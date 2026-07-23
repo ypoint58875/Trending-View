@@ -10,6 +10,12 @@ Every provider must:
 4. Use an explicit timeout and log only non-sensitive error metadata.
 5. Add source documentation and a reproducible raw sample.
 
+Provider orchestration belongs in `lib/market/index.ts`, not in individual
+adapters. Search results must normalize to the shared index/ETF asset types and
+must not expose individual equities. Fallbacks preserve the last valid series,
+prefer longer daily history when available, and never merge bars from different
+sources into one series.
+
 ## Indicator
 
 Indicators are pure, bar-aligned functions. Warm-up entries are `null`; values
@@ -24,5 +30,5 @@ position after a bar closes. Execution belongs only in the backtest engine.
 ## UI copy
 
 Chinese user-facing strings live in `app/i18n/zh-CN.ts`. Business logic,
-internal errors, identifiers, and tests remain English.
-
+internal errors, identifiers, and tests remain English. Provider-defined field
+values may retain their source language when required for parsing.

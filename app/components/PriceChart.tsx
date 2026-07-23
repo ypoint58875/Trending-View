@@ -4,25 +4,49 @@ import { useMemo } from "react";
 import type { EChartsOption, SeriesOption } from "echarts";
 import type { MarketBar } from "@/lib/market/types";
 import {
+  adx,
   atr,
   bollingerBands,
+  cci,
+  cmf,
+  dema,
   ema,
+  ichimoku,
   kdj,
   macd,
+  mfi,
   obv,
+  roc,
   rsi,
   sma,
+  stochasticRsi,
+  supertrend,
   type NumericSeries,
+  vwap,
+  williamsR,
+  wma,
 } from "@/lib/analysis/indicators";
 import { EChart } from "./EChart";
 
 export type IndicatorId =
   | "sma"
   | "ema"
+  | "wma"
+  | "dema"
   | "bollinger"
+  | "vwap"
+  | "supertrend"
+  | "ichimoku"
   | "rsi"
   | "macd"
   | "kdj"
+  | "stochasticRsi"
+  | "cci"
+  | "williamsR"
+  | "adx"
+  | "roc"
+  | "mfi"
+  | "cmf"
   | "atr"
   | "obv";
 
@@ -86,7 +110,16 @@ export function PriceChart({
   const option = useMemo<EChartsOption>(() => {
     const times = bars.map((bar) => bar.time);
     const closes = bars.map((bar) => bar.close);
-    const overlayIndicator = ["sma", "ema", "bollinger"].includes(indicator);
+    const overlayIndicator = [
+      "sma",
+      "ema",
+      "wma",
+      "dema",
+      "bollinger",
+      "vwap",
+      "supertrend",
+      "ichimoku",
+    ].includes(indicator);
     const mainHeight = overlayIndicator ? 68 : 57;
     const volumeTop = overlayIndicator ? 75 : 64;
     const volumeHeight = overlayIndicator ? 14 : 10;
@@ -155,12 +188,52 @@ export function PriceChart({
         lineSeries(labels.series.emaSlow, ema(closes, 26), colors.violet),
       );
     }
+    if (indicator === "wma") {
+      series.push(
+        lineSeries(labels.series.wmaFast, wma(closes, 20), colors.cyan),
+        lineSeries(labels.series.wmaSlow, wma(closes, 50), colors.amber),
+      );
+    }
+    if (indicator === "dema") {
+      series.push(
+        lineSeries(labels.series.demaFast, dema(closes, 20), colors.cyan),
+        lineSeries(labels.series.demaSlow, dema(closes, 50), colors.violet),
+      );
+    }
     if (indicator === "bollinger") {
       const bands = bollingerBands(closes, 20, 2);
       series.push(
         lineSeries(labels.series.bollMiddle, bands.middle, colors.amber),
         lineSeries(labels.series.bollUpper, bands.upper, colors.cyan),
         lineSeries(labels.series.bollLower, bands.lower, colors.cyan),
+      );
+    }
+    if (indicator === "vwap") {
+      series.push(
+        lineSeries(labels.series.vwap, vwap(bars), colors.amber),
+      );
+    }
+    if (indicator === "supertrend") {
+      const values = supertrend(bars, 10, 3);
+      series.push(
+        lineSeries(
+          labels.series.supertrend,
+          values.trend,
+          colors.up,
+        ),
+      );
+    }
+    if (indicator === "ichimoku") {
+      const values = ichimoku(bars);
+      series.push(
+        lineSeries(
+          labels.series.ichimokuConversion,
+          values.conversion,
+          colors.cyan,
+        ),
+        lineSeries(labels.series.ichimokuBase, values.base, colors.amber),
+        lineSeries(labels.series.ichimokuSpanA, values.spanA, colors.up),
+        lineSeries(labels.series.ichimokuSpanB, values.spanB, colors.down),
       );
     }
     if (indicator === "rsi") {
@@ -197,6 +270,52 @@ export function PriceChart({
         lineSeries(labels.series.kdjK, values.k, colors.cyan, 2, 2),
         lineSeries(labels.series.kdjD, values.d, colors.amber, 2, 2),
         lineSeries(labels.series.kdjJ, values.j, colors.violet, 2, 2),
+      );
+    }
+    if (indicator === "stochasticRsi") {
+      const values = stochasticRsi(closes);
+      series.push(
+        lineSeries(labels.series.stochRsiK, values.k, colors.cyan, 2, 2),
+        lineSeries(labels.series.stochRsiD, values.d, colors.amber, 2, 2),
+      );
+    }
+    if (indicator === "cci") {
+      series.push(
+        lineSeries(labels.series.cci, cci(bars), colors.violet, 2, 2),
+      );
+    }
+    if (indicator === "williamsR") {
+      series.push(
+        lineSeries(
+          labels.series.williamsR,
+          williamsR(bars),
+          colors.cyan,
+          2,
+          2,
+        ),
+      );
+    }
+    if (indicator === "adx") {
+      const values = adx(bars);
+      series.push(
+        lineSeries(labels.series.adx, values.adx, colors.violet, 2, 2),
+        lineSeries(labels.series.plusDi, values.plusDi, colors.up, 2, 2),
+        lineSeries(labels.series.minusDi, values.minusDi, colors.down, 2, 2),
+      );
+    }
+    if (indicator === "roc") {
+      series.push(
+        lineSeries(labels.series.roc, roc(closes), colors.amber, 2, 2),
+      );
+    }
+    if (indicator === "mfi") {
+      series.push(
+        lineSeries(labels.series.mfi, mfi(bars), colors.violet, 2, 2),
+      );
+    }
+    if (indicator === "cmf") {
+      series.push(
+        lineSeries(labels.series.cmf, cmf(bars), colors.cyan, 2, 2),
       );
     }
     if (indicator === "atr") {

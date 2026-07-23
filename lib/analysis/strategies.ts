@@ -1,5 +1,17 @@
 import type { MarketBar } from "@/lib/market/types";
-import { bollingerBands, ema, macd, rsi, sma } from "./indicators";
+import {
+  bollingerBands,
+  ema,
+  ichimoku,
+  kdj,
+  macd,
+  mfi,
+  roc,
+  rsi,
+  sma,
+  supertrend,
+  vwap,
+} from "./indicators";
 
 export type StrategyId =
   | "sma-cross"
@@ -7,7 +19,13 @@ export type StrategyId =
   | "rsi-reversal"
   | "macd-momentum"
   | "bollinger-reversion"
-  | "donchian-breakout";
+  | "donchian-breakout"
+  | "kdj-reversal"
+  | "supertrend-trend"
+  | "ichimoku-trend"
+  | "mfi-reversal"
+  | "roc-momentum"
+  | "vwap-reversion";
 
 export interface StrategyParameters {
   [key: string]: number;
@@ -162,6 +180,158 @@ function donchianBreakout(
   return target;
 }
 
+function kdjReversal(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
+  const values = kdj(bars, parameters.period);
+  const target = new Array(bars.length).fill(0);
+  let inPosition = false;
+
+  for (let index = 1; index < bars.length; index += 1) {
+    const currentK = values.k[index];
+    const currentD = values.d[index];
+    const previousK = values.k[index - 1];
+    const previousD = values.d[index - 1];
+    if (
+      currentK !== null &&
+      currentD !== null &&
+      previousK !== null &&
+      previousD !== null
+    ) {
+      if (
+        !inPosition &&
+        currentK > currentD &&
+        previousK <= previousD &&
+        currentK <= parameters.entry
+      ) {
+        inPosition = true;
+      } else if (
+        inPosition &&
+        currentK < currentD &&
+        previousK >= previousD &&
+        currentK >= parameters.exit
+      ) {
+        inPosition = false;
+      }
+    }
+    target[index] = inPosition ? 1 : 0;
+  }
+  return target;
+}
+
+function supertrendTrend(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
+  const values = supertrend(
+    bars,
+    parameters.period,
+    parameters.multiplier,
+  );
+  return values.direction.map((direction) => (direction > 0 ? 1 : 0));
+}
+
+function ichimokuTrend(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
+  const values = ichimoku(
+    bars,
+    parameters.conversionPeriod,
+    parameters.basePeriod,
+    parameters.spanPeriod,
+  );
+  const target = new Array(bars.length).fill(0);
+  let inPosition = false;
+
+  bars.forEach((bar, index) => {
+    const conversion = values.conversion[index];
+    const base = values.base[index];
+    const spanA = values.spanA[index];
+    const spanB = values.spanB[index];
+    if (
+      conversion !== null &&
+      base !== null &&
+      spanA !== null &&
+      spanB !== null
+    ) {
+      const cloudTop = Math.max(spanA, spanB);
+      const cloudBottom = Math.min(spanA, spanB);
+      if (!inPosition && bar.close > cloudTop && conversion > base) {
+        inPosition = true;
+      } else if (
+        inPosition &&
+        (bar.close < cloudBottom || conversion < base)
+      ) {
+        inPosition = false;
+      }
+    }
+    target[index] = inPosition ? 1 : 0;
+  });
+  return target;
+}
+
+function mfiReversal(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
+  const values = mfi(bars, parameters.period);
+  const target = new Array(bars.length).fill(0);
+  let inPosition = false;
+
+  values.forEach((value, index) => {
+    if (value !== null) {
+      if (!inPosition && value <= parameters.entry) inPosition = true;
+      if (inPosition && value >= parameters.exit) inPosition = false;
+    }
+    target[index] = inPosition ? 1 : 0;
+  });
+  return target;
+}
+
+function rocMomentum(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
+  const values = roc(
+    bars.map((bar) => bar.close),
+    parameters.period,
+  );
+  const target = new Array(bars.length).fill(0);
+  let inPosition = false;
+
+  values.forEach((value, index) => {
+    if (value !== null) {
+      if (!inPosition && value > parameters.entry) inPosition = true;
+      if (inPosition && value < parameters.exit) inPosition = false;
+    }
+    target[index] = inPosition ? 1 : 0;
+  });
+  return target;
+}
+
+function vwapReversion(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
+  const values = vwap(bars);
+  const target = new Array(bars.length).fill(0);
+  let inPosition = false;
+
+  bars.forEach((bar, index) => {
+    const value = values[index];
+    if (value !== null) {
+      const entryLevel = value * (1 - parameters.entryPercent / 100);
+      const exitLevel = value * (1 + parameters.exitPercent / 100);
+      if (!inPosition && bar.close <= entryLevel) inPosition = true;
+      if (inPosition && bar.close >= exitLevel) inPosition = false;
+    }
+    target[index] = inPosition ? 1 : 0;
+  });
+  return target;
+}
+
 export const STRATEGIES: StrategyDefinition[] = [
   {
     id: "sma-cross",
@@ -199,6 +369,46 @@ export const STRATEGIES: StrategyDefinition[] = [
     defaultParameters: { entryPeriod: 20, exitPeriod: 10 },
     buildTarget: donchianBreakout,
   },
+  {
+    id: "kdj-reversal",
+    indicatorId: "kdj",
+    defaultParameters: { period: 9, entry: 35, exit: 65 },
+    buildTarget: kdjReversal,
+  },
+  {
+    id: "supertrend-trend",
+    indicatorId: "supertrend",
+    defaultParameters: { period: 10, multiplier: 3 },
+    buildTarget: supertrendTrend,
+  },
+  {
+    id: "ichimoku-trend",
+    indicatorId: "ichimoku",
+    defaultParameters: {
+      conversionPeriod: 9,
+      basePeriod: 26,
+      spanPeriod: 52,
+    },
+    buildTarget: ichimokuTrend,
+  },
+  {
+    id: "mfi-reversal",
+    indicatorId: "mfi",
+    defaultParameters: { period: 14, entry: 20, exit: 60 },
+    buildTarget: mfiReversal,
+  },
+  {
+    id: "roc-momentum",
+    indicatorId: "roc",
+    defaultParameters: { period: 12, entry: 2, exit: 0 },
+    buildTarget: rocMomentum,
+  },
+  {
+    id: "vwap-reversion",
+    indicatorId: "vwap",
+    defaultParameters: { entryPercent: 1.5, exitPercent: 0 },
+    buildTarget: vwapReversion,
+  },
 ];
 
 export function getStrategy(id: StrategyId): StrategyDefinition {
@@ -206,4 +416,3 @@ export function getStrategy(id: StrategyId): StrategyDefinition {
   if (!strategy) throw new Error(`Unknown strategy: ${id}`);
   return strategy;
 }
-

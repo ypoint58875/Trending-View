@@ -38,7 +38,7 @@ implying access to TradingView-only scripting or strategy features.
 
 AKShare documents Eastmoney-backed daily and intraday interfaces and identifies
 the corresponding Eastmoney quote pages. Direct website endpoints require no
-private token and returned current `688484` daily and minute data during the
+private token and returned current index and ETF daily/minute data during the
 research check.
 
 Source:
@@ -47,7 +47,30 @@ Source:
 
 Risk: no public endpoint SLA or commercial-use guarantee.
 
-### Option B: Tushare Pro
+### Option B: Yahoo Finance chart and search endpoints
+
+Yahoo provides broad global symbol discovery and multiple chart intervals
+without an application key. It returned multi-year SOX and N225 daily history
+during research, but the chart endpoint can reject some regional or automated
+clients with HTTP 403.
+
+Sources:
+
+- https://finance.yahoo.com/quote/%5ESOX/history/
+- https://finance.yahoo.com/quote/%5EN225/history/
+
+### Option C: Nasdaq historical endpoint
+
+Nasdaq's website endpoint returned 1,254 SOX daily rows and daily history for
+supported US indexes and ETFs. It does not replace a general intraday feed and
+does not cover every global index.
+
+Sources:
+
+- https://www.nasdaq.com/market-activity/index/sox/historical
+- https://www.nasdaq.com/market-activity/etf/spy/historical
+
+### Option D: Tushare Pro
 
 Tushare publishes stock/index daily and minute interfaces, but access is gated
 by accounts and point tiers; index daily access is documented at a 2,000-point
@@ -58,8 +81,10 @@ Sources:
 - https://tushare.pro/document/1?doc_id=108
 - https://tushare.pro/document/1?doc_id=234
 
-Decision: use Eastmoney for the no-credential prototype behind a replaceable
-adapter. Recommend Tushare or an exchange-licensed feed for production.
+Decision: use Eastmoney first, Yahoo for broader discovery/history, and Nasdaq
+as a supported daily-history fallback. Preserve a shorter Eastmoney response if
+both longer-history sources fail. Recommend an exchange-licensed global feed
+for production.
 
 ## Backtesting
 
@@ -80,7 +105,6 @@ Sources:
 - https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
 - https://vectorbt.dev/api/portfolio/
 
-Decision: use a transparent TypeScript engine for the 18-candidate first
+Decision: use a transparent TypeScript engine for the 36-candidate current
 version. Move to a queued Python service for walk-forward studies or thousands
 of combinations.
-

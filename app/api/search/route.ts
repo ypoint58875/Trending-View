@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { searchEastmoney } from "@/lib/market/eastmoney";
+import { searchMarketAssets } from "@/lib/market";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const results = await searchEastmoney(query);
+    const results = await searchMarketAssets(query);
     return NextResponse.json(
       { results },
       {
@@ -31,4 +31,3 @@ export async function GET(request: Request) {
     );
   }
 }
-

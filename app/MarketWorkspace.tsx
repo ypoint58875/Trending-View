@@ -22,7 +22,10 @@ import {
 } from "./components/PriceChart";
 import { zhCN as copy } from "./i18n/zh-CN";
 import { runBacktest, type BacktestResult } from "@/lib/analysis/backtest";
-import { screenStrategies } from "@/lib/analysis/screening";
+import {
+  SCREENING_CANDIDATES,
+  screenStrategies,
+} from "@/lib/analysis/screening";
 import {
   STRATEGIES,
   getStrategy,
@@ -36,20 +39,33 @@ import type {
 } from "@/lib/market/types";
 
 const defaultInstrument: MarketInstrument = {
-  secid: "1.688484",
-  code: "688484",
+  secid: "100.N225",
+  code: "N225",
   name: copy.defaultInstrument.name,
-  exchange: "SSE",
-  kind: copy.defaultInstrument.kind,
+  exchange: "JPX",
+  assetType: "index",
+  provider: "eastmoney",
 };
 
 const indicatorIds: IndicatorId[] = [
   "sma",
   "ema",
+  "wma",
+  "dema",
   "bollinger",
+  "vwap",
+  "supertrend",
+  "ichimoku",
   "rsi",
   "macd",
   "kdj",
+  "stochasticRsi",
+  "cci",
+  "williamsR",
+  "adx",
+  "roc",
+  "mfi",
+  "cmf",
   "atr",
   "obv",
 ];
@@ -82,6 +98,19 @@ function formatNumber(value: number, digits = 2) {
 
 function datePart(time: string) {
   return time.slice(0, 10);
+}
+
+function isPeriodParameter(key: string) {
+  return (
+    key.endsWith("Period") ||
+    ["fast", "slow", "period", "signal"].includes(key)
+  );
+}
+
+function isDecimalParameter(key: string) {
+  return ["width", "multiplier", "entryPercent", "exitPercent"].includes(
+    key,
+  );
 }
 
 function resultTone(result: BacktestResult) {
@@ -127,6 +156,8 @@ export function MarketWorkspace() {
         code: instrument.code,
         name: instrument.name,
         exchange: instrument.exchange,
+        provider: instrument.provider,
+        assetType: instrument.assetType,
         interval,
         limit: interval === "1d" ? "1000" : "1500",
       });
@@ -335,7 +366,7 @@ export function MarketWorkspace() {
                 >
                   <span>
                     <strong>{result.name}</strong>
-                    <small>{result.kind}</small>
+                    <small>{copy.assetTypes[result.assetType]}</small>
                   </span>
                   <span className="search-code">
                     {result.exchange}:{result.code}
@@ -359,7 +390,7 @@ export function MarketWorkspace() {
             <h1>{series?.instrument.name ?? instrument.name}</h1>
             <p>
               {instrument.exchange}:{instrument.code} {copy.common.separator}{" "}
-              {instrument.kind}
+              {copy.assetTypes[instrument.assetType]}
             </p>
           </div>
         </div>
@@ -382,11 +413,15 @@ export function MarketWorkspace() {
             [copy.marketStats.low, latest?.low],
             [
               copy.marketStats.volume,
-              latest ? compactFormatter.format(latest.volume) : undefined,
+              latest?.volume
+                ? compactFormatter.format(latest.volume)
+                : undefined,
             ],
             [
               copy.marketStats.amount,
-              latest ? compactFormatter.format(latest.amount) : undefined,
+              latest?.amount
+                ? compactFormatter.format(latest.amount)
+                : undefined,
             ],
           ].map(([label, value]) => (
             <div className="market-stat" key={String(label)}>
@@ -475,7 +510,9 @@ export function MarketWorkspace() {
                   <span>
                     {series.bars.length} {copy.chart.bars}
                   </span>
-                  <span>{copy.marketSource}</span>
+                  <span>
+                    {copy.sources[series.source]}
+                  </span>
                 </>
               )}
             </div>
@@ -631,8 +668,8 @@ export function MarketWorkspace() {
                   <input
                     type="number"
                     value={value}
-                    min={key === "width" ? 0.5 : 2}
-                    step={key === "width" ? 0.1 : 1}
+                    min={isPeriodParameter(key) ? 1 : undefined}
+                    step={isDecimalParameter(key) ? 0.1 : 1}
                     onChange={(event) =>
                       setParameters((current) => ({
                         ...current,
@@ -735,7 +772,9 @@ export function MarketWorkspace() {
               </strong>
             </div>
             {screenResults.length > 0 && (
-              <span>{screenResults.length} / 18</span>
+              <span>
+                {screenResults.length} / {SCREENING_CANDIDATES.length}
+              </span>
             )}
           </div>
 

@@ -1,0 +1,40 @@
+{
+  "captured_at": "2026-07-23T09:15:00Z",
+  "request": {
+    "symbol": "^SOX",
+    "interval": "1d",
+    "range": "5d"
+  },
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "symbol": "^SOX",
+          "longName": "PHLX Semiconductor",
+          "chartPreviousClose": 12398.89,
+          "exchangeTimezoneName": "America/New_York",
+          "exchangeName": "NIM"
+        },
+        "timestamp": [
+          1784208600,
+          1784295000,
+          1784554200,
+          1784640600,
+          1784727000
+        ],
+        "indicators": {
+          "quote": [
+            {
+              "open": [12114.9697, 11485.8896, 11952.7002, 12311.2803, 12123.3203],
+              "high": [12191.4102, 11939.4404, 12071.8301, 12404.1104, 12525.71],
+              "close": [11867.5, 11673.8896, 11743.8496, 12356.1602, 12410.6699],
+              "volume": [0, 0, 0, 0, 0],
+              "low": [11768.96, 11194.5996, 11718.21, 12085.9902, 12113.9502]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}

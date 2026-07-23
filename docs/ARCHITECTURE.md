@@ -8,7 +8,9 @@ Worker-compatible bundle.
 ```text
 Browser UI
   -> /api/search and /api/market
-  -> Eastmoney adapter
+  -> index/ETF search filter
+  -> Eastmoney, Yahoo Finance, and Nasdaq adapters
+  -> ordered data-source fallback
   -> normalized MarketSeries
   -> indicator registry
   -> strategy registry
@@ -28,3 +30,8 @@ Browser UI
 The API routes return normalized data and do not expose provider-specific row
 formats to the browser.
 
+Eastmoney is the preferred source for search and bars. Yahoo Finance extends
+global symbol discovery and history. Nasdaq is the daily-history fallback for
+supported indexes and ETFs when Yahoo is unavailable. A shorter valid
+Eastmoney series is preserved as the final fallback instead of turning a
+partial upstream response into an empty chart.

@@ -31,6 +31,7 @@ interface EastmoneySearchItem {
   QuoteID?: string;
   MktNum?: string;
   SecurityTypeName?: string;
+  SecurityType?: string;
 }
 
 interface EastmoneySearchResponse {
@@ -54,8 +55,25 @@ interface EastmoneyKlineResponse {
 function exchangeFromMarket(market: string | number | undefined) {
   if (String(market) === "1") return "SSE" as const;
   if (String(market) === "0") return "SZSE" as const;
-  if (String(market) === "2") return "BSE" as const;
+  if (String(market) === "100") return "JPX" as const;
+  if (String(market) === "251") return "PHLX" as const;
+  if (String(market) === "107") return "NYSE_ARCA" as const;
+  if (String(market) === "105") return "NASDAQ" as const;
   return "OTHER" as const;
+}
+
+function assetTypeFromSearchItem(
+  item: EastmoneySearchItem,
+): MarketInstrument["assetType"] | null {
+  if (item.SecurityTypeName === "指数") return "index";
+  if (
+    item.SecurityType === "8" &&
+    /ETF/i.test(`${item.Name ?? ""} ${item.SecurityTypeName ?? ""}`)
+  ) {
+    return "etf";
+  }
+  if (/ETF/i.test(item.Name ?? "")) return "etf";
+  return null;
 }
 
 function numeric(value: string | undefined): number {
@@ -136,13 +154,32 @@ export async function searchEastmoney(
   const items = payload.QuotationCodeTable?.Data ?? [];
 
   return items
-    .filter((item) => item.Code && item.Name && item.QuoteID)
-    .map((item) => ({
-      secid: item.QuoteID!,
-      code: item.Code!,
-      name: item.Name!,
+    .map((item) => ({ item, assetType: assetTypeFromSearchItem(item) }))
+    .filter(
+      (
+        candidate,
+      ): candidate is {
+        item: EastmoneySearchItem & {
+          Code: string;
+          Name: string;
+          QuoteID: string;
+        };
+        assetType: MarketInstrument["assetType"];
+      } =>
+        Boolean(
+          candidate.item.Code &&
+            candidate.item.Name &&
+            candidate.item.QuoteID &&
+            candidate.assetType,
+        ),
+    )
+    .map(({ item, assetType }) => ({
+      secid: item.QuoteID,
+      code: item.Code,
+      name: item.Name,
       exchange: exchangeFromMarket(item.MktNum),
-      kind: item.SecurityTypeName || "Security",
+      assetType,
+      provider: "eastmoney" as const,
     }))
     .slice(0, 8);
 }
@@ -174,7 +211,8 @@ export async function fetchEastmoneySeries(
 
   const bars = data.klines
     .map(parseKlineRow)
-    .filter((bar): bar is MarketBar => Boolean(bar));
+    .filter((bar): bar is MarketBar => Boolean(bar))
+    .slice(-limit);
 
   if (bars.length === 0) {
     throw new Error("Eastmoney kline data could not be parsed");

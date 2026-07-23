@@ -1,11 +1,23 @@
 export type MarketInterval = "1m" | "5m" | "15m" | "30m" | "60m" | "1d";
+export type MarketAssetType = "index" | "etf";
+export type MarketDataProvider = "eastmoney" | "yahoo" | "nasdaq";
+export type MarketExchange =
+  | "SSE"
+  | "SZSE"
+  | "JPX"
+  | "PHLX"
+  | "NYSE_ARCA"
+  | "NASDAQ"
+  | "HKEX"
+  | "OTHER";
 
 export interface MarketInstrument {
   secid: string;
   code: string;
   name: string;
-  exchange: "SSE" | "SZSE" | "BSE" | "OTHER";
-  kind: string;
+  exchange: MarketExchange;
+  assetType: MarketAssetType;
+  provider: MarketDataProvider;
 }
 
 export interface MarketBar {
@@ -28,7 +40,6 @@ export interface MarketSeries {
   interval: MarketInterval;
   previousClose: number;
   bars: MarketBar[];
-  source: "eastmoney";
+  source: MarketDataProvider;
   fetchedAt: string;
 }
-
