@@ -31,6 +31,7 @@ import {
 } from "../lib/analysis/indicators";
 import {
   MAX_PARAMETER_SETS_PER_STRATEGY,
+  buildNearbyParameterSets,
   buildScreeningCandidates,
   compareScreeningResults,
   optimizeStrategies,
@@ -46,6 +47,13 @@ import {
   TRADINGVIEW_BUILT_IN_STRATEGY_IDS,
 } from "../lib/analysis/built-in-strategies";
 import { buildLiveStrategyGuidance } from "../lib/analysis/live-guidance";
+import {
+  STABILITY_THRESHOLDS,
+  analyzeStrategyStability,
+  classifyMarketRegimes,
+  summarizeNearbyBacktests,
+  summarizeRegimeReturns,
+} from "../lib/analysis/stability";
 import { buildTradeMarkers } from "../lib/analysis/trade-markers";
 import {
   parseKlineRow,
@@ -1008,6 +1016,244 @@ test("builds broad unique parameter grids within the per-strategy cap", () => {
       [0.01, 0.05, 0.1, 0.5, 1, 5, 10],
       strategyId,
     );
+  }
+});
+
+test("builds deterministic nearest valid parameter variants without optimizing", () => {
+  const baseParameters = { fast: 10, slow: 15 };
+  const parameterSets = buildNearbyParameterSets(
+    "sma-cross",
+    baseParameters,
+  );
+
+  assert.deepEqual(parameterSets, [
+    { fast: 10, slow: 15 },
+    { fast: 8, slow: 15 },
+    { fast: 12, slow: 15 },
+    { fast: 10, slow: 20 },
+  ]);
+  assert.equal(
+    parameterSets.filter(
+      (parameters) =>
+        JSON.stringify(parameters) === JSON.stringify(baseParameters),
+    ).length,
+    1,
+  );
+  parameterSets.slice(1).forEach((parameters) => {
+    assert.equal(
+      Object.keys(baseParameters).filter(
+        (key) => parameters[key] !== baseParameters[key],
+      ).length,
+      1,
+    );
+    assert.ok(parameters.fast < parameters.slow);
+  });
+});
+
+test("classifies trailing 60/20-day regimes deterministically without future data", () => {
+  const risingBars = makeBars(
+    Array.from({ length: 120 }, (_, index) => 100 + index),
+  );
+  const fallingBars = makeBars(
+    Array.from({ length: 120 }, (_, index) => 300 - index),
+  );
+  const flatBars = makeBars(Array.from({ length: 120 }, () => 100));
+
+  assert.deepEqual(classifyMarketRegimes([]), []);
+  assert.ok(
+    classifyMarketRegimes(risingBars.slice(0, 79)).every(
+      (regime) => regime === null,
+    ),
+  );
+  assert.equal(classifyMarketRegimes(risingBars)[79], "up");
+  assert.equal(classifyMarketRegimes(fallingBars)[79], "down");
+  assert.equal(classifyMarketRegimes(flatBars)[79], "sideways");
+
+  const fullRegimes = classifyMarketRegimes(
+    makeBars(
+      Array.from(
+        { length: 160 },
+        (_, index) => 100 + index * 0.08 + Math.sin(index / 5) * 8,
+      ),
+    ),
+  );
+  for (const prefixLength of [80, 100, 140]) {
+    assert.deepEqual(
+      classifyMarketRegimes(
+        makeBars(
+          Array.from(
+            { length: prefixLength },
+            (_, index) => 100 + index * 0.08 + Math.sin(index / 5) * 8,
+          ),
+        ),
+      ),
+      fullRegimes.slice(0, prefixLength),
+      `prefix:${prefixLength}`,
+    );
+  }
+});
+
+test("summarizes aligned consecutive equity returns by current-bar regime", () => {
+  const bars = makeBars(
+    Array.from({ length: 82 }, (_, index) => 100 + index),
+  );
+  const summaries = summarizeRegimeReturns(bars, [
+    { time: bars[78].time, equity: 100, drawdown: 0 },
+    { time: bars[79].time, equity: 110, drawdown: 0 },
+    { time: bars[80].time, equity: 121, drawdown: 0 },
+  ]);
+
+  assert.equal(summaries.up.periodCount, 2);
+  assert.ok(
+    Math.abs((summaries.up.returnPercent ?? Number.NaN) - 21) < 1e-10,
+  );
+  assert.deepEqual(summaries.sideways, {
+    returnPercent: null,
+    periodCount: 0,
+  });
+  assert.deepEqual(summaries.down, {
+    returnPercent: null,
+    periodCount: 0,
+  });
+});
+
+test("applies inclusive stability thresholds and retains factual ranges", () => {
+  const makeResult = (
+    totalReturn: number,
+    maxDrawdown: number,
+    tradeCount: number,
+  ): BacktestResult => ({
+    strategyId: "sma-cross",
+    parameters: { fast: 10, slow: 15 },
+    totalReturn,
+    annualizedReturn: totalReturn,
+    benchmarkReturn: 0,
+    maxDrawdown,
+    sharpe: 0,
+    winRate: 0,
+    profitFactor: 0,
+    tradeCount,
+    finalEquity: 100_000 * (1 + totalReturn / 100),
+    score: 0,
+    equity: [],
+    trades: [],
+  });
+  const baseResult = makeResult(5, -10, 4);
+  const variantResults = [
+    makeResult(15, -8, 8),
+    makeResult(10, -20, 6),
+    makeResult(5, -12, 2),
+    makeResult(0, -9, 5),
+  ];
+
+  assert.deepEqual(STABILITY_THRESHOLDS, {
+    minimumSignAgreement: 0.75,
+    maximumReturnRange: 15,
+    maximumDrawdownDeterioration: 10,
+  });
+  const summary = summarizeNearbyBacktests(baseResult, variantResults);
+  assert.deepEqual(summary.totalReturnRange, {
+    minimum: 0,
+    maximum: 15,
+    width: 15,
+  });
+  assert.deepEqual(summary.tradeCountRange, {
+    minimum: 2,
+    maximum: 8,
+  });
+  assert.equal(summary.worstDrawdown, -20);
+  assert.equal(summary.drawdownDeterioration, 10);
+  assert.deepEqual(summary.signAgreement, {
+    matchingVariants: 3,
+    variantCount: 4,
+    ratio: 0.75,
+  });
+  assert.deepEqual(summary.thresholdChecks, {
+    signAgreement: true,
+    returnRange: true,
+    drawdownDeterioration: true,
+  });
+  assert.equal(summary.stable, true);
+
+  assert.equal(
+    summarizeNearbyBacktests(baseResult, [
+      ...variantResults.slice(0, 3),
+      makeResult(-0.01, -9, 5),
+    ]).stable,
+    false,
+  );
+  assert.equal(
+    summarizeNearbyBacktests(baseResult, [
+      ...variantResults.slice(0, 1),
+      makeResult(10, -20.01, 6),
+      ...variantResults.slice(2),
+    ]).stable,
+    false,
+  );
+});
+
+test("runs current and nearby backtests without selecting replacement parameters", () => {
+  const bars = makeBars(
+    Array.from(
+      { length: 140 },
+      (_, index) => 80 + index * 0.12 + Math.sin(index / 4) * 5,
+    ),
+  );
+  const baseParameters = { fast: 10, slow: 15 };
+  const analysis = analyzeStrategyStability(
+    bars,
+    "sma-cross",
+    baseParameters,
+    {
+      initialCash: 100_000,
+      commissionRate: 0.0003,
+      slippageRate: 0.0002,
+      interval: "1d",
+    },
+  );
+  const expectedParameterSets = buildNearbyParameterSets(
+    "sma-cross",
+    baseParameters,
+  );
+  const allResults = [analysis.baseResult, ...analysis.variantResults];
+
+  assert.deepEqual(analysis.baseResult.parameters, baseParameters);
+  assert.deepEqual(
+    analysis.variantResults.map((result) => result.parameters),
+    expectedParameterSets.slice(1),
+  );
+  assert.equal(analysis.nearby.signAgreement.variantCount, 3);
+  assert.equal(
+    analysis.nearby.totalReturnRange.minimum,
+    Math.min(...allResults.map((result) => result.totalReturn)),
+  );
+  assert.equal(
+    analysis.nearby.totalReturnRange.maximum,
+    Math.max(...allResults.map((result) => result.totalReturn)),
+  );
+  assert.ok(analysis.nearby.signAgreement.ratio >= 0);
+  assert.ok(analysis.nearby.signAgreement.ratio <= 1);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(analysis, "selectedParameters"),
+    false,
+  );
+
+  const shortAnalysis = analyzeStrategyStability(
+    bars.slice(0, 30),
+    "sma-cross",
+    baseParameters,
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+  );
+  for (const regime of ["up", "sideways", "down"] as const) {
+    assert.deepEqual(shortAnalysis.regimes[regime], {
+      returnPercent: null,
+      periodCount: 0,
+    });
   }
 });
 

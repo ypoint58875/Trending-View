@@ -286,6 +286,37 @@ function buildParameterSets(space: ParameterSpace): StrategyParameters[] {
     : combinations;
 }
 
+export function buildNearbyParameterSets(
+  strategyId: StrategyId,
+  baseParameters: StrategyParameters,
+): StrategyParameters[] {
+  const space = PARAMETER_SPACES[strategyId];
+  const parameterSets = new Map<string, StrategyParameters>();
+  const base = { ...baseParameters };
+  parameterSets.set(JSON.stringify(base), base);
+
+  for (const domain of space.domains) {
+    const currentValue = baseParameters[domain.key];
+    const lowerValues = domain.values.filter(
+      (value) => value < currentValue,
+    );
+    const lower = lowerValues.at(-1);
+    const higher = domain.values.find((value) => value > currentValue);
+
+    for (const value of [lower, higher]) {
+      if (value === undefined) continue;
+      const candidate = {
+        ...baseParameters,
+        [domain.key]: value,
+      };
+      if (space.isValid && !space.isValid(candidate)) continue;
+      parameterSets.set(JSON.stringify(candidate), candidate);
+    }
+  }
+
+  return [...parameterSets.values()];
+}
+
 function clampCandidateLimit(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_PARAMETER_SETS_PER_STRATEGY;
   return Math.min(
