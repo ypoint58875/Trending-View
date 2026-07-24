@@ -14,9 +14,25 @@ Provider orchestration belongs in `lib/market/index.ts`, not in individual
 adapters. Search results must normalize to the shared index/ETF asset types and
 must not expose individual equities. Fallbacks preserve the last valid series,
 prefer longer daily history when available, and never merge bars from different
-sources into one series. Completed history may be cached, while current refresh
-requests remain uncached and replace only overlapping recent bars from the same
-provider and interval.
+sources into one series. History responses may be HTTP cached, while current
+refresh requests remain uncached and replace only overlapping recent bars from
+the same provider and interval.
+
+Every `MarketSeries` must set authoritative `priceAdjustment` metadata.
+Eastmoney's `fqt=1` output is `corporate-action-adjusted`. Yahoo daily OHLC is
+scaled per bar only when `adjclose / raw close` is finite and positive; any
+parsed daily bar without a valid factor falls back to raw prices and makes the
+whole series metadata `raw`. Yahoo intraday and Nasdaq daily output are `raw`.
+Never rescale provider volume with a price-adjustment factor.
+
+The active `MarketSeries.bars` is the shared input for chart history,
+indicators, strategy price references, live guidance, stability, and
+backtesting. Do not create a second independently adjusted analysis series. For
+ETFs, the normalized series reduces mechanical distribution/split gaps. For
+indexes, the provider symbol/methodology defines price-index versus
+total-return-index semantics; adjustment does not convert between them or
+process constituent-company events/fundamentals. Neither path implements a
+separate cash-distribution ledger or reinvestment.
 
 ## Indicator
 
@@ -28,6 +44,13 @@ stable IDs, main-chart versus lower-pane placement, defaults, minimums, and
 input steps. It contains no localized text and no chart styling. UI controls
 and chart calculations consume the same registry entry so a displayed setting
 cannot drift from the formula input.
+
+The UI keeps focused state separate from ordered-visible state. Focus selects
+which indicator's independent settings are edited; ordered visibility selects
+what the chart renders and preserves display order. Hiding an indicator does
+not reset its settings. Overlay definitions render on the price axes. Every
+visible pane definition receives its own lower pane. Price, volume, and all
+indicator panes share the same zoom contract.
 
 ## Strategy
 
@@ -87,10 +110,29 @@ the newest OHLC range. Guidance never alters historical backtest execution and
 must expose both action (`buy`, `sell`, `hold`, or `wait`) and resulting
 long-only position.
 
+Strategy price visuals are also a separate pure projection. The visual helper
+must return aligned finite-or-null series, reuse the exact `buildOrders` plan
+when it exists, and return an empty collection for a strategy without
+continuous price references. Chart components render these lines dashed on the
+main price axes and never duplicate execution rules to derive order levels.
+
+Nearby-parameter stability must reuse screening domains and the existing
+backtest engine. Generate only one-field moves to the immediately adjacent
+configured values, filter cross-field-invalid candidates, and retain the
+user's base parameters. The diagnostic reports sensitivity and 60-day
+SMA/20-bar-slope regimes; it must never rank, select, or apply a parameter.
+At least one valid variant is required. Thresholds are centralized and
+inclusive: 75% sign agreement, a 15-percentage-point maximum return range, and
+a 10-percentage-point maximum drawdown deterioration.
+
 Shared ECharts wrappers initialize and dispose the canvas only at component
 mount/unmount. Option changes update the existing instance. Interactive state
 that must survive an option update is captured explicitly and reapplied; reset
 keys define the business boundary where that state should be discarded.
+
+The browser workspace is daily-only and holds one index or ETF at a time.
+Provider/API types may keep intraday support, but adding an interval back to
+the UI is a product-contract change, not an incidental adapter change.
 
 ## Saved record
 

@@ -2,6 +2,27 @@
 
 ## 2026-07-24
 
+- Made the interactive workspace daily-only for one index or ETF at a time
+  while retaining interval support inside provider/API types.
+- Added authoritative `MarketSeries.priceAdjustment` metadata: Eastmoney
+  `fqt=1` is adjusted, Yahoo daily OHLC uses a validated per-bar
+  `adjclose / raw close` factor with whole-series raw fallback metadata, Yahoo
+  intraday remains raw internally, and Nasdaq is a raw daily fallback.
+- Kept provider volume unscaled and routed the same normalized `MarketBar[]`
+  through charts, indicators, strategy visuals, guidance, stability, and
+  backtests.
+- Added focused versus ordered-visible indicator state, independent settings,
+  overlay versus one-pane-per-indicator layout, and shared zoom across price,
+  volume, and all indicator panes.
+- Added a pure strategy price-visual contract for 17 price-based strategies,
+  including direct reuse of the five price-order plans, dashed main-axis
+  rendering, and empty output for strategies without continuous references.
+- Added nearby-parameter stability diagnostics using adjacent valid screening
+  values, inclusive 75%/15-point/10-point thresholds, and prefix-safe 60-day
+  SMA/20-bar-slope market regimes. The diagnostic never selects parameters.
+- Added `DATA_PIPELINE.md` and `CACHE_POLICY.md` to distinguish current HTTP
+  caching and in-memory latest-bar merge behavior from future ingestion,
+  archival, retention, and cleanup recommendations.
 - Added cached full history plus uncached recent-bar overlays on open, focus,
   visibility, and 60-second visible-page intervals.
 - Added current dynamic-bar buy, sell, continue-holding, and remain-flat

@@ -1,28 +1,37 @@
 # QuantScope
 
-QuantScope is a global index and ETF research workspace inspired by
-professional charting terminals. It combines filtered asset search, minute and
-daily OHLCV charts, technical indicators, strategy backtests, and automated
-parameter screening in one responsive page.
+QuantScope is a daily-only workspace for researching one global index or ETF at
+a time and making manual swing decisions. It combines filtered asset search,
+dividend/split-adjusted price charts when the selected source supports them,
+technical indicators, strategy backtests, parameter sensitivity diagnostics,
+and bounded parameter screening in one responsive page. It does not place
+trades or run unattended jobs.
 
 ## Included
 
 - Search only global indexes and exchange-traded funds; individual equities are
   excluded from results.
-- 1, 5, 15, 30, and 60-minute bars plus daily bars.
+- One fixed daily interval in the user interface. Provider adapters and API
+  types retain interval support for internal compatibility.
 - Candlestick and line chart modes with volume and synchronized zoom.
-- Cached completed history plus an uncached latest-bar overlay on open, every
+- Cached history plus an uncached latest-bar overlay on open, every
   60 seconds while visible, and on focus/visibility, with current-bar strategy
   guidance recalculated after each overlay.
+- Explicit price-adjustment metadata from the selected `MarketSeries`.
+  Eastmoney and valid Yahoo daily series are marked
+  `corporate-action-adjusted`; Nasdaq is a raw daily fallback.
 - Explicit green-up/red-down chart legend and separate range-end valuation
   markers so a forced backtest close is not presented as a strategy sell.
-- Twenty independently selectable indicators, including moving-average
+- Twenty independently configurable indicators, including moving-average
   variants, Bollinger Bands, Ichimoku, Supertrend, momentum, volatility, and
-  volume studies. Each parameterized indicator exposes its own settings and
-  remembers them while the page remains open.
-- Indicator selection is independent from strategy selection. The selected
-  study remains visible while the active strategy contributes its actual
-  buy/sell trade markers to the same chart.
+  volume studies. One indicator is focused for editing while an ordered
+  collection can remain visible. Each indicator retains its own parameters
+  while the page remains open.
+- Overlay indicators share the price axis; each lower-pane indicator receives
+  its own pane. Price, volume, and all indicator panes share the same zoom.
+- Indicator visibility is independent from strategy selection. The active
+  strategy contributes actual buy/sell fills and, where the rule has
+  continuous price references, dashed strategy lines on the main price axis.
 - Twelve extended strategy families plus independent equivalents of all 20
   templates in TradingView's official built-in-strategy directory.
 - Date-range backtests with initial cash, commission, and slippage settings.
@@ -30,7 +39,13 @@ parameter screening in one responsive page.
   stop fills for predefined breakout prices, including gap-aware pricing.
 - Chart-level buy/sell markers derived from the active backtest's actual fills.
 - Per-user saved backtests with a right-side shortcut bar that restores the
-  instrument, interval, strategy, parameters, date range, and cost settings.
+  instrument, strategy, parameters, date range, and cost settings. The
+  workspace interval remains daily.
+- A nearby-parameter stability diagnostic that changes one parameter at a time
+  to the immediately lower or higher configured value, reruns valid variants,
+  and reports return-sign agreement, return/drawdown/trade-count ranges, and
+  performance in up, sideways, and down market regimes. It never selects or
+  applies a replacement parameter.
 - Bounded parameter-grid optimization across all 32 strategies, configurable
   up to 2,500 combinations per strategy and ranked by a return, Sharpe,
   drawdown, and trade-count score.
@@ -76,6 +91,23 @@ Finance, and Nasdaq. These endpoints are convenient for a prototype but have
 no published stability or commercial-use SLA. Replace the adapters with a
 licensed provider before production or investment use.
 
+Eastmoney requests forward-adjusted data with `fqt=1`. Yahoo daily bars scale
+open, high, low, and close per bar by a finite positive
+`adjclose / raw close`; a missing or invalid factor leaves that bar raw and
+marks the whole returned series as raw. Yahoo intraday support remains raw
+inside the provider layer, and Nasdaq is always a raw daily fallback. Provider
+volume is never rescaled. `MarketSeries.priceAdjustment` is the authoritative
+adjustment label displayed by the UI.
+
+The chart, indicators, strategy reference lines, current-bar guidance,
+stability analysis, and backtests all consume the same normalized
+`MarketBar[]`. For ETFs, adjusted prices reduce mechanical distribution/split
+gaps. For indexes, the provider symbol and methodology determine whether the
+source represents a price index or a total-return index; QuantScope does not
+convert one methodology into the other or add constituent-company events and
+fundamentals. This is not separate cash-distribution accounting, reinvestment,
+cash yield, or a synthetic total-return ledger.
+
 Backtests are research simulations. They do not model every venue rule,
 tracking error, tax, suspension, lot constraint, corporate action, or real
 order-book liquidity. Intrabar stop fills use chart OHLC rather than tick data.
@@ -83,10 +115,18 @@ Index backtests are price proxies and do not represent a directly tradable
 instrument. Volume-based studies are unavailable or uninformative when an
 index source does not publish volume.
 
-The current strategy guidance intentionally evaluates the newest provider bar,
-including an unfinished intraday or daily bar. It can therefore change again
-before the bar closes. The historical backtest keeps its separate no-look-ahead
+The current strategy guidance intentionally evaluates the newest provider
+daily bar, which may still be unfinished. It can therefore change again before
+the bar closes. The historical backtest keeps its separate no-look-ahead
 execution rules.
+
+The stability label is descriptive, not predictive. It requires at least one
+valid nearby variant and is stable only when at least 75% of those variants
+share the base return sign, the return range across the base and variants is no
+wider than 15 percentage points, and the worst drawdown is no more than 10
+percentage points below the base drawdown. Regimes use the current close versus
+a 60-day SMA and the SMA's 20-bar slope. These checks do not replace
+out-of-sample or walk-forward validation.
 
 TradingView is a product reference only. This project does not redistribute the
 TradingView Advanced Charts library or copy protected Pine scripts. The

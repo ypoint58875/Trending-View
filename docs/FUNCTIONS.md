@@ -6,18 +6,24 @@
 - `searchYahoo(query)`: extends global index/ETF symbol discovery.
 - `searchMarketAssets(query)`: merges and de-duplicates provider results.
 - `fetchEastmoneySeries(instrument, interval, limit)`: fetches and normalizes
-  OHLCV bars.
+  OHLCV bars with `fqt=1` and marks the result corporate-action adjusted.
 - `fetchYahooSeries(instrument, interval, limit)`: fetches global chart history.
+  Daily bars scale OHLC per bar by a finite positive
+  `adjclose / raw close`; invalid or missing factors leave their bars raw and
+  make the entire series metadata raw. Intraday output is raw.
 - `fetchNasdaqDailySeries(instrument, limit)`: fetches supported daily index/ETF
-  history.
+  history and marks it raw.
 - `fetchMarketSeries(...)`: applies the ordered provider fallback.
 - `/api/market?mode=history`: returns cacheable normalized history.
 - `/api/market?mode=latest`: returns an uncached window of up to ten recent
-  bars for current-bar replacement.
-- `mergeLatestMarketSeries(...)`: retains cached history while replacing
-  overlapping recent bars from the same interval and source.
+  bars for current-bar replacement. The current UI requests five.
+- `mergeLatestMarketSeries(...)`: idempotently retains history and replaces
+  overlapping bars by `time`, then sorts and limits the result. It accepts only
+  the same interval and source; the workspace does not merge a changed source.
 - `parseKlineRow(row)`: parses daily or intraday Eastmoney CSV rows.
-- `parseYahooChart(...)` and `parseNasdaqRows(...)`: normalize provider payloads.
+- `parseYahooChart(...)` and `parseNasdaqRows(...)`: normalize provider payloads
+  into `MarketBar[]`. Provider volume passes through without price-adjustment
+  scaling.
 
 ## Indicators
 
@@ -33,17 +39,25 @@
   object for one indicator.
 - `createDefaultIndicatorSettings()`: creates independent session settings for
   every registered indicator.
+- `MarketWorkspace` keeps one `focusedIndicator` for settings and an ordered
+  `visibleIndicatorIds` collection for chart output. Focusing a hidden
+  indicator adds it to the visible order; its visibility can then be toggled
+  independently without discarding its parameter settings.
 
 ## Chart configuration
 
-- `buildIndicatorSeries(bars, indicator, parameters, labels)`: calculates the
-  selected indicator with the supplied display parameters and returns its
-  ECharts series without consulting strategy state.
-- `buildPriceDataZoom(barsLength, overlayIndicator)`: links the price, volume,
-  and indicator axes to one inside zoom and one directly draggable timeline
-  slider, showing the latest 120 bars initially.
+- `buildIndicatorSeries(bars, indicator, parameters, labels, xAxis, yAxis)`:
+  calculates one configured indicator and returns its ECharts series without
+  consulting strategy state.
+- `buildPriceChartLayout(times, paneCount)`: keeps overlay indicators on the
+  main price axes and allocates one lower grid for each visible pane indicator.
+- `buildPriceDataZoom(barsLength, xAxisIndexes)`: links price, volume, and all
+  indicator axes to one inside zoom and one directly draggable timeline slider,
+  showing the latest 120 bars initially.
 - `applyDataZoomWindow(option, window)`: reapplies the user's current zoom
   start/end percentages when chart series or indicators update.
+- `buildStrategyLineSeries(lines, labels)`: renders strategy price references
+  as semantic dashed lines on the main price axes.
 
 ## Strategies
 
@@ -57,6 +71,37 @@
   long-exit stop levels derived only from completed bars.
 - `INTRABAR_PRICE_ORDER_STRATEGY_IDS`: the ordered contract covering Channel
   BreakOut, Momentum, Pivot Reversal, Price Channel, and Volty Expan Close.
+- `buildStrategyOrders(bars, strategyId, parameters)`: validates and returns the
+  strategy's existing bar-aligned order plan, or `null` when the strategy has
+  no price-order contract.
+- `buildStrategyPriceLines(...)`: pure strategy visual contract. It reuses
+  `buildStrategyOrders` directly for the five price-order strategies and
+  provides continuous references for `sma-cross`, `ema-cross`,
+  `bollinger-reversion`, `donchian-breakout`, `supertrend-trend`,
+  `ichimoku-trend`, `vwap-reversion`, `tv-bollinger-bands`,
+  `tv-bollinger-directed`, `tv-keltner-channels`, `tv-parabolic-sar`, and
+  `tv-supertrend`. Other strategies return an empty array rather than an
+  invented line.
+
+## Stability
+
+- `buildNearbyParameterSets(strategyId, baseParameters)`: returns the base
+  parameters followed by valid variants that move one parameter at a time to
+  the immediately lower or higher value in its screening domain.
+- `classifyMarketRegimes(bars)`: classifies each eligible daily bar as up when
+  close is above the current 60-day SMA and that SMA is above its value 20 bars
+  earlier, down for the inverse, and sideways otherwise. Warm-up bars are
+  unclassified.
+- `summarizeNearbyBacktests(base, variants)`: reports return, drawdown, and
+  trade-count ranges plus nearby return-sign agreement. Stability requires at
+  least one valid variant and all inclusive checks: at least 75% sign
+  agreement, at most a 15-percentage-point return range, and at most 10
+  percentage points of drawdown deterioration.
+- `summarizeRegimeReturns(bars, equity)`: compounds consecutive current-rule
+  equity growth by the regime of the current bar.
+- `analyzeStrategyStability(...)`: reruns the existing backtest for the base
+  and nearby sets and returns diagnostics only; it never selects or applies a
+  parameter.
 
 ## Simulation
 
@@ -81,6 +126,10 @@
   progress, keeps only the best result for each strategy under the selected
   objective, and sorts those best results by the same objective.
 
+Historical price bars, indicators, strategy lines, live guidance, stability,
+and backtests all receive the same normalized `MarketBar[]` from the active
+`MarketSeries`.
+
 ## Saved backtests
 
 - `createSaveBacktestInput(...)`: creates a compact current-backtest snapshot.
@@ -90,3 +139,7 @@
 - `POST /api/saved-backtests`: inserts or updates the current user's latest
   snapshot for an instrument.
 - `DELETE /api/saved-backtests?id=...`: removes only the current user's record.
+
+The persistence shape retains an interval field for compatibility. New UI
+saves use `1d`, and opening a shortcut does not change the daily-only workspace
+interval.

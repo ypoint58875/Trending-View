@@ -13,8 +13,9 @@
   uncached recent-bar request runs every 60 seconds while visible and on
   focus/visibility, replacing matching current bars.
 
-Volume is retained in the provider's quote-page unit. The application displays
-it as provider volume and does not silently convert it to shares.
+`fqt=1` output is marked `corporate-action-adjusted`. Volume is retained in the
+provider's quote-page unit. The application displays it as provider volume and
+does not scale it with price adjustment or silently convert it to shares.
 
 These are public website endpoints, not a documented licensed API. They may
 change or rate-limit requests. Do not treat them as an authoritative execution
@@ -26,8 +27,8 @@ feed.
 - Chart endpoint: `https://query1.finance.yahoo.com/v8/finance/chart/{symbol}`
 - Backup host: `query2.finance.yahoo.com`
 - Accessed: 2026-07-23
-- Current parameters: interval-specific range, no pre/post-market bars, and
-  bounded local output.
+- Current parameters: interval-specific range, no pre/post-market bars,
+  split/dividend events, and bounded local output.
 - Raw sample: `data/raw/yahoo_sox_daily_sample.json`
 - Runtime freshness: full history is cacheable; recent-bar overlays use
   `no-store`. The newest returned bar may still reflect Yahoo's own publication
@@ -35,6 +36,13 @@ feed.
 
 Yahoo expands global index/ETF discovery and history. The adapter retries the
 equivalent query2 host, but regional HTTP 403 responses remain possible.
+
+For daily output, each parsed OHLC bar is scaled by a finite positive
+`adjclose / raw close`. If a factor is missing, zero, non-finite, or otherwise
+invalid, that bar retains raw OHLC and the whole series is marked `raw`;
+`corporate-action-adjusted` is used only when every parsed daily bar has a
+valid factor. Yahoo intraday support remains raw internally. Yahoo volume is
+never rescaled.
 
 ## Nasdaq website historical data
 
@@ -46,11 +54,31 @@ equivalent query2 host, but regional HTTP 403 responses remain possible.
 - Runtime freshness: recent-bar overlays use `no-store`; Nasdaq remains a
   daily-history fallback rather than an intraday feed.
 
-Nasdaq is used only as a daily-history fallback for supported symbols. It is
-not an intraday replacement and may publish no volume for indexes.
+Nasdaq is marked `raw` and used only as a daily-history fallback for supported
+symbols. It is not an intraday replacement and may publish no volume for
+indexes. Volume, when present, is not rescaled.
+
+## Normalized analysis semantics
+
+`MarketSeries.priceAdjustment` is the authoritative UI metadata. The active
+series supplies one normalized `MarketBar[]` to the historical chart,
+indicators, strategy reference lines, newest-bar guidance, stability
+diagnostic, and backtests.
+
+For ETFs, an adjusted source reduces mechanical distribution/split gaps. For
+indexes, the provider symbol and methodology determine whether the source is a
+price index or a total-return index; the adjustment layer does not convert
+between them. QuantScope does not ingest constituent operating-company events
+or fundamentals. Neither path is separate cash-distribution accounting, a
+cash-yield calculation, reinvestment, or multi-asset alignment.
 
 ## Reproducibility
 
 Runtime responses are kept separate from calculations. The UI receives a
-normalized `MarketSeries`, while raw samples preserve provider field names and
-row encoding for parser tests and incident comparison.
+normalized `MarketSeries`, while the committed raw samples preserve provider
+field names and row encoding for parser tests and incident comparison. They
+are reference fixtures, not an automatic runtime archive. The application does
+not persist each live response or run a raw-data retention/cleanup job.
+
+See `DATA_PIPELINE.md` for current fetch/merge behavior and `CACHE_POLICY.md`
+for HTTP caching and in-memory retention.

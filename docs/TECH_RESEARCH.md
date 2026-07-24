@@ -104,6 +104,47 @@ as a supported daily-history fallback. Preserve a shorter Eastmoney response if
 both longer-history sources fail. Recommend an exchange-licensed global feed
 for production.
 
+### Dividend and split normalization
+
+#### Option A: raw prices plus explicit distribution/split events
+
+An event-aware portfolio engine can keep raw prices, process splits and cash
+distributions separately, reset/warm indicators around discontinuities, and
+credit or reinvest distributions. QuantConnect documents this explicit model,
+including split-aware indicator handling and dividend reinvestment.
+
+Source:
+
+- https://www.quantconnect.com/docs/v2/writing-algorithms/securities/asset-classes/us-equity/corporate-actions
+
+This is the richer ETF accounting approach, but it requires event histories,
+cash-ledger rules, and provider-consistent instrument mapping that the current
+manual index/ETF chart workspace does not have. Operating-company fundamentals
+and events are outside the product's index/ETF-only scope.
+
+#### Option B: one adjusted price series
+
+TradingView documents dividend-adjusted chart data as a way to remove the
+price reduction caused by a distribution from the visible history. A
+consistently adjusted OHLC series also prevents indicators and rules from
+reacting mechanically to a distribution or split discontinuity.
+
+Source:
+
+- https://www.tradingview.com/support/solutions/43000590597-how-to-adjust-data-for-dividends/
+
+Decision: use the provider's adjusted Eastmoney daily output (`fqt=1`) and
+scale each Yahoo daily OHLC bar by a validated finite positive
+`adjclose / raw close`. If any parsed Yahoo daily factor is missing or invalid,
+keep that bar raw and mark the entire result raw. Keep Yahoo intraday raw
+internally and Nasdaq raw as the daily fallback. Never rescale volume.
+`MarketSeries.priceAdjustment` is the UI authority. For ETFs, the intent is a
+distribution/split-adjusted price history. For indexes, it is the provider's
+price-index or total-return-index methodology; the adapter does not convert
+one methodology to the other or process constituent-company events and
+fundamentals. The shared normalized bars do not constitute separate
+cash-distribution accounting or a synthetic total-return ledger.
+
 ## Backtesting
 
 ### Option A: browser-local TypeScript engine
@@ -227,6 +268,38 @@ divided by absolute drawdown, total return, maximum drawdown closest to zero,
 and Sharpe ratio. Every target uses the same deterministic tie-break chain.
 Reserve a Pareto-front view for a future workflow where the user chooses among
 multiple trade-off candidates instead of applying rank one immediately.
+
+### Nearby-parameter stability
+
+#### Option A: choose the best local parameter
+
+Rerunning nearby values and applying the highest historical return is simple,
+but it turns a sensitivity check into another in-sample optimizer. QuantConnect
+warns that parameter choices which perform very well historically yet are
+sensitive to small value changes are a form of overfitting; it also recommends
+testing selected parameters on recent out-of-sample history or using
+walk-forward optimization.
+
+Source:
+
+- https://www.quantconnect.com/docs/v2/writing-algorithms/optimization/parameters
+
+#### Option B: report local sensitivity without selection
+
+Perturb one parameter at a time to the immediately adjacent values already
+defined by the constrained screening domain, omit invalid combinations, and
+compare the resulting backtests with the unchanged base rule. This is bounded,
+deterministic, and transparent, but it is only a local diagnostic and does not
+estimate future performance.
+
+Decision: use Option B. Report nearby return-sign agreement and the return,
+drawdown, and trade-count ranges across the base and valid variants. Require at
+least one valid variant. Label a rule stable only when at least 75% of valid
+variants share the base return sign, the total-return range is no wider than 15
+percentage points, and the worst drawdown is no more than 10 percentage points
+below the base drawdown. Also report current-rule returns under up, sideways,
+and down regimes classified without future data from a 60-day SMA and its
+20-bar slope. Never select or apply a parameter from this diagnostic.
 
 ## TradingView strategy reference boundary
 

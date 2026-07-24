@@ -2,19 +2,34 @@
 
 ## Current status
 
-The index-and-ETF QuantScope version is implemented and buildable.
+The daily manual-swing index-and-ETF QuantScope version is implemented and
+buildable.
 
 Implemented:
 
 - Index/ETF-only search with individual-equity filtering.
 - Eastmoney, Yahoo Finance, and Nasdaq market adapters with ordered fallback.
-- Minute and daily intervals for tested global indexes and ETFs.
-- Candlestick/line switching, volume, zoom, and 20 independently selectable
-  indicators.
+- A daily-only, one-instrument user interface. Provider adapters, API
+  validation, and saved-record types retain interval support internally.
+- Authoritative adjustment metadata on every `MarketSeries`: Eastmoney
+  `fqt=1` is adjusted, valid Yahoo daily OHLC is scaled by
+  `adjclose / raw close`, Yahoo intraday is raw internally, and Nasdaq is a raw
+  daily fallback. Volume is never rescaled. ETF adjustment covers
+  distribution/split price gaps; index price-versus-total-return methodology
+  remains provider-defined.
+- Candlestick/line switching, provider volume, shared zoom, and an ordered
+  visible collection drawn from 20 indicators.
 - Metadata-driven settings for every parameterized indicator, including SMA,
-  with per-indicator session memory and one-click default restoration.
+  with a separate focused indicator, per-indicator session memory, independent
+  visibility, and one-click default restoration.
+- Overlay indicators on the price axis and one lower pane per visible pane
+  indicator, with price, volume, and all panes sharing zoom.
 - Independent indicator and strategy state so strategy changes preserve the
-  selected study while actual strategy buy/sell fills remain overlaid.
+  visible studies while actual strategy buy/sell fills remain overlaid.
+- Pure, bar-aligned strategy price references for 17 price-based strategies.
+  Price-order references reuse their exact order plans; all returned references
+  render dashed on the main price axis, and strategies without a continuous
+  price reference return no lines.
 - Cached full history plus uncached five-bar overlays on page open, manual
   refresh, 60-second visible-page refresh, and page focus/visibility.
 - A current-bar long-only strategy guidance card that reports buy, sell,
@@ -34,6 +49,13 @@ Implemented:
   inside the following bar with gap-aware prices.
 - Long-only positions, costs, metrics, equity, drawdown, and chart-level
   buy/sell markers derived from actual fills.
+- Nearby-parameter sensitivity diagnostics that perturb one parameter at a
+  time to the adjacent configured domain value, omit invalid combinations, and
+  never choose or apply parameters.
+- Stability labeling, when at least one valid nearby variant exists, with
+  inclusive 75% return-sign agreement, 15-percentage-point return-range, and
+  10-percentage-point drawdown-deterioration thresholds, plus current-rule
+  return summaries under prefix-safe 60-day SMA/20-bar slope regimes.
 - Bounded parameter-grid optimization across all 32 strategies, with a
   configurable hard cap of 2,500 combinations per strategy, chunked progress,
   cancellation, and best-per-strategy result retention. The default grids
@@ -52,6 +74,8 @@ Implemented:
 
 ## Verification status
 
+- Full 57-test TypeScript suite, production build, and one rendered-worker
+  test: passed after daily-workflow documentation verification on 2026-07-24.
 - Indicator registry and custom-period chart tests, the full 38-test TypeScript
   suite, production build, rendered-worker test, and ESLint: passed on
   2026-07-24.
@@ -122,3 +146,6 @@ Implemented:
    execution time becomes unacceptable.
 5. Add pyramiding, multi-order brackets, limit orders, and optional lower-
    timeframe Bar Magnifier data for templates that require those features.
+6. Add a licensed ingestion/archive pipeline and an explicit runtime cache
+   retention/cleanup implementation if QuantScope moves beyond browser-driven
+   public-endpoint refreshes.

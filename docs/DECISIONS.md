@@ -65,9 +65,9 @@ and sell points only from the resulting completed long trades.
 Persist saved index/ETF backtests in D1 instead of browser storage. Use the
 authenticated ChatGPT email as the owner key and include it in every query.
 Keep one latest snapshot per owner, provider, and instrument. A shortcut
-restores the instrument, interval, strategy, parameters, date range, capital,
-commission, and slippage; displayed metrics remain a saved summary while the
-current chart recalculates from current market data.
+restores the instrument, strategy, parameters, date range, capital, commission,
+and slippage; the current UI remains daily. Displayed metrics remain a saved
+summary while the current chart recalculates from current market data.
 
 For one-click local Windows use, retain the same D1 schema and owner-scoped
 queries but map unauthenticated loopback requests to
@@ -78,10 +78,14 @@ authentication.
 
 ## D-009: Dynamic-bar strategy guidance
 
-Cache full history for one hour, then fetch a separate uncached window of recent
+Return full history with one-hour HTTP freshness and one-day
+`stale-while-revalidate`, then fetch a separate `no-store` window of recent
 bars on page open, manual refresh, every 60 seconds while visible, and whenever
-the page regains focus or visibility. Merge only matching provider/interval bar
-times so completed history is reused while the current bar is replaced.
+the page regains focus or visibility. The API permits up to ten latest bars and
+the current UI requests five. Merge matching same-source/same-interval bar
+times idempotently so cached history is reused while the current bar is
+replaced. If the latest request changes provider, retain the existing history
+rather than mixing sources.
 Evaluate the provider's newest bar immediately, even when it is still forming,
 and label the result as a preview that can change before close.
 
@@ -89,3 +93,64 @@ Keep this guidance separate from historical backtest execution. Historical
 close-derived signals continue to fill at the next open, while predefined stop
 orders continue to fill when touched. Reuse the same strategy registry for both
 paths. Distinguish a range-end valuation close from a genuine sell marker.
+
+## D-010: Daily-only manual product boundary
+
+Present one index or ETF at a time at a fixed daily interval. Do not expose
+intraday interval controls in the current UI. Keep interval support in provider
+adapters, the market API, and persistence types for internal compatibility, but
+treat any return of interval selection as an explicit product decision.
+
+The application supports manual decisions only. Browser refresh timers,
+backtests, stability diagnostics, and parameter screening do not place trades
+or constitute scheduled server jobs.
+
+## D-011: Dividend/split-aware normalized price series
+
+Set `MarketSeries.priceAdjustment` on every provider result and treat it as the
+authoritative UI label. Eastmoney requests `fqt=1` and is marked
+`corporate-action-adjusted`. For Yahoo daily data, scale each bar's OHLC by a
+finite positive `adjclose / raw close`; when a parsed bar lacks a valid factor,
+leave that bar raw and mark the whole series `raw`. Keep Yahoo intraday raw
+internally and mark Nasdaq as a raw daily fallback. Never rescale provider
+volume.
+
+Feed the same normalized `MarketBar[]` to chart history, indicators, strategy
+price lines, latest guidance, stability, and backtests. For ETFs, this prevents
+mechanical distribution/split gaps from becoming ordinary analysis signals
+where adjusted data is available. For indexes, it records a provider-adjusted
+price series whose symbol/methodology may be a price index or a total-return
+index; QuantScope does not convert between those methodologies or process
+constituent operating-company events and fundamentals. It does not implement
+separate cash distributions, cash yield, reinvestment, exchange-rate handling,
+or multi-asset alignment.
+
+## D-012: Diagnostic-only local stability
+
+Build nearby parameter sets from the existing constrained screening domains.
+Retain the user's base parameters and change one field at a time to the
+immediately lower or higher configured value, discarding cross-field-invalid
+sets. Rerun the existing backtest and report facts; never rank, select, or apply
+a nearby set.
+
+Require at least one valid nearby variant. Use inclusive thresholds for the
+label: at least 75% of valid variants share the base total-return sign, the
+return range across base and variants is at most 15 percentage points, and the
+worst drawdown is at most 10 percentage points below the base drawdown.
+Classify eligible bars as up when close is above the current 60-day SMA and
+that SMA is above its value 20 bars earlier, down for the inverse, and sideways
+otherwise. This label is not a prediction or a substitute for out-of-sample
+validation.
+
+## D-013: Indicator collection and strategy price references
+
+Keep the focused indicator separate from the ordered-visible collection and
+retain independent settings for every indicator during the page session.
+Render overlays on the main price axes and allocate one lower pane per visible
+pane indicator. Share zoom across price, volume, and every pane.
+
+Calculate strategy price references through a pure, bar-aligned contract.
+Price-order strategies must reuse their actual order plans. Render returned
+references as dashed lines on the main price axes; return no lines for a rule
+without a continuous price reference. These visuals do not infer or execute
+trades.
