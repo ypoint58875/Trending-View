@@ -28,29 +28,15 @@ import {
   williamsR,
   wma,
 } from "@/lib/analysis/indicators";
+import {
+  getDefaultIndicatorParameters,
+  getIndicator,
+  type IndicatorId,
+  type IndicatorParameters,
+} from "@/lib/analysis/indicator-registry";
 import { EChart } from "./EChart";
 
-export type IndicatorId =
-  | "sma"
-  | "ema"
-  | "wma"
-  | "dema"
-  | "bollinger"
-  | "vwap"
-  | "supertrend"
-  | "ichimoku"
-  | "rsi"
-  | "macd"
-  | "kdj"
-  | "stochasticRsi"
-  | "cci"
-  | "williamsR"
-  | "adx"
-  | "roc"
-  | "mfi"
-  | "cmf"
-  | "atr"
-  | "obv";
+export type { IndicatorId } from "@/lib/analysis/indicator-registry";
 
 interface PriceChartProps {
   bars: MarketBar[];
@@ -58,6 +44,7 @@ interface PriceChartProps {
   dataKey: string;
   chartType: "candlestick" | "line";
   indicator: IndicatorId;
+  indicatorParameters?: IndicatorParameters;
   ariaLabel: string;
   labels: {
     price: string;
@@ -211,6 +198,228 @@ export function buildTradeMarkerSeries(
   ];
 }
 
+export function buildIndicatorSeries(
+  bars: MarketBar[],
+  indicator: IndicatorId,
+  inputParameters: IndicatorParameters,
+  labels: Record<string, string>,
+): SeriesOption[] {
+  const parameters = {
+    ...getDefaultIndicatorParameters(indicator),
+    ...inputParameters,
+  };
+  const closes = bars.map((bar) => bar.close);
+
+  if (indicator === "sma") {
+    return [
+      lineSeries(labels.smaFast, sma(closes, parameters.fast), colors.cyan),
+      lineSeries(labels.smaSlow, sma(closes, parameters.slow), colors.amber),
+    ];
+  }
+  if (indicator === "ema") {
+    return [
+      lineSeries(labels.emaFast, ema(closes, parameters.fast), colors.cyan),
+      lineSeries(labels.emaSlow, ema(closes, parameters.slow), colors.violet),
+    ];
+  }
+  if (indicator === "wma") {
+    return [
+      lineSeries(labels.wmaFast, wma(closes, parameters.fast), colors.cyan),
+      lineSeries(labels.wmaSlow, wma(closes, parameters.slow), colors.amber),
+    ];
+  }
+  if (indicator === "dema") {
+    return [
+      lineSeries(labels.demaFast, dema(closes, parameters.fast), colors.cyan),
+      lineSeries(
+        labels.demaSlow,
+        dema(closes, parameters.slow),
+        colors.violet,
+      ),
+    ];
+  }
+  if (indicator === "bollinger") {
+    const bands = bollingerBands(
+      closes,
+      parameters.period,
+      parameters.width,
+    );
+    return [
+      lineSeries(labels.bollMiddle, bands.middle, colors.amber),
+      lineSeries(labels.bollUpper, bands.upper, colors.cyan),
+      lineSeries(labels.bollLower, bands.lower, colors.cyan),
+    ];
+  }
+  if (indicator === "vwap") {
+    return [lineSeries(labels.vwap, vwap(bars), colors.amber)];
+  }
+  if (indicator === "supertrend") {
+    const values = supertrend(
+      bars,
+      parameters.period,
+      parameters.multiplier,
+    );
+    return [
+      lineSeries(labels.supertrend, values.trend, colors.up),
+    ];
+  }
+  if (indicator === "ichimoku") {
+    const values = ichimoku(
+      bars,
+      parameters.conversionPeriod,
+      parameters.basePeriod,
+      parameters.spanPeriod,
+    );
+    return [
+      lineSeries(
+        labels.ichimokuConversion,
+        values.conversion,
+        colors.cyan,
+      ),
+      lineSeries(labels.ichimokuBase, values.base, colors.amber),
+      lineSeries(labels.ichimokuSpanA, values.spanA, colors.up),
+      lineSeries(labels.ichimokuSpanB, values.spanB, colors.down),
+    ];
+  }
+  if (indicator === "rsi") {
+    return [
+      lineSeries(
+        labels.rsi,
+        rsi(closes, parameters.period),
+        colors.violet,
+        2,
+        2,
+      ),
+    ];
+  }
+  if (indicator === "macd") {
+    const values = macd(
+      closes,
+      parameters.fast,
+      parameters.slow,
+      parameters.signal,
+    );
+    return [
+      lineSeries(labels.macdLine, values.line, colors.cyan, 2, 2),
+      lineSeries(labels.macdSignal, values.signal, colors.amber, 2, 2),
+      {
+        name: labels.macdHistogram,
+        type: "bar",
+        data: values.histogram.map((value) => ({
+          value,
+          itemStyle: {
+            color:
+              (value ?? 0) >= 0
+                ? "rgba(34,197,94,.62)"
+                : "rgba(239,83,80,.62)",
+          },
+        })),
+        xAxisIndex: 2,
+        yAxisIndex: 2,
+        barMaxWidth: 5,
+      },
+    ];
+  }
+  if (indicator === "kdj") {
+    const values = kdj(bars, parameters.period);
+    return [
+      lineSeries(labels.kdjK, values.k, colors.cyan, 2, 2),
+      lineSeries(labels.kdjD, values.d, colors.amber, 2, 2),
+      lineSeries(labels.kdjJ, values.j, colors.violet, 2, 2),
+    ];
+  }
+  if (indicator === "stochasticRsi") {
+    const values = stochasticRsi(
+      closes,
+      parameters.rsiPeriod,
+      parameters.stochasticPeriod,
+      parameters.smoothPeriod,
+    );
+    return [
+      lineSeries(labels.stochRsiK, values.k, colors.cyan, 2, 2),
+      lineSeries(labels.stochRsiD, values.d, colors.amber, 2, 2),
+    ];
+  }
+  if (indicator === "cci") {
+    return [
+      lineSeries(
+        labels.cci,
+        cci(bars, parameters.period),
+        colors.violet,
+        2,
+        2,
+      ),
+    ];
+  }
+  if (indicator === "williamsR") {
+    return [
+      lineSeries(
+        labels.williamsR,
+        williamsR(bars, parameters.period),
+        colors.cyan,
+        2,
+        2,
+      ),
+    ];
+  }
+  if (indicator === "adx") {
+    const values = adx(bars, parameters.period);
+    return [
+      lineSeries(labels.adx, values.adx, colors.violet, 2, 2),
+      lineSeries(labels.plusDi, values.plusDi, colors.up, 2, 2),
+      lineSeries(labels.minusDi, values.minusDi, colors.down, 2, 2),
+    ];
+  }
+  if (indicator === "roc") {
+    return [
+      lineSeries(
+        labels.roc,
+        roc(closes, parameters.period),
+        colors.amber,
+        2,
+        2,
+      ),
+    ];
+  }
+  if (indicator === "mfi") {
+    return [
+      lineSeries(
+        labels.mfi,
+        mfi(bars, parameters.period),
+        colors.violet,
+        2,
+        2,
+      ),
+    ];
+  }
+  if (indicator === "cmf") {
+    return [
+      lineSeries(
+        labels.cmf,
+        cmf(bars, parameters.period),
+        colors.cyan,
+        2,
+        2,
+      ),
+    ];
+  }
+  if (indicator === "atr") {
+    return [
+      lineSeries(
+        labels.atr,
+        atr(bars, parameters.period),
+        colors.amber,
+        2,
+        2,
+      ),
+    ];
+  }
+  if (indicator === "obv") {
+    return [lineSeries(labels.obv, obv(bars), colors.cyan, 2, 2)];
+  }
+  return [];
+}
+
 export function buildPriceDataZoom(
   barsLength: number,
   overlayIndicator: boolean,
@@ -270,22 +479,14 @@ export function PriceChart({
   dataKey,
   chartType,
   indicator,
+  indicatorParameters,
   ariaLabel,
   labels,
 }: PriceChartProps) {
   const option = useMemo<EChartsOption>(() => {
     const times = bars.map((bar) => bar.time);
     const closes = bars.map((bar) => bar.close);
-    const overlayIndicator = [
-      "sma",
-      "ema",
-      "wma",
-      "dema",
-      "bollinger",
-      "vwap",
-      "supertrend",
-      "ichimoku",
-    ].includes(indicator);
+    const overlayIndicator = getIndicator(indicator).placement === "overlay";
     const mainHeight = overlayIndicator ? 68 : 57;
     const volumeTop = overlayIndicator ? 75 : 64;
     const volumeHeight = overlayIndicator ? 14 : 10;
@@ -344,158 +545,14 @@ export function PriceChart({
       emphasis: { disabled: true },
     });
 
-    if (indicator === "sma") {
-      series.push(
-        lineSeries(labels.series.smaFast, sma(closes, 10), colors.cyan),
-        lineSeries(labels.series.smaSlow, sma(closes, 30), colors.amber),
-      );
-    }
-    if (indicator === "ema") {
-      series.push(
-        lineSeries(labels.series.emaFast, ema(closes, 12), colors.cyan),
-        lineSeries(labels.series.emaSlow, ema(closes, 26), colors.violet),
-      );
-    }
-    if (indicator === "wma") {
-      series.push(
-        lineSeries(labels.series.wmaFast, wma(closes, 20), colors.cyan),
-        lineSeries(labels.series.wmaSlow, wma(closes, 50), colors.amber),
-      );
-    }
-    if (indicator === "dema") {
-      series.push(
-        lineSeries(labels.series.demaFast, dema(closes, 20), colors.cyan),
-        lineSeries(labels.series.demaSlow, dema(closes, 50), colors.violet),
-      );
-    }
-    if (indicator === "bollinger") {
-      const bands = bollingerBands(closes, 20, 2);
-      series.push(
-        lineSeries(labels.series.bollMiddle, bands.middle, colors.amber),
-        lineSeries(labels.series.bollUpper, bands.upper, colors.cyan),
-        lineSeries(labels.series.bollLower, bands.lower, colors.cyan),
-      );
-    }
-    if (indicator === "vwap") {
-      series.push(
-        lineSeries(labels.series.vwap, vwap(bars), colors.amber),
-      );
-    }
-    if (indicator === "supertrend") {
-      const values = supertrend(bars, 10, 3);
-      series.push(
-        lineSeries(
-          labels.series.supertrend,
-          values.trend,
-          colors.up,
-        ),
-      );
-    }
-    if (indicator === "ichimoku") {
-      const values = ichimoku(bars);
-      series.push(
-        lineSeries(
-          labels.series.ichimokuConversion,
-          values.conversion,
-          colors.cyan,
-        ),
-        lineSeries(labels.series.ichimokuBase, values.base, colors.amber),
-        lineSeries(labels.series.ichimokuSpanA, values.spanA, colors.up),
-        lineSeries(labels.series.ichimokuSpanB, values.spanB, colors.down),
-      );
-    }
-    if (indicator === "rsi") {
-      series.push(
-        lineSeries(labels.series.rsi, rsi(closes, 14), colors.violet, 2, 2),
-      );
-    }
-    if (indicator === "macd") {
-      const values = macd(closes);
-      series.push(
-        lineSeries(labels.series.macdLine, values.line, colors.cyan, 2, 2),
-        lineSeries(labels.series.macdSignal, values.signal, colors.amber, 2, 2),
-        {
-          name: labels.series.macdHistogram,
-          type: "bar",
-          data: values.histogram.map((value) => ({
-            value,
-            itemStyle: {
-              color:
-                (value ?? 0) >= 0
-                  ? "rgba(34,197,94,.62)"
-                  : "rgba(239,83,80,.62)",
-            },
-          })),
-          xAxisIndex: 2,
-          yAxisIndex: 2,
-          barMaxWidth: 5,
-        },
-      );
-    }
-    if (indicator === "kdj") {
-      const values = kdj(bars);
-      series.push(
-        lineSeries(labels.series.kdjK, values.k, colors.cyan, 2, 2),
-        lineSeries(labels.series.kdjD, values.d, colors.amber, 2, 2),
-        lineSeries(labels.series.kdjJ, values.j, colors.violet, 2, 2),
-      );
-    }
-    if (indicator === "stochasticRsi") {
-      const values = stochasticRsi(closes);
-      series.push(
-        lineSeries(labels.series.stochRsiK, values.k, colors.cyan, 2, 2),
-        lineSeries(labels.series.stochRsiD, values.d, colors.amber, 2, 2),
-      );
-    }
-    if (indicator === "cci") {
-      series.push(
-        lineSeries(labels.series.cci, cci(bars), colors.violet, 2, 2),
-      );
-    }
-    if (indicator === "williamsR") {
-      series.push(
-        lineSeries(
-          labels.series.williamsR,
-          williamsR(bars),
-          colors.cyan,
-          2,
-          2,
-        ),
-      );
-    }
-    if (indicator === "adx") {
-      const values = adx(bars);
-      series.push(
-        lineSeries(labels.series.adx, values.adx, colors.violet, 2, 2),
-        lineSeries(labels.series.plusDi, values.plusDi, colors.up, 2, 2),
-        lineSeries(labels.series.minusDi, values.minusDi, colors.down, 2, 2),
-      );
-    }
-    if (indicator === "roc") {
-      series.push(
-        lineSeries(labels.series.roc, roc(closes), colors.amber, 2, 2),
-      );
-    }
-    if (indicator === "mfi") {
-      series.push(
-        lineSeries(labels.series.mfi, mfi(bars), colors.violet, 2, 2),
-      );
-    }
-    if (indicator === "cmf") {
-      series.push(
-        lineSeries(labels.series.cmf, cmf(bars), colors.cyan, 2, 2),
-      );
-    }
-    if (indicator === "atr") {
-      series.push(
-        lineSeries(labels.series.atr, atr(bars, 14), colors.amber, 2, 2),
-      );
-    }
-    if (indicator === "obv") {
-      series.push(
-        lineSeries(labels.series.obv, obv(bars), colors.cyan, 2, 2),
-      );
-    }
+    series.push(
+      ...buildIndicatorSeries(
+        bars,
+        indicator,
+        indicatorParameters ?? {},
+        labels.series,
+      ),
+    );
 
     const xAxes: EChartsOption["xAxis"] = [
       {
@@ -632,7 +689,14 @@ export function PriceChart({
       dataZoom: buildPriceDataZoom(bars.length, overlayIndicator),
       series,
     };
-  }, [bars, chartType, indicator, labels, trades]);
+  }, [
+    bars,
+    chartType,
+    indicator,
+    indicatorParameters,
+    labels,
+    trades,
+  ]);
 
   return (
     <EChart

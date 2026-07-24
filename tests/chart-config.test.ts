@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { applyDataZoomWindow } from "../app/components/EChart";
 import {
+  buildIndicatorSeries,
   buildPriceDataZoom,
   buildTradeMarkerSeries,
 } from "../app/components/PriceChart";
+import type { MarketBar } from "../lib/market/types";
 
 type ZoomEntry = {
   id?: string;
@@ -33,12 +35,64 @@ type MarkerSeries = {
   };
 };
 
+type IndicatorSeries = {
+  data?: Array<number | null>;
+  xAxisIndex?: number;
+  yAxisIndex?: number;
+};
+
+const indicatorLabels = {
+  smaFast: "SMA fast",
+  smaSlow: "SMA slow",
+  rsi: "RSI",
+};
+
+const chartBars: MarketBar[] = [1, 2, 3, 4].map((close, index) => ({
+  time: `2026-01-0${index + 1}`,
+  timestamp: Date.UTC(2026, 0, index + 1),
+  open: close,
+  high: close + 0.5,
+  low: close - 0.5,
+  close,
+  volume: 100,
+  amount: 100,
+  amplitude: 0,
+  changePercent: 0,
+  change: 0,
+  turnoverRate: 0,
+}));
+
 function entries(barsLength: number, overlayIndicator: boolean) {
   return buildPriceDataZoom(
     barsLength,
     overlayIndicator,
   ) as ZoomEntry[];
 }
+
+test("builds SMA lines from display parameters", () => {
+  const [fast, slow] = buildIndicatorSeries(
+    chartBars,
+    "sma",
+    { fast: 2, slow: 3 },
+    indicatorLabels,
+  ) as unknown as IndicatorSeries[];
+
+  assert.deepEqual(fast.data, [null, 1.5, 2.5, 3.5]);
+  assert.deepEqual(slow.data, [null, null, 2, 3]);
+});
+
+test("passes custom periods to lower-pane indicators", () => {
+  const [strength] = buildIndicatorSeries(
+    chartBars,
+    "rsi",
+    { period: 2 },
+    indicatorLabels,
+  ) as unknown as IndicatorSeries[];
+
+  assert.equal(strength.xAxisIndex, 2);
+  assert.equal(strength.yAxisIndex, 2);
+  assert.equal(strength.data?.[2], 100);
+});
 
 test("uses dedicated high-contrast colors for trade markers", () => {
   const [buy, sell, rangeExit] = buildTradeMarkerSeries([], {
