@@ -295,6 +295,104 @@ test("adjusts daily Yahoo OHLC and derived changes without rescaling volume", ()
   );
 });
 
+test("marks mixed daily Yahoo prices raw when any parsed bar is unadjusted", () => {
+  const series = parseYahooChart(
+    {
+      chart: {
+        result: [
+          {
+            ...yahooCorporateActionFixture.chart.result[0],
+            indicators: {
+              quote: [
+                {
+                  open: [98, 59],
+                  close: [100, 60],
+                  high: [104, 62],
+                  low: [96, 58],
+                  volume: [1_000, 2_000],
+                },
+              ],
+              adjclose: [{ adjclose: [50, null] }],
+            },
+          },
+        ],
+      },
+    },
+    yahooInstrument,
+    "1d",
+  );
+
+  assert.equal(series.bars.length, 2);
+  assert.equal(series.priceAdjustment, "raw");
+  assert.deepEqual(
+    series.bars.map(({ open, close, high, low }) => ({
+      open,
+      close,
+      high,
+      low,
+    })),
+    [
+      { open: 49, close: 50, high: 52, low: 48 },
+      { open: 59, close: 60, high: 62, low: 58 },
+    ],
+  );
+});
+
+test("rejects invalid computed Yahoo daily adjustment ratios", () => {
+  const series = parseYahooChart(
+    {
+      chart: {
+        result: [
+          {
+            ...yahooCorporateActionFixture.chart.result[0],
+            indicators: {
+              quote: [
+                {
+                  open: [Number.MIN_VALUE, Number.MAX_VALUE],
+                  close: [Number.MIN_VALUE, Number.MAX_VALUE],
+                  high: [Number.MIN_VALUE, Number.MAX_VALUE],
+                  low: [Number.MIN_VALUE, Number.MAX_VALUE],
+                  volume: [1_000, 2_000],
+                },
+              ],
+              adjclose: [
+                { adjclose: [Number.MAX_VALUE, Number.MIN_VALUE] },
+              ],
+            },
+          },
+        ],
+      },
+    },
+    yahooInstrument,
+    "1d",
+  );
+
+  assert.equal(series.bars.length, 2);
+  assert.equal(series.priceAdjustment, "raw");
+  assert.deepEqual(
+    series.bars.map(({ open, close, high, low }) => ({
+      open,
+      close,
+      high,
+      low,
+    })),
+    [
+      {
+        open: Number.MIN_VALUE,
+        close: Number.MIN_VALUE,
+        high: Number.MIN_VALUE,
+        low: Number.MIN_VALUE,
+      },
+      {
+        open: Number.MAX_VALUE,
+        close: Number.MAX_VALUE,
+        high: Number.MAX_VALUE,
+        low: Number.MAX_VALUE,
+      },
+    ],
+  );
+});
+
 test("keeps intraday Yahoo OHLC raw when adjusted closes are present", () => {
   const series = parseYahooChart(
     yahooCorporateActionFixture,

@@ -224,7 +224,7 @@ export function parseYahooChart(
 
   const timeZone = result.meta?.exchangeTimezoneName || "UTC";
   const bars: MarketBar[] = [];
-  let hasAdjustedDailyPrice = false;
+  let allParsedDailyPricesAdjusted = interval === "1d";
   timestamps.forEach((timestamp, index) => {
     const open = quote.open?.[index];
     const close = quote.close?.[index];
@@ -240,14 +240,18 @@ export function parseYahooChart(
       return;
     }
     const adjustedClose = adjustedCloses?.[index];
-    const useAdjustedDailyPrice =
+    const adjustmentFactor =
       interval === "1d" &&
       adjustedClose != null &&
       Number.isFinite(adjustedClose) &&
       adjustedClose > 0 &&
-      close > 0;
-    const priceFactor = useAdjustedDailyPrice ? adjustedClose / close : 1;
-    hasAdjustedDailyPrice ||= useAdjustedDailyPrice;
+      close > 0
+        ? adjustedClose / close
+        : Number.NaN;
+    const useAdjustedDailyPrice =
+      Number.isFinite(adjustmentFactor) && adjustmentFactor > 0;
+    const priceFactor = useAdjustedDailyPrice ? adjustmentFactor : 1;
+    allParsedDailyPricesAdjusted &&= useAdjustedDailyPrice;
 
     const adjustedOpen = open * priceFactor;
     const adjustedBarClose = close * priceFactor;
@@ -284,7 +288,7 @@ export function parseYahooChart(
       provider: "yahoo",
     },
     interval,
-    priceAdjustment: hasAdjustedDailyPrice
+    priceAdjustment: allParsedDailyPricesAdjusted
       ? "corporate-action-adjusted"
       : "raw",
     previousClose:
