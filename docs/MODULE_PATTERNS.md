@@ -23,6 +23,12 @@ provider and interval.
 Indicators are pure, bar-aligned functions. Warm-up entries are `null`; values
 must never be shifted backward or use future bars.
 
+Display metadata belongs in the shared indicator registry. The registry owns
+stable IDs, main-chart versus lower-pane placement, defaults, minimums, and
+input steps. It contains no localized text and no chart styling. UI controls
+and chart calculations consume the same registry entry so a displayed setting
+cannot drift from the formula input.
+
 ## Strategy
 
 Strategies are registry entries with an ID, linked indicator, default
