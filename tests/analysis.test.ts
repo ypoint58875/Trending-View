@@ -507,7 +507,7 @@ test("parses Nasdaq history into chronological index bars", () => {
   assert.equal(bars[1].volume, 0);
 });
 
-test("replaces only overlapping latest bars while retaining cached history", () => {
+test("reconciles adjustment metadata while replacing only overlapping latest bars", () => {
   const instrument: MarketInstrument = {
     secid: "100.N225",
     code: "N225",
@@ -531,20 +531,58 @@ test("replaces only overlapping latest bars while retaining cached history", () 
     source: "eastmoney" as const,
     fetchedAt: "2026-07-24T01:00:00.000Z",
   };
-  const latest = {
-    ...history,
-    bars: latestBars,
-    fetchedAt: "2026-07-24T01:01:00.000Z",
-  };
+  const adjustmentCases = [
+    {
+      name: "adjusted history with adjusted latest",
+      history: "corporate-action-adjusted",
+      latest: "corporate-action-adjusted",
+      expected: "corporate-action-adjusted",
+    },
+    {
+      name: "adjusted history with raw latest",
+      history: "corporate-action-adjusted",
+      latest: "raw",
+      expected: "raw",
+    },
+    {
+      name: "raw history with adjusted latest",
+      history: "raw",
+      latest: "corporate-action-adjusted",
+      expected: "raw",
+    },
+  ] as const;
 
-  const merged = mergeLatestMarketSeries(history, latest, 1000);
+  for (const adjustmentCase of adjustmentCases) {
+    const scenarioHistory = {
+      ...history,
+      priceAdjustment: adjustmentCase.history,
+    };
+    const latest = {
+      ...scenarioHistory,
+      priceAdjustment: adjustmentCase.latest,
+      bars: latestBars,
+      fetchedAt: "2026-07-24T01:01:00.000Z",
+    };
 
-  assert.deepEqual(
-    merged.bars.map((bar) => bar.close),
-    [10, 11, 12, 15],
-  );
-  assert.equal(merged.bars[0], historyBars[0]);
-  assert.equal(merged.fetchedAt, latest.fetchedAt);
+    const merged = mergeLatestMarketSeries(scenarioHistory, latest, 1000);
+    const remerged = mergeLatestMarketSeries(merged, latest, 1000);
+
+    assert.equal(
+      merged.priceAdjustment,
+      adjustmentCase.expected,
+      adjustmentCase.name,
+    );
+    assert.deepEqual(
+      merged.bars.map((bar) => bar.close),
+      [10, 11, 12, 15],
+      adjustmentCase.name,
+    );
+    assert.equal(merged.bars[0], historyBars[0], adjustmentCase.name);
+    assert.equal(merged.bars[2], latestBars[0], adjustmentCase.name);
+    assert.equal(merged.bars[3], latestBars[1], adjustmentCase.name);
+    assert.deepEqual(remerged, merged, adjustmentCase.name);
+    assert.equal(merged.fetchedAt, latest.fetchedAt, adjustmentCase.name);
+  }
 });
 
 test("calculates every catalog indicator with aligned finite output", () => {

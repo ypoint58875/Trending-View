@@ -42,13 +42,14 @@ test("server-renders the QuantScope research workspace", async () => {
   );
   assert.doesNotMatch(html, /interval-tabs/);
 
-  const indicatorToolbar = html.match(
+  const indicatorGroup = html.match(
     /<div\b[^>]*class="indicator-controls"[^>]*>/,
   )?.[0];
-  assert.ok(indicatorToolbar, "indicator toolbar should render");
-  assert.match(indicatorToolbar, /role="toolbar"/);
-  assert.match(indicatorToolbar, /aria-label="\u6307\u6807"/);
-  assert.doesNotMatch(indicatorToolbar, /role="tablist"/);
+  assert.ok(indicatorGroup, "indicator group should render");
+  assert.match(indicatorGroup, /role="group"/);
+  assert.match(indicatorGroup, /aria-label="\u6307\u6807"/);
+  assert.doesNotMatch(indicatorGroup, /role="toolbar"/);
+  assert.doesNotMatch(indicatorGroup, /role="tablist"/);
 
   const macdButton = html.match(/<button\b[^>]*>MACD<\/button>/)?.[0];
   assert.ok(macdButton, "default MACD indicator button should render");
@@ -75,13 +76,12 @@ test("server-renders the QuantScope research workspace", async () => {
     "visibility button should expose its localized action as text",
   );
 
-  const settingsGroup = html.match(
+  const settingsRegion = html.match(
     /<section\b[^>]*id="indicator-settings-panel"[^>]*>/,
   )?.[0];
-  assert.ok(settingsGroup, "indicator settings group should render");
-  assert.match(settingsGroup, /role="group"/);
-  assert.doesNotMatch(settingsGroup, /role="tabpanel"/);
-  assert.match(settingsGroup, /aria-label="\u6307\u6807\u8bbe\u7f6e"/);
+  assert.ok(settingsRegion, "indicator settings region should render");
+  assert.doesNotMatch(settingsRegion, /\srole="/);
+  assert.match(settingsRegion, /aria-label="\u6307\u6807\u8bbe\u7f6e"/);
 
   const chartHeadingStart = html.indexOf(
     '<div class="panel-heading chart-heading">',
@@ -104,12 +104,13 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.ok(chartMeta, "chart metadata should render");
   assert.match(
     chartMeta,
-    /title="\u4ef7\u683c\u53e3\u5f84: \u516c\u53f8\u884c\u4e3a\u8c03\u6574\u4ef7 \/ \u539f\u59cb\u672a\u590d\u6743\u4ef7"/,
+    /title="\u4ef7\u683c\u53e3\u5f84: \u5206\u7ea2\/\u62c6\u5206\u8c03\u6574\u4ef7 \/ \u539f\u59cb\u672a\u590d\u6743\u4ef7"/,
   );
   assert.match(
     chartMeta,
-    /data-supported-price-adjustments="corporate-action-adjusted=\u516c\u53f8\u884c\u4e3a\u8c03\u6574\u4ef7\|raw=\u539f\u59cb\u672a\u590d\u6743\u4ef7"/,
+    /data-supported-price-adjustments="corporate-action-adjusted=\u5206\u7ea2\/\u62c6\u5206\u8c03\u6574\u4ef7\|raw=\u539f\u59cb\u672a\u590d\u6743\u4ef7"/,
   );
+  assert.doesNotMatch(html, /\u516c\u53f8\u884c\u4e3a\u8c03\u6574\u4ef7/);
 
   assert.match(html, /\u53c2\u6570\u7a33\u5b9a\u6027/);
   assert.match(html, /\u4e0d\u8fdb\u884c\u53c2\u6570\u4f18\u5316/);

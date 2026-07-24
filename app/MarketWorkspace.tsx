@@ -949,7 +949,7 @@ export function MarketWorkspace() {
         <span className="toolbar-divider" />
         <div
           className="indicator-controls"
-          role="toolbar"
+          role="group"
           aria-label={copy.indicatorsTitle}
         >
           {INDICATORS.map((item) => {
@@ -985,7 +985,6 @@ export function MarketWorkspace() {
       <section
         id="indicator-settings-panel"
         className="indicator-settings-bar"
-        role="group"
         aria-label={copy.indicatorSettings.title}
       >
         <div className="indicator-settings-title">

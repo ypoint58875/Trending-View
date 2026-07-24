@@ -64,7 +64,7 @@ export const zhCN = {
     },
     priceAdjustment: {
       label: "价格口径",
-      "corporate-action-adjusted": "公司行为调整价",
+      "corporate-action-adjusted": "分红/拆分调整价",
       raw: "原始未复权价",
     },
     equity: "策略权益",

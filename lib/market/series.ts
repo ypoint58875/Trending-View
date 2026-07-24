@@ -19,10 +19,16 @@ export function mergeLatestMarketSeries(
   const bars = Array.from(barsByTime.values())
     .sort((left, right) => left.timestamp - right.timestamp)
     .slice(-Math.max(Math.trunc(limit), 1));
+  const priceAdjustment =
+    history.priceAdjustment === "corporate-action-adjusted" &&
+    latest.priceAdjustment === "corporate-action-adjusted"
+      ? "corporate-action-adjusted"
+      : "raw";
 
   return {
     ...history,
     instrument: latest.instrument,
+    priceAdjustment,
     previousClose: latest.previousClose || history.previousClose,
     bars,
     source: latest.source,

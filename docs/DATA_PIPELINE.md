@@ -13,12 +13,13 @@ durable raw-response archive, server-side checkpoint, or disk cleanup process.
 3. `fetchMarketSeries` uses provider adapters and ordered fallback, returning
    one normalized `MarketSeries`.
 4. The browser requests a separate five-bar `mode=latest` window with
-   `no-store`. The route itself bounds latest requests to between 2 and 10
-   bars.
+   `no-store`. For finite numeric `limit` requests, the route clamps latest
+   windows to between 2 and 10 bars; the current UI explicitly requests five.
 5. When history and latest share the same source and interval, the client
    replaces bars with matching `time` values, appends new times, sorts by
-   timestamp, and keeps the newest 1,000 bars. Repeating the same latest window
-   is idempotent.
+   timestamp, and keeps the newest 1,000 bars. The merged adjustment metadata
+   remains `corporate-action-adjusted` only when both inputs are adjusted;
+   otherwise it becomes `raw`. Repeating the same latest window is idempotent.
 6. The resulting `MarketSeries.bars` is the single input for chart history,
    volume, indicators, strategy price references, current-bar guidance,
    stability, and backtesting.

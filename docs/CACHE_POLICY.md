@@ -34,8 +34,8 @@ CDN-Cache-Control: no-store
 Cloudflare-CDN-Cache-Control: no-store
 ```
 
-The API bounds latest windows to between 2 and 10 bars; the current daily UI
-asks for five.
+For finite numeric `limit` requests, the API clamps latest windows to between
+2 and 10 bars; the current daily UI explicitly requests five.
 The newest provider bar may still be delayed or unfinished even though
 QuantScope does not cache the response.
 
@@ -57,9 +57,10 @@ The UI does not merge bars from different sources. On an initial latest failure
 it continues with history; on a later latest failure it leaves the displayed
 series intact. Page memory is not durable across a reload or process restart.
 
-`MarketSeries.priceAdjustment` remains the series-level authority. History and
-latest are fetched through the same provider normalization contract; the merge
-does not independently recalculate adjustment factors or rescale volume.
+`MarketSeries.priceAdjustment` remains the series-level authority. A merged
+series remains `corporate-action-adjusted` only when both history and latest
+inputs are adjusted; every other combination becomes `raw`. The merge does not
+independently recalculate adjustment factors or rescale volume.
 
 ## Current retention and cleanup
 
