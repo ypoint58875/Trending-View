@@ -20,6 +20,7 @@ Browser UI
   -> ordered data-source fallback
   -> normalized MarketSeries
   -> indicator registry
+  -> independent indicator selection and per-indicator session settings
   -> strategy registry
   -> target-state or price-order strategy plan
   -> newest-bar live strategy guidance
@@ -52,6 +53,15 @@ per owner, provider, and instrument identifier; saving the same instrument
 updates its current snapshot instead of creating duplicates.
 The upper workspace pairs the price chart with saved shortcuts. The lower
 research grid pairs the strategy lab with automated parameter screening.
+
+`MarketWorkspace` owns separate indicator and strategy state. Indicator
+controls read defaults and validation metadata from the indicator registry,
+remember one parameter set per indicator for the browser session, and pass the
+active values to `PriceChart`. Strategy changes update the backtest, live
+guidance, and trade markers without replacing the selected indicator.
+`PriceChart` renders the selected study together with the active strategy's
+actual buy/sell fills. Indicator settings are display state and do not change
+the saved-backtest database schema.
 
 Screening generates constrained parameter grids from the shared strategy
 registry, applies a per-strategy cap, yields between small batches, and retains

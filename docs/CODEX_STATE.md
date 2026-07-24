@@ -9,7 +9,12 @@ Implemented:
 - Index/ETF-only search with individual-equity filtering.
 - Eastmoney, Yahoo Finance, and Nasdaq market adapters with ordered fallback.
 - Minute and daily intervals for tested global indexes and ETFs.
-- Candlestick/line switching, volume, zoom, and 20 indicators.
+- Candlestick/line switching, volume, zoom, and 20 independently selectable
+  indicators.
+- Metadata-driven settings for every parameterized indicator, including SMA,
+  with per-indicator session memory and one-click default restoration.
+- Independent indicator and strategy state so strategy changes preserve the
+  selected study while actual strategy buy/sell fills remain overlaid.
 - Cached full history plus uncached five-bar overlays on page open, manual
   refresh, 60-second visible-page refresh, and page focus/visibility.
 - A current-bar long-only strategy guidance card that reports buy, sell,
@@ -47,6 +52,14 @@ Implemented:
 
 ## Verification status
 
+- Indicator registry and custom-period chart tests, the full 38-test TypeScript
+  suite, production build, rendered-worker test, and ESLint: passed on
+  2026-07-24.
+- A real Edge workflow configured SMA 5/20, changed the strategy to MACD,
+  confirmed the SMA selection and parameters remained intact, switched
+  indicators and back, restored SMA 10/30 defaults, and visually confirmed
+  simultaneous SMA lines plus strategy buy/sell markers at desktop and
+  760-pixel widths on 2026-07-24.
 - Local launcher contract tests and PowerShell parser validation: passed on
   2026-07-24.
 - PowerShell behavior tests for missing, damaged, and ready dependencies plus

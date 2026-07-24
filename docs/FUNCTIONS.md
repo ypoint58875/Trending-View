@@ -27,9 +27,18 @@
   aligned with source bars.
 - `stochasticSlow` and `parabolicSar` support the corresponding built-in
   strategy equivalents.
+- `getIndicator(id)`: resolves display placement and parameter metadata from
+  the shared indicator registry.
+- `getDefaultIndicatorParameters(id)`: returns a fresh default parameter
+  object for one indicator.
+- `createDefaultIndicatorSettings()`: creates independent session settings for
+  every registered indicator.
 
 ## Chart configuration
 
+- `buildIndicatorSeries(bars, indicator, parameters, labels)`: calculates the
+  selected indicator with the supplied display parameters and returns its
+  ECharts series without consulting strategy state.
 - `buildPriceDataZoom(barsLength, overlayIndicator)`: links the price, volume,
   and indicator axes to one inside zoom and one directly draggable timeline
   slider, showing the latest 120 bars initially.

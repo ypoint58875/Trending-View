@@ -16,8 +16,13 @@ parameter screening in one responsive page.
   guidance recalculated after each overlay.
 - Explicit green-up/red-down chart legend and separate range-end valuation
   markers so a forced backtest close is not presented as a strategy sell.
-- Twenty indicators, including moving-average variants, Bollinger Bands,
-  Ichimoku, Supertrend, momentum, volatility, and volume studies.
+- Twenty independently selectable indicators, including moving-average
+  variants, Bollinger Bands, Ichimoku, Supertrend, momentum, volatility, and
+  volume studies. Each parameterized indicator exposes its own settings and
+  remembers them while the page remains open.
+- Indicator selection is independent from strategy selection. The selected
+  study remains visible while the active strategy contributes its actual
+  buy/sell trade markers to the same chart.
 - Twelve extended strategy families plus independent equivalents of all 20
   templates in TradingView's official built-in-strategy directory.
 - Date-range backtests with initial cash, commission, and slippage settings.
