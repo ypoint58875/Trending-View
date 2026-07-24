@@ -94,7 +94,13 @@
 
 - `isValidStrategyParameters(strategyId, parameters)`: requires exactly the
   registered parameter keys, finite values inside each domain's minimum and
-  maximum, and every cross-field constraint.
+  maximum, integer values for shared lookback/count/vote keys, and every
+  cross-field constraint. Decimal price and oscillator-level parameters remain
+  valid inside their registered ranges.
+- `isIntegerStrategyParameterKey(key)`: identifies shared integer-only
+  lookback/count/vote keys, including keys ending in `Period`.
+- `normalizeStrategyParameterInput(key, value)`: rounds and clamps integer-only
+  workspace inputs to at least one while preserving decimal parameter values.
 - `buildNearbyParameterSets(strategyId, baseParameters)`: returns an empty list
   for an invalid base; otherwise it returns the base
   parameters followed by valid variants that move one parameter at a time to

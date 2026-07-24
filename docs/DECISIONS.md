@@ -134,9 +134,12 @@ or multi-asset alignment.
 
 Build nearby parameter sets from the existing constrained screening domains.
 Require exactly the registered keys, finite values within each domain's
-minimum/maximum, and all cross-field constraints. Invalid parameters return no
-nearby sets and do not run a backtest. For a valid base, change one field at a
-time to the immediately lower or higher configured value and report facts;
+minimum/maximum, integer values for shared lookback/count/vote keys, and all
+cross-field constraints. Keep price and oscillator level thresholds decimal-
+capable. Reuse the same integer-key rule in workspace inputs, rounding and
+clamping those values to at least one before storage. Invalid parameters return
+no nearby sets and do not run a backtest. For a valid base, change one field at
+a time to the immediately lower or higher configured value and report facts;
 never rank, select, or apply a nearby set.
 
 Require at least 120 daily observations inside the current backtest range, two

@@ -56,8 +56,10 @@ Implemented:
   buy/sell markers derived from actual fills.
 - Nearby-parameter sensitivity diagnostics that perturb one parameter at a
   time to the adjacent configured domain value, require exact finite in-range
-  parameter keys plus cross-field validity, omit invalid combinations, and
-  never choose or apply parameters.
+  parameter keys, integer lookback/count/vote values, and cross-field
+  validity, omit invalid combinations, and never choose or apply parameters.
+  Workspace inputs use the same integer-key semantics and round those values
+  to an integer of at least one while preserving decimal price/level inputs.
 - Stability evidence with explicit invalid-parameter, observation, trade, and
   nearby-variant reasons. Stable/sensitive requires 120 selected-range daily
   observations, two completed base trades, and a valid nearby variant before

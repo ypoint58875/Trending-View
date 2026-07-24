@@ -34,7 +34,9 @@ import {
   buildNearbyParameterSets,
   buildScreeningCandidates,
   compareScreeningResults,
+  isIntegerStrategyParameterKey,
   isValidStrategyParameters,
+  normalizeStrategyParameterInput,
   optimizeStrategies,
   screeningObjectiveValue,
 } from "../lib/analysis/screening";
@@ -1552,10 +1554,63 @@ test("builds deterministic nearest valid parameter variants without optimizing",
   });
 });
 
-test("validates exact strategy parameter keys, finite ranges, and cross-field rules", () => {
+test("shares integer strategy parameter semantics without classifying level thresholds", () => {
+  for (const key of [
+    "entryPeriod",
+    "fast",
+    "slow",
+    "period",
+    "signal",
+    "length",
+    "upBars",
+    "downBars",
+    "leftBars",
+    "rightBars",
+    "smoothK",
+    "smoothD",
+    "threshold",
+  ]) {
+    assert.equal(isIntegerStrategyParameterKey(key), true, key);
+  }
+  for (const key of ["entry", "exit", "oversold", "overbought", "width"]) {
+    assert.equal(isIntegerStrategyParameterKey(key), false, key);
+  }
+
+  assert.equal(normalizeStrategyParameterInput("fast", 9.6), 10);
+  assert.equal(normalizeStrategyParameterInput("period", 0.2), 1);
+  assert.equal(normalizeStrategyParameterInput("threshold", 3.5), 4);
+  assert.equal(normalizeStrategyParameterInput("entry", 22.5), 22.5);
+  assert.equal(normalizeStrategyParameterInput("width", 2.25), 2.25);
+});
+
+test("validates exact strategy parameter keys, integer semantics, ranges, and cross-field rules", () => {
   assert.equal(
     isValidStrategyParameters("sma-cross", { fast: 9, slow: 31 }),
     true,
+  );
+  assert.equal(
+    isValidStrategyParameters("sma-cross", { fast: 9.5, slow: 31 }),
+    false,
+  );
+  assert.equal(
+    isValidStrategyParameters("rsi-reversal", {
+      period: 14,
+      entry: 22.5,
+      exit: 67.5,
+    }),
+    true,
+  );
+  assert.equal(
+    isValidStrategyParameters("tv-rsi", {
+      period: 14,
+      oversold: 22.5,
+      overbought: 72.5,
+    }),
+    true,
+  );
+  assert.equal(
+    isValidStrategyParameters("tv-technical-ratings", { threshold: 2.5 }),
+    false,
   );
   assert.equal(
     isValidStrategyParameters("sma-cross", { fast: 20, slow: 20 }),
@@ -1592,6 +1647,13 @@ test("validates exact strategy parameter keys, finite ranges, and cross-field ru
     buildNearbyParameterSets("sma-cross", {
       fast: Number.NaN,
       slow: 30,
+    }),
+    [],
+  );
+  assert.deepEqual(
+    buildNearbyParameterSets("sma-cross", {
+      fast: 9.5,
+      slow: 31,
     }),
     [],
   );

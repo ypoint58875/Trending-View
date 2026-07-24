@@ -125,13 +125,17 @@ price references used by its registered vote calculation.
 
 Nearby-parameter stability must reuse screening domains and the existing
 backtest engine. Validate that the base has exactly the registered keys, finite
-values inside every domain's minimum/maximum, and all cross-field constraints.
-Invalid bases return no variants and never run a backtest. Generate only
-one-field moves to immediately adjacent configured values. The diagnostic
-reports sensitivity and 60-day SMA/20-bar-slope regimes; it must never rank,
-select, or apply a parameter. Require 120 observations inside the current
-backtest range, two completed base trades, and one valid variant before
-stable/sensitive. Earlier bars remain available only for causal regime warm-up.
+values inside every domain's minimum/maximum, integer values for shared
+lookback/count/vote keys, and all cross-field constraints. Do not classify
+price or oscillator entry/exit/oversold/overbought levels as integer-only.
+Workspace inputs must reuse the shared integer-key predicate and normalize
+those values to an integer of at least one. Invalid bases return no variants
+and never run a backtest. Generate only one-field moves to immediately adjacent
+configured values. The diagnostic reports sensitivity and 60-day
+SMA/20-bar-slope regimes; it must never rank, select, or apply a parameter.
+Require 120 observations inside the current backtest range, two completed base
+trades, and one valid variant before stable/sensitive. Earlier bars remain
+available only for causal regime warm-up.
 Thresholds are centralized and inclusive: 75% sign agreement, a
 15-percentage-point maximum return range, and a 10-percentage-point maximum
 drawdown deterioration.

@@ -15,6 +15,35 @@ export const MAX_PARAMETER_SETS_PER_STRATEGY = 2_500;
 export const DEFAULT_PARAMETER_SETS_PER_STRATEGY =
   MAX_PARAMETER_SETS_PER_STRATEGY;
 
+const INTEGER_STRATEGY_PARAMETER_KEYS = new Set([
+  "fast",
+  "slow",
+  "period",
+  "signal",
+  "length",
+  "upBars",
+  "downBars",
+  "leftBars",
+  "rightBars",
+  "smoothK",
+  "smoothD",
+  "threshold",
+]);
+
+export function isIntegerStrategyParameterKey(key: string): boolean {
+  return (
+    key.endsWith("Period") || INTEGER_STRATEGY_PARAMETER_KEYS.has(key)
+  );
+}
+
+export function normalizeStrategyParameterInput(
+  key: string,
+  value: number,
+): number {
+  if (!isIntegerStrategyParameterKey(key)) return value;
+  return Math.max(1, Math.round(Number.isFinite(value) ? value : 1));
+}
+
 export const SCREENING_OBJECTIVES = [
   "balanced",
   "returnDrawdown",
@@ -306,6 +335,8 @@ export function isValidStrategyParameters(
     const maximum = domain.values.at(-1);
     if (
       !Number.isFinite(value) ||
+      (isIntegerStrategyParameterKey(domain.key) &&
+        !Number.isInteger(value)) ||
       minimum === undefined ||
       maximum === undefined ||
       value < minimum ||

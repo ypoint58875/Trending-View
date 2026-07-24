@@ -41,6 +41,8 @@ import {
   DEFAULT_PARAMETER_SETS_PER_STRATEGY,
   MAX_PARAMETER_SETS_PER_STRATEGY,
   SCREENING_OBJECTIVES,
+  isIntegerStrategyParameterKey,
+  normalizeStrategyParameterInput,
   optimizeStrategies,
   screeningObjectiveValue,
   type ScreeningObjective,
@@ -130,25 +132,6 @@ function datePart(time: string) {
   return time.slice(0, 10);
 }
 
-function isPeriodParameter(key: string) {
-  return (
-    key.endsWith("Period") ||
-    [
-      "fast",
-      "slow",
-      "period",
-      "signal",
-      "length",
-      "upBars",
-      "downBars",
-      "leftBars",
-      "rightBars",
-      "smoothK",
-      "smoothD",
-    ].includes(key)
-  );
-}
-
 function isDecimalParameter(key: string) {
   return [
     "width",
@@ -165,6 +148,7 @@ function isDecimalParameter(key: string) {
 
 function parameterStep(key: string) {
   if (key === "tick") return 0.01;
+  if (isIntegerStrategyParameterKey(key)) return 1;
   return isDecimalParameter(key) ? 0.1 : 1;
 }
 
@@ -1426,13 +1410,20 @@ export function MarketWorkspace() {
                     type="number"
                     value={value}
                     min={
-                      isPeriodParameter(key) ? 1 : key === "tick" ? 0 : undefined
+                      isIntegerStrategyParameterKey(key)
+                        ? 1
+                        : key === "tick"
+                          ? 0
+                          : undefined
                     }
                     step={parameterStep(key)}
                     onChange={(event) =>
                       setParameters((current) => ({
                         ...current,
-                        [key]: Number(event.target.value),
+                        [key]: normalizeStrategyParameterInput(
+                          key,
+                          Number(event.target.value),
+                        ),
                       }))
                     }
                   />
