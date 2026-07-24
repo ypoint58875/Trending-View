@@ -41,6 +41,11 @@ test("server-renders the QuantScope research workspace", async () => {
   );
   assert.match(html, /Channel BreakOut/);
   assert.match(html, /Technical Ratings/);
+  assert.match(html, /\u4ec5\u505a\u591a/);
+  assert.doesNotMatch(
+    html,
+    /\u505a\u7a7a|\u591a\u7a7a|\-1 \u7a7a/,
+  );
   assert.match(html, /Stoch RSI/);
   assert.match(html, /Supertrend/);
   assert.doesNotMatch(

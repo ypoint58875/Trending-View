@@ -1,9 +1,8 @@
-import type { BacktestTrade, TradeDirection } from "./backtest";
+import type { BacktestTrade } from "./backtest";
 
 export interface TradeMarker {
   time: string;
   price: number;
-  direction: TradeDirection;
   event: "entry" | "exit";
 }
 
@@ -19,23 +18,16 @@ export function buildTradeMarkers(trades: BacktestTrade[]): TradeMarkers {
     const entry: TradeMarker = {
       time: trade.entryTime,
       price: trade.entryPrice,
-      direction: trade.direction,
       event: "entry",
     };
     const exit: TradeMarker = {
       time: trade.exitTime,
       price: trade.exitPrice,
-      direction: trade.direction,
       event: "exit",
     };
 
-    if (trade.direction === "long") {
-      markers.buys.push(entry);
-      markers.sells.push(exit);
-    } else {
-      markers.sells.push(entry);
-      markers.buys.push(exit);
-    }
+    markers.buys.push(entry);
+    markers.sells.push(exit);
   });
 
   return markers;

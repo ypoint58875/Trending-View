@@ -149,7 +149,7 @@ official built-in templates while preserving its 12 existing extended
 strategies.
 
 The implementations are independently written, bar-aligned equivalents. The
-local engine does not yet reproduce pyramiding, intrabar stop/limit fills, or
-TradingView's private Technical Ratings aggregation exactly. Signed position
-targets and next-bar-open fills were selected because they cover the common
-long, short, and reversal semantics without look-ahead.
+local engine does not reproduce pyramiding, intrabar stop/limit fills, or
+TradingView's private Technical Ratings aggregation exactly. The product uses
+long-only `0/1` targets and next-bar-open fills: positive signals buy or hold,
+while negative reference signals sell to cash rather than open short positions.

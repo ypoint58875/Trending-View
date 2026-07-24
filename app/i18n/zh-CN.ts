@@ -127,7 +127,7 @@ export const zhCN = {
   },
   lab: {
     title: "策略实验室",
-    subtitle: "信号在收盘后生成，下一根 K 线开盘成交；买卖点同步显示在主图。",
+    subtitle: "仅做多：买入开仓、卖出平仓；信号在下一根 K 线开盘成交。",
     strategy: "策略",
     period: "回测区间",
     start: "开始日期",
@@ -190,83 +190,83 @@ export const zhCN = {
     },
     "tv-bar-up-down": {
       name: "内置 · BarUpDn",
-      description: "根据 K 线方向及相对前收盘的跳空方向切换多空",
+      description: "满足上涨条件时买入，满足下跌条件时卖出",
     },
     "tv-bollinger-bands": {
       name: "内置 · Bollinger Bands",
-      description: "跌破下轨后做多，突破上轨后退出",
+      description: "跌破下轨后买入，突破上轨后卖出",
     },
     "tv-bollinger-directed": {
       name: "内置 · Bollinger Directed",
-      description: "价格重新穿越布林轨道时按设定方向交易",
+      description: "价格上穿下轨时买入，下穿上轨时卖出",
     },
     "tv-channel-breakout": {
       name: "内置 · Channel BreakOut",
-      description: "突破前期最高价做多，跌破前期最低价做空",
+      description: "突破前期最高价买入，跌破前期最低价卖出",
     },
     "tv-consecutive-up-down": {
       name: "内置 · Consecutive Up/Down",
-      description: "连续上涨或连续下跌达到设定根数后切换方向",
+      description: "连续上涨达到设定根数后买入，连续下跌后卖出",
     },
     "tv-greedy": {
       name: "内置 · Greedy",
-      description: "结合跳空与当前 K 线方向连续跟随多空",
+      description: "向上跳空或阳线时买入，向下跳空或阴线时卖出",
     },
     "tv-inside-bar": {
       name: "内置 · InSide Bar",
-      description: "识别母 K 线内部的收缩 K 线并按其方向交易",
+      description: "内部收缩 K 线收阳时买入，收阴时卖出",
     },
     "tv-keltner-channels": {
       name: "内置 · Keltner Channels",
-      description: "价格突破 EMA 与 ATR 构成的通道时切换多空",
+      description: "突破 Keltner 上轨时买入，跌破下轨时卖出",
     },
     "tv-macd": {
       name: "内置 · MACD",
-      description: "MACD 柱体穿越零轴时切换多空",
+      description: "MACD 柱体上穿零轴时买入，下穿零轴时卖出",
     },
     "tv-momentum": {
       name: "内置 · Momentum",
-      description: "价格动量为正且增强时做多，为负且减弱时做空",
+      description: "价格动量为正且增强时买入，为负且减弱时卖出",
     },
     "tv-outside-bar": {
       name: "内置 · OutSide Bar",
-      description: "识别同时突破前高和前低的外包 K 线",
+      description: "外包 K 线收阳时买入，收阴时卖出",
     },
     "tv-parabolic-sar": {
       name: "内置 · Parabolic SAR",
-      description: "价格与抛物线转向点交叉时反转持仓",
+      description: "价格上穿抛物线转向点时买入，下穿时卖出",
     },
     "tv-pivot-extension": {
       name: "内置 · Pivot Extension",
-      description: "确认局部高低枢轴后按反转方向交易",
+      description: "确认局部低点后买入，确认局部高点后卖出",
     },
     "tv-pivot-reversal": {
       name: "内置 · Pivot Reversal",
-      description: "确认枢轴后，在价格突破枢轴位时切换方向",
+      description: "向上突破枢轴高点时买入，向下跌破低点时卖出",
     },
     "tv-price-channel": {
       name: "内置 · Price Channel",
-      description: "触及前期价格通道上沿做多、下沿做空",
+      description: "触及前期价格通道上沿时买入、下沿时卖出",
     },
     "tv-rsi": {
       name: "内置 · RSI",
-      description: "RSI 离开超卖区做多，离开超买区做空",
+      description: "RSI 离开超卖区时买入，离开超买区时卖出",
     },
     "tv-stochastic-slow": {
       name: "内置 · Stochastic Slow",
-      description: "慢速随机指标 K、D 线交叉时切换多空",
+      description: "慢速随机指标 K 线上穿 D 线买入，下穿时卖出",
     },
     "tv-supertrend": {
       name: "内置 · Supertrend",
-      description: "ATR 趋势方向翻转时同步反转持仓",
+      description: "ATR 趋势转强时买入，转弱时卖出",
     },
     "tv-technical-ratings": {
       name: "内置 · Technical Ratings",
-      description: "综合均线、振荡器和趋向指标生成强多空评级",
+      description: "综合指标形成强买入评级时持有，强卖出时退出",
     },
     "tv-volty-expan-close": {
       name: "内置 · Volty Expan Close",
-      description: "收盘价突破前收盘与 ATR 构成的波动通道时交易",
+      description: "收盘价突破波动通道上沿时买入，跌破下沿时卖出",
     },
   },
   parameters: {
@@ -286,7 +286,6 @@ export const zhCN = {
     entryPercent: "入场偏离 %",
     exitPercent: "退出偏离 %",
     length: "通道周期",
-    direction: "方向（0 多空 / 1 多 / -1 空）",
     upBars: "连续上涨根数",
     downBars: "连续下跌根数",
     start: "SAR 初始步长",

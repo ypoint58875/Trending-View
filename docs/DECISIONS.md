@@ -42,9 +42,10 @@ author-owned, and not a finite catalog. Templates that rely on pyramiding,
 intrabar orders, or TradingView's Technical Ratings implementation are exposed
 as documented target-state equivalents rather than execution-identical clones.
 
-## D-007: Signed target execution
+## D-007: Long-only target execution
 
-Represent desired position as `-1`, `0`, or `1`. Execute a changed target at the
-next bar open, closing the old direction before opening the new one. Apply
-direction-aware slippage and commission on both legs. Derive displayed buy and
-sell points only from the resulting completed trades.
+Represent desired position as `0` or `1`. Execute a changed target at the next
+bar open. A positive signal buys or maintains a long position; a flat or
+negative reference signal sells the long position and remains in cash. Apply
+slippage and commission on entry and exit. Derive displayed buy and sell points
+only from the resulting completed long trades.

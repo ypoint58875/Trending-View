@@ -292,7 +292,7 @@ test("calculates every catalog indicator with aligned finite output", () => {
   });
 });
 
-test("builds aligned signed signals for every strategy", () => {
+test("builds aligned long-only signals for every strategy", () => {
   const bars = makeBars(
     Array.from({ length: 240 }, (_, index) => {
       return 50 + index * 0.03 + Math.sin(index / 4) * 3;
@@ -313,15 +313,11 @@ test("builds aligned signed signals for every strategy", () => {
       strategy.defaultParameters,
     );
     assert.equal(target.length, bars.length);
-    assert.ok(
-      target.every(
-        (value) => value === -1 || value === 0 || value === 1,
-      ),
-    );
+    assert.ok(target.every((value) => value === 0 || value === 1));
   });
 });
 
-test("Channel BreakOut switches from long to short on channel breaks", () => {
+test("Channel BreakOut sells to flat on a lower-channel break", () => {
   const bars = makeBars([10, 10, 10, 10, 10, 12, 9]);
   const strategy = STRATEGIES.find(
     (candidate) => candidate.id === "tv-channel-breakout",
@@ -330,7 +326,7 @@ test("Channel BreakOut switches from long to short on channel breaks", () => {
 
   const target = strategy.buildTarget(bars, { length: 3 });
   assert.equal(target[5], 1);
-  assert.equal(target[6], -1);
+  assert.equal(target[6], 0);
 });
 
 test("executes a close signal at the next bar open and applies costs", () => {
@@ -354,7 +350,7 @@ test("executes a close signal at the next bar open and applies costs", () => {
   assert.ok(result.maxDrawdown <= 0);
 });
 
-test("executes short positions and maps long and short trades to buy/sell markers", () => {
+test("executes only long trades and maps entries and exits to buy/sell markers", () => {
   const bars = makeBars([10, 10, 10, 12, 13, 8, 7, 9, 11]);
   const result = runBacktest(
     bars,
@@ -368,25 +364,18 @@ test("executes short positions and maps long and short trades to buy/sell marker
     },
   );
 
-  assert.ok(result.trades.some((trade) => trade.direction === "long"));
-  assert.ok(result.trades.some((trade) => trade.direction === "short"));
+  assert.ok(result.tradeCount > 0);
+  assert.ok(
+    result.trades.every(
+      (trade) => !Object.prototype.hasOwnProperty.call(trade, "direction"),
+    ),
+  );
 
   const markers = buildTradeMarkers(result.trades);
   assert.equal(markers.buys.length, result.tradeCount);
   assert.equal(markers.sells.length, result.tradeCount);
-  const shortTrade = result.trades.find((trade) => trade.direction === "short")!;
-  assert.ok(
-    markers.sells.some(
-      (marker) =>
-        marker.time === shortTrade.entryTime && marker.event === "entry",
-    ),
-  );
-  assert.ok(
-    markers.buys.some(
-      (marker) =>
-        marker.time === shortTrade.exitTime && marker.event === "exit",
-    ),
-  );
+  assert.ok(markers.buys.every((marker) => marker.event === "entry"));
+  assert.ok(markers.sells.every((marker) => marker.event === "exit"));
 });
 
 test("screens every candidate and sorts by descending score", () => {

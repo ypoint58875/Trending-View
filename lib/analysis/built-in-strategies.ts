@@ -67,6 +67,18 @@ function carry(target: number[], index: number) {
   target[index] = index > 0 ? target[index - 1] : 0;
 }
 
+function asLongOnlyStrategy(
+  strategy: BuiltInStrategyDefinition,
+): BuiltInStrategyDefinition {
+  return {
+    ...strategy,
+    buildTarget: (bars, parameters) =>
+      strategy
+        .buildTarget(bars, parameters)
+        .map((signal) => (signal > 0 ? 1 : 0)),
+  };
+}
+
 function barUpDown(bars: MarketBar[]): number[] {
   const target = holdTarget(bars.length);
   for (let index = 1; index < bars.length; index += 1) {
@@ -79,7 +91,7 @@ function barUpDown(bars: MarketBar[]): number[] {
       current.close < current.open &&
       current.open < previous.close
     ) {
-      target[index] = -1;
+      target[index] = 0;
     }
   }
   return target;
@@ -132,7 +144,6 @@ function bollingerDirected(
     period(parameters, "period", 20),
     value(parameters, "width", 2),
   );
-  const direction = Math.sign(value(parameters, "direction", 0));
   const target = holdTarget(bars.length);
 
   for (let index = 1; index < bars.length; index += 1) {
@@ -142,7 +153,6 @@ function bollingerDirected(
     const upper = bands.upper[index];
     const previousUpper = bands.upper[index - 1];
     if (
-      direction >= 0 &&
       lower !== null &&
       previousLower !== null &&
       closes[index] > lower &&
@@ -150,13 +160,12 @@ function bollingerDirected(
     ) {
       target[index] = 1;
     } else if (
-      direction <= 0 &&
       upper !== null &&
       previousUpper !== null &&
       closes[index] < upper &&
       closes[index - 1] >= previousUpper
     ) {
-      target[index] = -1;
+      target[index] = 0;
     }
   }
   return target;
@@ -175,7 +184,7 @@ function channelBreakout(
     const upper = Math.max(...previousWindow.map((bar) => bar.high));
     const lower = Math.min(...previousWindow.map((bar) => bar.low));
     if (bars[index].high > upper) target[index] = 1;
-    if (bars[index].low < lower) target[index] = -1;
+    if (bars[index].low < lower) target[index] = 0;
   }
   return target;
 }
@@ -197,7 +206,7 @@ function consecutiveUpDown(
     falling =
       bars[index].close < bars[index - 1].close ? falling + 1 : 0;
     if (rising >= upBars) target[index] = 1;
-    if (falling >= downBars) target[index] = -1;
+    if (falling >= downBars) target[index] = 0;
   }
   return target;
 }
@@ -214,7 +223,7 @@ function greedy(bars: MarketBar[]): number[] {
       current.open < previous.low ||
       current.close < current.open
     ) {
-      target[index] = -1;
+      target[index] = 0;
     }
   }
   return target;
@@ -228,7 +237,7 @@ function insideBar(bars: MarketBar[]): number[] {
     const previous = bars[index - 1];
     if (current.high <= previous.high && current.low >= previous.low) {
       if (current.close > current.open) target[index] = 1;
-      if (current.close < current.open) target[index] = -1;
+      if (current.close < current.open) target[index] = 0;
     }
   }
   return target;
@@ -267,7 +276,7 @@ function keltnerChannels(
       closes[index] < lower &&
       closes[index - 1] >= previousLower
     ) {
-      target[index] = -1;
+      target[index] = 0;
     }
   }
   return target;
@@ -290,7 +299,7 @@ function macdStrategy(
     const previous = values.histogram[index - 1];
     if (current === null || previous === null) continue;
     if (current > 0 && previous <= 0) target[index] = 1;
-    if (current < 0 && previous >= 0) target[index] = -1;
+    if (current < 0 && previous >= 0) target[index] = 0;
   }
   return target;
 }
@@ -310,7 +319,7 @@ function momentum(
     const current = momentumValues[index]!;
     const previous = momentumValues[index - 1]!;
     if (current > 0 && current > previous) target[index] = 1;
-    if (current < 0 && current < previous) target[index] = -1;
+    if (current < 0 && current < previous) target[index] = 0;
   }
   return target;
 }
@@ -323,7 +332,7 @@ function outsideBar(bars: MarketBar[]): number[] {
     const previous = bars[index - 1];
     if (current.high > previous.high && current.low < previous.low) {
       if (current.close > current.open) target[index] = 1;
-      if (current.close < current.open) target[index] = -1;
+      if (current.close < current.open) target[index] = 0;
     }
   }
   return target;
@@ -353,7 +362,7 @@ function parabolicSarStrategy(
       bars[index].close < sar[index]! &&
       bars[index - 1].close >= sar[index - 1]!
     ) {
-      target[index] = -1;
+      target[index] = 0;
     }
   }
   return target;
@@ -394,7 +403,7 @@ function pivotExtension(
   for (let index = left + right; index < bars.length; index += 1) {
     carry(target, index);
     const center = index - right;
-    if (isPivotHigh(bars, center, left, right)) target[index] = -1;
+    if (isPivotHigh(bars, center, left, right)) target[index] = 0;
     if (isPivotLow(bars, center, left, right)) target[index] = 1;
   }
   return target;
@@ -431,7 +440,7 @@ function pivotReversal(
       bars[index].low < pivotLow &&
       bars[index - 1].low >= pivotLow
     ) {
-      target[index] = -1;
+      target[index] = 0;
       pivotLow = null;
     }
   }
@@ -450,7 +459,7 @@ function priceChannel(
     const upper = Math.max(...previousWindow.map((bar) => bar.high));
     const lower = Math.min(...previousWindow.map((bar) => bar.low));
     if (bars[index].high >= upper) target[index] = 1;
-    if (bars[index].low <= lower) target[index] = -1;
+    if (bars[index].low <= lower) target[index] = 0;
   }
   return target;
 }
@@ -476,7 +485,7 @@ function rsiStrategy(
       strength[index]! < overbought &&
       strength[index - 1]! >= overbought
     ) {
-      target[index] = -1;
+      target[index] = 0;
     }
   }
   return target;
@@ -509,7 +518,7 @@ function stochasticSlowStrategy(
       continue;
     }
     if (currentK > currentD && previousK <= previousD) target[index] = 1;
-    if (currentK < currentD && previousK >= previousD) target[index] = -1;
+    if (currentK < currentD && previousK >= previousD) target[index] = 0;
   }
   return target;
 }
@@ -523,7 +532,7 @@ function supertrendStrategy(
     period(parameters, "period", 10),
     value(parameters, "multiplier", 3),
   );
-  return result.direction.map((direction) => Math.sign(direction));
+  return result.direction.map((direction) => (direction > 0 ? 1 : 0));
 }
 
 function technicalRatings(
@@ -571,7 +580,7 @@ function technicalRatings(
     ];
     const rating = votes.reduce((sum, vote) => sum + vote, 0);
     if (rating >= threshold) target[index] = 1;
-    if (rating <= -threshold) target[index] = -1;
+    if (rating <= -threshold) target[index] = 0;
   }
   return target;
 }
@@ -593,12 +602,12 @@ function voltyExpanClose(
     const lower =
       bars[index - 1].close - volatility[index - 1]! * multiplier;
     if (bars[index].close > upper) target[index] = 1;
-    if (bars[index].close < lower) target[index] = -1;
+    if (bars[index].close < lower) target[index] = 0;
   }
   return target;
 }
 
-export const TRADINGVIEW_BUILT_IN_STRATEGIES: BuiltInStrategyDefinition[] = [
+const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-bar-up-down",
     indicatorId: "sma",
@@ -614,7 +623,7 @@ export const TRADINGVIEW_BUILT_IN_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-bollinger-directed",
     indicatorId: "bollinger",
-    defaultParameters: { period: 20, width: 2, direction: 0 },
+    defaultParameters: { period: 20, width: 2 },
     buildTarget: bollingerDirected,
   },
   {
@@ -720,3 +729,6 @@ export const TRADINGVIEW_BUILT_IN_STRATEGIES: BuiltInStrategyDefinition[] = [
     buildTarget: voltyExpanClose,
   },
 ];
+
+export const TRADINGVIEW_BUILT_IN_STRATEGIES =
+  TRADINGVIEW_REFERENCE_STRATEGIES.map(asLongOnlyStrategy);

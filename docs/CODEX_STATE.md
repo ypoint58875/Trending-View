@@ -13,7 +13,7 @@ Implemented:
 - Twelve extended strategies plus independent equivalents of all 20 official
   TradingView built-in strategy templates.
 - Date-range backtesting with next-bar-open execution, costs, metrics, equity,
-  drawdown, signed long/short positions, and chart-level buy/sell markers.
+  drawdown, long-only positions, and chart-level buy/sell markers.
 - Automated screening across 74 parameter candidates.
 - Chinese responsive UI with centralized locale copy.
 
@@ -28,6 +28,7 @@ Implemented:
 - ESLint: passed on 2026-07-24.
 - Browser workflow for Channel BreakOut, 74/74 screening, Apply, and visible
   buy/sell markers on N225: passed on 2026-07-24.
+- Long-only catalog, execution, and marker rules: passed on 2026-07-24.
 
 ## Next priorities
 

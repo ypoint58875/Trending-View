@@ -164,11 +164,11 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   },
   {
     strategyId: "tv-bollinger-directed",
-    parameters: { period: 20, width: 2, direction: 0 },
+    parameters: { period: 20, width: 2 },
   },
   {
     strategyId: "tv-bollinger-directed",
-    parameters: { period: 30, width: 2.5, direction: 0 },
+    parameters: { period: 30, width: 2.5 },
   },
   { strategyId: "tv-channel-breakout", parameters: { length: 5 } },
   { strategyId: "tv-channel-breakout", parameters: { length: 20 } },

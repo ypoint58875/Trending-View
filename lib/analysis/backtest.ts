@@ -23,10 +23,7 @@ export interface EquityPoint {
   drawdown: number;
 }
 
-export type TradeDirection = "long" | "short";
-
 export interface BacktestTrade {
-  direction: TradeDirection;
   entryTime: string;
   exitTime: string;
   entryPrice: number;
@@ -88,7 +85,7 @@ export function runBacktest(
   const indexedBars = allBars
     .map((bar, index) => ({
       bar,
-      target: Math.sign(fullTarget[index] ?? 0) as -1 | 0 | 1,
+      target: (fullTarget[index] ?? 0) > 0 ? 1 : 0,
     }))
     .filter(({ bar }) => filterRange([bar], settings.startTime, settings.endTime).length);
 
@@ -98,11 +95,9 @@ export function runBacktest(
 
   let cash = Math.max(settings.initialCash, 1);
   let units = 0;
-  let position = 0;
   let entryPrice = 0;
   let entryTime = "";
   let entryCost = 0;
-  let entryNotional = 0;
   const commissionRate = Math.max(settings.commissionRate, 0);
   const slippageRate = Math.max(settings.slippageRate, 0);
   let peak = cash;
@@ -110,66 +105,34 @@ export function runBacktest(
   const equity: EquityPoint[] = [];
 
   const closePosition = (marketPrice: number, exitTime: string) => {
-    if (position === 0 || units === 0) return;
+    if (units === 0) return;
 
-    if (position === 1) {
-      const fillPrice = marketPrice * (1 - slippageRate);
-      const proceeds = units * fillPrice;
-      const fee = proceeds * commissionRate;
-      cash += proceeds - fee;
-      trades.push({
-        direction: "long",
-        entryTime,
-        exitTime,
-        entryPrice,
-        exitPrice: fillPrice,
-        returnPercent:
-          ((proceeds - fee - entryCost) / Math.max(entryCost, 1)) * 100,
-      });
-    } else {
-      const fillPrice = marketPrice * (1 + slippageRate);
-      const coverCost = units * fillPrice;
-      const fee = coverCost * commissionRate;
-      const entryFee = entryCost - entryNotional;
-      cash -= coverCost + fee;
-      trades.push({
-        direction: "short",
-        entryTime,
-        exitTime,
-        entryPrice,
-        exitPrice: fillPrice,
-        returnPercent:
-          ((entryNotional - entryFee - coverCost - fee) /
-            Math.max(entryCost, 1)) *
-          100,
-      });
-    }
-
+    const fillPrice = marketPrice * (1 - slippageRate);
+    const proceeds = units * fillPrice;
+    const fee = proceeds * commissionRate;
+    cash += proceeds - fee;
+    trades.push({
+      entryTime,
+      exitTime,
+      entryPrice,
+      exitPrice: fillPrice,
+      returnPercent:
+        ((proceeds - fee - entryCost) / Math.max(entryCost, 1)) * 100,
+    });
     units = 0;
-    position = 0;
     entryPrice = 0;
     entryTime = "";
     entryCost = 0;
-    entryNotional = 0;
   };
 
-  const openPosition = (
-    nextPosition: -1 | 1,
-    marketPrice: number,
-    nextEntryTime: string,
-  ) => {
+  const openPosition = (marketPrice: number, nextEntryTime: string) => {
     if (cash <= 0) return;
-    const fillPrice =
-      marketPrice * (nextPosition === 1 ? 1 + slippageRate : 1 - slippageRate);
+    const fillPrice = marketPrice * (1 + slippageRate);
     units = cash / (fillPrice * (1 + commissionRate));
-    entryNotional = units * fillPrice;
+    const entryNotional = units * fillPrice;
     const fee = entryNotional * commissionRate;
     entryCost = entryNotional + fee;
-    cash +=
-      nextPosition === 1
-        ? -(entryNotional + fee)
-        : entryNotional - fee;
-    position = nextPosition;
+    cash -= entryCost;
     entryPrice = fillPrice;
     entryTime = nextEntryTime;
   };
@@ -179,20 +142,14 @@ export function runBacktest(
 
     if (index > 0) {
       const priorTarget = indexedBars[index - 1].target;
-      if (priorTarget !== position) {
+      if (priorTarget === 1 && units === 0) {
+        openPosition(bar.open, bar.time);
+      } else if (priorTarget === 0 && units > 0) {
         closePosition(bar.open, bar.time);
-        if (priorTarget !== 0) {
-          openPosition(priorTarget, bar.open, bar.time);
-        }
       }
     }
 
-    const currentEquity =
-      position === 1
-        ? cash + units * bar.close
-        : position === -1
-          ? cash - units * bar.close
-          : cash;
+    const currentEquity = cash + units * bar.close;
     peak = Math.max(peak, currentEquity);
     equity.push({
       time: bar.time,
@@ -201,7 +158,7 @@ export function runBacktest(
     });
   }
 
-  if (position !== 0) {
+  if (units > 0) {
     const lastBar = indexedBars[indexedBars.length - 1].bar;
     closePosition(lastBar.close, lastBar.time);
     equity[equity.length - 1].equity = cash;

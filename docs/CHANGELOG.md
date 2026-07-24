@@ -2,6 +2,10 @@
 
 ## 2026-07-24
 
+- Restricted every strategy and backtest to long-only execution: buy opens a
+  long position and sell closes it; negative reference signals now remain flat.
+- Removed short-direction parameters, short trade accounting, and short marker
+  mapping while preserving all 32 strategies and 74 screening candidates.
 - Added buy and sell annotations to the main chart for the active backtest,
   including immediately applied screening results.
 - Upgraded the backtest engine from long-only targets to next-open long, flat,

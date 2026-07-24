@@ -28,15 +28,16 @@
 - `getStrategy(id)`: resolves a registry entry.
 - `TRADINGVIEW_BUILT_IN_STRATEGY_IDS`: the ordered 20-entry completeness
   contract for the official built-in template directory.
-- Each strategy provides `buildTarget(bars, parameters)`, producing a signed
-  `-1/0/1` desired-position series without future data.
+- Each strategy provides `buildTarget(bars, parameters)`, producing a long-only
+  `0/1` desired-position series without future data. Negative reference signals
+  are normalized to flat.
 
 ## Simulation
 
 - `runBacktest(...)`: executes prior-bar targets at the next bar open, applies
-  costs to long and short positions, records trade direction, and calculates
-  equity, drawdown, return, Sharpe, win rate, profit factor, trade count,
-  benchmark return, and a screening score.
-- `buildTradeMarkers(trades)`: maps long/short entries and exits to chart-level
-  buy and sell markers.
+  costs to long entries and exits, and calculates equity, drawdown, return,
+  Sharpe, win rate, profit factor, trade count, benchmark return, and a
+  screening score.
+- `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
+  long exit to a sell marker.
 - `screenStrategies(...)`: runs 74 declared candidates and sorts them by score.

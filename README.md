@@ -16,7 +16,7 @@ parameter screening in one responsive page.
 - Twelve extended strategy families plus independent equivalents of all 20
   templates in TradingView's official built-in-strategy directory.
 - Date-range backtests with initial cash, commission, and slippage settings.
-- Signed long/short targets, next-bar-open execution, and chart-level buy/sell
+- Long-only buy/flat targets, next-bar-open execution, and chart-level buy/sell
   markers for the active backtest.
 - Seventy-four-candidate automated screening ranked by a return, Sharpe,
   drawdown, and trade-count score.
@@ -55,6 +55,8 @@ uninformative when an index source does not publish volume.
 TradingView is a product reference only. This project does not redistribute the
 TradingView Advanced Charts library or copy protected Pine scripts. The
 built-in strategy implementations are transparent, independently written
-target-state equivalents. Strategies whose originals depend on pyramiding,
-intrabar stops, or TradingView's private Technical Ratings engine are not
-claimed to be execution-identical.
+long-only target-state equivalents. Negative or short signals from an original
+template close an existing long position instead of opening a short position.
+Strategies whose originals depend on pyramiding, intrabar stops, or
+TradingView's private Technical Ratings engine are not claimed to be
+execution-identical.
