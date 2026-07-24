@@ -10,6 +10,7 @@ import {
   LineChart,
   LoaderCircle,
   RefreshCw,
+  RotateCcw,
   Save,
   Search,
   ShieldAlert,
@@ -20,12 +21,16 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BacktestChart } from "./components/BacktestChart";
-import {
-  PriceChart,
-  type IndicatorId,
-} from "./components/PriceChart";
+import { PriceChart } from "./components/PriceChart";
 import { zhCN as copy } from "./i18n/zh-CN";
 import { runBacktest, type BacktestResult } from "@/lib/analysis/backtest";
+import {
+  INDICATORS,
+  createDefaultIndicatorSettings,
+  getDefaultIndicatorParameters,
+  getIndicator,
+  type IndicatorId,
+} from "@/lib/analysis/indicator-registry";
 import {
   DEFAULT_PARAMETER_SETS_PER_STRATEGY,
   MAX_PARAMETER_SETS_PER_STRATEGY,
@@ -61,29 +66,6 @@ const defaultInstrument: MarketInstrument = {
   assetType: "index",
   provider: "eastmoney",
 };
-
-const indicatorIds: IndicatorId[] = [
-  "sma",
-  "ema",
-  "wma",
-  "dema",
-  "bollinger",
-  "vwap",
-  "supertrend",
-  "ichimoku",
-  "rsi",
-  "macd",
-  "kdj",
-  "stochasticRsi",
-  "cci",
-  "williamsR",
-  "adx",
-  "roc",
-  "mfi",
-  "cmf",
-  "atr",
-  "obv",
-];
 
 const priceChartLabels = {
   price: copy.chart.price,
@@ -203,6 +185,9 @@ export function MarketWorkspace() {
     "candlestick",
   );
   const [indicator, setIndicator] = useState<IndicatorId>("macd");
+  const [indicatorSettings, setIndicatorSettings] = useState(
+    createDefaultIndicatorSettings,
+  );
   const [strategyId, setStrategyId] = useState<StrategyId>("sma-cross");
   const [parameters, setParameters] = useState<StrategyParameters>(
     getStrategy("sma-cross").defaultParameters,
@@ -245,6 +230,8 @@ export function MarketWorkspace() {
   const currentSeriesKeyRef = useRef("");
   const latestSeriesDateRef = useRef("");
   const marketSeriesRef = useRef<MarketSeries | null>(null);
+  const activeIndicator = getIndicator(indicator);
+  const indicatorParameters = indicatorSettings[indicator];
 
   const fetchMarket = useCallback(
     async (signal: AbortSignal) => {
@@ -552,7 +539,35 @@ export function MarketWorkspace() {
       ...next.defaultParameters,
       ...nextParameters,
     });
-    setIndicator(next.indicatorId as IndicatorId);
+  };
+
+  const updateIndicatorParameter = (key: string, value: number) => {
+    const definition = activeIndicator.parameters.find(
+      (parameter) => parameter.key === key,
+    );
+    if (!definition) return;
+
+    const finiteValue = Number.isFinite(value)
+      ? value
+      : definition.minimum;
+    const steppedValue =
+      definition.step === 1 ? Math.round(finiteValue) : finiteValue;
+    const nextValue = Math.max(steppedValue, definition.minimum);
+
+    setIndicatorSettings((current) => ({
+      ...current,
+      [indicator]: {
+        ...current[indicator],
+        [key]: nextValue,
+      },
+    }));
+  };
+
+  const resetIndicator = () => {
+    setIndicatorSettings((current) => ({
+      ...current,
+      [indicator]: getDefaultIndicatorParameters(indicator),
+    }));
   };
 
   const saveCurrentBacktest = async () => {
@@ -884,18 +899,66 @@ export function MarketWorkspace() {
         </div>
         <span className="toolbar-divider" />
         <div className="indicator-tabs" aria-label={copy.indicatorsTitle}>
-          {indicatorIds.map((item) => (
+          {INDICATORS.map((item) => (
             <button
               type="button"
-              key={item}
-              className={indicator === item ? "active" : ""}
-              onClick={() => setIndicator(item)}
-              title={copy.indicators[item].name}
+              key={item.id}
+              className={indicator === item.id ? "active" : ""}
+              onClick={() => setIndicator(item.id)}
+              title={copy.indicators[item.id].name}
             >
-              {copy.indicators[item].short}
+              {copy.indicators[item.id].short}
             </button>
           ))}
         </div>
+      </section>
+
+      <section
+        className="indicator-settings-bar"
+        aria-label={copy.indicatorSettings.title}
+      >
+        <div className="indicator-settings-title">
+          <span>{copy.indicatorSettings.eyebrow}</span>
+          <strong>{copy.indicators[indicator].name}</strong>
+        </div>
+        {activeIndicator.parameters.length > 0 ? (
+          <div className="indicator-parameter-controls">
+            {activeIndicator.parameters.map((parameter) => (
+              <label key={parameter.key}>
+                <span>
+                  {copy.parameters[
+                    parameter.key as keyof typeof copy.parameters
+                  ]}
+                </span>
+                <input
+                  name={`indicator-${parameter.key}`}
+                  type="number"
+                  value={indicatorParameters[parameter.key]}
+                  min={parameter.minimum}
+                  step={parameter.step}
+                  onChange={(event) =>
+                    updateIndicatorParameter(
+                      parameter.key,
+                      Number(event.target.value),
+                    )
+                  }
+                />
+              </label>
+            ))}
+          </div>
+        ) : (
+          <span className="indicator-no-parameters">
+            {copy.indicatorSettings.noParameters}
+          </span>
+        )}
+        <button
+          className="indicator-reset-button"
+          type="button"
+          onClick={resetIndicator}
+        >
+          <RotateCcw size={13} />
+          {copy.indicatorSettings.reset}
+        </button>
       </section>
 
       <div className="workspace-grid">
@@ -904,8 +967,14 @@ export function MarketWorkspace() {
             <div>
               <span className="eyebrow">{copy.chart.title}</span>
               <strong>
-                {copy.indicators[indicator].name}
-                <small>{copy.indicators[indicator].description}</small>
+                <span>
+                  {copy.indicatorSettings.activeIndicator}{" "}
+                  {copy.common.separator} {copy.indicators[indicator].name}
+                </span>
+                <small>
+                  {copy.indicatorSettings.activeStrategy}{" "}
+                  {copy.common.separator} {copy.strategies[strategyId].name}
+                </small>
               </strong>
             </div>
             <div className="chart-heading-side">
@@ -968,6 +1037,7 @@ export function MarketWorkspace() {
                 dataKey={`${instrument.secid}:${interval}`}
                 chartType={chartType}
                 indicator={indicator}
+                indicatorParameters={indicatorParameters}
                 ariaLabel={copy.chart.aria}
                 labels={priceChartLabels}
               />

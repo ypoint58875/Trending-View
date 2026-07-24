@@ -399,6 +399,105 @@ button {
   display: none;
 }
 
+.indicator-settings-bar {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 22px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(9, 15, 12, 0.72);
+}
+
+.indicator-settings-title {
+  display: flex;
+  min-width: 148px;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.indicator-settings-title span {
+  color: var(--green);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+}
+
+.indicator-settings-title strong {
+  font-size: 10px;
+  font-weight: 620;
+}
+
+.indicator-parameter-controls {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.indicator-parameter-controls::-webkit-scrollbar {
+  display: none;
+}
+
+.indicator-parameter-controls label {
+  display: grid;
+  grid-template-columns: auto 68px;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.indicator-parameter-controls label > span,
+.indicator-no-parameters {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.indicator-parameter-controls input {
+  width: 68px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: 0;
+  background: #0a110e;
+  color: var(--text);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+}
+
+.indicator-parameter-controls input:focus {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
+.indicator-no-parameters {
+  flex: 1;
+}
+
+.indicator-reset-button {
+  display: inline-flex;
+  height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-raised);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.indicator-reset-button:hover {
+  border-color: var(--line-bright);
+  color: var(--green);
+}
+
 .toolbar-group,
 .indicator-tabs {
   display: flex;
@@ -1355,6 +1454,28 @@ button {
   .chart-toolbar {
     padding-right: 12px;
     padding-left: 12px;
+  }
+
+  .indicator-settings-bar {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .indicator-settings-title {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .indicator-parameter-controls {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  .indicator-no-parameters {
+    order: 3;
+    flex-basis: 100%;
   }
 
   .workspace-grid {

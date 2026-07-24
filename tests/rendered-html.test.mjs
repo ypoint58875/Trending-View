@@ -34,6 +34,11 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u91cf\u5316\u7b56\u7565\u7814\u7a76\u53f0/);
   assert.match(html, /\u4e00\u952e\u7b5b\u9009/);
   assert.match(html, /\u7b56\u7565\u5b9e\u9a8c\u5ba4/);
+  assert.match(html, /\u6307\u6807\u8bbe\u7f6e/);
+  assert.match(html, /\u7b56\u7565\u53e0\u52a0/);
+  assert.match(html, /\u6062\u590d\u9ed8\u8ba4/);
+  assert.match(html, /name="indicator-fast"/);
+  assert.match(html, /name="indicator-slow"/);
   assert.match(html, /\u6700\u65b0\u7b56\u7565\u5efa\u8bae/);
   assert.match(html, /\u7eff\u8272\uff1a\u4e0a\u6da8/);
   assert.match(html, /\u7ea2\u8272\uff1a\u4e0b\u8dcc/);
