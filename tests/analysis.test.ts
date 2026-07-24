@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runBacktest } from "../lib/analysis/backtest";
+import {
+  runBacktest,
+  type BacktestResult,
+} from "../lib/analysis/backtest";
 import {
   adx,
   atr,
@@ -29,7 +32,9 @@ import {
 import {
   MAX_PARAMETER_SETS_PER_STRATEGY,
   buildScreeningCandidates,
+  compareScreeningResults,
   optimizeStrategies,
+  screeningObjectiveValue,
 } from "../lib/analysis/screening";
 import { parseSaveBacktestInput } from "../lib/analysis/saved-backtests";
 import {
@@ -421,6 +426,62 @@ test("optimizes every strategy and sorts best results by score", async () => {
       outcome.results[index - 1].score >= outcome.results[index].score,
     );
   }
+});
+
+test("ranks screening results by the selected optimization objective", () => {
+  const base: BacktestResult = {
+    strategyId: "sma-cross",
+    parameters: { fast: 10, slow: 30 },
+    totalReturn: 0,
+    annualizedReturn: 0,
+    benchmarkReturn: 0,
+    maxDrawdown: 0,
+    sharpe: 0,
+    winRate: 0,
+    profitFactor: 0,
+    tradeCount: 1,
+    finalEquity: 100_000,
+    score: 0,
+    equity: [],
+    trades: [],
+  };
+  const aggressive = {
+    ...base,
+    totalReturn: 30,
+    maxDrawdown: -25,
+    sharpe: 0.8,
+    score: 10,
+  };
+  const defensive = {
+    ...base,
+    totalReturn: 12,
+    maxDrawdown: -4,
+    sharpe: 1.8,
+    score: 40,
+  };
+
+  assert.ok(
+    compareScreeningResults(aggressive, defensive, "totalReturn") < 0,
+  );
+  for (const objective of [
+    "balanced",
+    "returnDrawdown",
+    "minDrawdown",
+    "sharpe",
+  ] as const) {
+    assert.ok(
+      compareScreeningResults(defensive, aggressive, objective) < 0,
+      objective,
+    );
+  }
+  assert.equal(
+    screeningObjectiveValue(aggressive, "returnDrawdown"),
+    1.2,
+  );
+  assert.equal(
+    screeningObjectiveValue(defensive, "returnDrawdown"),
+    3,
+  );
 });
 
 test("builds broad unique parameter grids within the per-strategy cap", () => {

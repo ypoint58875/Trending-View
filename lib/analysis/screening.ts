@@ -15,6 +15,16 @@ export const MAX_PARAMETER_SETS_PER_STRATEGY = 2_500;
 export const DEFAULT_PARAMETER_SETS_PER_STRATEGY =
   MAX_PARAMETER_SETS_PER_STRATEGY;
 
+export const SCREENING_OBJECTIVES = [
+  "balanced",
+  "returnDrawdown",
+  "totalReturn",
+  "minDrawdown",
+  "sharpe",
+] as const;
+
+export type ScreeningObjective = (typeof SCREENING_OBJECTIVES)[number];
+
 export interface ScreeningCandidate {
   strategyId: StrategyId;
   parameters: StrategyParameters;
@@ -37,6 +47,7 @@ export interface ScreeningOptimizationResult {
 
 interface OptimizeStrategiesOptions {
   maxPerStrategy?: number;
+  objective?: ScreeningObjective;
   signal?: AbortSignal;
   yieldEvery?: number;
   onProgress?: (progress: ScreeningProgress) => void;
@@ -325,10 +336,63 @@ export function buildScreeningCandidates(
   });
 }
 
-function scoreValue(result: BacktestResult): number {
-  return Number.isFinite(result.score)
-    ? result.score
-    : Number.NEGATIVE_INFINITY;
+function finiteOrNegativeInfinity(value: number): number {
+  return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+}
+
+export function screeningObjectiveValue(
+  result: BacktestResult,
+  objective: ScreeningObjective,
+): number {
+  if (objective === "returnDrawdown") {
+    const drawdownFloor = Math.max(Math.abs(result.maxDrawdown), 0.1);
+    return finiteOrNegativeInfinity(result.totalReturn / drawdownFloor);
+  }
+  if (objective === "totalReturn") {
+    return finiteOrNegativeInfinity(result.totalReturn);
+  }
+  if (objective === "minDrawdown") {
+    return finiteOrNegativeInfinity(result.maxDrawdown);
+  }
+  if (objective === "sharpe") {
+    return finiteOrNegativeInfinity(result.sharpe);
+  }
+  return finiteOrNegativeInfinity(result.score);
+}
+
+function compareDescending(left: number, right: number): number {
+  if (left === right) return 0;
+  return left > right ? -1 : 1;
+}
+
+export function compareScreeningResults(
+  left: BacktestResult,
+  right: BacktestResult,
+  objective: ScreeningObjective,
+): number {
+  const comparisons = [
+    compareDescending(
+      screeningObjectiveValue(left, objective),
+      screeningObjectiveValue(right, objective),
+    ),
+    compareDescending(
+      finiteOrNegativeInfinity(left.totalReturn),
+      finiteOrNegativeInfinity(right.totalReturn),
+    ),
+    compareDescending(
+      finiteOrNegativeInfinity(left.maxDrawdown),
+      finiteOrNegativeInfinity(right.maxDrawdown),
+    ),
+    compareDescending(
+      finiteOrNegativeInfinity(left.sharpe),
+      finiteOrNegativeInfinity(right.sharpe),
+    ),
+    compareDescending(
+      finiteOrNegativeInfinity(left.score),
+      finiteOrNegativeInfinity(right.score),
+    ),
+  ];
+  return comparisons.find((comparison) => comparison !== 0) ?? 0;
 }
 
 function yieldToMainThread(): Promise<void> {
@@ -343,6 +407,7 @@ export async function optimizeStrategies(
   options: OptimizeStrategiesOptions = {},
 ): Promise<ScreeningOptimizationResult> {
   const candidates = buildScreeningCandidates(options.maxPerStrategy);
+  const objective = options.objective ?? "balanced";
   const yieldEvery = Math.max(Math.floor(options.yieldEvery ?? 24), 1);
   const bestByStrategy = new Map<StrategyId, BacktestResult>();
   let evaluatedCount = 0;
@@ -365,7 +430,10 @@ export async function optimizeStrategies(
         settings,
       );
       const currentBest = bestByStrategy.get(candidate.strategyId);
-      if (!currentBest || scoreValue(result) > scoreValue(currentBest)) {
+      if (
+        !currentBest ||
+        compareScreeningResults(result, currentBest, objective) < 0
+      ) {
         bestByStrategy.set(candidate.strategyId, result);
       }
     } catch {
@@ -388,8 +456,8 @@ export async function optimizeStrategies(
   }
 
   return {
-    results: [...bestByStrategy.values()].sort(
-      (left, right) => scoreValue(right) - scoreValue(left),
+    results: [...bestByStrategy.values()].sort((left, right) =>
+      compareScreeningResults(left, right, objective),
     ),
     evaluatedCount,
     totalCandidates: candidates.length,

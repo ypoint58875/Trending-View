@@ -23,6 +23,14 @@
 - `stochasticSlow` and `parabolicSar` support the corresponding built-in
   strategy equivalents.
 
+## Chart configuration
+
+- `buildPriceDataZoom(barsLength, overlayIndicator)`: links the price, volume,
+  and indicator axes to one inside zoom and one directly draggable timeline
+  slider, showing the latest 120 bars initially.
+- `applyDataZoomWindow(option, window)`: reapplies the user's current zoom
+  start/end percentages when chart series or indicators update.
+
 ## Strategies
 
 - `getStrategy(id)`: resolves a registry entry.
@@ -44,9 +52,13 @@
   parameter spaces for all registered strategies, includes each default
   parameter set, and deterministically samples any space above the 2,500 hard
   cap.
+- `screeningObjectiveValue(result, objective)`: maps a backtest to balanced,
+  return/drawdown, total-return, minimum-drawdown, or Sharpe utility.
+- `compareScreeningResults(left, right, objective)`: orders candidates under
+  the selected objective and deterministic metric tie-breakers.
 - `optimizeStrategies(...)`: runs candidates in interruptible chunks, reports
-  progress, keeps only the highest-scoring result for each strategy, and sorts
-  those best results by score.
+  progress, keeps only the best result for each strategy under the selected
+  objective, and sorts those best results by the same objective.
 
 ## Saved backtests
 

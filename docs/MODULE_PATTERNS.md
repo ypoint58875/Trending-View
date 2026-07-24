@@ -43,12 +43,19 @@ shared per-strategy hard cap.
 
 Large candidate spaces are sampled deterministically across the full ordered
 grid. Screening executes in interruptible chunks and retains only the best
-result per strategy. Tests enforce registry coverage, uniqueness, the cap,
+result per strategy under one explicit scalar objective. Objective comparison
+and tie-breaking belong in the shared screening module, not the UI. Tests
+enforce registry coverage, uniqueness, the cap, objective ordering,
 best-result sorting, progress completion, and cancellation.
 
 Trade annotations are derived from completed `BacktestTrade` records by a pure
 mapping helper. Every entry is a buy and every exit is a sell. Chart components
 consume the mapped markers but never infer trades from indicator lines.
+
+Shared ECharts wrappers initialize and dispose the canvas only at component
+mount/unmount. Option changes update the existing instance. Interactive state
+that must survive an option update is captured explicitly and reapplied; reset
+keys define the business boundary where that state should be discarded.
 
 ## Saved record
 

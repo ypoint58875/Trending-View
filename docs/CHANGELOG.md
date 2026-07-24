@@ -2,6 +2,17 @@
 
 ## 2026-07-24
 
+- Preserved the active main-chart zoom window when an optimized strategy is
+  applied by updating the existing ECharts instance instead of recreating it.
+- Added selectable balanced, return/drawdown, maximum-return,
+  minimum-drawdown, and maximum-Sharpe screening targets with deterministic
+  tie-breaking and target-value display.
+- Made the selected chart timeline range directly draggable, enlarged its
+  interaction area and resize handles, and stabilized chart label props so
+  parent rerenders do not reconstruct the chart.
+- Updated the Windows launcher to open a new maximized Edge window, preventing
+  an existing browser split pane from appearing as unused application width.
+- Added slider configuration tests and real-browser drag/full-width checks.
 - Replaced the fixed three-presets-per-strategy screen with constrained
   parameter grids, a configurable 2,500-combination per-strategy hard cap, and
   27,584 valid default candidates.

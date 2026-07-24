@@ -29,7 +29,10 @@ import { runBacktest, type BacktestResult } from "@/lib/analysis/backtest";
 import {
   DEFAULT_PARAMETER_SETS_PER_STRATEGY,
   MAX_PARAMETER_SETS_PER_STRATEGY,
+  SCREENING_OBJECTIVES,
   optimizeStrategies,
+  screeningObjectiveValue,
+  type ScreeningObjective,
   type ScreeningProgress,
 } from "@/lib/analysis/screening";
 import {
@@ -79,6 +82,20 @@ const indicatorIds: IndicatorId[] = [
   "atr",
   "obv",
 ];
+
+const priceChartLabels = {
+  price: copy.chart.price,
+  close: copy.chart.close,
+  volume: copy.chart.volume,
+  buy: copy.chart.buy,
+  sell: copy.chart.sell,
+  series: { ...copy.chart.series },
+};
+
+const backtestChartLabels = {
+  equity: copy.chart.equity,
+  drawdown: copy.chart.drawdown,
+};
 
 const intervals: MarketInterval[] = [
   "1m",
@@ -148,6 +165,17 @@ function resultTone(result: BacktestResult) {
     : "neutral";
 }
 
+function formatObjectiveValue(
+  result: BacktestResult,
+  objective: ScreeningObjective,
+) {
+  const value = screeningObjectiveValue(result, objective);
+  if (objective === "totalReturn" || objective === "minDrawdown") {
+    return formatPercent(value, objective === "totalReturn");
+  }
+  return formatNumber(value, 2);
+}
+
 export function MarketWorkspace() {
   const [instrument, setInstrument] =
     useState<MarketInstrument>(defaultInstrument);
@@ -177,6 +205,8 @@ export function MarketWorkspace() {
   const [maxParameterSets, setMaxParameterSets] = useState(
     DEFAULT_PARAMETER_SETS_PER_STRATEGY,
   );
+  const [screeningObjective, setScreeningObjective] =
+    useState<ScreeningObjective>("balanced");
   const [screenProgress, setScreenProgress] = useState<ScreeningProgress>({
     completed: 0,
     total: 0,
@@ -503,6 +533,7 @@ export function MarketWorkspace() {
       },
       {
         maxPerStrategy: maxParameterSets,
+        objective: screeningObjective,
         signal: controller.signal,
         onProgress: setScreenProgress,
       },
@@ -764,17 +795,11 @@ export function MarketWorkspace() {
               <PriceChart
                 bars={series.bars}
                 trades={backtest?.trades ?? []}
+                dataKey={`${instrument.secid}:${interval}`}
                 chartType={chartType}
                 indicator={indicator}
                 ariaLabel={copy.chart.aria}
-                labels={{
-                  price: copy.chart.price,
-                  close: copy.chart.close,
-                  volume: copy.chart.volume,
-                  buy: copy.chart.buy,
-                  sell: copy.chart.sell,
-                  series: copy.chart.series,
-                }}
+                labels={priceChartLabels}
               />
             )}
           </div>
@@ -1061,10 +1086,7 @@ export function MarketWorkspace() {
               <BacktestChart
                 result={backtest}
                 ariaLabel={copy.chart.backtestAria}
-                labels={{
-                  equity: copy.chart.equity,
-                  drawdown: copy.chart.drawdown,
-                }}
+                labels={backtestChartLabels}
               />
             </>
           ) : (
@@ -1080,39 +1102,72 @@ export function MarketWorkspace() {
             {copy.screening.title}
           </h2>
           <p>{copy.screening.description}</p>
-          <label className="screening-limit-field">
-            <span>{copy.screening.maxPerStrategy}</span>
-            <input
-              type="number"
-              min={1}
-              max={MAX_PARAMETER_SETS_PER_STRATEGY}
-              step={50}
-              value={maxParameterSets}
-              disabled={screening}
-              onChange={(event) => {
-                const nextValue = Number(event.target.value);
-                setMaxParameterSets(
-                  Math.min(
-                    Math.max(
-                      Number.isFinite(nextValue) ? Math.floor(nextValue) : 1,
-                      1,
+          <div className="screening-config">
+            <label className="screening-control-field">
+              <span>{copy.screening.objective}</span>
+              <select
+                value={screeningObjective}
+                disabled={screening}
+                onChange={(event) => {
+                  setScreeningObjective(
+                    event.target.value as ScreeningObjective,
+                  );
+                  setScreenResults([]);
+                  setScreenProgress({
+                    completed: 0,
+                    total: 0,
+                    failed: 0,
+                    strategyId: null,
+                  });
+                }}
+              >
+                {SCREENING_OBJECTIVES.map((value) => (
+                  <option value={value} key={value}>
+                    {copy.screening.objectives[value]}
+                  </option>
+                ))}
+              </select>
+              <small>
+                {copy.screening.objectiveDescriptions[screeningObjective]}
+              </small>
+            </label>
+            <label className="screening-control-field">
+              <span>{copy.screening.maxPerStrategy}</span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_PARAMETER_SETS_PER_STRATEGY}
+                step={50}
+                value={maxParameterSets}
+                disabled={screening}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  setMaxParameterSets(
+                    Math.min(
+                      Math.max(
+                        Number.isFinite(nextValue)
+                          ? Math.floor(nextValue)
+                          : 1,
+                        1,
+                      ),
+                      MAX_PARAMETER_SETS_PER_STRATEGY,
                     ),
-                    MAX_PARAMETER_SETS_PER_STRATEGY,
-                  ),
-                );
-                setScreenResults([]);
-                setScreenProgress({
-                  completed: 0,
-                  total: 0,
-                  failed: 0,
-                  strategyId: null,
-                });
-              }}
-            />
-            <small>
-              {copy.screening.limitHint} {MAX_PARAMETER_SETS_PER_STRATEGY}
-            </small>
-          </label>
+                  );
+                  setScreenResults([]);
+                  setScreenProgress({
+                    completed: 0,
+                    total: 0,
+                    failed: 0,
+                    strategyId: null,
+                  });
+                }}
+              />
+              <small>
+                {copy.screening.limitHint}{" "}
+                {MAX_PARAMETER_SETS_PER_STRATEGY}
+              </small>
+            </label>
+          </div>
           <button
             type="button"
             className={`primary-action ${screening ? "stop" : ""}`}
@@ -1193,7 +1248,7 @@ export function MarketWorkspace() {
                     <th>{copy.screening.drawdown}</th>
                     <th>{copy.screening.sharpe}</th>
                     <th>{copy.screening.trades}</th>
-                    <th>{copy.screening.score}</th>
+                    <th>{copy.screening.objectiveValue}</th>
                     <th />
                   </tr>
                 </thead>
@@ -1236,7 +1291,12 @@ export function MarketWorkspace() {
                           {resultTone(result) === "positive"
                             ? copy.screening.suitable
                             : copy.screening.caution}
-                          <b>{formatNumber(result.score, 1)}</b>
+                          <b>
+                            {formatObjectiveValue(
+                              result,
+                              screeningObjective,
+                            )}
+                          </b>
                         </span>
                       </td>
                       <td>

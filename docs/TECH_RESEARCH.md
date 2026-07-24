@@ -32,6 +32,24 @@ Sources:
 Decision: use ECharts. It provides the required rendering primitives without
 implying access to TradingView-only scripting or strategy features.
 
+### Slider zoom interaction
+
+ECharts exposes two relevant slider interaction modes. With `brushSelect`
+enabled, dragging the slider background selects a new range and the selected
+fill is intentionally silent; moving the existing range is then limited to the
+narrow move control. With `brushSelect: false`, ECharts makes the selected fill
+the draggable move zone while retaining the two handles for resizing.
+
+Sources:
+
+- https://echarts.apache.org/en/option.html#dataZoom-slider.brushSelect
+- https://github.com/apache/echarts/blob/master/src/component/dataZoom/SliderZoomView.ts
+
+Decision: disable brush selection for the price-chart slider, enlarge the
+timeline to 22 pixels, and make the handles visually explicit. This matches the
+expected timeline behavior: drag the selected range to pan and drag its edges
+to change the visible period.
+
 ## Market data
 
 ### Option A: Eastmoney website endpoints
@@ -152,6 +170,31 @@ the default parameters. Execute small asynchronous chunks, report progress,
 allow cancellation, and retain only the best full result per strategy. Use a
 Web Worker or durable queue if measured job duration or concurrent usage
 outgrows this browser-local design.
+
+### Optimization objective selection
+
+Approach A is a selectable scalar objective. Backtesting.py accepts either a
+named result metric or a custom numeric function and always maximizes the
+result, which produces one deterministic best parameter set that can be
+applied directly.
+
+Approach B is true multi-objective optimization. Optuna represents this with
+multiple optimization directions and returns Pareto-front trials. This
+preserves trade-offs without arbitrary weights, but it yields a set of
+non-dominated answers rather than the single ranking required by the current
+one-click Apply workflow.
+
+Sources:
+
+- https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
+- https://optuna.readthedocs.io/en/stable/reference/generated/optuna.study.create_study.html
+- https://optuna.readthedocs.io/en/stable/reference/visualization/generated/optuna.visualization.plot_pareto_front.html
+
+Decision: expose five scalar targets: the existing balanced score, total return
+divided by absolute drawdown, total return, maximum drawdown closest to zero,
+and Sharpe ratio. Every target uses the same deterministic tie-break chain.
+Reserve a Pareto-front view for a future workflow where the user chooses among
+multiple trade-off candidates instead of applying rank one immediately.
 
 ## TradingView strategy reference boundary
 

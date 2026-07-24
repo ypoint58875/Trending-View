@@ -55,6 +55,7 @@ export type IndicatorId =
 interface PriceChartProps {
   bars: MarketBar[];
   trades: BacktestTrade[];
+  dataKey: string;
   chartType: "candlestick" | "line";
   indicator: IndicatorId;
   ariaLabel: string;
@@ -105,9 +106,63 @@ const compactFormatter = new Intl.NumberFormat("zh-CN", {
   maximumFractionDigits: 1,
 });
 
+export function buildPriceDataZoom(
+  barsLength: number,
+  overlayIndicator: boolean,
+): EChartsOption["dataZoom"] {
+  const xAxisIndex = overlayIndicator ? [0, 1] : [0, 1, 2];
+  const start = Math.max(
+    0,
+    100 - (120 / Math.max(barsLength, 120)) * 100,
+  );
+
+  return [
+    {
+      id: "price-zoom-inside",
+      type: "inside",
+      xAxisIndex,
+      start,
+      end: 100,
+      zoomLock: false,
+    },
+    {
+      id: "price-zoom-slider",
+      type: "slider",
+      xAxisIndex,
+      start,
+      end: 100,
+      bottom: 2,
+      height: 22,
+      borderColor: "#263a32",
+      borderRadius: 5,
+      backgroundColor: "#101916",
+      fillerColor: "rgba(34,197,94,.2)",
+      handleSize: "125%",
+      handleStyle: {
+        color: "#22c55e",
+        borderColor: "#d9ffe5",
+        borderWidth: 1,
+      },
+      emphasis: {
+        handleStyle: {
+          color: "#34d870",
+          borderColor: "#ffffff",
+        },
+      },
+      textStyle: { color: "#6f807a" },
+      showDetail: false,
+      showDataShadow: true,
+      brushSelect: false,
+      realtime: true,
+      zoomLock: false,
+    },
+  ];
+}
+
 export function PriceChart({
   bars,
   trades,
+  dataKey,
   chartType,
   indicator,
   ariaLabel,
@@ -522,29 +577,18 @@ export function PriceChart({
           ],
       xAxis: xAxes,
       yAxis: yAxes,
-      dataZoom: [
-        {
-          type: "inside",
-          xAxisIndex: overlayIndicator ? [0, 1] : [0, 1, 2],
-          start: Math.max(0, 100 - (120 / Math.max(bars.length, 120)) * 100),
-          end: 100,
-        },
-        {
-          type: "slider",
-          xAxisIndex: overlayIndicator ? [0, 1] : [0, 1, 2],
-          bottom: 0,
-          height: 14,
-          borderColor: "transparent",
-          backgroundColor: "#101916",
-          fillerColor: "rgba(34,197,94,.12)",
-          handleStyle: { color: "#22c55e" },
-          textStyle: { color: "#6f807a" },
-          showDetail: false,
-        },
-      ],
+      dataZoom: buildPriceDataZoom(bars.length, overlayIndicator),
       series,
     };
   }, [bars, chartType, indicator, labels, trades]);
 
-  return <EChart option={option} className="price-chart" ariaLabel={ariaLabel} />;
+  return (
+    <EChart
+      option={option}
+      className="price-chart"
+      ariaLabel={ariaLabel}
+      preserveDataZoom
+      dataZoomResetKey={dataKey}
+    />
+  );
 }
