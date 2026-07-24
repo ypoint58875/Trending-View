@@ -70,6 +70,10 @@ interface YahooChartQuote {
   volume?: Array<number | null>;
 }
 
+interface YahooChartAdjustedClose {
+  adjclose?: Array<number | null>;
+}
+
 interface YahooChartResult {
   meta?: {
     symbol?: string;
@@ -83,6 +87,7 @@ interface YahooChartResult {
   timestamp?: number[];
   indicators?: {
     quote?: YahooChartQuote[];
+    adjclose?: YahooChartAdjustedClose[];
   };
 }
 
@@ -209,6 +214,7 @@ export function parseYahooChart(
 ): MarketSeries {
   const result = payload.chart?.result?.[0];
   const quote = result?.indicators?.quote?.[0];
+  const adjustedCloses = result?.indicators?.adjclose?.[0]?.adjclose;
   const timestamps = result?.timestamp ?? [];
   if (!result || !quote || timestamps.length === 0) {
     throw new Error(
@@ -218,6 +224,7 @@ export function parseYahooChart(
 
   const timeZone = result.meta?.exchangeTimezoneName || "UTC";
   const bars: MarketBar[] = [];
+  let hasAdjustedDailyPrice = false;
   timestamps.forEach((timestamp, index) => {
     const open = quote.open?.[index];
     const close = quote.close?.[index];
@@ -232,18 +239,35 @@ export function parseYahooChart(
     ) {
       return;
     }
-    const previousClose = bars.at(-1)?.close ?? open;
-    const change = close - previousClose;
+    const adjustedClose = adjustedCloses?.[index];
+    const useAdjustedDailyPrice =
+      interval === "1d" &&
+      adjustedClose != null &&
+      Number.isFinite(adjustedClose) &&
+      adjustedClose > 0 &&
+      close > 0;
+    const priceFactor = useAdjustedDailyPrice ? adjustedClose / close : 1;
+    hasAdjustedDailyPrice ||= useAdjustedDailyPrice;
+
+    const adjustedOpen = open * priceFactor;
+    const adjustedBarClose = close * priceFactor;
+    const adjustedHigh = high * priceFactor;
+    const adjustedLow = low * priceFactor;
+    const previousClose = bars.at(-1)?.close ?? adjustedOpen;
+    const change = adjustedBarClose - previousClose;
     bars.push({
       time: formatTimestamp(timestamp, interval, timeZone),
       timestamp: timestamp * 1000,
-      open,
-      close,
-      high,
-      low,
+      open: adjustedOpen,
+      close: adjustedBarClose,
+      high: adjustedHigh,
+      low: adjustedLow,
       volume: Number(quote.volume?.[index]) || 0,
       amount: 0,
-      amplitude: previousClose === 0 ? 0 : ((high - low) / previousClose) * 100,
+      amplitude:
+        previousClose === 0
+          ? 0
+          : ((adjustedHigh - adjustedLow) / previousClose) * 100,
       changePercent: previousClose === 0 ? 0 : (change / previousClose) * 100,
       change,
       turnoverRate: 0,
@@ -260,6 +284,9 @@ export function parseYahooChart(
       provider: "yahoo",
     },
     interval,
+    priceAdjustment: hasAdjustedDailyPrice
+      ? "corporate-action-adjusted"
+      : "raw",
     previousClose:
       Number(result.meta?.chartPreviousClose ?? result.meta?.previousClose) ||
       bars[0].open,

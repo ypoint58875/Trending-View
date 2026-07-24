@@ -233,6 +233,7 @@ export async function fetchEastmoneySeries(
       exchange: exchangeFromMarket(data.market),
     },
     interval,
+    priceAdjustment: "corporate-action-adjusted",
     previousClose: Number(data.preKPrice) || bars[0].open,
     bars,
     source: "eastmoney",

@@ -104,6 +104,44 @@ function makeOhlcBars(
   });
 }
 
+const yahooInstrument: MarketInstrument = {
+  secid: "^SOX",
+  code: "SOX",
+  name: "SOX",
+  exchange: "PHLX",
+  assetType: "index",
+  provider: "yahoo",
+};
+
+const yahooCorporateActionFixture = {
+  chart: {
+    result: [
+      {
+        meta: {
+          symbol: "^SOX",
+          longName: "PHLX Semiconductor Sector",
+          chartPreviousClose: 100,
+          exchangeTimezoneName: "America/New_York",
+          exchangeName: "NIM",
+        },
+        timestamp: [1_752_710_400, 1_752_796_800],
+        indicators: {
+          quote: [
+            {
+              open: [98, 49],
+              close: [100, 50],
+              high: [104, 52],
+              low: [96, 48],
+              volume: [1_000, 2_000],
+            },
+          ],
+          adjclose: [{ adjclose: [50, 50] }],
+        },
+      },
+    ],
+  },
+};
+
 test("calculates common indicators without future values", () => {
   const values = [1, 2, 3, 4, 5, 6];
   assert.deepEqual(sma(values, 3), [null, null, 2, 3, 4, 5]);
@@ -216,51 +254,121 @@ test("keeps only indexes and ETFs in Yahoo search results", async () => {
   );
 });
 
-test("parses Yahoo index history and skips incomplete bars", () => {
-  const instrument: MarketInstrument = {
-    secid: "^SOX",
-    code: "SOX",
-    name: "SOX",
-    exchange: "PHLX",
-    assetType: "index",
-    provider: "yahoo",
-  };
+test("adjusts daily Yahoo OHLC and derived changes without rescaling volume", () => {
   const series = parseYahooChart(
-    {
-      chart: {
-        result: [
-          {
-            meta: {
-              symbol: "^SOX",
-              longName: "PHLX Semiconductor Sector",
-              chartPreviousClose: 5200,
-              exchangeTimezoneName: "America/New_York",
-              exchangeName: "NIM",
-            },
-            timestamp: [1_752_710_400, 1_752_796_800],
-            indicators: {
-              quote: [
-                {
-                  open: [5300, null],
-                  close: [5350, 5400],
-                  high: [5380, 5420],
-                  low: [5280, 5360],
-                  volume: [0, 0],
-                },
-              ],
-            },
-          },
-        ],
-      },
-    },
-    instrument,
+    yahooCorporateActionFixture,
+    yahooInstrument,
     "1d",
   );
 
-  assert.equal(series.bars.length, 1);
-  assert.equal(series.bars[0].close, 5350);
-  assert.equal(series.source, "yahoo");
-  assert.equal(series.instrument.code, "SOX");
+  assert.equal(series.priceAdjustment, "corporate-action-adjusted");
+  assert.deepEqual(
+    series.bars.map(({ open, close, high, low, volume, change, changePercent }) => ({
+      open,
+      close,
+      high,
+      low,
+      volume,
+      change,
+      changePercent,
+    })),
+    [
+      {
+        open: 49,
+        close: 50,
+        high: 52,
+        low: 48,
+        volume: 1_000,
+        change: 1,
+        changePercent: (1 / 49) * 100,
+      },
+      {
+        open: 49,
+        close: 50,
+        high: 52,
+        low: 48,
+        volume: 2_000,
+        change: 0,
+        changePercent: 0,
+      },
+    ],
+  );
+});
+
+test("keeps intraday Yahoo OHLC raw when adjusted closes are present", () => {
+  const series = parseYahooChart(
+    yahooCorporateActionFixture,
+    yahooInstrument,
+    "5m",
+  );
+
+  assert.equal(series.priceAdjustment, "raw");
+  assert.deepEqual(
+    series.bars.map(({ open, close, high, low, volume }) => ({
+      open,
+      close,
+      high,
+      low,
+      volume,
+    })),
+    [
+      { open: 98, close: 100, high: 104, low: 96, volume: 1_000 },
+      { open: 49, close: 50, high: 52, low: 48, volume: 2_000 },
+    ],
+  );
+});
+
+test("falls back to raw Yahoo OHLC when adjusted close is absent or invalid", () => {
+  for (const adjustedClose of [undefined, -1]) {
+    const series = parseYahooChart(
+      {
+        chart: {
+          result: [
+            {
+              meta: {
+                symbol: "^SOX",
+                longName: "PHLX Semiconductor Sector",
+                chartPreviousClose: 5200,
+                exchangeTimezoneName: "America/New_York",
+                exchangeName: "NIM",
+              },
+              timestamp: [1_752_710_400, 1_752_796_800],
+              indicators: {
+                quote: [
+                  {
+                    open: [5300, null],
+                    close: [5350, 5400],
+                    high: [5380, 5420],
+                    low: [5280, 5360],
+                    volume: [0, 0],
+                  },
+                ],
+                ...(adjustedClose === undefined
+                  ? {}
+                  : { adjclose: [{ adjclose: [adjustedClose, null] }] }),
+              },
+            },
+          ],
+        },
+      },
+      yahooInstrument,
+      "1d",
+    );
+
+    assert.equal(series.bars.length, 1);
+    assert.equal(series.priceAdjustment, "raw");
+    assert.deepEqual(
+      {
+        open: series.bars[0].open,
+        close: series.bars[0].close,
+        high: series.bars[0].high,
+        low: series.bars[0].low,
+      },
+      { open: 5300, close: 5350, high: 5380, low: 5280 },
+    );
+    assert.equal(series.source, "yahoo");
+    assert.equal(series.instrument.code, "SOX");
+  }
 });
 
 test("parses Nasdaq history into chronological index bars", () => {
@@ -307,6 +415,7 @@ test("replaces only overlapping latest bars while retaining cached history", () 
   const history = {
     instrument,
     interval: "1d" as const,
+    priceAdjustment: "corporate-action-adjusted" as const,
     previousClose: 9,
     bars: historyBars,
     source: "eastmoney" as const,

@@ -127,6 +127,7 @@ export async function fetchNasdaqDailySeries(
   return {
     instrument,
     interval: "1d",
+    priceAdjustment: "raw",
     previousClose: bars[0].open,
     bars,
     source: "nasdaq",
