@@ -16,22 +16,27 @@ Implemented:
   `adjclose / raw close`, Yahoo intraday is raw internally, and Nasdaq is a raw
   daily fallback. Volume is never rescaled. ETF adjustment covers
   distribution/split price gaps; index price-versus-total-return methodology
-  remains provider-defined.
+  remains provider-defined. Yahoo normalizes provider `previousClose` to the
+  returned scale and resets it to the preceding normalized bar after slicing.
 - Candlestick/line switching, provider volume, shared zoom, and an ordered
   visible collection drawn from 20 indicators.
 - Metadata-driven settings for every parameterized indicator, including SMA,
   with a separate focused indicator, per-indicator session memory, independent
   visibility, and one-click default restoration.
 - Overlay indicators on the price axis and one lower pane per visible pane
-  indicator, with price, volume, and all panes sharing zoom.
+  indicator, with price, volume, and all panes sharing zoom. Every configured
+  series name reports its actual parameters in a scrolling legend.
 - Independent indicator and strategy state so strategy changes preserve the
   visible studies while actual strategy buy/sell fills remain overlaid.
-- Pure, bar-aligned strategy price references for 17 price-based strategies.
+- Pure, bar-aligned strategy price references for 18 price-based strategies.
   Price-order references reuse their exact order plans; all returned references
   render dashed on the main price axis, and strategies without a continuous
-  price reference return no lines.
+  price reference return no lines. Technical Ratings exposes the EMA-20 and
+  SMA-50 references used by its price votes.
 - Cached full history plus uncached five-bar overlays on page open, manual
-  refresh, 60-second visible-page refresh, and page focus/visibility.
+  refresh, 60-second visible-page refresh, and page focus/visibility. Only
+  identical source, interval, and price-adjustment modes merge; otherwise the
+  complete existing history remains active.
 - A current-bar long-only strategy guidance card that reports buy, sell,
   continue holding, or remain flat from the newest available provider bar.
 - An explicit green-up/red-down legend and a neutral range-end valuation marker
@@ -50,12 +55,14 @@ Implemented:
 - Long-only positions, costs, metrics, equity, drawdown, and chart-level
   buy/sell markers derived from actual fills.
 - Nearby-parameter sensitivity diagnostics that perturb one parameter at a
-  time to the adjacent configured domain value, omit invalid combinations, and
+  time to the adjacent configured domain value, require exact finite in-range
+  parameter keys plus cross-field validity, omit invalid combinations, and
   never choose or apply parameters.
-- Stability labeling, when at least one valid nearby variant exists, with
-  inclusive 75% return-sign agreement, 15-percentage-point return-range, and
-  10-percentage-point drawdown-deterioration thresholds, plus current-rule
-  return summaries under prefix-safe 60-day SMA/20-bar slope regimes.
+- Stability evidence with explicit invalid-parameter, observation, trade, and
+  nearby-variant reasons. Stable/sensitive requires 120 selected-range daily
+  observations, two completed base trades, and a valid nearby variant before
+  applying the inclusive 75% return-sign, 15-point return-range, and 10-point
+  drawdown-deterioration thresholds. Regimes retain causal pre-range warm-up.
 - Bounded parameter-grid optimization across all 32 strategies, with a
   configurable hard cap of 2,500 combinations per strategy, chunked progress,
   cancellation, and best-per-strategy result retention. The default grids
@@ -63,7 +70,9 @@ Implemented:
 - Five deterministic screening objectives: balanced score, return/drawdown
   ratio, maximum return, minimum drawdown, and maximum Sharpe.
 - Per-user D1-backed saved backtests with a dedicated upper-right shortcut bar
-  for restoring index/ETF research settings.
+  for restoring index/ETF research settings. Legacy records display their
+  stored interval and disclose daily recalculation without changing the daily
+  workspace.
 - A lower research area that places the strategy lab and automated screening
   together while keeping the current-backtest save action in the lab.
 - Chinese responsive UI with centralized locale copy.
@@ -74,6 +83,8 @@ Implemented:
 
 ## Verification status
 
+- Task 8 final-review coverage passed 67 TypeScript tests, the production
+  build, two rendered/source worker tests, and ESLint on 2026-07-24.
 - Full 57-test TypeScript suite, production build, and one rendered-worker
   test: passed after daily-workflow documentation verification on 2026-07-24.
 - Indicator registry and custom-period chart tests, the full 38-test TypeScript

@@ -48,19 +48,20 @@ does not cache market history or analysis output.
 ## Current page-memory merge
 
 The browser keeps the current normalized history in React/ref memory. A latest
-window from the same source and interval replaces matching `time` keys, appends
-new keys, sorts by timestamp, and retains the configured newest-bar limit
-(1,000 in the current workspace). Reapplying the same latest response is
-idempotent.
+window with the same source, interval, and `priceAdjustment` replaces matching
+`time` keys, appends new keys, sorts by timestamp, and retains the configured
+newest-bar limit (1,000 in the current workspace). Reapplying the same
+compatible latest response is idempotent.
 
-The UI does not merge bars from different sources. On an initial latest failure
-it continues with history; on a later latest failure it leaves the displayed
+The UI does not merge bars from different sources or price-adjustment modes.
+On either mismatch it retains the complete existing/history series until a
+complete compatible refresh succeeds. On an initial latest failure it
+continues with history; on a later latest failure it leaves the displayed
 series intact. Page memory is not durable across a reload or process restart.
 
-`MarketSeries.priceAdjustment` remains the series-level authority. A merged
-series remains `corporate-action-adjusted` only when both history and latest
-inputs are adjusted; every other combination becomes `raw`. The merge does not
-independently recalculate adjustment factors or rescale volume.
+`MarketSeries.priceAdjustment` remains the series-level authority. The merge
+requires identical modes and never downgrades or combines adjusted/raw bars.
+It does not independently recalculate adjustment factors or rescale volume.
 
 ## Current retention and cleanup
 

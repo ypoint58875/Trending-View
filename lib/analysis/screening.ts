@@ -286,10 +286,44 @@ function buildParameterSets(space: ParameterSpace): StrategyParameters[] {
     : combinations;
 }
 
+export function isValidStrategyParameters(
+  strategyId: StrategyId,
+  parameters: StrategyParameters,
+): boolean {
+  const space = PARAMETER_SPACES[strategyId];
+  const expectedKeys = space.domains.map((domain) => domain.key);
+  const actualKeys = Object.keys(parameters);
+  if (
+    actualKeys.length !== expectedKeys.length ||
+    !expectedKeys.every((key) => actualKeys.includes(key))
+  ) {
+    return false;
+  }
+
+  for (const domain of space.domains) {
+    const value = parameters[domain.key];
+    const minimum = domain.values[0];
+    const maximum = domain.values.at(-1);
+    if (
+      !Number.isFinite(value) ||
+      minimum === undefined ||
+      maximum === undefined ||
+      value < minimum ||
+      value > maximum
+    ) {
+      return false;
+    }
+  }
+
+  return space.isValid ? space.isValid(parameters) : true;
+}
+
 export function buildNearbyParameterSets(
   strategyId: StrategyId,
   baseParameters: StrategyParameters,
 ): StrategyParameters[] {
+  if (!isValidStrategyParameters(strategyId, baseParameters)) return [];
+
   const space = PARAMETER_SPACES[strategyId];
   const parameterSets = new Map<string, StrategyParameters>();
   const base = { ...baseParameters };
@@ -309,7 +343,7 @@ export function buildNearbyParameterSets(
         ...baseParameters,
         [domain.key]: value,
       };
-      if (space.isValid && !space.isValid(candidate)) continue;
+      if (!isValidStrategyParameters(strategyId, candidate)) continue;
       parameterSets.set(JSON.stringify(candidate), candidate);
     }
   }

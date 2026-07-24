@@ -2,6 +2,17 @@
 
 ## 2026-07-24
 
+- Prevented all adjusted/raw latest-history merges and retained the complete
+  compatible series across source or adjustment-mode mismatches.
+- Added exact strategy-parameter validation and explicit stability evidence:
+  120 in-range daily observations, two completed base trades, and a nearby
+  variant are required before stable/sensitive can appear.
+- Made all configurable indicator legend names reflect actual parameters,
+  changed the legend to a scrolling layout with reserved plot clearance, and
+  added exact Technical Ratings EMA-20/SMA-50 price references.
+- Preserved legacy shortcut interval provenance while keeping all reopened
+  setups daily, normalized Yahoo previous-close scale/slice behavior, and
+  re-exported `MarketPriceAdjustment` from the market barrel.
 - Made the interactive workspace daily-only for one index or ETF at a time
   while retaining interval support inside provider/API types.
 - Added authoritative `MarketSeries.priceAdjustment` metadata: Eastmoney

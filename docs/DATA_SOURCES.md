@@ -42,7 +42,11 @@ For daily output, each parsed OHLC bar is scaled by a finite positive
 invalid, that bar retains raw OHLC and the whole series is marked `raw`;
 `corporate-action-adjusted` is used only when every parsed daily bar has a
 valid factor. Yahoo intraday support remains raw internally. Yahoo volume is
-never rescaled.
+never rescaled. For an all-adjusted series, provider previous close is scaled
+by the first accepted bar factor. When a fetch limit slices normalized bars,
+`previousClose` becomes the immediately preceding normalized close when one is
+available. Raw and mixed fallback keep provider previous close on the raw
+scale.
 
 ## Nasdaq website historical data
 

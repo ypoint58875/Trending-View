@@ -148,5 +148,6 @@ export type {
   MarketExchange,
   MarketInstrument,
   MarketInterval,
+  MarketPriceAdjustment,
   MarketSeries,
 } from "./types";

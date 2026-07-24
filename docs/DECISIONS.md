@@ -68,6 +68,9 @@ Keep one latest snapshot per owner, provider, and instrument. A shortcut
 restores the instrument, strategy, parameters, date range, capital, commission,
 and slippage; the current UI remains daily. Displayed metrics remain a saved
 summary while the current chart recalculates from current market data.
+Always label a shortcut with its stored interval. If that provenance is
+non-daily, disclose that opening retains the daily workspace and recalculates
+the selected setup on daily bars.
 
 For one-click local Windows use, retain the same D1 schema and owner-scoped
 queries but map unauthenticated loopback requests to
@@ -82,10 +85,10 @@ Return full history with one-hour HTTP freshness and one-day
 `stale-while-revalidate`, then fetch a separate `no-store` window of recent
 bars on page open, manual refresh, every 60 seconds while visible, and whenever
 the page regains focus or visibility. The API permits up to ten latest bars and
-the current UI requests five. Merge matching same-source/same-interval bar
-times idempotently so cached history is reused while the current bar is
-replaced. If the latest request changes provider, retain the existing history
-rather than mixing sources.
+the current UI requests five. Merge matching bar times idempotently only when
+history and latest share source, interval, and price-adjustment mode. If source
+or adjustment mode changes, retain the complete compatible history until a
+full compatible refresh succeeds.
 Evaluate the provider's newest bar immediately, even when it is still forming,
 and label the result as a preview that can change before close.
 
@@ -113,7 +116,9 @@ authoritative UI label. Eastmoney requests `fqt=1` and is marked
 finite positive `adjclose / raw close`; when a parsed bar lacks a valid factor,
 leave that bar raw and mark the whole series `raw`. Keep Yahoo intraday raw
 internally and mark Nasdaq as a raw daily fallback. Never rescale provider
-volume.
+volume. For an all-adjusted Yahoo parse, scale provider previous close by the
+first accepted factor. After slicing, use the immediately preceding normalized
+bar as previous close when available; raw/mixed fallback remains raw.
 
 Feed the same normalized `MarketBar[]` to chart history, indicators, strategy
 price lines, latest guidance, stability, and backtests. For ETFs, this prevents
@@ -128,29 +133,34 @@ or multi-asset alignment.
 ## D-012: Diagnostic-only local stability
 
 Build nearby parameter sets from the existing constrained screening domains.
-Retain the user's base parameters and change one field at a time to the
-immediately lower or higher configured value, discarding cross-field-invalid
-sets. Rerun the existing backtest and report facts; never rank, select, or apply
-a nearby set.
+Require exactly the registered keys, finite values within each domain's
+minimum/maximum, and all cross-field constraints. Invalid parameters return no
+nearby sets and do not run a backtest. For a valid base, change one field at a
+time to the immediately lower or higher configured value and report facts;
+never rank, select, or apply a nearby set.
 
-Require at least one valid nearby variant. Use inclusive thresholds for the
-label: at least 75% of valid variants share the base total-return sign, the
-return range across base and variants is at most 15 percentage points, and the
-worst drawdown is at most 10 percentage points below the base drawdown.
-Classify eligible bars as up when close is above the current 60-day SMA and
-that SMA is above its value 20 bars earlier, down for the inverse, and sideways
-otherwise. This label is not a prediction or a substitute for out-of-sample
-validation.
+Require at least 120 daily observations inside the current backtest range, two
+completed base trades, and one valid nearby variant before a stable/sensitive
+label is allowed. Otherwise show insufficient evidence with explicit reasons
+and keep any factual nearby/regime output available. With sufficient evidence,
+use inclusive thresholds: at least 75% of variants share the base return sign,
+the return range is at most 15 percentage points, and worst drawdown is no more
+than 10 points below base. Classify regimes with the current 60-day SMA and its
+20-bar slope; earlier bars may remain only for causal warm-up. This label is
+not predictive or a substitute for out-of-sample validation.
 
 ## D-013: Indicator collection and strategy price references
 
 Keep the focused indicator separate from the ordered-visible collection and
 retain independent settings for every indicator during the page session.
 Render overlays on the main price axes and allocate one lower pane per visible
-pane indicator. Share zoom across price, volume, and every pane.
+pane indicator. Share zoom across price, volume, and every pane. Build every
+parameterized legend name from its actual settings, keep VWAP/OBV
+parameter-free, and use a scrolling legend with reserved top clearance.
 
 Calculate strategy price references through a pure, bar-aligned contract.
 Price-order strategies must reuse their actual order plans. Render returned
 references as dashed lines on the main price axes; return no lines for a rule
-without a continuous price reference. These visuals do not infer or execute
-trades.
+without a continuous price reference. Technical Ratings exposes the same
+EMA-20 and SMA-50 used by its price votes. These visuals do not infer or
+execute trades.

@@ -897,6 +897,14 @@ button {
   white-space: nowrap;
 }
 
+.saved-shortcut-legacy {
+  display: block;
+  margin-top: 5px;
+  color: var(--amber);
+  font-size: 7px;
+  line-height: 1.45;
+}
+
 .saved-shortcut-delete {
   display: grid;
   place-items: center;
@@ -1050,6 +1058,10 @@ button {
   border-color: rgba(245, 158, 11, 0.28);
 }
 
+.stability-card.insufficient {
+  border-color: rgba(56, 189, 248, 0.28);
+}
+
 .stability-card-heading {
   display: flex;
   align-items: center;
@@ -1089,11 +1101,37 @@ button {
   color: var(--amber);
 }
 
+.stability-card.insufficient .stability-status {
+  border-color: rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.08);
+  color: var(--cyan);
+}
+
 .stability-card > p {
   margin: 0;
   color: var(--subtle);
   font-size: 8px;
   line-height: 1.5;
+}
+
+.stability-evidence {
+  padding: 8px;
+  border: 1px dashed rgba(56, 189, 248, 0.25);
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.045);
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.stability-evidence strong {
+  color: var(--cyan);
+  font-size: 8px;
+}
+
+.stability-evidence ul {
+  margin: 5px 0 0;
+  padding-left: 15px;
 }
 
 .stability-stat-grid,

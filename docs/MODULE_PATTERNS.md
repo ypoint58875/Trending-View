@@ -16,14 +16,17 @@ must not expose individual equities. Fallbacks preserve the last valid series,
 prefer longer daily history when available, and never merge bars from different
 sources into one series. History responses may be HTTP cached, while current
 refresh requests remain uncached and replace only overlapping recent bars from
-the same provider and interval.
+the same provider, interval, and price-adjustment mode. A mismatch retains the
+complete compatible history until a full compatible refresh succeeds.
 
 Every `MarketSeries` must set authoritative `priceAdjustment` metadata.
 Eastmoney's `fqt=1` output is `corporate-action-adjusted`. Yahoo daily OHLC is
 scaled per bar only when `adjclose / raw close` is finite and positive; any
 parsed daily bar without a valid factor falls back to raw prices and makes the
 whole series metadata `raw`. Yahoo intraday and Nasdaq daily output are `raw`.
-Never rescale provider volume with a price-adjustment factor.
+Never rescale provider volume with a price-adjustment factor. Scale Yahoo's
+provider previous close only for an all-adjusted parsed series, and after
+slicing use the immediately preceding normalized bar when one exists.
 
 The active `MarketSeries.bars` is the shared input for chart history,
 indicators, strategy price references, live guidance, stability, and
@@ -50,7 +53,9 @@ which indicator's independent settings are edited; ordered visibility selects
 what the chart renders and preserves display order. Hiding an indicator does
 not reset its settings. Overlay definitions render on the price axes. Every
 visible pane definition receives its own lower pane. Price, volume, and all
-indicator panes share the same zoom contract.
+indicator panes share the same zoom contract. Build legend names from each
+visible indicator's actual parameters, leave VWAP/OBV parameter-free, use a
+scrolling legend, and reserve top space so it cannot cover the price plot.
 
 ## Strategy
 
@@ -115,15 +120,21 @@ must return aligned finite-or-null series, reuse the exact `buildOrders` plan
 when it exists, and return an empty collection for a strategy without
 continuous price references. Chart components render these lines dashed on the
 main price axes and never duplicate execution rules to derive order levels.
+Technical Ratings may expose EMA-20 and SMA-50 because those are the exact
+price references used by its registered vote calculation.
 
 Nearby-parameter stability must reuse screening domains and the existing
-backtest engine. Generate only one-field moves to the immediately adjacent
-configured values, filter cross-field-invalid candidates, and retain the
-user's base parameters. The diagnostic reports sensitivity and 60-day
-SMA/20-bar-slope regimes; it must never rank, select, or apply a parameter.
-At least one valid variant is required. Thresholds are centralized and
-inclusive: 75% sign agreement, a 15-percentage-point maximum return range, and
-a 10-percentage-point maximum drawdown deterioration.
+backtest engine. Validate that the base has exactly the registered keys, finite
+values inside every domain's minimum/maximum, and all cross-field constraints.
+Invalid bases return no variants and never run a backtest. Generate only
+one-field moves to immediately adjacent configured values. The diagnostic
+reports sensitivity and 60-day SMA/20-bar-slope regimes; it must never rank,
+select, or apply a parameter. Require 120 observations inside the current
+backtest range, two completed base trades, and one valid variant before
+stable/sensitive. Earlier bars remain available only for causal regime warm-up.
+Thresholds are centralized and inclusive: 75% sign agreement, a
+15-percentage-point maximum return range, and a 10-percentage-point maximum
+drawdown deterioration.
 
 Shared ECharts wrappers initialize and dispose the canvas only at component
 mount/unmount. Option changes update the existing instance. Interactive state
@@ -141,7 +152,10 @@ an authenticated API route, and a D1 table. Every query includes the owner key.
 The instrument identity is limited to the same index/ETF types accepted by the
 market layer. Upserts use the owner, provider, and provider symbol as the
 de-duplication key. UI components consume API records and do not access D1
-bindings directly.
+bindings directly. Shortcut labels use the stored interval for provenance. A
+legacy non-daily record remains non-mutating metadata: opening it keeps the
+workspace daily and shows that the selected setup is recalculated on daily
+bars.
 
 ## UI copy
 

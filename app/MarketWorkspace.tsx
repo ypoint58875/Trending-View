@@ -57,7 +57,11 @@ import {
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
 import { buildLiveStrategyGuidance } from "@/lib/analysis/live-guidance";
-import { analyzeStrategyStability } from "@/lib/analysis/stability";
+import {
+  analyzeStrategyStability,
+  type StabilityEvidence,
+  type StabilityEvidenceReason,
+} from "@/lib/analysis/stability";
 import type {
   MarketInstrument,
   MarketInterval,
@@ -181,6 +185,22 @@ function formatObjectiveValue(
   return formatNumber(value, 2);
 }
 
+function formatStabilityEvidenceReason(
+  reason: StabilityEvidenceReason,
+  evidence: StabilityEvidence,
+) {
+  if (reason === "invalid-parameters") {
+    return copy.stability.evidenceReasons.invalidParameters;
+  }
+  if (reason === "insufficient-observations") {
+    return `${copy.stability.evidenceReasons.insufficientObservations} ${evidence.observationCount} / ${evidence.minimumObservationCount}`;
+  }
+  if (reason === "insufficient-trades") {
+    return `${copy.stability.evidenceReasons.insufficientTrades} ${evidence.tradeCount} / ${evidence.minimumTradeCount}`;
+  }
+  return copy.stability.evidenceReasons.noNearbyVariants;
+}
+
 export function MarketWorkspace() {
   const [instrument, setInstrument] =
     useState<MarketInstrument>(defaultInstrument);
@@ -300,7 +320,8 @@ export function MarketWorkspace() {
             5,
           );
           payload =
-            latest.source === currentSeries.source
+            latest.source === currentSeries.source &&
+            latest.priceAdjustment === currentSeries.priceAdjustment
               ? mergeLatestMarketSeries(currentSeries, latest, seriesLimit)
               : currentSeries;
         } else {
@@ -316,7 +337,10 @@ export function MarketWorkspace() {
               "latest",
               5,
             );
-            if (latest.source === history.source) {
+            if (
+              latest.source === history.source &&
+              latest.priceAdjustment === history.priceAdjustment
+            ) {
               payload = mergeLatestMarketSeries(
                 history,
                 latest,
@@ -561,7 +585,7 @@ export function MarketWorkspace() {
           interval: DAILY_INTERVAL,
         },
       );
-      return analysis.variantResults.length > 0 ? analysis : null;
+      return analysis;
     } catch {
       return null;
     }
@@ -575,6 +599,14 @@ export function MarketWorkspace() {
     startDate,
     strategyId,
   ]);
+  const stabilityNearby = stability?.nearby ?? null;
+  const stabilityState = !stability
+    ? "unavailable"
+    : !stability.evidence.sufficient
+      ? "insufficient"
+      : stabilityNearby?.stable
+        ? "stable"
+        : "sensitive";
 
   const selectStrategy = (
     nextStrategyId: StrategyId,
@@ -1222,11 +1254,18 @@ export function MarketWorkspace() {
                           {saved.instrument.exchange}:{saved.instrument.code}
                           {" "}
                           {copy.common.separator}{" "}
-                          {copy.intervals[DAILY_INTERVAL]}
+                          {copy.intervals[saved.interval]}
                           {" "}
                           {copy.common.separator}{" "}
                           {copy.strategies[saved.strategyId].name}
                         </small>
+                        {saved.interval !== DAILY_INTERVAL && (
+                          <span className="saved-shortcut-legacy">
+                            {copy.savedBacktests.legacyIntervalPrefix}{" "}
+                            {copy.intervals[saved.interval]}{" "}
+                            {copy.savedBacktests.legacyIntervalSuffix}
+                          </span>
+                        )}
                       </button>
                       <button
                         className="saved-shortcut-delete"
@@ -1444,13 +1483,7 @@ export function MarketWorkspace() {
             )}
 
             <section
-              className={`stability-card ${
-                stability
-                  ? stability.nearby.stable
-                    ? "stable"
-                    : "sensitive"
-                  : "unavailable"
-              }`}
+              className={`stability-card ${stabilityState}`}
               aria-labelledby="stability-card-title"
             >
               <div className="stability-card-heading">
@@ -1461,16 +1494,34 @@ export function MarketWorkspace() {
                   </strong>
                 </div>
                 <span className="stability-status">
-                  {stability
-                    ? stability.nearby.stable
-                      ? copy.stability.stable
-                      : copy.stability.sensitive
-                    : copy.common.unavailable}
+                  {stabilityState === "stable"
+                    ? copy.stability.stable
+                    : stabilityState === "sensitive"
+                      ? copy.stability.sensitive
+                      : stabilityState === "insufficient"
+                        ? copy.stability.insufficientEvidence
+                        : copy.common.unavailable}
                 </span>
               </div>
               <p>{copy.stability.description}</p>
 
-              {stability ? (
+              {stability && !stability.evidence.sufficient && (
+                <div className="stability-evidence" role="status">
+                  <strong>{copy.stability.insufficientEvidence}</strong>
+                  <ul>
+                    {stability.evidence.reasons.map((reason) => (
+                      <li key={reason}>
+                        {formatStabilityEvidenceReason(
+                          reason,
+                          stability.evidence,
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {stabilityNearby ? (
                 <>
                   <dl className="stability-stat-grid">
                     <div>
@@ -1481,7 +1532,7 @@ export function MarketWorkspace() {
                       <dt>{copy.stability.signAgreement}</dt>
                       <dd>
                         {formatPercent(
-                          stability.nearby.signAgreement.ratio * 100,
+                          stabilityNearby.signAgreement.ratio * 100,
                         )}
                       </dd>
                     </div>
@@ -1489,12 +1540,12 @@ export function MarketWorkspace() {
                       <dt>{copy.stability.totalReturnRange}</dt>
                       <dd>
                         {formatPercent(
-                          stability.nearby.totalReturnRange.minimum,
+                          stabilityNearby.totalReturnRange.minimum,
                           true,
                         )}{" "}
                         {copy.stability.rangeSeparator}{" "}
                         {formatPercent(
-                          stability.nearby.totalReturnRange.maximum,
+                          stabilityNearby.totalReturnRange.maximum,
                           true,
                         )}
                       </dd>
@@ -1503,20 +1554,20 @@ export function MarketWorkspace() {
                       <dt>{copy.stability.drawdownRange}</dt>
                       <dd>
                         {formatPercent(
-                          stability.nearby.drawdownRange.minimum,
+                          stabilityNearby.drawdownRange.minimum,
                         )}{" "}
                         {copy.stability.rangeSeparator}{" "}
                         {formatPercent(
-                          stability.nearby.drawdownRange.maximum,
+                          stabilityNearby.drawdownRange.maximum,
                         )}
                       </dd>
                     </div>
                     <div>
                       <dt>{copy.stability.tradeCountRange}</dt>
                       <dd>
-                        {stability.nearby.tradeCountRange.minimum}{" "}
+                        {stabilityNearby.tradeCountRange.minimum}{" "}
                         {copy.stability.rangeSeparator}{" "}
-                        {stability.nearby.tradeCountRange.maximum}
+                        {stabilityNearby.tradeCountRange.maximum}
                       </dd>
                     </div>
                   </dl>
@@ -1548,11 +1599,11 @@ export function MarketWorkspace() {
                     </dl>
                   </div>
                 </>
-              ) : (
+              ) : !stability ? (
                 <div className="stability-unavailable">
                   {copy.stability.unavailable}
                 </div>
-              )}
+              ) : null}
             </section>
           </div>
 

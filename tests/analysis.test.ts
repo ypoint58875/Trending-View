@@ -34,6 +34,7 @@ import {
   buildNearbyParameterSets,
   buildScreeningCandidates,
   compareScreeningResults,
+  isValidStrategyParameters,
   optimizeStrategies,
   screeningObjectiveValue,
 } from "../lib/analysis/screening";
@@ -48,6 +49,8 @@ import {
 } from "../lib/analysis/built-in-strategies";
 import { buildLiveStrategyGuidance } from "../lib/analysis/live-guidance";
 import {
+  MINIMUM_STABILITY_OBSERVATIONS,
+  MINIMUM_STABILITY_TRADES,
   STABILITY_THRESHOLDS,
   analyzeStrategyStability,
   classifyMarketRegimes,
@@ -64,12 +67,17 @@ import {
   searchEastmoney,
 } from "../lib/market/eastmoney";
 import { parseNasdaqRows } from "../lib/market/nasdaq";
+import type { MarketPriceAdjustment } from "../lib/market";
 import type {
   MarketBar,
   MarketInstrument,
 } from "../lib/market/types";
 import { mergeLatestMarketSeries } from "../lib/market/series";
-import { parseYahooChart, searchYahoo } from "../lib/market/yahoo";
+import {
+  fetchYahooSeries,
+  parseYahooChart,
+  searchYahoo,
+} from "../lib/market/yahoo";
 
 function makeBars(closes: number[]): MarketBar[] {
   return closes.map((close, index) => {
@@ -274,6 +282,7 @@ test("adjusts daily Yahoo OHLC and derived changes without rescaling volume", ()
   );
 
   assert.equal(series.priceAdjustment, "corporate-action-adjusted");
+  assert.equal(series.previousClose, 50);
   assert.deepEqual(
     series.bars.map(({ open, close, high, low, volume, change, changePercent }) => ({
       open,
@@ -336,6 +345,7 @@ test("marks mixed daily Yahoo prices raw when any parsed bar is unadjusted", () 
 
   assert.equal(series.bars.length, 2);
   assert.equal(series.priceAdjustment, "raw");
+  assert.equal(series.previousClose, 100);
   assert.deepEqual(
     series.bars.map(({ open, close, high, low }) => ({
       open,
@@ -481,6 +491,63 @@ test("falls back to raw Yahoo OHLC when adjusted close is absent or invalid", ()
   }
 });
 
+test("uses the preceding normalized Yahoo bar after applying the fetch limit", async () => {
+  const payload = {
+    chart: {
+      result: [
+        {
+          meta: {
+            symbol: "^SOX",
+            longName: "PHLX Semiconductor Sector",
+            chartPreviousClose: 98,
+            exchangeTimezoneName: "America/New_York",
+            exchangeName: "NIM",
+          },
+          timestamp: [
+            1_752_710_400,
+            1_752_796_800,
+            1_752_883_200,
+            1_752_969_600,
+          ],
+          indicators: {
+            quote: [
+              {
+                open: [98, 100, 102, 104],
+                close: [100, 102, 104, 106],
+                high: [102, 104, 106, 108],
+                low: [96, 98, 100, 102],
+                volume: [1_000, 2_000, 3_000, 4_000],
+              },
+            ],
+            adjclose: [{ adjclose: [50, 51, 52, 53] }],
+          },
+        },
+      ],
+    },
+  };
+  const mockFetch = (async () =>
+    new Response(JSON.stringify(payload), { status: 200 })) as typeof fetch;
+
+  const series = await fetchYahooSeries(
+    yahooInstrument,
+    "1d",
+    2,
+    mockFetch,
+  );
+
+  assert.equal(series.priceAdjustment, "corporate-action-adjusted");
+  assert.deepEqual(
+    series.bars.map((bar) => bar.close),
+    [52, 53],
+  );
+  assert.equal(series.previousClose, 51);
+});
+
+test("re-exports the market price-adjustment type from the market barrel", () => {
+  const adjustment: MarketPriceAdjustment = "corporate-action-adjusted";
+  assert.equal(adjustment, "corporate-action-adjusted");
+});
+
 test("parses Nasdaq history into chronological index bars", () => {
   const bars = parseNasdaqRows([
     {
@@ -507,7 +574,7 @@ test("parses Nasdaq history into chronological index bars", () => {
   assert.equal(bars[1].volume, 0);
 });
 
-test("reconciles adjustment metadata while replacing only overlapping latest bars", () => {
+test("merges overlapping latest bars idempotently only for one adjustment mode", () => {
   const instrument: MarketInstrument = {
     secid: "100.N225",
     code: "N225",
@@ -531,35 +598,16 @@ test("reconciles adjustment metadata while replacing only overlapping latest bar
     source: "eastmoney" as const,
     fetchedAt: "2026-07-24T01:00:00.000Z",
   };
-  const adjustmentCases = [
-    {
-      name: "adjusted history with adjusted latest",
-      history: "corporate-action-adjusted",
-      latest: "corporate-action-adjusted",
-      expected: "corporate-action-adjusted",
-    },
-    {
-      name: "adjusted history with raw latest",
-      history: "corporate-action-adjusted",
-      latest: "raw",
-      expected: "raw",
-    },
-    {
-      name: "raw history with adjusted latest",
-      history: "raw",
-      latest: "corporate-action-adjusted",
-      expected: "raw",
-    },
-  ] as const;
-
-  for (const adjustmentCase of adjustmentCases) {
+  for (const priceAdjustment of [
+    "corporate-action-adjusted",
+    "raw",
+  ] as const) {
     const scenarioHistory = {
       ...history,
-      priceAdjustment: adjustmentCase.history,
+      priceAdjustment,
     };
     const latest = {
       ...scenarioHistory,
-      priceAdjustment: adjustmentCase.latest,
       bars: latestBars,
       fetchedAt: "2026-07-24T01:01:00.000Z",
     };
@@ -569,19 +617,53 @@ test("reconciles adjustment metadata while replacing only overlapping latest bar
 
     assert.equal(
       merged.priceAdjustment,
-      adjustmentCase.expected,
-      adjustmentCase.name,
+      priceAdjustment,
+      priceAdjustment,
     );
     assert.deepEqual(
       merged.bars.map((bar) => bar.close),
       [10, 11, 12, 15],
-      adjustmentCase.name,
+      priceAdjustment,
     );
-    assert.equal(merged.bars[0], historyBars[0], adjustmentCase.name);
-    assert.equal(merged.bars[2], latestBars[0], adjustmentCase.name);
-    assert.equal(merged.bars[3], latestBars[1], adjustmentCase.name);
-    assert.deepEqual(remerged, merged, adjustmentCase.name);
-    assert.equal(merged.fetchedAt, latest.fetchedAt, adjustmentCase.name);
+    assert.equal(merged.bars[0], historyBars[0], priceAdjustment);
+    assert.equal(merged.bars[2], latestBars[0], priceAdjustment);
+    assert.equal(merged.bars[3], latestBars[1], priceAdjustment);
+    assert.deepEqual(remerged, merged, priceAdjustment);
+    assert.equal(merged.fetchedAt, latest.fetchedAt, priceAdjustment);
+  }
+});
+
+test("rejects adjusted/raw market-series merges in either direction", () => {
+  const instrument: MarketInstrument = {
+    secid: "100.N225",
+    code: "N225",
+    name: "N225",
+    exchange: "JPX",
+    assetType: "index",
+    provider: "eastmoney",
+  };
+  const adjusted = {
+    instrument,
+    interval: "1d" as const,
+    priceAdjustment: "corporate-action-adjusted" as const,
+    previousClose: 9,
+    bars: makeBars([10, 11, 12]),
+    source: "eastmoney" as const,
+    fetchedAt: "2026-07-24T01:00:00.000Z",
+  };
+  const raw = {
+    ...adjusted,
+    priceAdjustment: "raw" as const,
+  };
+
+  for (const [history, latest] of [
+    [adjusted, raw],
+    [raw, adjusted],
+  ] as const) {
+    assert.throws(
+      () => mergeLatestMarketSeries(history, latest, 1_000),
+      /price adjustment/i,
+    );
   }
 });
 
@@ -938,6 +1020,35 @@ test("builds strategy price references from the same indicator calculations", ()
   );
 });
 
+test("uses the exact Technical Ratings EMA-20 and SMA-50 price votes", () => {
+  const bars = makeBars(
+    Array.from({ length: 80 }, (_, index) => {
+      return 100 + index * 0.1 + Math.sin(index / 3) * 4;
+    }),
+  );
+  const closes = bars.map((bar) => bar.close);
+
+  assert.deepEqual(
+    buildStrategyPriceLines(
+      bars,
+      "tv-technical-ratings",
+      getStrategy("tv-technical-ratings").defaultParameters,
+    ),
+    [
+      {
+        id: "tv-technical-ratings:ema-20",
+        role: "fast",
+        data: ema(closes, 20),
+      },
+      {
+        id: "tv-technical-ratings:sma-50",
+        role: "slow",
+        data: sma(closes, 50),
+      },
+    ],
+  );
+});
+
 test("aligns Donchian, VWAP, Keltner, and SAR price references", () => {
   const bars = makeOhlcBars([
     { open: 9, high: 10, low: 8, close: 9 },
@@ -1069,6 +1180,7 @@ test("returns only declared aligned finite price lines for every strategy", () =
     ["tv-pivot-reversal", ["entry", "exit"]],
     ["tv-price-channel", ["entry", "exit"]],
     ["tv-supertrend", ["trend"]],
+    ["tv-technical-ratings", ["ema-20", "sma-50"]],
     ["tv-volty-expan-close", ["entry", "exit"]],
   ]);
 
@@ -1440,6 +1552,51 @@ test("builds deterministic nearest valid parameter variants without optimizing",
   });
 });
 
+test("validates exact strategy parameter keys, finite ranges, and cross-field rules", () => {
+  assert.equal(
+    isValidStrategyParameters("sma-cross", { fast: 9, slow: 31 }),
+    true,
+  );
+  assert.equal(
+    isValidStrategyParameters("sma-cross", { fast: 20, slow: 20 }),
+    false,
+  );
+  assert.equal(
+    isValidStrategyParameters("sma-cross", { fast: 1, slow: 30 }),
+    false,
+  );
+  assert.equal(
+    isValidStrategyParameters("sma-cross", {
+      fast: Number.POSITIVE_INFINITY,
+      slow: 30,
+    }),
+    false,
+  );
+  assert.equal(
+    isValidStrategyParameters("sma-cross", { fast: 10 }),
+    false,
+  );
+  assert.equal(
+    isValidStrategyParameters("sma-cross", {
+      fast: 10,
+      slow: 30,
+      extra: 1,
+    }),
+    false,
+  );
+  assert.deepEqual(
+    buildNearbyParameterSets("sma-cross", { fast: 20, slow: 20 }),
+    [],
+  );
+  assert.deepEqual(
+    buildNearbyParameterSets("sma-cross", {
+      fast: Number.NaN,
+      slow: 30,
+    }),
+    [],
+  );
+});
+
 test("classifies trailing 60/20-day regimes deterministically without future data", () => {
   const risingBars = makeBars(
     Array.from({ length: 120 }, (_, index) => 100 + index),
@@ -1659,6 +1816,8 @@ test("runs current and nearby backtests without selecting replacement parameters
     "sma-cross",
     baseParameters,
   );
+  assert.ok(analysis.baseResult);
+  assert.ok(analysis.nearby);
   const allResults = [analysis.baseResult, ...analysis.variantResults];
 
   assert.deepEqual(analysis.baseResult.parameters, baseParameters);
@@ -1707,6 +1866,124 @@ test("runs current and nearby backtests without selecting replacement parameters
       periodCount: 0,
     });
   }
+});
+
+test("reports invalid strategy parameters without running a base backtest", () => {
+  const bars = makeBars(
+    Array.from({ length: 140 }, (_, index) => 100 + index * 0.1),
+  );
+  const analysis = analyzeStrategyStability(
+    bars,
+    "sma-cross",
+    { fast: 30, slow: 10 },
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+  );
+
+  assert.equal(analysis.baseResult, null);
+  assert.deepEqual(analysis.variantResults, []);
+  assert.equal(analysis.nearby, null);
+  assert.equal(analysis.evidence.sufficient, false);
+  assert.ok(analysis.evidence.reasons.includes("invalid-parameters"));
+  assert.equal(analysis.evidence.observationCount, 140);
+  assert.equal(analysis.evidence.minimumObservationCount, 120);
+  assert.equal(analysis.evidence.tradeCount, 0);
+  assert.equal(analysis.evidence.minimumTradeCount, 2);
+});
+
+test("requires 120 in-range observations and two completed base trades", () => {
+  const alternatingBars = makeOhlcBars(
+    Array.from({ length: 140 }, (_, index) => {
+      if (index === 0) {
+        return { open: 100, high: 101, low: 99, close: 100 };
+      }
+      if (index % 2 === 1) {
+        return {
+          open: 101,
+          high: 103,
+          low: 100,
+          close: 102,
+        };
+      }
+      return {
+        open: 101,
+        high: 102,
+        low: 99,
+        close: 100,
+      };
+    }),
+  );
+  const settings = {
+    initialCash: 100_000,
+    commissionRate: 0,
+    slippageRate: 0,
+    interval: "1d" as const,
+  };
+
+  assert.equal(MINIMUM_STABILITY_OBSERVATIONS, 120);
+  assert.equal(MINIMUM_STABILITY_TRADES, 2);
+
+  const short = analyzeStrategyStability(
+    alternatingBars.slice(0, 119),
+    "tv-bar-up-down",
+    { minimumBodyPercent: 0 },
+    settings,
+  );
+  assert.equal(short.evidence.observationCount, 119);
+  assert.ok(short.evidence.reasons.includes("insufficient-observations"));
+  assert.equal(short.evidence.sufficient, false);
+  assert.equal(short.nearby?.stable, false);
+
+  const noTrades = analyzeStrategyStability(
+    makeBars(Array.from({ length: 120 }, () => 100)),
+    "sma-cross",
+    { fast: 10, slow: 30 },
+    settings,
+  );
+  assert.equal(noTrades.evidence.tradeCount, 0);
+  assert.ok(noTrades.evidence.reasons.includes("insufficient-trades"));
+  assert.equal(noTrades.evidence.sufficient, false);
+  assert.equal(noTrades.nearby?.stable, false);
+
+  const oneTradeBars = makeOhlcBars(
+    Array.from({ length: 120 }, (_, index) => {
+      if (index === 1) {
+        return { open: 101, high: 103, low: 100, close: 102 };
+      }
+      return { open: 100, high: 101, low: 99, close: 100 };
+    }),
+  );
+  const oneTrade = analyzeStrategyStability(
+    oneTradeBars,
+    "tv-bar-up-down",
+    { minimumBodyPercent: 0 },
+    settings,
+  );
+  assert.equal(oneTrade.evidence.tradeCount, 1);
+  assert.ok(oneTrade.evidence.reasons.includes("insufficient-trades"));
+  assert.equal(oneTrade.evidence.sufficient, false);
+  assert.equal(oneTrade.nearby?.stable, false);
+
+  const sufficient = analyzeStrategyStability(
+    alternatingBars,
+    "tv-bar-up-down",
+    { minimumBodyPercent: 0 },
+    {
+      ...settings,
+      startTime: alternatingBars[20].time,
+      endTime: alternatingBars[139].time,
+    },
+  );
+  assert.equal(sufficient.evidence.observationCount, 120);
+  assert.ok(sufficient.evidence.tradeCount >= 2);
+  assert.deepEqual(sufficient.evidence.reasons, []);
+  assert.equal(sufficient.evidence.sufficient, true);
+  assert.ok(sufficient.baseResult);
+  assert.ok(sufficient.nearby);
 });
 
 test("cancels a parameter optimization between chunks", async () => {

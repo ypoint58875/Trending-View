@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type {
   EChartsOption,
   GridComponentOption,
+  LegendComponentOption,
   SeriesOption,
   XAxisComponentOption,
   YAxisComponentOption,
@@ -261,16 +262,20 @@ export function buildIndicatorSeries(
     data: NumericSeries | number[],
     color: string,
   ) => lineSeries(name, data, color, xAxisIndex, yAxisIndex);
+  const configuredName = (
+    name: string,
+    ...values: number[]
+  ) => `${name} (${values.join("/")})`;
 
   if (indicator === "sma") {
     return [
       indicatorLine(
-        labels.smaFast,
+        configuredName(labels.smaFast, parameters.fast),
         sma(closes, parameters.fast),
         colors.cyan,
       ),
       indicatorLine(
-        labels.smaSlow,
+        configuredName(labels.smaSlow, parameters.slow),
         sma(closes, parameters.slow),
         colors.amber,
       ),
@@ -279,12 +284,12 @@ export function buildIndicatorSeries(
   if (indicator === "ema") {
     return [
       indicatorLine(
-        labels.emaFast,
+        configuredName(labels.emaFast, parameters.fast),
         ema(closes, parameters.fast),
         colors.cyan,
       ),
       indicatorLine(
-        labels.emaSlow,
+        configuredName(labels.emaSlow, parameters.slow),
         ema(closes, parameters.slow),
         colors.violet,
       ),
@@ -293,12 +298,12 @@ export function buildIndicatorSeries(
   if (indicator === "wma") {
     return [
       indicatorLine(
-        labels.wmaFast,
+        configuredName(labels.wmaFast, parameters.fast),
         wma(closes, parameters.fast),
         colors.cyan,
       ),
       indicatorLine(
-        labels.wmaSlow,
+        configuredName(labels.wmaSlow, parameters.slow),
         wma(closes, parameters.slow),
         colors.amber,
       ),
@@ -307,12 +312,12 @@ export function buildIndicatorSeries(
   if (indicator === "dema") {
     return [
       indicatorLine(
-        labels.demaFast,
+        configuredName(labels.demaFast, parameters.fast),
         dema(closes, parameters.fast),
         colors.cyan,
       ),
       indicatorLine(
-        labels.demaSlow,
+        configuredName(labels.demaSlow, parameters.slow),
         dema(closes, parameters.slow),
         colors.violet,
       ),
@@ -324,10 +329,27 @@ export function buildIndicatorSeries(
       parameters.period,
       parameters.width,
     );
+    const configuredLabels = {
+      middle: configuredName(
+        labels.bollMiddle,
+        parameters.period,
+        parameters.width,
+      ),
+      upper: configuredName(
+        labels.bollUpper,
+        parameters.period,
+        parameters.width,
+      ),
+      lower: configuredName(
+        labels.bollLower,
+        parameters.period,
+        parameters.width,
+      ),
+    };
     return [
-      indicatorLine(labels.bollMiddle, bands.middle, colors.amber),
-      indicatorLine(labels.bollUpper, bands.upper, colors.cyan),
-      indicatorLine(labels.bollLower, bands.lower, colors.cyan),
+      indicatorLine(configuredLabels.middle, bands.middle, colors.amber),
+      indicatorLine(configuredLabels.upper, bands.upper, colors.cyan),
+      indicatorLine(configuredLabels.lower, bands.lower, colors.cyan),
     ];
   }
   if (indicator === "vwap") {
@@ -340,7 +362,15 @@ export function buildIndicatorSeries(
       parameters.multiplier,
     );
     return [
-      indicatorLine(labels.supertrend, values.trend, colors.up),
+      indicatorLine(
+        configuredName(
+          labels.supertrend,
+          parameters.period,
+          parameters.multiplier,
+        ),
+        values.trend,
+        colors.up,
+      ),
     ];
   }
   if (indicator === "ichimoku") {
@@ -350,21 +380,40 @@ export function buildIndicatorSeries(
       parameters.basePeriod,
       parameters.spanPeriod,
     );
+    const ichimokuName = (name: string) =>
+      configuredName(
+        name,
+        parameters.conversionPeriod,
+        parameters.basePeriod,
+        parameters.spanPeriod,
+      );
     return [
       indicatorLine(
-        labels.ichimokuConversion,
+        ichimokuName(labels.ichimokuConversion),
         values.conversion,
         colors.cyan,
       ),
-      indicatorLine(labels.ichimokuBase, values.base, colors.amber),
-      indicatorLine(labels.ichimokuSpanA, values.spanA, colors.up),
-      indicatorLine(labels.ichimokuSpanB, values.spanB, colors.down),
+      indicatorLine(
+        ichimokuName(labels.ichimokuBase),
+        values.base,
+        colors.amber,
+      ),
+      indicatorLine(
+        ichimokuName(labels.ichimokuSpanA),
+        values.spanA,
+        colors.up,
+      ),
+      indicatorLine(
+        ichimokuName(labels.ichimokuSpanB),
+        values.spanB,
+        colors.down,
+      ),
     ];
   }
   if (indicator === "rsi") {
     return [
       indicatorLine(
-        labels.rsi,
+        configuredName(labels.rsi, parameters.period),
         rsi(closes, parameters.period),
         colors.violet,
       ),
@@ -377,11 +426,22 @@ export function buildIndicatorSeries(
       parameters.slow,
       parameters.signal,
     );
+    const macdName = (name: string) =>
+      configuredName(
+        name,
+        parameters.fast,
+        parameters.slow,
+        parameters.signal,
+      );
     return [
-      indicatorLine(labels.macdLine, values.line, colors.cyan),
-      indicatorLine(labels.macdSignal, values.signal, colors.amber),
+      indicatorLine(macdName(labels.macdLine), values.line, colors.cyan),
+      indicatorLine(
+        macdName(labels.macdSignal),
+        values.signal,
+        colors.amber,
+      ),
       {
-        name: labels.macdHistogram,
+        name: macdName(labels.macdHistogram),
         type: "bar",
         data: values.histogram.map((value) => ({
           value,
@@ -401,9 +461,21 @@ export function buildIndicatorSeries(
   if (indicator === "kdj") {
     const values = kdj(bars, parameters.period);
     return [
-      indicatorLine(labels.kdjK, values.k, colors.cyan),
-      indicatorLine(labels.kdjD, values.d, colors.amber),
-      indicatorLine(labels.kdjJ, values.j, colors.violet),
+      indicatorLine(
+        configuredName(labels.kdjK, parameters.period),
+        values.k,
+        colors.cyan,
+      ),
+      indicatorLine(
+        configuredName(labels.kdjD, parameters.period),
+        values.d,
+        colors.amber,
+      ),
+      indicatorLine(
+        configuredName(labels.kdjJ, parameters.period),
+        values.j,
+        colors.violet,
+      ),
     ];
   }
   if (indicator === "stochasticRsi") {
@@ -413,15 +485,30 @@ export function buildIndicatorSeries(
       parameters.stochasticPeriod,
       parameters.smoothPeriod,
     );
+    const stochasticRsiName = (name: string) =>
+      configuredName(
+        name,
+        parameters.rsiPeriod,
+        parameters.stochasticPeriod,
+        parameters.smoothPeriod,
+      );
     return [
-      indicatorLine(labels.stochRsiK, values.k, colors.cyan),
-      indicatorLine(labels.stochRsiD, values.d, colors.amber),
+      indicatorLine(
+        stochasticRsiName(labels.stochRsiK),
+        values.k,
+        colors.cyan,
+      ),
+      indicatorLine(
+        stochasticRsiName(labels.stochRsiD),
+        values.d,
+        colors.amber,
+      ),
     ];
   }
   if (indicator === "cci") {
     return [
       indicatorLine(
-        labels.cci,
+        configuredName(labels.cci, parameters.period),
         cci(bars, parameters.period),
         colors.violet,
       ),
@@ -430,7 +517,7 @@ export function buildIndicatorSeries(
   if (indicator === "williamsR") {
     return [
       indicatorLine(
-        labels.williamsR,
+        configuredName(labels.williamsR, parameters.period),
         williamsR(bars, parameters.period),
         colors.cyan,
       ),
@@ -439,15 +526,27 @@ export function buildIndicatorSeries(
   if (indicator === "adx") {
     const values = adx(bars, parameters.period);
     return [
-      indicatorLine(labels.adx, values.adx, colors.violet),
-      indicatorLine(labels.plusDi, values.plusDi, colors.up),
-      indicatorLine(labels.minusDi, values.minusDi, colors.down),
+      indicatorLine(
+        configuredName(labels.adx, parameters.period),
+        values.adx,
+        colors.violet,
+      ),
+      indicatorLine(
+        configuredName(labels.plusDi, parameters.period),
+        values.plusDi,
+        colors.up,
+      ),
+      indicatorLine(
+        configuredName(labels.minusDi, parameters.period),
+        values.minusDi,
+        colors.down,
+      ),
     ];
   }
   if (indicator === "roc") {
     return [
       indicatorLine(
-        labels.roc,
+        configuredName(labels.roc, parameters.period),
         roc(closes, parameters.period),
         colors.amber,
       ),
@@ -456,7 +555,7 @@ export function buildIndicatorSeries(
   if (indicator === "mfi") {
     return [
       indicatorLine(
-        labels.mfi,
+        configuredName(labels.mfi, parameters.period),
         mfi(bars, parameters.period),
         colors.violet,
       ),
@@ -465,7 +564,7 @@ export function buildIndicatorSeries(
   if (indicator === "cmf") {
     return [
       indicatorLine(
-        labels.cmf,
+        configuredName(labels.cmf, parameters.period),
         cmf(bars, parameters.period),
         colors.cyan,
       ),
@@ -474,7 +573,7 @@ export function buildIndicatorSeries(
   if (indicator === "atr") {
     return [
       indicatorLine(
-        labels.atr,
+        configuredName(labels.atr, parameters.period),
         atr(bars, parameters.period),
         colors.amber,
       ),
@@ -513,8 +612,26 @@ export function buildStrategyLineSeries(
   });
 }
 
-const baseChartHeight = 520;
+const baseChartHeight = 544;
 const paneChartHeight = 150;
+const legendTop = 4;
+const priceGridTop = 54;
+
+export function buildPriceChartLegend(): LegendComponentOption {
+  return {
+    type: "scroll",
+    top: legendTop,
+    left: 8,
+    right: 8,
+    textStyle: { color: "#8ea099", fontSize: 10 },
+    itemWidth: 12,
+    itemHeight: 6,
+    pageIconColor: "#22c55e",
+    pageIconInactiveColor: "#42534d",
+    pageTextStyle: { color: "#8ea099", fontSize: 9 },
+    selectedMode: false,
+  };
+}
 
 export function buildPriceChartLayout(
   times: string[],
@@ -522,15 +639,15 @@ export function buildPriceChartLayout(
 ) {
   const normalizedPaneCount = Math.max(0, Math.floor(paneCount));
   const grids: GridComponentOption[] = [
-    { left: 12, right: 62, top: 30, height: 335 },
-    { left: 12, right: 62, top: 375, height: 90 },
+    { left: 12, right: 62, top: priceGridTop, height: 335 },
+    { left: 12, right: 62, top: 399, height: 90 },
   ];
 
   for (let index = 0; index < normalizedPaneCount; index += 1) {
     grids.push({
       left: 12,
       right: 62,
-      top: 480 + index * paneChartHeight,
+      top: 504 + index * paneChartHeight,
       height: 135,
     });
   }
@@ -773,14 +890,7 @@ export function PriceChart({
     const option: EChartsOption = {
       animation: false,
       backgroundColor: "transparent",
-      legend: {
-        top: 0,
-        left: 8,
-        textStyle: { color: "#8ea099", fontSize: 10 },
-        itemWidth: 12,
-        itemHeight: 6,
-        selectedMode: false,
-      },
+      legend: buildPriceChartLegend(),
       axisPointer: {
         link: [{ xAxisIndex: "all" }],
         label: { backgroundColor: "#26332f" },

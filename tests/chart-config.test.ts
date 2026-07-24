@@ -3,6 +3,7 @@ import test from "node:test";
 import { applyDataZoomWindow } from "../app/components/EChart";
 import {
   buildIndicatorSeries,
+  buildPriceChartLegend,
   buildPriceChartLayout,
   buildPriceDataZoom,
   buildStrategyLineSeries,
@@ -61,10 +62,40 @@ type IndicatorSeries = {
 const indicatorLabels = {
   smaFast: "SMA fast",
   smaSlow: "SMA slow",
+  emaFast: "EMA fast",
+  emaSlow: "EMA slow",
+  wmaFast: "WMA fast",
+  wmaSlow: "WMA slow",
+  demaFast: "DEMA fast",
+  demaSlow: "DEMA slow",
+  bollMiddle: "BOLL middle",
+  bollUpper: "BOLL upper",
+  bollLower: "BOLL lower",
+  vwap: "VWAP",
+  supertrend: "Supertrend",
+  ichimokuConversion: "Ichimoku conversion",
+  ichimokuBase: "Ichimoku base",
+  ichimokuSpanA: "Ichimoku span A",
+  ichimokuSpanB: "Ichimoku span B",
   rsi: "RSI",
-  macdLine: "MACD",
-  macdSignal: "Signal",
-  macdHistogram: "Histogram",
+  macdLine: "MACD line",
+  macdSignal: "MACD signal",
+  macdHistogram: "MACD histogram",
+  kdjK: "KDJ K",
+  kdjD: "KDJ D",
+  kdjJ: "KDJ J",
+  stochRsiK: "Stoch RSI K",
+  stochRsiD: "Stoch RSI D",
+  cci: "CCI",
+  williamsR: "Williams %R",
+  adx: "ADX",
+  plusDi: "+DI",
+  minusDi: "-DI",
+  roc: "ROC",
+  mfi: "MFI",
+  cmf: "CMF",
+  atr: "ATR",
+  obv: "OBV",
 };
 
 const chartBars: MarketBar[] = [1, 2, 3, 4].map((close, index) => ({
@@ -101,8 +132,118 @@ test("builds SMA lines from display parameters", () => {
 
   assert.deepEqual(fast.data, [null, 1.5, 2.5, 3.5]);
   assert.deepEqual(slow.data, [null, null, 2, 3]);
+  assert.equal(fast.name, "SMA fast (2)");
+  assert.equal(slow.name, "SMA slow (3)");
   assert.equal(fast.xAxisIndex, 0);
   assert.equal(fast.yAxisIndex, 0);
+});
+
+test("names every configurable indicator from its actual parameters", () => {
+  const names = (
+    indicator: Parameters<typeof buildIndicatorSeries>[1],
+    parameters: Parameters<typeof buildIndicatorSeries>[2],
+  ) =>
+    (
+      buildIndicatorSeries(
+        chartBars,
+        indicator,
+        parameters,
+        indicatorLabels,
+        0,
+        0,
+      ) as unknown as IndicatorSeries[]
+    ).map((series) => series.name);
+
+  assert.deepEqual(names("ema", { fast: 3, slow: 4 }), [
+    "EMA fast (3)",
+    "EMA slow (4)",
+  ]);
+  assert.deepEqual(names("wma", { fast: 2, slow: 4 }), [
+    "WMA fast (2)",
+    "WMA slow (4)",
+  ]);
+  assert.deepEqual(names("dema", { fast: 2, slow: 4 }), [
+    "DEMA fast (2)",
+    "DEMA slow (4)",
+  ]);
+  assert.deepEqual(names("bollinger", { period: 3, width: 1.5 }), [
+    "BOLL middle (3/1.5)",
+    "BOLL upper (3/1.5)",
+    "BOLL lower (3/1.5)",
+  ]);
+  assert.deepEqual(names("supertrend", { period: 3, multiplier: 1.5 }), [
+    "Supertrend (3/1.5)",
+  ]);
+  assert.deepEqual(
+    names("ichimoku", {
+      conversionPeriod: 2,
+      basePeriod: 3,
+      spanPeriod: 4,
+    }),
+    [
+      "Ichimoku conversion (2/3/4)",
+      "Ichimoku base (2/3/4)",
+      "Ichimoku span A (2/3/4)",
+      "Ichimoku span B (2/3/4)",
+    ],
+  );
+  assert.deepEqual(names("rsi", { period: 2 }), ["RSI (2)"]);
+  assert.deepEqual(names("kdj", { period: 3 }), [
+    "KDJ K (3)",
+    "KDJ D (3)",
+    "KDJ J (3)",
+  ]);
+  assert.deepEqual(names("cci", { period: 3 }), ["CCI (3)"]);
+  assert.deepEqual(names("williamsR", { period: 3 }), [
+    "Williams %R (3)",
+  ]);
+  assert.deepEqual(names("adx", { period: 3 }), [
+    "ADX (3)",
+    "+DI (3)",
+    "-DI (3)",
+  ]);
+  assert.deepEqual(names("roc", { period: 3 }), ["ROC (3)"]);
+  assert.deepEqual(names("mfi", { period: 3 }), ["MFI (3)"]);
+  assert.deepEqual(names("cmf", { period: 3 }), ["CMF (3)"]);
+  assert.deepEqual(names("atr", { period: 3 }), ["ATR (3)"]);
+  assert.deepEqual(names("macd", { fast: 2, slow: 3, signal: 4 }), [
+    "MACD line (2/3/4)",
+    "MACD signal (2/3/4)",
+    "MACD histogram (2/3/4)",
+  ]);
+  assert.deepEqual(
+    names("stochasticRsi", {
+      rsiPeriod: 2,
+      stochasticPeriod: 3,
+      smoothPeriod: 4,
+    }),
+    ["Stoch RSI K (2/3/4)", "Stoch RSI D (2/3/4)"],
+  );
+  assert.deepEqual(names("vwap", {}), ["VWAP"]);
+  assert.deepEqual(names("obv", {}), ["OBV"]);
+});
+
+test("keeps independent indicator legend labels distinct", () => {
+  const [smaLine] = buildIndicatorSeries(
+    chartBars,
+    "sma",
+    { fast: 2, slow: 3 },
+    indicatorLabels,
+    0,
+    0,
+  ) as unknown as IndicatorSeries[];
+  const [emaLine] = buildIndicatorSeries(
+    chartBars,
+    "ema",
+    { fast: 2, slow: 3 },
+    indicatorLabels,
+    0,
+    0,
+  ) as unknown as IndicatorSeries[];
+
+  assert.equal(smaLine.name, "SMA fast (2)");
+  assert.equal(emaLine.name, "EMA fast (2)");
+  assert.notEqual(smaLine.name, emaLine.name);
 });
 
 test("passes custom periods and explicit axes to lower-pane indicators", () => {
@@ -206,6 +347,7 @@ test("builds readable zero, one, and multiple-pane chart layouts", () => {
   assert.deepEqual(empty.xAxisIndexes, [0, 1]);
   assert.equal(empty.xAxes[0].axisLabel?.show, false);
   assert.equal(empty.xAxes[1].axisLabel?.show, true);
+  assert.ok(Number(empty.grids[0].top) >= 50);
 
   assert.equal(single.grids.length, 3);
   assert.equal(single.xAxes.length, 3);
@@ -224,6 +366,24 @@ test("builds readable zero, one, and multiple-pane chart layouts", () => {
     assert.equal(axis.axisLabel?.show, false);
   }
   assert.equal(multiple.xAxes.at(-1)?.axisLabel?.show, true);
+});
+
+test("uses a scrolling legend above the reserved price-plot area", () => {
+  const legend = buildPriceChartLegend() as {
+    type?: string;
+    top?: number;
+    left?: number;
+    right?: number;
+    selectedMode?: boolean;
+  };
+  const layout = buildPriceChartLayout(["2026-01-01"], 0);
+
+  assert.equal(legend.type, "scroll");
+  assert.equal(legend.selectedMode, false);
+  assert.equal(legend.left, 8);
+  assert.equal(legend.right, 8);
+  assert.ok(Number(layout.grids[0].top) > Number(legend.top));
+  assert.ok(Number(layout.grids[0].top) - Number(legend.top) >= 44);
 });
 
 test("renders strategy price lines on the main axes with semantic dashed styles", () => {

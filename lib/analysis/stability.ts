@@ -5,7 +5,10 @@ import {
   type BacktestSettings,
   type EquityPoint,
 } from "./backtest";
-import { buildNearbyParameterSets } from "./screening";
+import {
+  buildNearbyParameterSets,
+  isValidStrategyParameters,
+} from "./screening";
 import type {
   StrategyId,
   StrategyParameters,
@@ -16,6 +19,9 @@ export const STABILITY_THRESHOLDS = {
   maximumReturnRange: 15,
   maximumDrawdownDeterioration: 10,
 } as const;
+
+export const MINIMUM_STABILITY_OBSERVATIONS = 120;
+export const MINIMUM_STABILITY_TRADES = 2;
 
 const REGIME_SMA_PERIOD = 60;
 const REGIME_SMA_LOOKBACK = 20;
@@ -64,11 +70,42 @@ export interface NearbyBacktestSummary {
   stable: boolean;
 }
 
+export type StabilityEvidenceReason =
+  | "invalid-parameters"
+  | "insufficient-observations"
+  | "insufficient-trades"
+  | "no-nearby-variants";
+
+export interface StabilityEvidence {
+  sufficient: boolean;
+  reasons: StabilityEvidenceReason[];
+  observationCount: number;
+  minimumObservationCount: number;
+  tradeCount: number;
+  minimumTradeCount: number;
+}
+
 export interface StrategyStabilityAnalysis {
-  baseResult: BacktestResult;
+  baseResult: BacktestResult | null;
   variantResults: BacktestResult[];
-  nearby: NearbyBacktestSummary;
+  nearby: NearbyBacktestSummary | null;
   regimes: RegimeReturnSummaries;
+  evidence: StabilityEvidence;
+}
+
+function countInRangeObservations(
+  bars: MarketBar[],
+  settings: BacktestSettings,
+): number {
+  const start = settings.startTime
+    ? Date.parse(`${settings.startTime}T00:00:00+08:00`)
+    : -Infinity;
+  const end = settings.endTime
+    ? Date.parse(`${settings.endTime}T23:59:59+08:00`)
+    : Infinity;
+  return bars.filter(
+    (bar) => bar.timestamp >= start && bar.timestamp <= end,
+  ).length;
 }
 
 export function classifyMarketRegimes(
@@ -253,19 +290,69 @@ export function analyzeStrategyStability(
   baseParameters: StrategyParameters,
   settings: BacktestSettings,
 ): StrategyStabilityAnalysis {
+  const observationCount = countInRangeObservations(bars, settings);
+  const minimumEvidence = {
+    observationCount,
+    minimumObservationCount: MINIMUM_STABILITY_OBSERVATIONS,
+    minimumTradeCount: MINIMUM_STABILITY_TRADES,
+  };
+
+  if (!isValidStrategyParameters(strategyId, baseParameters)) {
+    return {
+      baseResult: null,
+      variantResults: [],
+      nearby: null,
+      regimes: summarizeRegimeReturns(bars, []),
+      evidence: {
+        ...minimumEvidence,
+        sufficient: false,
+        reasons: ["invalid-parameters"],
+        tradeCount: 0,
+      },
+    };
+  }
+
   const parameterSets = buildNearbyParameterSets(
     strategyId,
     baseParameters,
   );
-  const [baseResult, ...variantResults] = parameterSets.map(
-    (parameters) =>
-      runBacktest(bars, strategyId, parameters, settings),
-  );
+  const [baseParametersSet, ...variantParameterSets] = parameterSets;
+  const baseResult =
+    observationCount >= 3 && baseParametersSet
+      ? runBacktest(bars, strategyId, baseParametersSet, settings)
+      : null;
+  const variantResults = baseResult
+    ? variantParameterSets.map((parameters) =>
+        runBacktest(bars, strategyId, parameters, settings),
+      )
+    : [];
+  const reasons: StabilityEvidenceReason[] = [];
+  if (observationCount < MINIMUM_STABILITY_OBSERVATIONS) {
+    reasons.push("insufficient-observations");
+  }
+  const tradeCount = baseResult?.tradeCount ?? 0;
+  if (tradeCount < MINIMUM_STABILITY_TRADES) {
+    reasons.push("insufficient-trades");
+  }
+  if (variantParameterSets.length === 0) {
+    reasons.push("no-nearby-variants");
+  }
+  const sufficient = reasons.length === 0;
+  const nearby = baseResult
+    ? summarizeNearbyBacktests(baseResult, variantResults)
+    : null;
+  if (nearby && !sufficient) nearby.stable = false;
 
   return {
     baseResult,
     variantResults,
-    nearby: summarizeNearbyBacktests(baseResult, variantResults),
-    regimes: summarizeRegimeReturns(bars, baseResult.equity),
+    nearby,
+    regimes: summarizeRegimeReturns(bars, baseResult?.equity ?? []),
+    evidence: {
+      ...minimumEvidence,
+      sufficient,
+      reasons,
+      tradeCount,
+    },
   };
 }

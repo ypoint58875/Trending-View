@@ -415,5 +415,23 @@ export function buildStrategyPriceLines(
       ),
     ];
   }
+  if (strategyId === "tv-technical-ratings") {
+    return [
+      priceLine(
+        strategyId,
+        "ema-20",
+        "fast",
+        ema(closes, 20),
+        bars.length,
+      ),
+      priceLine(
+        strategyId,
+        "sma-50",
+        "slow",
+        sma(closes, 50),
+        bars.length,
+      ),
+    ];
+  }
   return [];
 }

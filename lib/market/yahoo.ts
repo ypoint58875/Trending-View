@@ -225,6 +225,7 @@ export function parseYahooChart(
   const timeZone = result.meta?.exchangeTimezoneName || "UTC";
   const bars: MarketBar[] = [];
   let allParsedDailyPricesAdjusted = interval === "1d";
+  let firstAcceptedAdjustmentFactor: number | null = null;
   timestamps.forEach((timestamp, index) => {
     const open = quote.open?.[index];
     const close = quote.close?.[index];
@@ -252,6 +253,12 @@ export function parseYahooChart(
       Number.isFinite(adjustmentFactor) && adjustmentFactor > 0;
     const priceFactor = useAdjustedDailyPrice ? adjustmentFactor : 1;
     allParsedDailyPricesAdjusted &&= useAdjustedDailyPrice;
+    if (
+      firstAcceptedAdjustmentFactor === null &&
+      useAdjustedDailyPrice
+    ) {
+      firstAcceptedAdjustmentFactor = adjustmentFactor;
+    }
 
     const adjustedOpen = open * priceFactor;
     const adjustedBarClose = close * priceFactor;
@@ -279,6 +286,15 @@ export function parseYahooChart(
   });
 
   if (bars.length === 0) throw new Error("Yahoo chart data could not be parsed");
+  const providerPreviousClose = Number(
+    result.meta?.chartPreviousClose ?? result.meta?.previousClose,
+  );
+  const normalizedProviderPreviousClose =
+    allParsedDailyPricesAdjusted &&
+    firstAcceptedAdjustmentFactor !== null &&
+    Number.isFinite(providerPreviousClose)
+      ? providerPreviousClose * firstAcceptedAdjustmentFactor
+      : providerPreviousClose;
   return {
     instrument: {
       ...instrument,
@@ -292,7 +308,9 @@ export function parseYahooChart(
       ? "corporate-action-adjusted"
       : "raw",
     previousClose:
-      Number(result.meta?.chartPreviousClose ?? result.meta?.previousClose) ||
+      (Number.isFinite(normalizedProviderPreviousClose)
+        ? normalizedProviderPreviousClose
+        : 0) ||
       bars[0].open,
     bars,
     source: "yahoo",
@@ -322,8 +340,13 @@ export async function fetchYahooSeries(
   );
   const series = parseYahooChart(payload, instrument, interval);
   const limit = Math.min(Math.max(Math.trunc(requestedLimit), 2), 1500);
+  const sliceStart = Math.max(series.bars.length - limit, 0);
   return {
     ...series,
-    bars: series.bars.slice(-limit),
+    previousClose:
+      sliceStart > 0
+        ? series.bars[sliceStart - 1].close
+        : series.previousClose,
+    bars: series.bars.slice(sliceStart),
   };
 }

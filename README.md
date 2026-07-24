@@ -16,7 +16,8 @@ trades or run unattended jobs.
 - Candlestick and line chart modes with volume and synchronized zoom.
 - Cached history plus an uncached latest-bar overlay on open, every
   60 seconds while visible, and on focus/visibility, with current-bar strategy
-  guidance recalculated after each overlay.
+  guidance recalculated after each compatible overlay. Source or
+  price-adjustment mismatches retain the complete existing history.
 - Explicit price-adjustment metadata from the selected `MarketSeries`.
   Eastmoney and valid Yahoo daily series are marked
   `corporate-action-adjusted`; Nasdaq is a raw daily fallback.
@@ -29,9 +30,12 @@ trades or run unattended jobs.
   while the page remains open.
 - Overlay indicators share the price axis; each lower-pane indicator receives
   its own pane. Price, volume, and all indicator panes share the same zoom.
+  Series names show their actual parameters in a scrolling legend.
 - Indicator visibility is independent from strategy selection. The active
   strategy contributes actual buy/sell fills and, where the rule has
   continuous price references, dashed strategy lines on the main price axis.
+  Technical Ratings shows the same EMA-20 and SMA-50 references used by its
+  price votes.
 - Twelve extended strategy families plus independent equivalents of all 20
   templates in TradingView's official built-in-strategy directory.
 - Date-range backtests with initial cash, commission, and slippage settings.
@@ -40,12 +44,15 @@ trades or run unattended jobs.
 - Chart-level buy/sell markers derived from the active backtest's actual fills.
 - Per-user saved backtests with a right-side shortcut bar that restores the
   instrument, strategy, parameters, date range, and cost settings. The
-  workspace interval remains daily.
+  workspace interval remains daily. Legacy non-daily records keep their stored
+  interval label and disclose that opening them recalculates on daily bars.
 - A nearby-parameter stability diagnostic that changes one parameter at a time
   to the immediately lower or higher configured value, reruns valid variants,
   and reports return-sign agreement, return/drawdown/trade-count ranges, and
-  performance in up, sideways, and down market regimes. It never selects or
-  applies a replacement parameter.
+  performance in up, sideways, and down market regimes. It validates the exact
+  parameter shape and requires 120 in-range daily observations, two completed
+  base trades, and a nearby variant before showing stable/sensitive. It never
+  selects or applies a replacement parameter.
 - Bounded parameter-grid optimization across all 32 strategies, configurable
   up to 2,500 combinations per strategy and ranked by a return, Sharpe,
   drawdown, and trade-count score.
@@ -97,7 +104,9 @@ open, high, low, and close per bar by a finite positive
 marks the whole returned series as raw. Yahoo intraday support remains raw
 inside the provider layer, and Nasdaq is always a raw daily fallback. Provider
 volume is never rescaled. `MarketSeries.priceAdjustment` is the authoritative
-adjustment label displayed by the UI.
+adjustment label displayed by the UI. Yahoo also scales an adjusted series'
+provider previous close and, after limiting output, uses the immediately
+preceding normalized bar as `previousClose`.
 
 The chart, indicators, strategy reference lines, current-bar guidance,
 stability analysis, and backtests all consume the same normalized
@@ -120,12 +129,15 @@ daily bar, which may still be unfinished. It can therefore change again before
 the bar closes. The historical backtest keeps its separate no-look-ahead
 execution rules.
 
-The stability label is descriptive, not predictive. It requires at least one
-valid nearby variant and is stable only when at least 75% of those variants
-share the base return sign, the return range across the base and variants is no
-wider than 15 percentage points, and the worst drawdown is no more than 10
-percentage points below the base drawdown. Regimes use the current close versus
-a 60-day SMA and the SMA's 20-bar slope. These checks do not replace
+The stability label is descriptive, not predictive. Invalid parameters do not
+run a stability backtest. Evidence requires at least 120 daily observations
+inside the selected range, two completed base trades, and one valid nearby
+variant. Insufficient evidence is displayed with explicit reasons rather than
+stable/sensitive. With sufficient evidence, stability additionally requires at
+least 75% return-sign agreement, a return range no wider than 15 percentage
+points, and no more than 10 percentage points of drawdown deterioration.
+Regimes use the current close versus a 60-day SMA and the SMA's 20-bar slope,
+retaining earlier bars for causal warm-up. These checks do not replace
 out-of-sample or walk-forward validation.
 
 TradingView is a product reference only. This project does not redistribute the

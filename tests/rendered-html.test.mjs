@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 async function render(path = "/") {
@@ -151,4 +152,36 @@ test("server-renders the QuantScope research workspace", async () => {
     /\u641c\u7d22\u80a1\u7968|\u4e2a\u80a1|688484/,
   );
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
+});
+
+test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in source", async () => {
+  const workspace = await readFile(
+    new URL("../app/MarketWorkspace.tsx", import.meta.url),
+    "utf8",
+  );
+  const locale = await readFile(
+    new URL("../app/i18n/zh-CN.ts", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    workspace,
+    /latest\.priceAdjustment === currentSeries\.priceAdjustment/,
+  );
+  assert.match(
+    workspace,
+    /latest\.priceAdjustment === history\.priceAdjustment/,
+  );
+  assert.match(workspace, /copy\.intervals\[saved\.interval\]/);
+  assert.match(workspace, /saved\.interval !== DAILY_INTERVAL/);
+  assert.doesNotMatch(workspace, /copy\.intervals\[DAILY_INTERVAL\]/);
+  assert.doesNotMatch(workspace, /setInterval\(saved\.interval\)/);
+
+  assert.match(locale, /insufficientEvidence:\s*"证据不足"/);
+  assert.match(locale, /invalidParameters:\s*"当前策略参数无效/);
+  assert.match(locale, /insufficientObservations:\s*"当前回测区间/);
+  assert.match(locale, /insufficientTrades:\s*"当前规则完成的交易/);
+  assert.match(locale, /noNearbyVariants:\s*"没有可用的邻近参数组合/);
+  assert.match(locale, /legacyIntervalPrefix:\s*"此保存结果使用旧版"/);
+  assert.match(locale, /legacyIntervalSuffix:\s*"周期；打开后会在日线数据上重新计算所选设置。"/);
 });

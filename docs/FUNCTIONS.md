@@ -10,7 +10,9 @@
 - `fetchYahooSeries(instrument, interval, limit)`: fetches global chart history.
   Daily bars scale OHLC per bar by a finite positive
   `adjclose / raw close`; invalid or missing factors leave their bars raw and
-  make the entire series metadata raw. Intraday output is raw.
+  make the entire series metadata raw. An all-adjusted series scales provider
+  previous close by its first accepted factor; slicing sets previous close to
+  the immediately preceding normalized bar. Intraday output is raw.
 - `fetchNasdaqDailySeries(instrument, limit)`: fetches supported daily index/ETF
   history and marks it raw.
 - `fetchMarketSeries(...)`: applies the ordered provider fallback.
@@ -19,7 +21,8 @@
   bars for current-bar replacement. The current UI requests five.
 - `mergeLatestMarketSeries(...)`: idempotently retains history and replaces
   overlapping bars by `time`, then sorts and limits the result. It accepts only
-  the same interval and source; the workspace does not merge a changed source.
+  identical interval, source, and `priceAdjustment`; the workspace retains the
+  complete existing/history series on any mismatch.
 - `parseKlineRow(row)`: parses daily or intraday Eastmoney CSV rows.
 - `parseYahooChart(...)` and `parseNasdaqRows(...)`: normalize provider payloads
   into `MarketBar[]`. Provider volume passes through without price-adjustment
@@ -48,7 +51,10 @@
 
 - `buildIndicatorSeries(bars, indicator, parameters, labels, xAxis, yAxis)`:
   calculates one configured indicator and returns its ECharts series without
-  consulting strategy state.
+  consulting strategy state. Every parameterized series name includes the
+  actual calculation parameters; VWAP and OBV remain parameter-free.
+- `buildPriceChartLegend()`: returns a non-interactive scrolling legend above
+  the reserved main-price plot area.
 - `buildPriceChartLayout(times, paneCount)`: keeps overlay indicators on the
   main price axes and allocates one lower grid for each visible pane indicator.
 - `buildPriceDataZoom(barsLength, xAxisIndexes)`: links price, volume, and all
@@ -80,12 +86,17 @@
   `bollinger-reversion`, `donchian-breakout`, `supertrend-trend`,
   `ichimoku-trend`, `vwap-reversion`, `tv-bollinger-bands`,
   `tv-bollinger-directed`, `tv-keltner-channels`, `tv-parabolic-sar`, and
-  `tv-supertrend`. Other strategies return an empty array rather than an
+  `tv-supertrend`. Technical Ratings exposes the exact EMA-20 and SMA-50 used
+  by its price votes. Other strategies return an empty array rather than an
   invented line.
 
 ## Stability
 
-- `buildNearbyParameterSets(strategyId, baseParameters)`: returns the base
+- `isValidStrategyParameters(strategyId, parameters)`: requires exactly the
+  registered parameter keys, finite values inside each domain's minimum and
+  maximum, and every cross-field constraint.
+- `buildNearbyParameterSets(strategyId, baseParameters)`: returns an empty list
+  for an invalid base; otherwise it returns the base
   parameters followed by valid variants that move one parameter at a time to
   the immediately lower or higher value in its screening domain.
 - `classifyMarketRegimes(bars)`: classifies each eligible daily bar as up when
@@ -100,8 +111,12 @@
 - `summarizeRegimeReturns(bars, equity)`: compounds consecutive current-rule
   equity growth by the regime of the current bar.
 - `analyzeStrategyStability(...)`: reruns the existing backtest for the base
-  and nearby sets and returns diagnostics only; it never selects or applies a
-  parameter.
+  and nearby sets and returns diagnostics only; invalid parameters do not run.
+  Evidence reports actual/minimum observation and trade counts plus
+  `invalid-parameters`, `insufficient-observations`, `insufficient-trades`, or
+  `no-nearby-variants`. Stable/sensitive requires at least 120 in-range daily
+  observations and two completed base trades; regimes may retain earlier bars
+  for causal warm-up. The diagnostic never selects or applies a parameter.
 
 ## Simulation
 
@@ -142,4 +157,5 @@ and backtests all receive the same normalized `MarketBar[]` from the active
 
 The persistence shape retains an interval field for compatibility. New UI
 saves use `1d`, and opening a shortcut does not change the daily-only workspace
-interval.
+interval. Legacy shortcuts display their stored interval and disclose that
+opening recalculates the selected setup on daily bars.

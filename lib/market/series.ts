@@ -7,9 +7,12 @@ export function mergeLatestMarketSeries(
 ): MarketSeries {
   if (
     history.interval !== latest.interval ||
-    history.source !== latest.source
+    history.source !== latest.source ||
+    history.priceAdjustment !== latest.priceAdjustment
   ) {
-    throw new Error("Market series must share an interval and source");
+    throw new Error(
+      "Market series must share an interval, source, and price adjustment",
+    );
   }
 
   const barsByTime = new Map(
@@ -19,16 +22,9 @@ export function mergeLatestMarketSeries(
   const bars = Array.from(barsByTime.values())
     .sort((left, right) => left.timestamp - right.timestamp)
     .slice(-Math.max(Math.trunc(limit), 1));
-  const priceAdjustment =
-    history.priceAdjustment === "corporate-action-adjusted" &&
-    latest.priceAdjustment === "corporate-action-adjusted"
-      ? "corporate-action-adjusted"
-      : "raw";
-
   return {
     ...history,
     instrument: latest.instrument,
-    priceAdjustment,
     previousClose: latest.previousClose || history.previousClose,
     bars,
     source: latest.source,
