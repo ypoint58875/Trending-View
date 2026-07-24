@@ -38,6 +38,9 @@ trades or run unattended jobs.
   price votes.
 - Twelve extended strategy families plus independent equivalents of all 20
   templates in TradingView's official built-in-strategy directory.
+- Explicit long-horizon and short-horizon classification for every strategy.
+  The strategy selector and screening results expose the intended signal
+  horizon; both groups still operate on the same daily bars.
 - Date-range backtests with initial cash, commission, and slippage settings.
 - Long-only execution with next-bar-open fills for close signals and intrabar
   stop fills for predefined breakout prices, including gap-aware pricing.
@@ -58,6 +61,11 @@ trades or run unattended jobs.
   drawdown, and trade-count score.
 - Chunked screening progress and cancellation, retaining only the best
   parameter set for each strategy.
+- A separate bounded long/short combination screen. It first retains two
+  standalone parameter finalists per strategy, then compares hierarchical
+  pairs: a long-horizon rule gates the uptrend, while a short-horizon rule
+  selects a configurable core allocation (60% by default) or the full planned
+  allocation inside that trend.
 
 ## Run locally
 
@@ -139,6 +147,12 @@ points, and no more than 10 percentage points of drawdown deterioration.
 Regimes use the current close versus a 60-day SMA and the SMA's 20-bar slope,
 retaining earlier bars for causal warm-up. These checks do not replace
 out-of-sample or walk-forward validation.
+
+Combination screening is also an in-sample comparison. The core allocation is
+fixed by the user rather than optimized, and the bounded two-stage search
+reduces computation and parameter mining without eliminating overfitting.
+Combined close-derived allocation changes execute at the following daily open;
+the workflow does not combine intrabar stop fills from two strategies.
 
 TradingView is a product reference only. This project does not redistribute the
 TradingView Advanced Charts library or copy protected Pine scripts. The

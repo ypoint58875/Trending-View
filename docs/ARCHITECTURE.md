@@ -26,6 +26,8 @@ Browser UI
   -> newest-bar live strategy guidance
   -> hybrid backtest execution engine
   -> bounded, chunked parameter-grid optimizer
+  -> bounded long-gate/short-overlay combination optimizer
+  -> partial-allocation next-open backtest
   -> ECharts canvas views
   -> /api/saved-backtests
   -> hosted email or fixed loopback owner key
@@ -63,10 +65,21 @@ guidance, and trade markers without replacing the selected indicator.
 actual buy/sell fills. Indicator settings are display state and do not change
 the saved-backtest database schema.
 
-Screening generates constrained parameter grids from the shared strategy
-registry, applies a per-strategy cap, yields between small batches, and retains
-only the highest-scoring result for each strategy. This bounds both UI blocking
-and result memory without changing the deterministic backtest engine.
+Single-strategy screening generates constrained parameter grids from the shared
+strategy registry, applies a per-strategy cap, yields between small batches,
+and retains only the highest-scoring result for each strategy. Combination
+screening uses the same candidates and objectives in two bounded stages: keep
+two standalone finalists per strategy, then compare long-horizon finalists
+against short-horizon finalists. This bounds UI blocking and result memory
+without creating a full parameter Cartesian product.
+
+Every strategy registry entry declares a stable `long` or `short` horizon.
+These labels describe intended signal duration on daily bars rather than a
+different market interval. A combined target is hierarchical: the long rule
+gates all exposure; when it is active, the short rule selects the configured
+core allocation or full allocation. The allocation backtest applies the prior
+completed bar's target at the next open, trades only the allocation delta,
+applies costs to each rebalance, and liquidates at the selected range end.
 
 The strategy registry supports two execution contracts. Target-state
 strategies produce long/flat decisions after a completed bar and execute at the

@@ -417,6 +417,12 @@ export const zhCN = {
     periods: "期",
     rangeSeparator: "至",
   },
+  strategyHorizons: {
+    longGroup: "长周期策略",
+    shortGroup: "短周期策略",
+    long: "长周期",
+    short: "短周期",
+  },
   screening: {
     eyebrow: "AUTO LAB",
     title: "一键筛选",
@@ -460,6 +466,30 @@ export const zhCN = {
     empty: "点击按钮开始遍历当前指数或 ETF 与回测区间。",
     overfit:
       "筛选结果是样本内比较，不代表未来表现。请使用样本外数据、滚动窗口和更真实的交易约束复核。",
+  },
+  combinationScreening: {
+    eyebrow: "HIERARCHY",
+    title: "一键组合策略",
+    description:
+      "长周期寻找上行通道，短周期识别通道内小趋势。长周期关闭时空仓；长周期向上时，短周期决定保留核心仓位或恢复完整计划仓位。",
+    coreAllocation: "核心仓位 %",
+    coreHint: "短周期转弱时保留的计划仓位；不参与自动优化。",
+    action: "开始组合筛选",
+    stop: "停止组合筛选",
+    runningStrategies: "正在筛选长短周期候选…",
+    runningCombinations: "正在组合长短周期策略…",
+    stopped: "组合筛选已停止",
+    completed: "组合筛选完成",
+    empty:
+      "先分别保留每种长短周期策略的少量候选，再比较长周期与短周期的分层组合。",
+    bestResults: "个最佳组合",
+    longStrategy: "长周期 / 参数",
+    shortStrategy: "短周期 / 参数",
+    rebalances: "调仓",
+    preview: "第一名组合权益预览",
+    noPreview: "完成组合筛选后显示第一名的权益和回撤。",
+    overfit:
+      "组合结果仍是样本内比较。两阶段筛选限制了组合数量，但不能消除过拟合；请优先检查参数稳定性与不同市场阶段。",
   },
   footer: "行情可能延迟或缺失。指数回测为价格代理，不代表可直接成交的产品。",
 } as const;

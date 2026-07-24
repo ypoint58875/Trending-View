@@ -167,3 +167,24 @@ references as dashed lines on the main price axes; return no lines for a rule
 without a continuous price reference. Technical Ratings exposes the same
 EMA-20 and SMA-50 used by its price votes. These visuals do not infer or
 execute trades.
+
+## D-014: Explicit horizons and hierarchical strategy combinations
+
+Classify every strategy explicitly as `long` or `short` in the shared registry.
+The label describes intended signal duration while all current analysis remains
+daily-only. Do not infer the label from tuned parameters or observed holding
+period because either would make the taxonomy asset- and sample-dependent.
+
+Combine horizons as a gate and overlay, not as equal votes. A flat long target
+always produces zero allocation. An active long target produces the
+user-configured core allocation when the short target is flat and full planned
+allocation when the short target is active. Default core allocation is 60%;
+the user may set 30% through 90%, and the optimizer does not tune it.
+
+Avoid the full parameter Cartesian product. First retain the best two
+standalone parameter sets for every strategy under the selected shared
+objective, then evaluate the retained long-by-short product. Keep progress and
+cancellation interruptible and retain only the best 32 pair results. Combined
+close-derived targets rebalance at the following open with commission and
+slippage; they do not inherit the component strategies' intrabar stop-fill
+contracts.

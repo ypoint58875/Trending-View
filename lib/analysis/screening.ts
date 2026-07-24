@@ -1,6 +1,7 @@
 import type { MarketBar, MarketInterval } from "@/lib/market/types";
 import {
   runBacktest,
+  type BacktestPerformance,
   type BacktestResult,
   type BacktestSettings,
 } from "./backtest";
@@ -8,6 +9,7 @@ import {
   STRATEGIES,
   getStrategy,
   type StrategyId,
+  type StrategyHorizon,
   type StrategyParameters,
 } from "./strategies";
 
@@ -426,9 +428,13 @@ function selectEvenly(
 
 export function buildScreeningCandidates(
   maxPerStrategy = DEFAULT_PARAMETER_SETS_PER_STRATEGY,
+  horizons: readonly StrategyHorizon[] = ["long", "short"],
 ): ScreeningCandidate[] {
   const limit = clampCandidateLimit(maxPerStrategy);
-  return STRATEGIES.flatMap((strategy) => {
+  const includedHorizons = new Set(horizons);
+  return STRATEGIES.filter((strategy) =>
+    includedHorizons.has(strategy.horizon),
+  ).flatMap((strategy) => {
     const parameterSets = selectEvenly(
       buildParameterSets(PARAMETER_SPACES[strategy.id]),
       limit,
@@ -446,7 +452,7 @@ function finiteOrNegativeInfinity(value: number): number {
 }
 
 export function screeningObjectiveValue(
-  result: BacktestResult,
+  result: BacktestPerformance,
   objective: ScreeningObjective,
 ): number {
   if (objective === "returnDrawdown") {
@@ -471,8 +477,8 @@ function compareDescending(left: number, right: number): number {
 }
 
 export function compareScreeningResults(
-  left: BacktestResult,
-  right: BacktestResult,
+  left: BacktestPerformance,
+  right: BacktestPerformance,
   objective: ScreeningObjective,
 ): number {
   const comparisons = [

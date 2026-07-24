@@ -59,10 +59,13 @@ scrolling legend, and reserve top space so it cannot cover the price plot.
 
 ## Strategy
 
-Strategies are registry entries with an ID, linked indicator, default
-parameters, and a `buildTarget` function. Target-state strategies describe the
-desired position after a bar closes: `1` for long and `0` for flat. Their
-changes execute at the next open.
+Strategies are registry entries with an ID, explicit `long` or `short` horizon,
+linked indicator, default parameters, and a `buildTarget` function. Horizon is
+stable catalog metadata describing intended signal duration on daily bars; it
+must not be inferred from the current parameters or historical holding time.
+Catalog tests must prove the long and short lists are disjoint and cover every
+strategy. Target-state strategies describe the desired position after a bar
+closes: `1` for long and `0` for flat. Their changes execute at the next open.
 
 Strategies based on prices known before the active bar may additionally expose
 `buildOrders`. The returned series is aligned with bars and contains a long
@@ -100,6 +103,22 @@ result per strategy under one explicit scalar objective. Objective comparison
 and tie-breaking belong in the shared screening module, not the UI. Tests
 enforce registry coverage, uniqueness, the cap, objective ordering,
 best-result sorting, progress completion, and cancellation.
+
+Multi-horizon combinations are hierarchical, never equal-weight votes. The
+long target gates exposure. Inside an active long target, the short target
+selects full planned allocation when active and a user-configured core
+allocation when inactive. Outside the long target, allocation is zero
+regardless of the short target. Core allocation is clamped at the pure-function
+boundary and is not optimized.
+
+Combination optimization must reuse shared candidate domains, objectives, and
+tie-breaking. It first retains a small fixed number of standalone finalists per
+strategy, then evaluates only the retained long/short Cartesian product. The
+partial-allocation engine executes the prior completed bar's target at the next
+open, applies costs to the changed allocation, and reports rebalances rather
+than claiming completed round-trip win statistics. Tests cover role
+validation, target alignment, prefix invariance, bounded pairing, progress,
+cancellation, costs, and range-end liquidation.
 
 Trade annotations are derived from completed `BacktestTrade` records by a pure
 mapping helper. Every entry is a buy and every strategy exit is a sell. Chart

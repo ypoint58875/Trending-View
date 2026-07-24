@@ -48,6 +48,10 @@ Implemented:
   zoom window for the current instrument and interval.
 - Twelve extended strategies plus independent equivalents of all 20 official
   TradingView built-in strategy templates.
+- Explicit horizon metadata for all 32 strategies: 15 long-horizon trend,
+  breakout, channel, and persistent-momentum rules plus 17 short-horizon
+  reversal, candle, pivot, oscillator, and volatility rules. The daily
+  strategy selector and results expose these groups.
 - Date-range backtesting with hybrid execution: close-derived targets fill at
   the next open, while Channel BreakOut, Momentum, Pivot Reversal, Price
   Channel, and Volty Expan Close use completed-bar stop orders that can fill
@@ -71,6 +75,15 @@ Implemented:
   currently contain 31,172 valid combinations.
 - Five deterministic screening objectives: balanced score, return/drawdown
   ratio, maximum return, minimum drawdown, and maximum Sharpe.
+- A separate hierarchical combination screen below single-strategy screening.
+  The long rule gates exposure; inside its uptrend, the short rule selects a
+  configurable core allocation (60% by default) or full planned allocation.
+  The two-stage optimizer retains two standalone finalists per strategy,
+  evaluates only those long/short pairs, supports progress/cancellation, and
+  keeps the best 32 pair results.
+- A partial-allocation backtest that executes completed-bar combination targets
+  at the next open, applies commission and slippage to allocation deltas, and
+  reports rebalances plus common return/drawdown/Sharpe/equity metrics.
 - Per-user D1-backed saved backtests with a dedicated upper-right shortcut bar
   for restoring index/ETF research settings. Legacy records display their
   stored interval and disclose daily recalculation without changing the daily
@@ -85,6 +98,14 @@ Implemented:
 
 ## Verification status
 
+- Hierarchical horizon/combination coverage passed 75 TypeScript tests, the
+  production build, two rendered/source worker tests, ESLint, and
+  `git diff --check` on 2026-07-25.
+- A real local browser run on N225 used one parameter set per strategy,
+  completed 287 standalone-and-pair evaluations, retained 32 combinations,
+  rendered eight ranked long/short rows and one equity/drawdown preview, and
+  reported no console errors on 2026-07-25. The 1,265-pixel desktop and
+  760-pixel responsive layouts had no document-level horizontal overflow.
 - Task 8 final-review coverage passed 67 TypeScript tests, the production
   build, two rendered/source worker tests, and ESLint on 2026-07-24.
 - Full 57-test TypeScript suite, production build, and one rendered-worker

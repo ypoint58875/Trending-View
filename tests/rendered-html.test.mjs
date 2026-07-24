@@ -134,6 +134,23 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u6700\u5927\u6536\u76ca/);
   assert.match(html, /\u6700\u5c0f\u56de\u64a4/);
   assert.match(html, /\u6700\u5927\u590f\u666e/);
+  assert.match(
+    html,
+    /<optgroup label="\u957f\u5468\u671f\u7b56\u7565">/,
+  );
+  assert.match(
+    html,
+    /<optgroup label="\u77ed\u5468\u671f\u7b56\u7565">/,
+  );
+  assert.match(html, /\u4e00\u952e\u7ec4\u5408\u7b56\u7565/);
+  assert.match(html, /\u957f\u5468\u671f\u5bfb\u627e\u4e0a\u884c\u901a\u9053/);
+  assert.match(html, /\u77ed\u5468\u671f\u8bc6\u522b\u901a\u9053\u5185\u5c0f\u8d8b\u52bf/);
+  assert.match(html, /\u6838\u5fc3\u4ed3\u4f4d/);
+  assert.match(html, /value="60"/);
+  assert.ok(
+    html.indexOf("\u4e00\u952e\u7b5b\u9009") <
+      html.indexOf("\u4e00\u952e\u7ec4\u5408\u7b56\u7565"),
+  );
   assert.ok(
     html.indexOf("\u56de\u6d4b\u5feb\u6377\u680f") <
       html.indexOf("\u7b56\u7565\u5b9e\u9a8c\u5ba4"),
@@ -176,6 +193,9 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /saved\.interval !== DAILY_INTERVAL/);
   assert.doesNotMatch(workspace, /copy\.intervals\[DAILY_INTERVAL\]/);
   assert.doesNotMatch(workspace, /setInterval\(saved\.interval\)/);
+  assert.match(workspace, /optimizeStrategyCombinations/);
+  assert.match(workspace, /getStrategiesByHorizon\("long"\)/);
+  assert.match(workspace, /getStrategiesByHorizon\("short"\)/);
 
   assert.match(locale, /insufficientEvidence:\s*"证据不足"/);
   assert.match(locale, /invalidParameters:\s*"当前策略参数无效/);

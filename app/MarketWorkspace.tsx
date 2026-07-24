@@ -29,7 +29,11 @@ import {
   type StrategyLineLabels,
 } from "./components/PriceChart";
 import { zhCN as copy } from "./i18n/zh-CN";
-import { runBacktest, type BacktestResult } from "@/lib/analysis/backtest";
+import {
+  runBacktest,
+  type BacktestPerformance,
+  type BacktestResult,
+} from "@/lib/analysis/backtest";
 import {
   INDICATORS,
   createDefaultIndicatorSettings,
@@ -49,11 +53,17 @@ import {
   type ScreeningProgress,
 } from "@/lib/analysis/screening";
 import {
-  STRATEGIES,
   getStrategy,
+  getStrategiesByHorizon,
   type StrategyId,
   type StrategyParameters,
 } from "@/lib/analysis/strategies";
+import {
+  DEFAULT_CORE_ALLOCATION,
+  optimizeStrategyCombinations,
+  type CombinationScreeningProgress,
+  type StrategyCombinationResult,
+} from "@/lib/analysis/strategy-combinations";
 import {
   createSaveBacktestInput,
   type SavedBacktestRecord,
@@ -152,14 +162,14 @@ function parameterStep(key: string) {
   return isDecimalParameter(key) ? 0.1 : 1;
 }
 
-function resultTone(result: BacktestResult) {
+function resultTone(result: BacktestPerformance) {
   return result.totalReturn > 0 && result.sharpe > 0 && result.tradeCount >= 2
     ? "positive"
     : "neutral";
 }
 
 function formatObjectiveValue(
-  result: BacktestResult,
+  result: BacktestPerformance,
   objective: ScreeningObjective,
 ) {
   const value = screeningObjectiveValue(result, objective);
@@ -167,6 +177,20 @@ function formatObjectiveValue(
     return formatPercent(value, objective === "totalReturn");
   }
   return formatNumber(value, 2);
+}
+
+const longStrategies = getStrategiesByHorizon("long");
+const shortStrategies = getStrategiesByHorizon("short");
+
+function emptyCombinationProgress(): CombinationScreeningProgress {
+  return {
+    completed: 0,
+    total: 0,
+    failed: 0,
+    stage: "strategies",
+    longStrategyId: null,
+    shortStrategyId: null,
+  };
 }
 
 function formatStabilityEvidenceReason(
@@ -228,6 +252,15 @@ export function MarketWorkspace() {
     failed: 0,
     strategyId: null,
   });
+  const [combinationScreening, setCombinationScreening] = useState(false);
+  const [combinationResults, setCombinationResults] = useState<
+    StrategyCombinationResult[]
+  >([]);
+  const [coreAllocationPercent, setCoreAllocationPercent] = useState(
+    DEFAULT_CORE_ALLOCATION * 100,
+  );
+  const [combinationProgress, setCombinationProgress] =
+    useState<CombinationScreeningProgress>(emptyCombinationProgress);
   const [savedBacktests, setSavedBacktests] = useState<
     SavedBacktestRecord[]
   >([]);
@@ -239,6 +272,7 @@ export function MarketWorkspace() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const pendingSavedBacktestRef = useRef<SavedBacktestRecord | null>(null);
   const screeningAbortRef = useRef<AbortController | null>(null);
+  const combinationAbortRef = useRef<AbortController | null>(null);
   const currentSeriesKeyRef = useRef("");
   const latestSeriesDateRef = useRef("");
   const marketSeriesRef = useRef<MarketSeries | null>(null);
@@ -474,6 +508,7 @@ export function MarketWorkspace() {
   useEffect(
     () => () => {
       screeningAbortRef.current?.abort();
+      combinationAbortRef.current?.abort();
     },
     [],
   );
@@ -693,14 +728,19 @@ export function MarketWorkspace() {
   const resetScreening = () => {
     screeningAbortRef.current?.abort();
     screeningAbortRef.current = null;
+    combinationAbortRef.current?.abort();
+    combinationAbortRef.current = null;
     setScreening(false);
+    setCombinationScreening(false);
     setScreenResults([]);
+    setCombinationResults([]);
     setScreenProgress({
       completed: 0,
       total: 0,
       failed: 0,
       strategyId: null,
     });
+    setCombinationProgress(emptyCombinationProgress());
   };
 
   const openSavedBacktest = (saved: SavedBacktestRecord) => {
@@ -786,6 +826,50 @@ export function MarketWorkspace() {
     screeningAbortRef.current?.abort();
   };
 
+  const startCombinationScreening = async () => {
+    if (!series?.bars.length) return;
+    combinationAbortRef.current?.abort();
+    const controller = new AbortController();
+    combinationAbortRef.current = controller;
+    setCombinationScreening(true);
+    setCombinationResults([]);
+    setCombinationProgress(emptyCombinationProgress());
+
+    const outcome = await optimizeStrategyCombinations(
+      series.bars,
+      {
+        initialCash,
+        commissionRate: commissionPercent / 100,
+        slippageRate: slippagePercent / 100,
+        startTime: startDate,
+        endTime: endDate,
+        interval: DAILY_INTERVAL,
+      },
+      {
+        maxPerStrategy: maxParameterSets,
+        objective: screeningObjective,
+        coreAllocation: coreAllocationPercent / 100,
+        signal: controller.signal,
+        onProgress: setCombinationProgress,
+      },
+    );
+
+    if (combinationAbortRef.current !== controller) return;
+    setCombinationResults(outcome.results);
+    setCombinationProgress((current) => ({
+      ...current,
+      completed: outcome.evaluatedCount,
+      total: outcome.totalCandidates,
+      failed: outcome.failedCount,
+    }));
+    setCombinationScreening(false);
+    combinationAbortRef.current = null;
+  };
+
+  const stopCombinationScreening = () => {
+    combinationAbortRef.current?.abort();
+  };
+
   const chooseInstrument = (nextInstrument: MarketInstrument) => {
     resetScreening();
     pendingSavedBacktestRef.current = null;
@@ -806,6 +890,8 @@ export function MarketWorkspace() {
   const maxDate = series?.bars.length
     ? datePart(series.bars[series.bars.length - 1].time)
     : "";
+  const screeningBusy = screening || combinationScreening;
+  const bestCombination = combinationResults[0] ?? null;
 
   return (
     <main className="workspace-shell">
@@ -1274,7 +1360,14 @@ export function MarketWorkspace() {
           <div className="panel-heading">
             <div>
               <span className="eyebrow">{copy.lab.title}</span>
-              <strong>{copy.strategies[strategyId].name}</strong>
+              <div className="strategy-title-line">
+                <strong>{copy.strategies[strategyId].name}</strong>
+                <span
+                  className={`horizon-badge ${getStrategy(strategyId).horizon}`}
+                >
+                  {copy.strategyHorizons[getStrategy(strategyId).horizon]}
+                </span>
+              </div>
             </div>
             <div className="lab-heading-actions">
               <button
@@ -1313,11 +1406,20 @@ export function MarketWorkspace() {
                 selectStrategy(event.target.value as StrategyId)
               }
             >
-              {STRATEGIES.map((strategy) => (
-                <option key={strategy.id} value={strategy.id}>
-                  {copy.strategies[strategy.id].name}
-                </option>
-              ))}
+              <optgroup label={copy.strategyHorizons.longGroup}>
+                {longStrategies.map((strategy) => (
+                  <option key={strategy.id} value={strategy.id}>
+                    {copy.strategies[strategy.id].name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label={copy.strategyHorizons.shortGroup}>
+                {shortStrategies.map((strategy) => (
+                  <option key={strategy.id} value={strategy.id}>
+                    {copy.strategies[strategy.id].name}
+                  </option>
+                ))}
+              </optgroup>
             </select>
           </label>
           <p className="strategy-description">
@@ -1620,18 +1722,12 @@ export function MarketWorkspace() {
               <span>{copy.screening.objective}</span>
               <select
                 value={screeningObjective}
-                disabled={screening}
+                disabled={screeningBusy}
                 onChange={(event) => {
                   setScreeningObjective(
                     event.target.value as ScreeningObjective,
                   );
-                  setScreenResults([]);
-                  setScreenProgress({
-                    completed: 0,
-                    total: 0,
-                    failed: 0,
-                    strategyId: null,
-                  });
+                  resetScreening();
                 }}
               >
                 {SCREENING_OBJECTIVES.map((value) => (
@@ -1652,7 +1748,7 @@ export function MarketWorkspace() {
                 max={MAX_PARAMETER_SETS_PER_STRATEGY}
                 step={50}
                 value={maxParameterSets}
-                disabled={screening}
+                disabled={screeningBusy}
                 onChange={(event) => {
                   const nextValue = Number(event.target.value);
                   setMaxParameterSets(
@@ -1666,13 +1762,7 @@ export function MarketWorkspace() {
                       MAX_PARAMETER_SETS_PER_STRATEGY,
                     ),
                   );
-                  setScreenResults([]);
-                  setScreenProgress({
-                    completed: 0,
-                    total: 0,
-                    failed: 0,
-                    strategyId: null,
-                  });
+                  resetScreening();
                 }}
               />
               <small>
@@ -1684,7 +1774,7 @@ export function MarketWorkspace() {
           <button
             type="button"
             className={`primary-action ${screening ? "stop" : ""}`}
-            disabled={!series}
+            disabled={!series || combinationScreening}
             onClick={() =>
               screening ? stopScreening() : void startScreening()
             }
@@ -1780,6 +1870,15 @@ export function MarketWorkspace() {
                           <strong>
                             {copy.strategies[result.strategyId].name}
                           </strong>
+                          <span
+                            className={`horizon-badge ${getStrategy(result.strategyId).horizon}`}
+                          >
+                            {
+                              copy.strategyHorizons[
+                                getStrategy(result.strategyId).horizon
+                              ]
+                            }
+                          </span>
                           <small>
                             {Object.entries(result.parameters)
                               .map(([key, value]) => `${key} ${value}`)
@@ -1831,6 +1930,249 @@ export function MarketWorkspace() {
             </div>
           )}
         </div>
+
+        <section
+          className="combination-screening"
+          aria-labelledby="combination-screening-title"
+        >
+          <div className="combination-intro">
+            <span className="eyebrow">
+              {copy.combinationScreening.eyebrow}
+            </span>
+            <h2 id="combination-screening-title">
+              <Sparkles size={21} />
+              {copy.combinationScreening.title}
+            </h2>
+            <p>{copy.combinationScreening.description}</p>
+
+            <label className="screening-control-field combination-core-field">
+              <span>{copy.combinationScreening.coreAllocation}</span>
+              <input
+                type="number"
+                min={30}
+                max={90}
+                step={10}
+                value={coreAllocationPercent}
+                disabled={screeningBusy}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  setCoreAllocationPercent(
+                    Math.min(
+                      Math.max(
+                        Number.isFinite(nextValue)
+                          ? Math.round(nextValue)
+                          : 60,
+                        30,
+                      ),
+                      90,
+                    ),
+                  );
+                  resetScreening();
+                }}
+              />
+              <small>{copy.combinationScreening.coreHint}</small>
+            </label>
+
+            <button
+              type="button"
+              className={`primary-action ${combinationScreening ? "stop" : ""}`}
+              disabled={!series || screening}
+              onClick={() =>
+                combinationScreening
+                  ? stopCombinationScreening()
+                  : void startCombinationScreening()
+              }
+            >
+              {combinationScreening ? (
+                <Square size={14} fill="currentColor" />
+              ) : (
+                <Sparkles size={16} />
+              )}
+              {combinationScreening
+                ? copy.combinationScreening.stop
+                : copy.combinationScreening.action}
+            </button>
+
+            {combinationProgress.total > 0 && (
+              <div className="screening-progress" aria-live="polite">
+                <div>
+                  <span>
+                    {combinationScreening
+                      ? combinationProgress.stage === "strategies"
+                        ? copy.combinationScreening.runningStrategies
+                        : copy.combinationScreening.runningCombinations
+                      : combinationProgress.completed <
+                          combinationProgress.total
+                        ? copy.combinationScreening.stopped
+                        : copy.combinationScreening.completed}
+                  </span>
+                  <strong>
+                    {combinationProgress.completed} /{" "}
+                    {combinationProgress.total}
+                    {combinationProgress.failed > 0
+                      ? ` · ${combinationProgress.failed} ${copy.screening.skipped}`
+                      : ""}
+                  </strong>
+                </div>
+                <progress
+                  max={combinationProgress.total}
+                  value={combinationProgress.completed}
+                />
+              </div>
+            )}
+
+            <div className="risk-note">
+              <ShieldAlert size={15} />
+              <span>{copy.combinationScreening.overfit}</span>
+            </div>
+          </div>
+
+          <div className="combination-results">
+            <div className="results-heading">
+              <div>
+                <Trophy size={17} />
+                <strong>
+                  {combinationResults.length
+                    ? copy.combinationScreening.completed
+                    : copy.combinationScreening.title}
+                </strong>
+              </div>
+              {combinationResults.length > 0 && (
+                <span>
+                  {combinationResults.length}{" "}
+                  {copy.combinationScreening.bestResults}
+                  {" · "}
+                  {combinationProgress.completed}{" "}
+                  {copy.screening.backtests}
+                </span>
+              )}
+            </div>
+
+            {combinationResults.length === 0 ? (
+              <div className="screening-empty combination-empty">
+                <BarChart3 size={27} />
+                <p>{copy.combinationScreening.empty}</p>
+              </div>
+            ) : (
+              <>
+                <div className="results-table-wrap">
+                  <table className="results-table combination-table">
+                    <thead>
+                      <tr>
+                        <th>{copy.screening.rank}</th>
+                        <th>{copy.combinationScreening.longStrategy}</th>
+                        <th>{copy.combinationScreening.shortStrategy}</th>
+                        <th>{copy.screening.return}</th>
+                        <th>{copy.screening.drawdown}</th>
+                        <th>{copy.screening.sharpe}</th>
+                        <th>{copy.combinationScreening.rebalances}</th>
+                        <th>{copy.screening.objectiveValue}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {combinationResults.slice(0, 8).map((result, index) => (
+                        <tr
+                          key={`${result.longStrategyId}-${JSON.stringify(result.longParameters)}-${result.shortStrategyId}-${JSON.stringify(result.shortParameters)}`}
+                        >
+                          <td>
+                            <span className={`rank rank-${index + 1}`}>
+                              {index + 1}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="strategy-cell">
+                              <strong>
+                                {copy.strategies[result.longStrategyId].name}
+                              </strong>
+                              <span className="horizon-badge long">
+                                {copy.strategyHorizons.long}
+                              </span>
+                              <small>
+                                {Object.entries(result.longParameters)
+                                  .map(
+                                    ([key, value]) => `${key} ${value}`,
+                                  )
+                                  .join(` ${copy.common.separator} `)}
+                              </small>
+                            </div>
+                          </td>
+                          <td>
+                            <div className="strategy-cell">
+                              <strong>
+                                {copy.strategies[result.shortStrategyId].name}
+                              </strong>
+                              <span className="horizon-badge short">
+                                {copy.strategyHorizons.short}
+                              </span>
+                              <small>
+                                {Object.entries(result.shortParameters)
+                                  .map(
+                                    ([key, value]) => `${key} ${value}`,
+                                  )
+                                  .join(` ${copy.common.separator} `)}
+                              </small>
+                            </div>
+                          </td>
+                          <td
+                            className={
+                              result.totalReturn >= 0
+                                ? "positive"
+                                : "negative"
+                            }
+                          >
+                            {formatPercent(result.totalReturn, true)}
+                          </td>
+                          <td className="negative">
+                            {formatPercent(result.maxDrawdown)}
+                          </td>
+                          <td>{formatNumber(result.sharpe)}</td>
+                          <td>{result.tradeCount}</td>
+                          <td>
+                            <span
+                              className={`fit-badge ${resultTone(result)}`}
+                            >
+                              {resultTone(result) === "positive"
+                                ? copy.screening.suitable
+                                : copy.screening.caution}
+                              <b>
+                                {formatObjectiveValue(
+                                  result,
+                                  screeningObjective,
+                                )}
+                              </b>
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {bestCombination ? (
+                  <div className="combination-preview">
+                    <strong>{copy.combinationScreening.preview}</strong>
+                    <span>
+                      {copy.strategies[bestCombination.longStrategyId].name}
+                      {" + "}
+                      {copy.strategies[bestCombination.shortStrategyId].name}
+                      {" · "}
+                      {Math.round(bestCombination.coreAllocation * 100)}%
+                    </span>
+                    <BacktestChart
+                      result={bestCombination}
+                      ariaLabel={copy.chart.backtestAria}
+                      labels={backtestChartLabels}
+                    />
+                  </div>
+                ) : (
+                  <div className="screening-empty">
+                    <p>{copy.combinationScreening.noPreview}</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </section>
       </section>
       </section>
 

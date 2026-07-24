@@ -737,6 +737,38 @@ button {
   margin-left: 14px;
 }
 
+.strategy-title-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.horizon-badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 7px;
+  font-weight: 650;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.horizon-badge.long {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: rgba(56, 189, 248, 0.1);
+  color: #7dd3fc;
+}
+
+.horizon-badge.short {
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(251, 191, 36, 0.1);
+  color: var(--amber);
+}
+
 .lab-heading-actions {
   display: flex;
   align-items: center;
@@ -1235,12 +1267,32 @@ button {
   min-height: 310px;
 }
 
+.combination-screening {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: 300px minmax(0, 1fr);
+  min-width: 0;
+  border-top: 1px solid var(--line);
+}
+
 .screening-intro {
   padding: 24px;
   border-right: 1px solid var(--line);
   background:
     radial-gradient(circle at 15% 0%, rgba(34, 197, 94, 0.12), transparent 35%),
     #0c1411;
+}
+
+.combination-intro {
+  padding: 24px;
+  border-right: 1px solid var(--line);
+  background:
+    radial-gradient(
+      circle at 15% 0%,
+      rgba(56, 189, 248, 0.13),
+      transparent 35%
+    ),
+    #0b1217;
 }
 
 .screening-intro h2 {
@@ -1260,6 +1312,33 @@ button {
   color: var(--muted);
   font-size: 10px;
   line-height: 1.65;
+}
+
+.combination-intro h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 0 7px;
+  font-size: 19px;
+}
+
+.combination-intro h2 svg {
+  color: #7dd3fc;
+}
+
+.combination-intro > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.combination-core-field {
+  margin-top: 16px;
+}
+
+.combination-results {
+  min-width: 0;
 }
 
 .screening-config {
@@ -1517,6 +1596,49 @@ button {
   font-size: 7px;
 }
 
+.strategy-cell .horizon-badge {
+  align-self: flex-start;
+}
+
+.combination-table th:nth-child(3),
+.combination-table td:nth-child(3) {
+  text-align: left;
+}
+
+.combination-table .strategy-cell {
+  min-width: 170px;
+}
+
+.combination-preview {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 14px 16px 18px;
+  border-top: 1px solid var(--line);
+}
+
+.combination-preview > strong {
+  font-size: 10px;
+}
+
+.combination-preview > span {
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  text-align: right;
+}
+
+.combination-preview .backtest-chart {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 190px;
+}
+
+.combination-empty {
+  min-height: 290px;
+}
+
 .fit-badge {
   display: inline-flex;
   align-items: center;
@@ -1741,7 +1863,12 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .screening-intro {
+  .combination-screening {
+    grid-template-columns: 1fr;
+  }
+
+  .screening-intro,
+  .combination-intro {
     border-right: 0;
     border-bottom: 1px solid var(--line);
   }

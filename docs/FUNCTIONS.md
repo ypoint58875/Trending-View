@@ -68,6 +68,10 @@
 ## Strategies
 
 - `getStrategy(id)`: resolves a registry entry.
+- `getStrategiesByHorizon(horizon)`: returns the registry entries explicitly
+  classified for long- or short-horizon use.
+- `LONG_HORIZON_STRATEGY_IDS` and `SHORT_HORIZON_STRATEGY_IDS`: ordered,
+  disjoint catalog contracts covering every registered strategy exactly once.
 - `TRADINGVIEW_BUILT_IN_STRATEGY_IDS`: the ordered 20-entry completeness
   contract for the official built-in template directory.
 - Every strategy provides `buildTarget(bars, parameters)`, producing a
@@ -133,10 +137,18 @@
   gap fills at the bar open. The function applies costs to long entries and
   exits and calculates equity, drawdown, return, Sharpe, win rate, profit
   factor, trade count, benchmark return, and a screening score.
+- `runAllocationBacktest(...)`: executes an aligned `[0, 1]` allocation target
+  from the prior completed bar at the next open, trades only the required
+  delta, applies costs, and reports common performance plus rebalance records.
+- `buildHierarchicalAllocationTarget(longTarget, shortTarget, coreAllocation)`:
+  returns 0 when the long rule is flat, the configured core allocation when
+  only the long rule is active, and 1 when both rules are active.
+- `buildStrategyCombinationTarget(...)`: validates long/short registry roles
+  and builds the hierarchical target for one explicit pair.
 - `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
   strategy exit to a sell marker while separating range-end valuation exits.
-- `buildScreeningCandidates(maxPerStrategy)`: expands the constrained
-  parameter spaces for all registered strategies, includes each default
+- `buildScreeningCandidates(maxPerStrategy, horizons)`: expands the constrained
+  parameter spaces for the requested strategy horizons, includes each default
   parameter set, and deterministically samples any space above the 2,500 hard
   cap.
 - `screeningObjectiveValue(result, objective)`: maps a backtest to balanced,
@@ -146,6 +158,10 @@
 - `optimizeStrategies(...)`: runs candidates in interruptible chunks, reports
   progress, keeps only the best result for each strategy under the selected
   objective, and sorts those best results by the same objective.
+- `optimizeStrategyCombinations(...)`: screens standalone candidates, retains
+  two finalists per strategy, evaluates every retained long/short pair through
+  the allocation backtest, reports both progress stages, and retains the best
+  32 combinations under the selected objective.
 
 Historical price bars, indicators, strategy lines, live guidance, stability,
 and backtests all receive the same normalized `MarketBar[]` from the active

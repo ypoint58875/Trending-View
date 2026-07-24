@@ -2,6 +2,8 @@
 
 Research date: 2026-07-24.
 
+Additional research date: 2026-07-25.
+
 ## Charting
 
 ### Option A: TradingView Advanced Charts
@@ -202,6 +204,55 @@ open for gap fills, do not exit and re-enter on the same bar, and reserve Option
 C for Greedy-style pyramiding and bracket fidelity.
 
 ## Parameter optimization
+
+### Multi-horizon hierarchical strategy combinations
+
+Research distinguishes slow and fast trend signals rather than treating every
+indicator as an equal vote. Slow signals tend to retain persistent moves but
+react later, while fast signals react earlier and produce more false changes.
+The momentum-turning-point research reports that the intersection of slow and
+fast signal directions contains information, which supports making the slow
+signal the regime gate and using the fast signal only inside that gate.
+
+Sources:
+
+- https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3489539
+- https://www.aqr.com/Insights/Research/Alternative-Thinking/Should-Your-Portfolio-Protection-Work-Fast-or-Slow
+
+Three implementation approaches were considered:
+
+1. Treat long and short rules as equal votes.
+   This is simple but allows a fast rule to open exposure when the slow trend
+   is flat and does not express the requested hierarchy.
+2. Require both rules to be long and otherwise hold cash.
+   This creates a strict intersection but lets every fast false negative remove
+   the long-horizon core position.
+3. Use the long rule as an exposure gate and let the short rule select a core
+   or full allocation inside the gate.
+   This preserves the hierarchy and keeps some exposure through short
+   pullbacks.
+
+Decision: use approach 3. The combined target is 0% when the long rule is flat,
+a configurable core allocation (60% by default) when the long rule is long and
+the short rule is flat, and 100% when both are long. The allocation is not
+automatically optimized.
+
+For parameter search, a full Cartesian product of all long and short parameter
+sets is impractical and increases selection bias. Backtesting.py documents
+constrained grid search, absolute evaluation caps, deterministic seeds, and
+partial position closing, while its examples explicitly warn about
+overfitting.
+
+Sources:
+
+- https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
+- https://kernc.github.io/backtesting.py/doc/examples/Parameter%20Heatmap%20%26%20Optimization.html
+
+Decision: retain two standalone parameter finalists per registered strategy,
+then evaluate the bounded Cartesian product of long-horizon and short-horizon
+finalists. Reuse the current scalar objective, deterministic tie-breaks,
+chunked progress, and cancellation. All combined targets execute from the
+prior completed daily bar at the next open.
 
 ### Option A: constrained exhaustive grid with a hard cap
 

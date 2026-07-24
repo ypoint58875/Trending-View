@@ -37,8 +37,11 @@ export interface StrategyParameters {
   [key: string]: number;
 }
 
+export type StrategyHorizon = "long" | "short";
+
 export interface StrategyDefinition {
   id: StrategyId;
+  horizon: StrategyHorizon;
   indicatorId: string;
   defaultParameters: StrategyParameters;
   buildTarget: (
@@ -49,6 +52,28 @@ export interface StrategyDefinition {
     bars: MarketBar[],
     parameters: StrategyParameters,
   ) => StrategyOrderSeries;
+}
+
+const LONG_HORIZON_IDS = new Set<StrategyId>([
+  "sma-cross",
+  "ema-cross",
+  "macd-momentum",
+  "donchian-breakout",
+  "supertrend-trend",
+  "ichimoku-trend",
+  "roc-momentum",
+  "tv-bollinger-directed",
+  "tv-keltner-channels",
+  "tv-macd",
+  "tv-momentum",
+  "tv-parabolic-sar",
+  "tv-price-channel",
+  "tv-supertrend",
+  "tv-technical-ratings",
+]);
+
+function strategyHorizon(id: StrategyId): StrategyHorizon {
+  return LONG_HORIZON_IDS.has(id) ? "long" : "short";
 }
 
 function crossingTarget(
@@ -345,54 +370,63 @@ function vwapReversion(
 export const STRATEGIES: StrategyDefinition[] = [
   {
     id: "sma-cross",
+    horizon: "long",
     indicatorId: "sma",
     defaultParameters: { fast: 10, slow: 30 },
     buildTarget: smaCross,
   },
   {
     id: "ema-cross",
+    horizon: "long",
     indicatorId: "ema",
     defaultParameters: { fast: 12, slow: 26 },
     buildTarget: emaCross,
   },
   {
     id: "rsi-reversal",
+    horizon: "short",
     indicatorId: "rsi",
     defaultParameters: { period: 14, entry: 30, exit: 65 },
     buildTarget: rsiReversal,
   },
   {
     id: "macd-momentum",
+    horizon: "long",
     indicatorId: "macd",
     defaultParameters: { fast: 12, slow: 26, signal: 9 },
     buildTarget: macdMomentum,
   },
   {
     id: "bollinger-reversion",
+    horizon: "short",
     indicatorId: "bollinger",
     defaultParameters: { period: 20, width: 2 },
     buildTarget: bollingerReversion,
   },
   {
     id: "donchian-breakout",
+    horizon: "long",
     indicatorId: "atr",
     defaultParameters: { entryPeriod: 20, exitPeriod: 10 },
     buildTarget: donchianBreakout,
   },
   {
     id: "kdj-reversal",
+    horizon: "short",
     indicatorId: "kdj",
     defaultParameters: { period: 9, entry: 35, exit: 65 },
     buildTarget: kdjReversal,
   },
   {
     id: "supertrend-trend",
+    horizon: "long",
     indicatorId: "supertrend",
     defaultParameters: { period: 10, multiplier: 3 },
     buildTarget: supertrendTrend,
   },
   {
     id: "ichimoku-trend",
+    horizon: "long",
     indicatorId: "ichimoku",
     defaultParameters: {
       conversionPeriod: 9,
@@ -403,24 +437,44 @@ export const STRATEGIES: StrategyDefinition[] = [
   },
   {
     id: "mfi-reversal",
+    horizon: "short",
     indicatorId: "mfi",
     defaultParameters: { period: 14, entry: 20, exit: 60 },
     buildTarget: mfiReversal,
   },
   {
     id: "roc-momentum",
+    horizon: "long",
     indicatorId: "roc",
     defaultParameters: { period: 12, entry: 2, exit: 0 },
     buildTarget: rocMomentum,
   },
   {
     id: "vwap-reversion",
+    horizon: "short",
     indicatorId: "vwap",
     defaultParameters: { entryPercent: 1.5, exitPercent: 0 },
     buildTarget: vwapReversion,
   },
-  ...TRADINGVIEW_BUILT_IN_STRATEGIES,
+  ...TRADINGVIEW_BUILT_IN_STRATEGIES.map((strategy) => ({
+    ...strategy,
+    horizon: strategyHorizon(strategy.id),
+  })),
 ];
+
+export const LONG_HORIZON_STRATEGY_IDS: StrategyId[] = STRATEGIES.filter(
+  (strategy) => strategy.horizon === "long",
+).map((strategy) => strategy.id);
+
+export const SHORT_HORIZON_STRATEGY_IDS: StrategyId[] = STRATEGIES.filter(
+  (strategy) => strategy.horizon === "short",
+).map((strategy) => strategy.id);
+
+export function getStrategiesByHorizon(
+  horizon: StrategyHorizon,
+): StrategyDefinition[] {
+  return STRATEGIES.filter((strategy) => strategy.horizon === horizon);
+}
 
 export function getStrategy(id: StrategyId): StrategyDefinition {
   const strategy = STRATEGIES.find((candidate) => candidate.id === id);

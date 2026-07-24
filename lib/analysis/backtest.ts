@@ -32,21 +32,36 @@ export interface BacktestTrade {
   exitReason: "strategy" | "range-end";
 }
 
-export interface BacktestResult {
-  strategyId: StrategyId;
-  parameters: StrategyParameters;
+export interface BacktestPerformance {
   totalReturn: number;
   annualizedReturn: number;
   benchmarkReturn: number;
   maxDrawdown: number;
   sharpe: number;
-  winRate: number;
-  profitFactor: number;
   tradeCount: number;
   finalEquity: number;
   score: number;
   equity: EquityPoint[];
+}
+
+export interface BacktestResult extends BacktestPerformance {
+  strategyId: StrategyId;
+  parameters: StrategyParameters;
+  winRate: number;
+  profitFactor: number;
   trades: BacktestTrade[];
+}
+
+export interface AllocationRebalance {
+  time: string;
+  fromAllocation: number;
+  targetAllocation: number;
+  fillPrice: number;
+  reason: "strategy" | "range-end";
+}
+
+export interface AllocationBacktestResult extends BacktestPerformance {
+  rebalances: AllocationRebalance[];
 }
 
 const periodsPerYear: Record<MarketInterval, number> = {
@@ -73,6 +88,197 @@ function filterRange(bars: MarketBar[], startTime?: string, endTime?: string) {
     ? Date.parse(`${endTime}T23:59:59+08:00`)
     : Infinity;
   return bars.filter((bar) => bar.timestamp >= start && bar.timestamp <= end);
+}
+
+function summarizePerformance(
+  finalCash: number,
+  equity: EquityPoint[],
+  bars: MarketBar[],
+  tradeCount: number,
+  settings: BacktestSettings,
+): BacktestPerformance {
+  let peak = 0;
+  equity.forEach((point) => {
+    peak = Math.max(peak, point.equity);
+    point.drawdown = peak === 0 ? 0 : ((point.equity - peak) / peak) * 100;
+  });
+
+  const returns = equity
+    .slice(1)
+    .map((point, index) => point.equity / equity[index].equity - 1)
+    .filter(Number.isFinite);
+  const meanReturn =
+    returns.reduce((sum, value) => sum + value, 0) / Math.max(returns.length, 1);
+  const deviation = standardDeviation(returns);
+  const sharpe =
+    deviation === 0
+      ? 0
+      : (meanReturn / deviation) * Math.sqrt(periodsPerYear[settings.interval]);
+  const initialCash = Math.max(settings.initialCash, 1);
+  const totalReturn = ((finalCash - initialCash) / initialCash) * 100;
+  const elapsedYears =
+    (bars[bars.length - 1].timestamp - bars[0].timestamp) /
+    (365.25 * 24 * 60 * 60 * 1000);
+  const annualizedReturn =
+    elapsedYears > 0
+      ? (Math.pow(
+          Math.max(finalCash / initialCash, 0.0001),
+          1 / elapsedYears,
+        ) -
+          1) *
+        100
+      : totalReturn;
+  const maxDrawdown = Math.min(...equity.map((point) => point.drawdown));
+  const firstBar = bars[0];
+  const lastBar = bars[bars.length - 1];
+  const commissionRate = Math.max(settings.commissionRate, 0);
+  const slippageRate = Math.max(settings.slippageRate, 0);
+  const benchmarkReturn =
+    ((lastBar.close * (1 - slippageRate) -
+      firstBar.open * (1 + slippageRate)) /
+      (firstBar.open * (1 + slippageRate))) *
+      100 -
+    commissionRate * 200;
+  const score =
+    totalReturn * 0.45 +
+    Math.max(Math.min(sharpe, 5), -5) * 8 +
+    maxDrawdown * 0.35 +
+    Math.min(tradeCount, 20) * 0.2;
+
+  return {
+    totalReturn,
+    annualizedReturn,
+    benchmarkReturn,
+    maxDrawdown,
+    sharpe,
+    tradeCount,
+    finalEquity: finalCash,
+    score,
+    equity,
+  };
+}
+
+function clampAllocation(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(Math.max(value, 0), 1);
+}
+
+export function runAllocationBacktest(
+  allBars: MarketBar[],
+  fullTarget: number[],
+  settings: BacktestSettings,
+): AllocationBacktestResult {
+  if (fullTarget.length !== allBars.length) {
+    throw new Error("Allocation target must align with market bars");
+  }
+
+  const indexedBars = allBars
+    .map((bar, index) => ({
+      bar,
+      target: clampAllocation(fullTarget[index] ?? 0),
+    }))
+    .filter(({ bar }) =>
+      filterRange([bar], settings.startTime, settings.endTime).length,
+    );
+  if (indexedBars.length < 3) {
+    throw new Error("Backtest requires at least three bars in the selected range");
+  }
+
+  let cash = Math.max(settings.initialCash, 1);
+  let units = 0;
+  let peak = cash;
+  const commissionRate = Math.max(settings.commissionRate, 0);
+  const slippageRate = Math.max(settings.slippageRate, 0);
+  const equity: EquityPoint[] = [];
+  const rebalances: AllocationRebalance[] = [];
+
+  const rebalanceAtOpen = (
+    bar: MarketBar,
+    targetAllocation: number,
+  ) => {
+    const equityAtOpen = cash + units * bar.open;
+    if (equityAtOpen <= 0 || bar.open <= 0) return;
+    const fromAllocation = clampAllocation(
+      (units * bar.open) / equityAtOpen,
+    );
+    const desiredUnits = (equityAtOpen * targetAllocation) / bar.open;
+    const unitDelta = desiredUnits - units;
+    const tolerance = Math.max(desiredUnits, units, 1) * 1e-10;
+
+    if (unitDelta > tolerance) {
+      const fillPrice = bar.open * (1 + slippageRate);
+      const unitCost = fillPrice * (1 + commissionRate);
+      const boughtUnits = Math.min(unitDelta, cash / unitCost);
+      if (boughtUnits <= tolerance) return;
+      cash -= boughtUnits * unitCost;
+      units += boughtUnits;
+      rebalances.push({
+        time: bar.time,
+        fromAllocation,
+        targetAllocation,
+        fillPrice,
+        reason: "strategy",
+      });
+    } else if (unitDelta < -tolerance) {
+      const fillPrice = bar.open * (1 - slippageRate);
+      const soldUnits = Math.min(-unitDelta, units);
+      if (soldUnits <= tolerance) return;
+      cash += soldUnits * fillPrice * (1 - commissionRate);
+      units -= soldUnits;
+      rebalances.push({
+        time: bar.time,
+        fromAllocation,
+        targetAllocation,
+        fillPrice,
+        reason: "strategy",
+      });
+    }
+  };
+
+  for (let index = 0; index < indexedBars.length; index += 1) {
+    const { bar } = indexedBars[index];
+    if (index > 0) {
+      rebalanceAtOpen(bar, indexedBars[index - 1].target);
+    }
+
+    const currentEquity = cash + units * bar.close;
+    peak = Math.max(peak, currentEquity);
+    equity.push({
+      time: bar.time,
+      equity: currentEquity,
+      drawdown: peak === 0 ? 0 : ((currentEquity - peak) / peak) * 100,
+    });
+  }
+
+  if (units > 0) {
+    const lastBar = indexedBars[indexedBars.length - 1].bar;
+    const equityBeforeClose = cash + units * lastBar.close;
+    const fromAllocation = clampAllocation(
+      (units * lastBar.close) / equityBeforeClose,
+    );
+    const fillPrice = lastBar.close * (1 - slippageRate);
+    cash += units * fillPrice * (1 - commissionRate);
+    units = 0;
+    rebalances.push({
+      time: lastBar.time,
+      fromAllocation,
+      targetAllocation: 0,
+      fillPrice,
+      reason: "range-end",
+    });
+    equity[equity.length - 1].equity = cash;
+  }
+
+  return {
+    ...summarizePerformance(
+      cash,
+      equity,
+      indexedBars.map(({ bar }) => bar),
+      rebalances.length,
+      settings,
+    ),
+    rebalances,
+  };
 }
 
 export function runBacktest(
@@ -191,35 +397,6 @@ export function runBacktest(
     equity[equity.length - 1].equity = cash;
   }
 
-  peak = 0;
-  equity.forEach((point) => {
-    peak = Math.max(peak, point.equity);
-    point.drawdown = peak === 0 ? 0 : ((point.equity - peak) / peak) * 100;
-  });
-
-  const returns = equity
-    .slice(1)
-    .map((point, index) => point.equity / equity[index].equity - 1)
-    .filter(Number.isFinite);
-  const meanReturn =
-    returns.reduce((sum, value) => sum + value, 0) / Math.max(returns.length, 1);
-  const deviation = standardDeviation(returns);
-  const sharpe =
-    deviation === 0
-      ? 0
-      : (meanReturn / deviation) * Math.sqrt(periodsPerYear[settings.interval]);
-  const initialCash = Math.max(settings.initialCash, 1);
-  const totalReturn = ((cash - initialCash) / initialCash) * 100;
-  const elapsedYears =
-    (indexedBars[indexedBars.length - 1].bar.timestamp -
-      indexedBars[0].bar.timestamp) /
-    (365.25 * 24 * 60 * 60 * 1000);
-  const annualizedReturn =
-    elapsedYears > 0
-      ? (Math.pow(Math.max(cash / initialCash, 0.0001), 1 / elapsedYears) - 1) *
-        100
-      : totalReturn;
-  const maxDrawdown = Math.min(...equity.map((point) => point.drawdown));
   const winningTrades = trades.filter((trade) => trade.returnPercent > 0);
   const losingTrades = trades.filter((trade) => trade.returnPercent < 0);
   const grossProfit = winningTrades.reduce(
@@ -229,36 +406,22 @@ export function runBacktest(
   const grossLoss = Math.abs(
     losingTrades.reduce((sum, trade) => sum + trade.returnPercent, 0),
   );
-  const firstBar = indexedBars[0].bar;
-  const lastBar = indexedBars[indexedBars.length - 1].bar;
-  const benchmarkReturn =
-    ((lastBar.close * (1 - slippageRate) -
-      firstBar.open * (1 + slippageRate)) /
-      (firstBar.open * (1 + slippageRate))) *
-      100 -
-    commissionRate * 200;
-  const score =
-    totalReturn * 0.45 +
-    Math.max(Math.min(sharpe, 5), -5) * 8 +
-    maxDrawdown * 0.35 +
-    Math.min(trades.length, 20) * 0.2;
+  const performance = summarizePerformance(
+    cash,
+    equity,
+    indexedBars.map(({ bar }) => bar),
+    trades.length,
+    settings,
+  );
 
   return {
     strategyId,
     parameters,
-    totalReturn,
-    annualizedReturn,
-    benchmarkReturn,
-    maxDrawdown,
-    sharpe,
+    ...performance,
     winRate:
       trades.length === 0 ? 0 : (winningTrades.length / trades.length) * 100,
     profitFactor:
       grossLoss === 0 ? (grossProfit > 0 ? 99 : 0) : grossProfit / grossLoss,
-    tradeCount: trades.length,
-    finalEquity: cash,
-    score,
-    equity,
     trades,
   };
 }

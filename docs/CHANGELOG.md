@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-25
+
+- Classified all 32 strategies into explicit, disjoint long- and short-horizon
+  groups and exposed those groups in the strategy selector and screening
+  results.
+- Added hierarchical targets where the long rule gates exposure and the short
+  rule switches between a configurable core allocation and full planned
+  allocation inside the long uptrend.
+- Added a partial-allocation next-open backtest with per-rebalance commission,
+  slippage, range-end liquidation, and shared screening metrics.
+- Added bounded two-stage combination screening: two standalone finalists per
+  strategy, retained long/short pairing, shared objectives, progress,
+  cancellation, ranked results, and an equity/drawdown preview.
+- Added coverage for horizon completeness, hierarchy truth tables, prefix
+  invariance, allocation execution and costs, bounded role-safe optimization,
+  progress, cancellation, and rendered UI order.
+
 ## 2026-07-24
 
 - Prevented all adjusted/raw latest-history merges and retained the complete

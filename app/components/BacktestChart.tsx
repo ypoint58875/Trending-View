@@ -2,11 +2,11 @@
 
 import { useMemo } from "react";
 import type { EChartsOption } from "echarts";
-import type { BacktestResult } from "@/lib/analysis/backtest";
+import type { BacktestPerformance } from "@/lib/analysis/backtest";
 import { EChart } from "./EChart";
 
 interface BacktestChartProps {
-  result: BacktestResult;
+  result: BacktestPerformance;
   ariaLabel: string;
   labels: {
     equity: string;

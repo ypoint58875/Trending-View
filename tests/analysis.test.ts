@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  runAllocationBacktest,
   runBacktest,
   type BacktestResult,
 } from "../lib/analysis/backtest";
@@ -42,9 +43,19 @@ import {
 } from "../lib/analysis/screening";
 import { parseSaveBacktestInput } from "../lib/analysis/saved-backtests";
 import {
+  LONG_HORIZON_STRATEGY_IDS,
+  SHORT_HORIZON_STRATEGY_IDS,
   getStrategy,
+  getStrategiesByHorizon,
   STRATEGIES,
 } from "../lib/analysis/strategies";
+import {
+  COMBINATION_FINALISTS_PER_STRATEGY,
+  MAX_COMBINATION_RESULTS,
+  buildHierarchicalAllocationTarget,
+  buildStrategyCombinationTarget,
+  optimizeStrategyCombinations,
+} from "../lib/analysis/strategy-combinations";
 import {
   INTRABAR_PRICE_ORDER_STRATEGY_IDS,
   TRADINGVIEW_BUILT_IN_STRATEGY_IDS,
@@ -743,6 +754,150 @@ test("builds aligned long-only signals for every strategy", () => {
   );
 });
 
+test("classifies every registered strategy into one explicit holding horizon", () => {
+  assert.deepEqual(LONG_HORIZON_STRATEGY_IDS, [
+    "sma-cross",
+    "ema-cross",
+    "macd-momentum",
+    "donchian-breakout",
+    "supertrend-trend",
+    "ichimoku-trend",
+    "roc-momentum",
+    "tv-bollinger-directed",
+    "tv-keltner-channels",
+    "tv-macd",
+    "tv-momentum",
+    "tv-parabolic-sar",
+    "tv-price-channel",
+    "tv-supertrend",
+    "tv-technical-ratings",
+  ]);
+  assert.deepEqual(SHORT_HORIZON_STRATEGY_IDS, [
+    "rsi-reversal",
+    "bollinger-reversion",
+    "kdj-reversal",
+    "mfi-reversal",
+    "vwap-reversion",
+    "tv-bar-up-down",
+    "tv-bollinger-bands",
+    "tv-channel-breakout",
+    "tv-consecutive-up-down",
+    "tv-greedy",
+    "tv-inside-bar",
+    "tv-outside-bar",
+    "tv-pivot-extension",
+    "tv-pivot-reversal",
+    "tv-rsi",
+    "tv-stochastic-slow",
+    "tv-volty-expan-close",
+  ]);
+
+  const categorizedIds = [
+    ...LONG_HORIZON_STRATEGY_IDS,
+    ...SHORT_HORIZON_STRATEGY_IDS,
+  ];
+  assert.equal(categorizedIds.length, STRATEGIES.length);
+  assert.equal(new Set(categorizedIds).size, STRATEGIES.length);
+  assert.deepEqual(
+    getStrategiesByHorizon("long").map((strategy) => strategy.id),
+    LONG_HORIZON_STRATEGY_IDS,
+  );
+  assert.deepEqual(
+    getStrategiesByHorizon("short").map((strategy) => strategy.id),
+    SHORT_HORIZON_STRATEGY_IDS,
+  );
+  for (const strategy of STRATEGIES) {
+    assert.ok(
+      strategy.horizon === "long" || strategy.horizon === "short",
+      strategy.id,
+    );
+  }
+});
+
+test("builds a gated flat, core, and full hierarchical allocation target", () => {
+  const combined = buildHierarchicalAllocationTarget(
+    [0, 1, 1, 1, 0],
+    [1, 0, 1, 0, 1],
+    0.6,
+  );
+  assert.deepEqual(combined, [0, 0.6, 1, 0.6, 0]);
+  assert.deepEqual(
+    buildHierarchicalAllocationTarget([1, 1], [0, 1], -1),
+    [0, 1],
+  );
+  assert.deepEqual(
+    buildHierarchicalAllocationTarget([1, 1], [0, 1], 2),
+    [1, 1],
+  );
+  assert.throws(
+    () => buildHierarchicalAllocationTarget([1], [1, 0], 0.6),
+    /align/i,
+  );
+});
+
+test("keeps hierarchical strategy targets invariant across input prefixes", () => {
+  const bars = makeBars(
+    Array.from({ length: 180 }, (_, index) => {
+      return 100 + index * 0.08 + Math.sin(index / 5) * 4;
+    }),
+  );
+  const combination = {
+    longStrategyId: "donchian-breakout" as const,
+    longParameters: { entryPeriod: 40, exitPeriod: 20 },
+    shortStrategyId: "tv-channel-breakout" as const,
+    shortParameters: { length: 10, tick: 0.1 },
+    coreAllocation: 0.6,
+  };
+  const fullTarget = buildStrategyCombinationTarget(bars, combination);
+
+  assert.equal(fullTarget.length, bars.length);
+  assert.ok(
+    fullTarget.every(
+      (allocation) =>
+        allocation === 0 || allocation === 0.6 || allocation === 1,
+    ),
+  );
+  for (const prefixLength of [60, 100, 140]) {
+    assert.deepEqual(
+      buildStrategyCombinationTarget(
+        bars.slice(0, prefixLength),
+        combination,
+      ),
+      fullTarget.slice(0, prefixLength),
+      String(prefixLength),
+    );
+  }
+});
+
+test("rebalances hierarchical allocations at the next open and applies costs", () => {
+  const bars = makeOhlcBars([
+    { open: 10, high: 10, low: 10, close: 10 },
+    { open: 11, high: 11, low: 11, close: 11 },
+    { open: 12, high: 12, low: 12, close: 12 },
+    { open: 13, high: 13, low: 13, close: 13 },
+    { open: 14, high: 14, low: 14, close: 14 },
+  ]);
+  const target = [0, 1, 0.6, 1, 0];
+  const result = runAllocationBacktest(bars, target, {
+    initialCash: 10_000,
+    commissionRate: 0.001,
+    slippageRate: 0.001,
+    interval: "1d",
+  });
+
+  assert.equal(result.rebalances[0].time, bars[2].time);
+  assert.equal(result.rebalances[0].targetAllocation, 1);
+  assert.equal(result.rebalances[1].time, bars[3].time);
+  assert.equal(result.rebalances[1].targetAllocation, 0.6);
+  assert.equal(result.rebalances[2].time, bars[4].time);
+  assert.equal(result.rebalances[2].targetAllocation, 1);
+  assert.equal(result.rebalances.at(-1)?.reason, "range-end");
+  assert.equal(result.tradeCount, result.rebalances.length);
+  assert.ok(result.finalEquity > 10_000);
+  assert.ok(result.finalEquity < 12_000);
+  assert.ok(result.maxDrawdown <= 0);
+});
+
 test("Channel BreakOut sells to flat on a lower-channel break", () => {
   const bars = makeBars([10, 10, 10, 10, 10, 12, 9]);
   const strategy = STRATEGIES.find(
@@ -1412,6 +1567,110 @@ test("optimizes every strategy and sorts best results by score", async () => {
       outcome.results[index - 1].score >= outcome.results[index].score,
     );
   }
+});
+
+test("builds horizon-filtered screening candidates", () => {
+  const longCandidates = buildScreeningCandidates(1, ["long"]);
+  const shortCandidates = buildScreeningCandidates(1, ["short"]);
+
+  assert.equal(longCandidates.length, LONG_HORIZON_STRATEGY_IDS.length);
+  assert.equal(shortCandidates.length, SHORT_HORIZON_STRATEGY_IDS.length);
+  assert.ok(
+    longCandidates.every(
+      (candidate) => getStrategy(candidate.strategyId).horizon === "long",
+    ),
+  );
+  assert.ok(
+    shortCandidates.every(
+      (candidate) => getStrategy(candidate.strategyId).horizon === "short",
+    ),
+  );
+});
+
+test("optimizes bounded long and short strategy combinations", async () => {
+  const bars = makeBars(
+    Array.from({ length: 180 }, (_, index) => {
+      return 30 + index * 0.05 + Math.sin(index / 5) * 2.4;
+    }),
+  );
+  const progress: number[] = [];
+  const outcome = await optimizeStrategyCombinations(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0.0003,
+      slippageRate: 0.0002,
+      interval: "1d",
+    },
+    {
+      maxPerStrategy: 1,
+      coreAllocation: 0.6,
+      yieldEvery: 16,
+      onProgress: (update) => progress.push(update.completed),
+    },
+  );
+
+  assert.equal(COMBINATION_FINALISTS_PER_STRATEGY, 2);
+  assert.equal(
+    outcome.totalCandidates,
+    STRATEGIES.length +
+      LONG_HORIZON_STRATEGY_IDS.length *
+        SHORT_HORIZON_STRATEGY_IDS.length,
+  );
+  assert.equal(outcome.evaluatedCount, outcome.totalCandidates);
+  assert.equal(outcome.failedCount, 0);
+  assert.equal(outcome.cancelled, false);
+  assert.equal(
+    outcome.results.length,
+    MAX_COMBINATION_RESULTS,
+  );
+  assert.equal(progress.at(0), 0);
+  assert.equal(progress.at(-1), outcome.totalCandidates);
+
+  for (const result of outcome.results) {
+    assert.equal(getStrategy(result.longStrategyId).horizon, "long");
+    assert.equal(getStrategy(result.shortStrategyId).horizon, "short");
+    assert.equal(result.coreAllocation, 0.6);
+    assert.equal(result.tradeCount, result.rebalances.length);
+  }
+  for (let index = 1; index < outcome.results.length; index += 1) {
+    assert.ok(
+      compareScreeningResults(
+        outcome.results[index - 1],
+        outcome.results[index],
+        "balanced",
+      ) <= 0,
+    );
+  }
+});
+
+test("cancels combination optimization between chunks", async () => {
+  const controller = new AbortController();
+  const bars = makeBars(
+    Array.from({ length: 100 }, (_, index) => 20 + index * 0.08),
+  );
+  const outcome = await optimizeStrategyCombinations(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+    {
+      maxPerStrategy: 2,
+      coreAllocation: 0.6,
+      signal: controller.signal,
+      yieldEvery: 1,
+      onProgress: ({ completed }) => {
+        if (completed === 3) controller.abort();
+      },
+    },
+  );
+
+  assert.equal(outcome.cancelled, true);
+  assert.equal(outcome.evaluatedCount, 3);
+  assert.ok(outcome.evaluatedCount < outcome.totalCandidates);
 });
 
 test("ranks screening results by the selected optimization objective", () => {
