@@ -1,16 +1,13 @@
 @echo off
 setlocal
-set "SITE_URL=https://quantscope-market-lab.work-3582.chatgpt.site"
-set "EDGE_EXE=%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
+set "PROJECT_DIR=%~dp0"
 
-if not exist "%EDGE_EXE%" set "EDGE_EXE=%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
-if not exist "%EDGE_EXE%" set "EDGE_EXE=%LocalAppData%\Microsoft\Edge\Application\msedge.exe"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_DIR%scripts\start-local.ps1"
+set "EXIT_CODE=%ERRORLEVEL%"
 
-if exist "%EDGE_EXE%" (
-  start "" "%EDGE_EXE%" --new-window --start-maximized "%SITE_URL%"
-) else (
-  start "" "%SITE_URL%"
+if not "%EXIT_CODE%"=="0" (
+  echo.
+  pause
 )
 
-endlocal
-exit /b 0
+endlocal & exit /b %EXIT_CODE%
