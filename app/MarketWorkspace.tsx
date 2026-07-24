@@ -3,15 +3,18 @@
 import {
   Activity,
   BarChart3,
+  Bookmark,
   CandlestickChart,
   ChevronRight,
   FlaskConical,
   LineChart,
   LoaderCircle,
   RefreshCw,
+  Save,
   Search,
   ShieldAlert,
   Sparkles,
+  Trash2,
   Trophy,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,6 +35,10 @@ import {
   type StrategyId,
   type StrategyParameters,
 } from "@/lib/analysis/strategies";
+import {
+  createSaveBacktestInput,
+  type SavedBacktestRecord,
+} from "@/lib/analysis/saved-backtests";
 import type {
   MarketInstrument,
   MarketInterval,
@@ -164,7 +171,16 @@ export function MarketWorkspace() {
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [screening, setScreening] = useState(false);
   const [screenResults, setScreenResults] = useState<BacktestResult[]>([]);
+  const [savedBacktests, setSavedBacktests] = useState<
+    SavedBacktestRecord[]
+  >([]);
+  const [savedBacktestsLoading, setSavedBacktestsLoading] = useState(true);
+  const [savedBacktestsError, setSavedBacktestsError] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const pendingSavedBacktestRef = useRef<SavedBacktestRecord | null>(null);
 
   const fetchMarket = useCallback(
     async (signal: AbortSignal) => {
@@ -195,10 +211,33 @@ export function MarketWorkspace() {
         setSeries(payload);
 
         if (payload.bars.length) {
-          const rangeStart =
-            payload.bars[Math.max(0, payload.bars.length - 500)];
-          setStartDate(datePart(rangeStart.time));
-          setEndDate(datePart(payload.bars[payload.bars.length - 1].time));
+          const firstDate = datePart(payload.bars[0].time);
+          const rangeStart = datePart(
+            payload.bars[Math.max(0, payload.bars.length - 500)].time,
+          );
+          const lastDate = datePart(
+            payload.bars[payload.bars.length - 1].time,
+          );
+          const saved = pendingSavedBacktestRef.current;
+          const restoresSavedRange =
+            saved?.instrument.secid === instrument.secid &&
+            saved.instrument.provider === instrument.provider &&
+            saved.interval === interval;
+          setStartDate(
+            restoresSavedRange &&
+              saved.startDate >= firstDate &&
+              saved.startDate <= lastDate
+              ? saved.startDate
+              : rangeStart,
+          );
+          setEndDate(
+            restoresSavedRange &&
+              saved.endDate >= firstDate &&
+              saved.endDate <= lastDate
+              ? saved.endDate
+              : lastDate,
+          );
+          if (restoresSavedRange) pendingSavedBacktestRef.current = null;
         }
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
@@ -263,6 +302,33 @@ export function MarketWorkspace() {
     return () => document.removeEventListener("mousedown", closeSearch);
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadSavedBacktests = async () => {
+      setSavedBacktestsLoading(true);
+      setSavedBacktestsError(false);
+      try {
+        const response = await fetch("/api/saved-backtests", {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        const payload = (await response.json()) as {
+          savedBacktests?: SavedBacktestRecord[];
+        };
+        if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+        setSavedBacktests(payload.savedBacktests ?? []);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setSavedBacktestsError(true);
+        }
+      } finally {
+        if (!controller.signal.aborted) setSavedBacktestsLoading(false);
+      }
+    };
+    void loadSavedBacktests();
+    return () => controller.abort();
+  }, []);
+
   const latest = series?.bars.at(-1);
   const previous = series?.bars.at(-2);
   const comparisonPrice =
@@ -307,6 +373,77 @@ export function MarketWorkspace() {
     setIndicator(next.indicatorId as IndicatorId);
   };
 
+  const saveCurrentBacktest = async () => {
+    if (!backtest) return;
+    setSaveStatus("saving");
+    try {
+      const response = await fetch("/api/saved-backtests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          createSaveBacktestInput(
+            instrument,
+            interval,
+            strategyId,
+            parameters,
+            startDate,
+            endDate,
+            initialCash,
+            commissionPercent,
+            slippagePercent,
+            backtest,
+          ),
+        ),
+      });
+      const payload = (await response.json()) as {
+        savedBacktest?: SavedBacktestRecord;
+      };
+      if (!response.ok || !payload.savedBacktest) {
+        throw new Error("PERSISTENCE_UNAVAILABLE");
+      }
+      setSavedBacktests((current) => [
+        payload.savedBacktest!,
+        ...current.filter((item) => item.id !== payload.savedBacktest!.id),
+      ]);
+      setSavedBacktestsError(false);
+      setSaveStatus("saved");
+      window.setTimeout(() => setSaveStatus("idle"), 1600);
+    } catch {
+      setSaveStatus("error");
+    }
+  };
+
+  const openSavedBacktest = (saved: SavedBacktestRecord) => {
+    const requiresMarketReload =
+      saved.instrument.secid !== instrument.secid ||
+      saved.instrument.provider !== instrument.provider ||
+      saved.interval !== interval;
+    pendingSavedBacktestRef.current = requiresMarketReload ? saved : null;
+    setInstrument(saved.instrument);
+    setInterval(saved.interval);
+    selectStrategy(saved.strategyId, saved.parameters);
+    setStartDate(saved.startDate);
+    setEndDate(saved.endDate);
+    setInitialCash(saved.initialCash);
+    setCommissionPercent(saved.commissionPercent);
+    setSlippagePercent(saved.slippagePercent);
+    setScreenResults([]);
+  };
+
+  const deleteSavedBacktest = async (id: number) => {
+    try {
+      const response = await fetch(`/api/saved-backtests?id=${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+      setSavedBacktests((current) =>
+        current.filter((saved) => saved.id !== id),
+      );
+    } catch {
+      setSavedBacktestsError(true);
+    }
+  };
+
   const startScreening = () => {
     if (!series?.bars.length) return;
     setScreening(true);
@@ -326,6 +463,7 @@ export function MarketWorkspace() {
   };
 
   const chooseInstrument = (nextInstrument: MarketInstrument) => {
+    pendingSavedBacktestRef.current = null;
     setInstrument(nextInstrument);
     setQuery("");
     setSearchResults([]);
@@ -341,6 +479,7 @@ export function MarketWorkspace() {
   };
 
   const chooseInterval = (nextInterval: MarketInterval) => {
+    pendingSavedBacktestRef.current = null;
     setInterval(nextInterval);
     setScreenResults([]);
   };
@@ -585,8 +724,112 @@ export function MarketWorkspace() {
               <span className="eyebrow">{copy.lab.title}</span>
               <strong>{copy.strategies[strategyId].name}</strong>
             </div>
-            <FlaskConical size={19} />
+            <div className="lab-heading-actions">
+              <button
+                className={`save-backtest-button ${saveStatus}`}
+                type="button"
+                disabled={!backtest || saveStatus === "saving"}
+                onClick={() => void saveCurrentBacktest()}
+                aria-label={copy.savedBacktests.save}
+                title={copy.savedBacktests.save}
+              >
+                {saveStatus === "saving" ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : (
+                  <Save size={14} />
+                )}
+                <span>
+                  {saveStatus === "saving"
+                    ? copy.savedBacktests.saving
+                    : saveStatus === "saved"
+                      ? copy.savedBacktests.saved
+                      : saveStatus === "error"
+                        ? copy.savedBacktests.saveError
+                        : copy.savedBacktests.save}
+                </span>
+              </button>
+              <FlaskConical size={19} />
+            </div>
           </div>
+
+          <section
+            className="saved-backtest-shortcuts"
+            aria-label={copy.savedBacktests.title}
+          >
+            <div className="saved-shortcuts-heading">
+              <span>
+                <Bookmark size={14} />
+                {copy.savedBacktests.title}
+              </span>
+              <small>{savedBacktests.length}</small>
+            </div>
+            {savedBacktestsLoading ? (
+              <div className="saved-shortcuts-state">
+                <LoaderCircle className="spin" size={14} />
+                {copy.savedBacktests.loading}
+              </div>
+            ) : savedBacktests.length === 0 ? (
+              <div className="saved-shortcuts-state">
+                {savedBacktestsError
+                  ? copy.savedBacktests.loadError
+                  : copy.savedBacktests.empty}
+              </div>
+            ) : (
+              <div className="saved-shortcuts-list">
+                {savedBacktests.map((saved) => {
+                  const active =
+                    saved.instrument.secid === instrument.secid &&
+                    saved.instrument.provider === instrument.provider;
+                  return (
+                    <div
+                      className={`saved-shortcut ${active ? "active" : ""}`}
+                      key={saved.id}
+                    >
+                      <button
+                        className="saved-shortcut-main"
+                        type="button"
+                        onClick={() => openSavedBacktest(saved)}
+                        title={copy.savedBacktests.open}
+                      >
+                        <span className="saved-shortcut-name">
+                          <strong>{saved.instrument.name}</strong>
+                          <b
+                            className={
+                              saved.metrics.totalReturn >= 0
+                                ? "positive"
+                                : "negative"
+                            }
+                          >
+                            {formatPercent(
+                              saved.metrics.totalReturn,
+                              true,
+                            )}
+                          </b>
+                        </span>
+                        <small>
+                          {saved.instrument.exchange}:{saved.instrument.code}
+                          {" "}
+                          {copy.common.separator} {copy.intervals[saved.interval]}
+                          {" "}
+                          {copy.common.separator}{" "}
+                          {copy.strategies[saved.strategyId].name}
+                        </small>
+                      </button>
+                      <button
+                        className="saved-shortcut-delete"
+                        type="button"
+                        onClick={() => void deleteSavedBacktest(saved.id)}
+                        aria-label={`${copy.savedBacktests.remove} ${saved.instrument.name}`}
+                        title={copy.savedBacktests.remove}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
           <p className="panel-copy">{copy.lab.subtitle}</p>
 
           <label className="field-label">

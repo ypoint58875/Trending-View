@@ -51,3 +51,12 @@ bar open. A positive signal buys or maintains a long position; a flat or
 negative reference signal sells the long position and remains in cash. Apply
 slippage and commission on entry and exit. Derive displayed buy and sell points
 only from the resulting completed long trades.
+
+## D-008: Durable saved backtest shortcuts
+
+Persist saved index/ETF backtests in D1 instead of browser storage. Use the
+authenticated ChatGPT email as the owner key and include it in every query.
+Keep one latest snapshot per owner, provider, and instrument. A shortcut
+restores the instrument, interval, strategy, parameters, date range, capital,
+commission, and slippage; displayed metrics remain a saved summary while the
+current chart recalculates from current market data.

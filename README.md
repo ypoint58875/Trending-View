@@ -18,6 +18,8 @@ parameter screening in one responsive page.
 - Date-range backtests with initial cash, commission, and slippage settings.
 - Long-only buy/flat targets, next-bar-open execution, and chart-level buy/sell
   markers for the active backtest.
+- Per-user saved backtests with a right-side shortcut bar that restores the
+  instrument, interval, strategy, parameters, date range, and cost settings.
 - Ninety-six-candidate automated screening with three distinct parameter sets
   for every strategy, ranked by a return, Sharpe, drawdown, and trade-count
   score.

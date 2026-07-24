@@ -30,6 +30,7 @@ import {
   SCREENING_CANDIDATES,
   screenStrategies,
 } from "../lib/analysis/screening";
+import { parseSaveBacktestInput } from "../lib/analysis/saved-backtests";
 import {
   getStrategy,
   STRATEGIES,
@@ -446,4 +447,48 @@ test("filters weak candle signals with the minimum body parameter", () => {
 
   assert.equal(unfiltered[1], 1);
   assert.equal(filtered[1], 0);
+});
+
+test("validates saved backtests and rejects unsupported assets", () => {
+  const payload = {
+    instrument: {
+      secid: "100.N225",
+      code: "N225",
+      name: "Nikkei 225",
+      exchange: "JPX",
+      assetType: "index",
+      provider: "eastmoney",
+    },
+    interval: "1d",
+    strategyId: "sma-cross",
+    parameters: { fast: 10, slow: 30 },
+    startDate: "2024-01-01",
+    endDate: "2025-01-01",
+    initialCash: 100_000,
+    commissionPercent: 0.03,
+    slippagePercent: 0.02,
+    metrics: {
+      totalReturn: 12.3,
+      maxDrawdown: 8.1,
+      sharpe: 1.2,
+      tradeCount: 10,
+      score: 42,
+    },
+  };
+
+  assert.deepEqual(parseSaveBacktestInput(payload), payload);
+  assert.equal(
+    parseSaveBacktestInput({
+      ...payload,
+      instrument: { ...payload.instrument, assetType: "equity" },
+    }),
+    null,
+  );
+  assert.equal(
+    parseSaveBacktestInput({
+      ...payload,
+      parameters: { fast: Number.NaN, slow: 30 },
+    }),
+    null,
+  );
 });

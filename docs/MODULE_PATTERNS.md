@@ -44,6 +44,15 @@ Trade annotations are derived from completed `BacktestTrade` records by a pure
 mapping helper. Every entry is a buy and every exit is a sell. Chart components
 consume the mapped markers but never infer trades from indicator lines.
 
+## Saved record
+
+Saved product records use a shared input/record type, pure boundary validation,
+an authenticated API route, and a D1 table. Every query includes the owner key.
+The instrument identity is limited to the same index/ETF types accepted by the
+market layer. Upserts use the owner, provider, and provider symbol as the
+de-duplication key. UI components consume API records and do not access D1
+bindings directly.
+
 ## UI copy
 
 Chinese user-facing strings live in `app/i18n/zh-CN.ts`. Business logic,

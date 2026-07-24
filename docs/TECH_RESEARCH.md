@@ -154,3 +154,33 @@ local engine does not reproduce pyramiding, intrabar stop/limit fills, or
 TradingView's private Technical Ratings aggregation exactly. The product uses
 long-only `0/1` targets and next-bar-open fills: positive signals buy or hold,
 while negative reference signals sell to cash rather than open short positions.
+
+## Saved backtest persistence
+
+### Option A: browser local storage
+
+The Web Storage API persists data for an origin after the browser closes, but
+the record remains device- and browser-local. It is not an authoritative
+cross-device store and can be cleared by the user or browser.
+
+Source:
+
+- https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API
+
+### Option B: Cloudflare D1
+
+D1 is a managed serverless SQL database with SQLite semantics and direct Worker
+bindings. Prepared statements and bound parameters keep ownership filters and
+record mutations explicit. Drizzle provides a D1 driver plus generated SQL
+migrations for schema traceability.
+
+Sources:
+
+- https://developers.cloudflare.com/d1/
+- https://developers.cloudflare.com/d1/worker-api/prepared-statements/
+- https://orm.drizzle.team/docs/get-started/d1-new
+
+Decision: use D1 because saved backtests are user data expected to survive
+sessions and devices. Scope every list, upsert, and delete by authenticated
+email. Retain one latest snapshot per owner and instrument so the shortcut bar
+stays compact.

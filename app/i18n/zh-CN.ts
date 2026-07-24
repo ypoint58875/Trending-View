@@ -139,6 +139,18 @@ export const zhCN = {
     automatic: "参数变化后自动回测",
     noResult: "当前区间数据不足，无法生成回测。",
   },
+  savedBacktests: {
+    title: "回测快捷栏",
+    save: "保存",
+    saving: "保存中…",
+    saved: "已保存",
+    saveError: "重试保存",
+    loading: "正在加载已保存回测…",
+    empty: "保存当前回测后，可从这里快速切换指数或 ETF。",
+    loadError: "快捷栏加载失败，请稍后重试。",
+    open: "打开已保存回测",
+    remove: "删除已保存回测",
+  },
   strategies: {
     "sma-cross": {
       name: "SMA 双均线",

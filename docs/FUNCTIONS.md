@@ -42,3 +42,13 @@
   long exit to a sell marker.
 - `screenStrategies(...)`: runs 96 declared candidates, comprising three
   distinct parameter sets for every strategy, and sorts them by score.
+
+## Saved backtests
+
+- `createSaveBacktestInput(...)`: creates a compact current-backtest snapshot.
+- `parseSaveBacktestInput(...)`: validates index/ETF identity, strategy,
+  parameters, date range, costs, and metrics at the API boundary.
+- `GET /api/saved-backtests`: lists up to 20 current-user shortcuts.
+- `POST /api/saved-backtests`: inserts or updates the current user's latest
+  snapshot for an instrument.
+- `DELETE /api/saved-backtests?id=...`: removes only the current user's record.

@@ -16,6 +16,8 @@ Implemented:
   drawdown, long-only positions, and chart-level buy/sell markers.
 - Automated screening across 96 parameter candidates, with three distinct
   parameter sets for each of the 32 strategies.
+- Per-user D1-backed saved backtests with a right-side save action and shortcut
+  bar for restoring index/ETF research settings.
 - Chinese responsive UI with centralized locale copy.
 
 ## Verification status
@@ -23,7 +25,7 @@ Implemented:
 - Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-24.
 - Live daily series for N225, SOX, and SPY passed on 2026-07-24; the broader
   daily/5-minute N225, SOX, SPY, and 510300 matrix last passed on 2026-07-23.
-- Analysis and adapter unit tests: 14 passed on 2026-07-24.
+- Analysis and adapter unit tests: 15 passed on 2026-07-24.
 - Built-worker rendering test: 1 passed on 2026-07-24.
 - Production build: passed on 2026-07-24.
 - ESLint: passed on 2026-07-24.
@@ -31,6 +33,8 @@ Implemented:
   buy/sell markers on N225: passed on 2026-07-24.
 - Automated 96-candidate parameter coverage and distinctness tests: passed on
   2026-07-24.
+- Saved-backtest payload validation, migration generation, and production
+  build: passed on 2026-07-24.
 - Long-only catalog, execution, and marker rules: passed on 2026-07-24.
 
 ## Next priorities

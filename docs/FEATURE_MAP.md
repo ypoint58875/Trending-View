@@ -7,4 +7,5 @@
 | Chart modes, indicators, and trade markers | `lib/analysis/indicators.ts`, `lib/analysis/trade-markers.ts` | `PriceChart.tsx`, locale copy | Indicator and marker-mapping tests | `FUNCTIONS.md` |
 | Strategy backtest | `strategies.ts`, `built-in-strategies.ts`, `backtest.ts` | Strategy panel, `PriceChart.tsx`, `BacktestChart.tsx` | Long-only catalog, Channel BreakOut exit, execution, and cost tests | `DECISIONS.md`, `TECH_RESEARCH.md` |
 | Automated screening | `screening.ts` | Screening panel and result table | Full-candidate sorting plus per-strategy parameter coverage and distinctness tests | `FUNCTIONS.md`, `MODULE_PATTERNS.md` |
+| Saved backtest shortcuts | `saved-backtests.ts`, `db/schema.ts`, `/api/saved-backtests` | Save action and shortcut bar in `MarketWorkspace.tsx` | Payload validation and rendered-copy tests | `ARCHITECTURE.md`, `FUNCTIONS.md`, `DECISIONS.md` |
 | Product copy and risk disclosure | `app/i18n/zh-CN.ts` | Workspace and footer | Rendered HTML test | `README.md` |

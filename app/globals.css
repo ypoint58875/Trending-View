@@ -495,6 +495,187 @@ button {
   margin-left: 14px;
 }
 
+.lab-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.save-backtest-button {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 6px;
+  background: var(--green-soft);
+  color: var(--green);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.save-backtest-button:hover:not(:disabled) {
+  border-color: rgba(34, 197, 94, 0.58);
+  background: rgba(34, 197, 94, 0.18);
+}
+
+.save-backtest-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.save-backtest-button.saved {
+  border-color: rgba(34, 197, 94, 0.58);
+  background: rgba(34, 197, 94, 0.2);
+}
+
+.save-backtest-button.error {
+  border-color: rgba(239, 83, 80, 0.4);
+  background: rgba(239, 83, 80, 0.1);
+  color: var(--red);
+}
+
+.saved-backtest-shortcuts {
+  margin-top: 12px;
+  margin-bottom: 2px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0a110e;
+}
+
+.saved-shortcuts-heading {
+  display: flex;
+  height: 33px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px;
+  border-bottom: 1px solid var(--line);
+}
+
+.saved-shortcuts-heading > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.saved-shortcuts-heading svg {
+  color: var(--green);
+}
+
+.saved-shortcuts-heading small {
+  display: grid;
+  min-width: 19px;
+  height: 19px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--panel-raised);
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+}
+
+.saved-shortcuts-state {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px;
+  color: var(--subtle);
+  font-size: 8px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.saved-shortcuts-list {
+  max-height: 154px;
+  overflow-y: auto;
+  scrollbar-color: var(--line-bright) transparent;
+  scrollbar-width: thin;
+}
+
+.saved-shortcut {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 27px;
+  align-items: stretch;
+  border-top: 1px solid var(--line);
+}
+
+.saved-shortcut:first-child {
+  border-top: 0;
+}
+
+.saved-shortcut:hover,
+.saved-shortcut.active {
+  background: rgba(34, 197, 94, 0.045);
+}
+
+.saved-shortcut.active {
+  box-shadow: inset 2px 0 0 var(--green);
+}
+
+.saved-shortcut-main,
+.saved-shortcut-delete {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.saved-shortcut-main {
+  min-width: 0;
+  padding: 8px 6px 8px 9px;
+  text-align: left;
+}
+
+.saved-shortcut-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.saved-shortcut-name strong {
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-shortcut-name b {
+  flex: 0 0 auto;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.saved-shortcut-main small {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--subtle);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-shortcut-delete {
+  display: grid;
+  place-items: center;
+  color: var(--subtle);
+}
+
+.saved-shortcut-delete:hover {
+  color: var(--red);
+}
+
 .panel-copy {
   margin-top: 12px;
   margin-bottom: 13px;

@@ -28,6 +28,16 @@ The selected parameters may produce no entry signal in the chosen date range.
 Expand the range or change the strategy. Do not weaken assertions or inject a
 trade only to make a test pass.
 
+## Saved shortcut bar cannot load
+
+1. Confirm `.openai/hosting.json` declares the `DB` D1 binding.
+2. Confirm `drizzle/` contains the `saved_backtests` migration.
+3. Check that the request is authenticated and includes the injected user
+   identity headers in production.
+4. Inspect `/api/saved-backtests` for `AUTH_REQUIRED`,
+   `INVALID_PAYLOAD`, or `PERSISTENCE_UNAVAILABLE`.
+5. Do not fall back to browser storage for failed durable writes.
+
 ## Commands
 
 ```bash

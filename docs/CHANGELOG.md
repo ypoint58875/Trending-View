@@ -2,6 +2,11 @@
 
 ## 2026-07-24
 
+- Added per-user D1 persistence for saved index/ETF backtests.
+- Added a right-side save action and shortcut bar that restores the complete
+  saved backtest setup and displays its saved return.
+- Added an ownership-scoped upsert/list/delete API, schema migration, payload
+  validation, and rendered UI coverage.
 - Added a root-level Windows launcher for the deployed application.
 - Expanded screening to 96 candidates so every strategy is tested with three
   distinct parameter sets, with automated coverage and distinctness checks.
