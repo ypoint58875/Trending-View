@@ -55,6 +55,7 @@ export interface StabilityThresholdChecks {
 
 export interface NearbyBacktestSummary {
   totalReturnRange: TotalReturnRange;
+  drawdownRange: NumericRange;
   worstDrawdown: number;
   drawdownDeterioration: number;
   tradeCountRange: NumericRange;
@@ -195,9 +196,8 @@ export function summarizeNearbyBacktests(
   const minimumReturn = Math.min(...totalReturns);
   const maximumReturn = Math.max(...totalReturns);
   const tradeCounts = allResults.map((result) => result.tradeCount);
-  const worstDrawdown = Math.min(
-    ...allResults.map((result) => result.maxDrawdown),
-  );
+  const drawdowns = allResults.map((result) => result.maxDrawdown);
+  const worstDrawdown = Math.min(...drawdowns);
   const baseReturnSign = Math.sign(baseResult.totalReturn);
   const matchingVariants = variantResults.filter(
     (result) => Math.sign(result.totalReturn) === baseReturnSign,
@@ -226,6 +226,10 @@ export function summarizeNearbyBacktests(
       minimum: minimumReturn,
       maximum: maximumReturn,
       width: returnRangeWidth,
+    },
+    drawdownRange: {
+      minimum: worstDrawdown,
+      maximum: Math.max(...drawdowns),
     },
     worstDrawdown,
     drawdownDeterioration,

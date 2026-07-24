@@ -1161,6 +1161,10 @@ test("applies inclusive stability thresholds and retains factual ranges", () => 
     minimum: 2,
     maximum: 8,
   });
+  assert.deepEqual(summary.drawdownRange, {
+    minimum: -20,
+    maximum: -8,
+  });
   assert.equal(summary.worstDrawdown, -20);
   assert.equal(summary.drawdownDeterioration, 10);
   assert.deepEqual(summary.signAgreement, {
@@ -1190,6 +1194,56 @@ test("applies inclusive stability thresholds and retains factual ranges", () => 
     ]).stable,
     false,
   );
+});
+
+test("marks only sub-75-percent sign agreement as sensitive", () => {
+  const baseResult: BacktestResult = {
+    strategyId: "sma-cross",
+    parameters: { fast: 10, slow: 15 },
+    totalReturn: 5,
+    annualizedReturn: 5,
+    benchmarkReturn: 0,
+    maxDrawdown: -10,
+    sharpe: 0,
+    winRate: 0,
+    profitFactor: 0,
+    tradeCount: 4,
+    finalEquity: 105_000,
+    score: 0,
+    equity: [],
+    trades: [],
+  };
+  const variantResults = [
+    { ...baseResult, totalReturn: 5, maxDrawdown: -11 },
+    { ...baseResult, totalReturn: 4, maxDrawdown: -12 },
+    { ...baseResult, totalReturn: 0, maxDrawdown: -9 },
+    { ...baseResult, totalReturn: 0, maxDrawdown: -8 },
+  ];
+
+  const summary = summarizeNearbyBacktests(
+    baseResult,
+    variantResults,
+  );
+
+  assert.deepEqual(summary.signAgreement, {
+    matchingVariants: 2,
+    variantCount: 4,
+    ratio: 0.5,
+  });
+  assert.deepEqual(summary.thresholdChecks, {
+    signAgreement: false,
+    returnRange: true,
+    drawdownDeterioration: true,
+  });
+  assert.ok(
+    summary.totalReturnRange.width <=
+      STABILITY_THRESHOLDS.maximumReturnRange,
+  );
+  assert.ok(
+    summary.drawdownDeterioration <=
+      STABILITY_THRESHOLDS.maximumDrawdownDeterioration,
+  );
+  assert.equal(summary.stable, false);
 });
 
 test("runs current and nearby backtests without selecting replacement parameters", () => {
@@ -1230,6 +1284,14 @@ test("runs current and nearby backtests without selecting replacement parameters
   assert.equal(
     analysis.nearby.totalReturnRange.maximum,
     Math.max(...allResults.map((result) => result.totalReturn)),
+  );
+  assert.equal(
+    analysis.nearby.drawdownRange.minimum,
+    Math.min(...allResults.map((result) => result.maxDrawdown)),
+  );
+  assert.equal(
+    analysis.nearby.drawdownRange.maximum,
+    Math.max(...allResults.map((result) => result.maxDrawdown)),
   );
   assert.ok(analysis.nearby.signAgreement.ratio >= 0);
   assert.ok(analysis.nearby.signAgreement.ratio <= 1);
