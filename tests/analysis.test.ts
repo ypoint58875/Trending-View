@@ -54,6 +54,10 @@ import {
   summarizeNearbyBacktests,
   summarizeRegimeReturns,
 } from "../lib/analysis/stability";
+import {
+  buildStrategyOrders,
+  buildStrategyPriceLines,
+} from "../lib/analysis/strategy-visuals";
 import { buildTradeMarkers } from "../lib/analysis/trade-markers";
 import {
   parseKlineRow,
@@ -738,6 +742,354 @@ test("builds price orders only from information available before each bar", () =
         fullOrders.slice(0, prefixLength),
         prefixOrders,
         `${strategyId}:${prefixLength}`,
+      );
+    }
+  }
+});
+
+test("builds Channel BreakOut entry and exit visuals from its order plan", () => {
+  const bars = makeOhlcBars([
+    { open: 9.5, high: 10, low: 9, close: 9.5 },
+    { open: 10, high: 11, low: 9.5, close: 10.5 },
+    { open: 11, high: 12, low: 10, close: 11.5 },
+    { open: 9.8, high: 10, low: 9, close: 9.2 },
+  ]);
+  const parameters = { length: 2, tick: 0.1 };
+  const orders = buildStrategyOrders(
+    bars,
+    "tv-channel-breakout",
+    parameters,
+  );
+
+  assert.ok(orders);
+  assert.deepEqual(
+    buildStrategyPriceLines(
+      bars,
+      "tv-channel-breakout",
+      parameters,
+    ),
+    [
+      {
+        id: "tv-channel-breakout:entry",
+        role: "entry",
+        data: orders.map((order) => order.entryStop),
+      },
+      {
+        id: "tv-channel-breakout:exit",
+        role: "exit",
+        data: orders.map((order) => order.exitStop),
+      },
+    ],
+  );
+});
+
+test("builds every price-order visual directly from its aligned order plan", () => {
+  const bars = makeBars(
+    Array.from({ length: 100 }, (_, index) => {
+      return 100 + index * 0.08 + Math.sin(index / 4) * 5;
+    }),
+  );
+
+  for (const strategyId of INTRABAR_PRICE_ORDER_STRATEGY_IDS) {
+    const strategy = getStrategy(strategyId);
+    const orders = buildStrategyOrders(
+      bars,
+      strategyId,
+      strategy.defaultParameters,
+    );
+    const lines = buildStrategyPriceLines(
+      bars,
+      strategyId,
+      strategy.defaultParameters,
+    );
+
+    assert.ok(orders, strategyId);
+    assert.deepEqual(
+      lines.map((line) => line.data),
+      [
+        orders.map((order) => order.entryStop),
+        orders.map((order) => order.exitStop),
+      ],
+      strategyId,
+    );
+  }
+});
+
+test("builds strategy price references from the same indicator calculations", () => {
+  const bars = makeBars(
+    Array.from({ length: 80 }, (_, index) => {
+      return 100 + index * 0.1 + Math.sin(index / 3) * 4;
+    }),
+  );
+  const closes = bars.map((bar) => bar.close);
+
+  const smaParameters = { fast: 5, slow: 12 };
+  assert.deepEqual(
+    buildStrategyPriceLines(bars, "sma-cross", smaParameters),
+    [
+      {
+        id: "sma-cross:fast",
+        role: "fast",
+        data: sma(closes, smaParameters.fast),
+      },
+      {
+        id: "sma-cross:slow",
+        role: "slow",
+        data: sma(closes, smaParameters.slow),
+      },
+    ],
+  );
+
+  const bollingerParameters = { period: 10, width: 1.5 };
+  const bands = bollingerBands(
+    closes,
+    bollingerParameters.period,
+    bollingerParameters.width,
+  );
+  assert.deepEqual(
+    buildStrategyPriceLines(
+      bars,
+      "tv-bollinger-bands",
+      bollingerParameters,
+    ),
+    [
+      {
+        id: "tv-bollinger-bands:middle",
+        role: "middle",
+        data: bands.middle,
+      },
+      {
+        id: "tv-bollinger-bands:upper",
+        role: "upper",
+        data: bands.upper,
+      },
+      {
+        id: "tv-bollinger-bands:lower",
+        role: "lower",
+        data: bands.lower,
+      },
+    ],
+  );
+
+  const supertrendParameters = { period: 7, multiplier: 2.5 };
+  assert.deepEqual(
+    buildStrategyPriceLines(
+      bars,
+      "supertrend-trend",
+      supertrendParameters,
+    ),
+    [
+      {
+        id: "supertrend-trend:trend",
+        role: "trend",
+        data: supertrend(
+          bars,
+          supertrendParameters.period,
+          supertrendParameters.multiplier,
+        ).trend,
+      },
+    ],
+  );
+  assert.deepEqual(
+    buildStrategyPriceLines(
+      bars,
+      "rsi-reversal",
+      getStrategy("rsi-reversal").defaultParameters,
+    ),
+    [],
+  );
+});
+
+test("aligns Donchian, VWAP, Keltner, and SAR price references", () => {
+  const bars = makeOhlcBars([
+    { open: 9, high: 10, low: 8, close: 9 },
+    { open: 10, high: 12, low: 9, close: 11 },
+    { open: 9, high: 11, low: 7, close: 10 },
+    { open: 12, high: 13, low: 10, close: 12 },
+    { open: 11, high: 12, low: 9, close: 11 },
+    { open: 13, high: 14, low: 11, close: 13 },
+  ]);
+
+  const donchian = buildStrategyPriceLines(
+    bars,
+    "donchian-breakout",
+    { entryPeriod: 2, exitPeriod: 3 },
+  );
+  assert.deepEqual(donchian[0].data, [null, null, 12, 12, 13, 13]);
+  assert.deepEqual(donchian[1].data, [null, null, null, 7, 7, 7]);
+
+  const vwapParameters = { entryPercent: 2, exitPercent: 1 };
+  const vwapValues = vwap(bars);
+  assert.deepEqual(
+    buildStrategyPriceLines(bars, "vwap-reversion", vwapParameters),
+    [
+      {
+        id: "vwap-reversion:vwap",
+        role: "reference",
+        data: vwapValues,
+      },
+      {
+        id: "vwap-reversion:entry",
+        role: "entry",
+        data: vwapValues.map((value) =>
+          value === null
+            ? null
+            : value * (1 - vwapParameters.entryPercent / 100),
+        ),
+      },
+      {
+        id: "vwap-reversion:exit",
+        role: "exit",
+        data: vwapValues.map((value) =>
+          value === null
+            ? null
+            : value * (1 + vwapParameters.exitPercent / 100),
+        ),
+      },
+    ],
+  );
+
+  const keltnerParameters = { period: 3, multiplier: 1.5 };
+  const middle = ema(
+    bars.map((bar) => bar.close),
+    keltnerParameters.period,
+  );
+  const volatility = atr(bars, keltnerParameters.period);
+  assert.deepEqual(
+    buildStrategyPriceLines(
+      bars,
+      "tv-keltner-channels",
+      keltnerParameters,
+    ),
+    [
+      {
+        id: "tv-keltner-channels:middle",
+        role: "middle",
+        data: middle,
+      },
+      {
+        id: "tv-keltner-channels:upper",
+        role: "upper",
+        data: middle.map((value, index) =>
+          value === null || volatility[index] === null
+            ? null
+            : value + volatility[index]! * keltnerParameters.multiplier,
+        ),
+      },
+      {
+        id: "tv-keltner-channels:lower",
+        role: "lower",
+        data: middle.map((value, index) =>
+          value === null || volatility[index] === null
+            ? null
+            : value - volatility[index]! * keltnerParameters.multiplier,
+        ),
+      },
+    ],
+  );
+
+  const sarParameters = {
+    start: 0.03,
+    increment: 0.02,
+    maximum: 0.25,
+  };
+  assert.deepEqual(
+    buildStrategyPriceLines(
+      bars,
+      "tv-parabolic-sar",
+      sarParameters,
+    )[0].data,
+    parabolicSar(
+      bars,
+      sarParameters.start,
+      sarParameters.increment,
+      sarParameters.maximum,
+    ),
+  );
+});
+
+test("returns only declared aligned finite price lines for every strategy", () => {
+  const bars = makeBars(
+    Array.from({ length: 100 }, (_, index) => {
+      return 100 + index * 0.08 + Math.sin(index / 4) * 5;
+    }),
+  );
+  const expectedLineSuffixes = new Map<string, string[]>([
+    ["sma-cross", ["fast", "slow"]],
+    ["ema-cross", ["fast", "slow"]],
+    ["bollinger-reversion", ["middle", "upper", "lower"]],
+    ["donchian-breakout", ["entry", "exit"]],
+    ["supertrend-trend", ["trend"]],
+    ["ichimoku-trend", ["conversion", "base", "span-a", "span-b"]],
+    ["vwap-reversion", ["vwap", "entry", "exit"]],
+    ["tv-bollinger-bands", ["middle", "upper", "lower"]],
+    ["tv-bollinger-directed", ["middle", "upper", "lower"]],
+    ["tv-channel-breakout", ["entry", "exit"]],
+    ["tv-keltner-channels", ["middle", "upper", "lower"]],
+    ["tv-momentum", ["entry", "exit"]],
+    ["tv-parabolic-sar", ["sar"]],
+    ["tv-pivot-reversal", ["entry", "exit"]],
+    ["tv-price-channel", ["entry", "exit"]],
+    ["tv-supertrend", ["trend"]],
+    ["tv-volty-expan-close", ["entry", "exit"]],
+  ]);
+
+  for (const strategy of STRATEGIES) {
+    const lines = buildStrategyPriceLines(
+      bars,
+      strategy.id,
+      strategy.defaultParameters,
+    );
+    assert.deepEqual(
+      lines.map((line) => line.id),
+      (expectedLineSuffixes.get(strategy.id) ?? []).map(
+        (suffix) => `${strategy.id}:${suffix}`,
+      ),
+      strategy.id,
+    );
+    assert.equal(
+      new Set(lines.map((line) => line.id)).size,
+      lines.length,
+      strategy.id,
+    );
+    for (const line of lines) {
+      assert.equal(line.data.length, bars.length, line.id);
+      assert.ok(
+        line.data.every(
+          (value) => value === null || Number.isFinite(value),
+        ),
+        line.id,
+      );
+    }
+  }
+});
+
+test("keeps every strategy price line invariant across input prefixes", () => {
+  const bars = makeBars(
+    Array.from({ length: 100 }, (_, index) => {
+      return 100 + index * 0.08 + Math.sin(index / 4) * 5;
+    }),
+  );
+
+  for (const strategy of STRATEGIES) {
+    const fullLines = buildStrategyPriceLines(
+      bars,
+      strategy.id,
+      strategy.defaultParameters,
+    );
+    for (const prefixLength of [20, 40, 80]) {
+      const prefixLines = buildStrategyPriceLines(
+        bars.slice(0, prefixLength),
+        strategy.id,
+        strategy.defaultParameters,
+      );
+      assert.deepEqual(
+        prefixLines,
+        fullLines.map((line) => ({
+          ...line,
+          data: line.data.slice(0, prefixLength),
+        })),
+        `${strategy.id}:${prefixLength}`,
       );
     }
   }
