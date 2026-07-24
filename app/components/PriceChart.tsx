@@ -78,6 +78,11 @@ const colors = {
   amber: "#fbbf24",
   violet: "#a78bfa",
   muted: "#64748b",
+  tradeBuy: "#38bdf8",
+  tradeBuyText: "#e0f2fe",
+  tradeSell: "#fb923c",
+  tradeSellText: "#ffedd5",
+  tradeLabelBackground: "rgba(7, 15, 22, 0.82)",
   rangeExit: "#94a3b8",
 };
 
@@ -107,6 +112,104 @@ const compactFormatter = new Intl.NumberFormat("zh-CN", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
+
+interface TradeMarkerLabels {
+  buy: string;
+  sell: string;
+  rangeExit: string;
+}
+
+export function buildTradeMarkerSeries(
+  trades: BacktestTrade[],
+  labels: TradeMarkerLabels,
+): SeriesOption[] {
+  const tradeMarkers = buildTradeMarkers(trades);
+
+  return [
+    {
+      name: labels.buy,
+      type: "scatter",
+      data: tradeMarkers.buys.map((marker) => ({
+        value: [marker.time, marker.price],
+      })),
+      symbol: "triangle",
+      symbolSize: 14,
+      symbolOffset: [0, 8],
+      itemStyle: {
+        color: colors.tradeBuy,
+        borderColor: colors.tradeBuyText,
+        borderWidth: 1.5,
+      },
+      label: {
+        show: true,
+        formatter: labels.buy,
+        position: "bottom",
+        distance: 3,
+        color: colors.tradeBuyText,
+        backgroundColor: colors.tradeLabelBackground,
+        borderRadius: 3,
+        padding: [2, 4],
+        fontSize: 9,
+        fontWeight: 700,
+      },
+      z: 20,
+    },
+    {
+      name: labels.sell,
+      type: "scatter",
+      data: tradeMarkers.sells.map((marker) => ({
+        value: [marker.time, marker.price],
+      })),
+      symbol: "triangle",
+      symbolRotate: 180,
+      symbolSize: 14,
+      symbolOffset: [0, -8],
+      itemStyle: {
+        color: colors.tradeSell,
+        borderColor: colors.tradeSellText,
+        borderWidth: 1.5,
+      },
+      label: {
+        show: true,
+        formatter: labels.sell,
+        position: "top",
+        distance: 3,
+        color: colors.tradeSellText,
+        backgroundColor: colors.tradeLabelBackground,
+        borderRadius: 3,
+        padding: [2, 4],
+        fontSize: 9,
+        fontWeight: 700,
+      },
+      z: 20,
+    },
+    {
+      name: labels.rangeExit,
+      type: "scatter",
+      data: tradeMarkers.rangeExits.map((marker) => ({
+        value: [marker.time, marker.price],
+      })),
+      symbol: "diamond",
+      symbolSize: 10,
+      symbolOffset: [0, -7],
+      itemStyle: {
+        color: colors.rangeExit,
+        borderColor: "#e2e8f0",
+        borderWidth: 1,
+      },
+      label: {
+        show: true,
+        formatter: labels.rangeExit,
+        position: "top",
+        distance: 3,
+        color: colors.rangeExit,
+        fontSize: 8,
+        fontWeight: 650,
+      },
+      z: 19,
+    },
+  ];
+}
 
 export function buildPriceDataZoom(
   barsLength: number,
@@ -221,85 +324,7 @@ export function PriceChart({
       } as SeriesOption);
     }
 
-    const tradeMarkers = buildTradeMarkers(trades);
-    series.push(
-      {
-        name: labels.buy,
-        type: "scatter",
-        data: tradeMarkers.buys.map((marker) => ({
-          value: [marker.time, marker.price],
-        })),
-        symbol: "triangle",
-        symbolSize: 14,
-        symbolOffset: [0, 8],
-        itemStyle: {
-          color: colors.up,
-          borderColor: "#d9ffe5",
-          borderWidth: 1,
-        },
-        label: {
-          show: true,
-          formatter: labels.buy,
-          position: "bottom",
-          distance: 3,
-          color: colors.up,
-          fontSize: 9,
-          fontWeight: 700,
-        },
-        z: 20,
-      },
-      {
-        name: labels.sell,
-        type: "scatter",
-        data: tradeMarkers.sells.map((marker) => ({
-          value: [marker.time, marker.price],
-        })),
-        symbol: "triangle",
-        symbolRotate: 180,
-        symbolSize: 14,
-        symbolOffset: [0, -8],
-        itemStyle: {
-          color: colors.down,
-          borderColor: "#ffe1e1",
-          borderWidth: 1,
-        },
-        label: {
-          show: true,
-          formatter: labels.sell,
-          position: "top",
-          distance: 3,
-          color: colors.down,
-          fontSize: 9,
-          fontWeight: 700,
-        },
-        z: 20,
-      },
-      {
-        name: labels.rangeExit,
-        type: "scatter",
-        data: tradeMarkers.rangeExits.map((marker) => ({
-          value: [marker.time, marker.price],
-        })),
-        symbol: "diamond",
-        symbolSize: 10,
-        symbolOffset: [0, -7],
-        itemStyle: {
-          color: colors.rangeExit,
-          borderColor: "#e2e8f0",
-          borderWidth: 1,
-        },
-        label: {
-          show: true,
-          formatter: labels.rangeExit,
-          position: "top",
-          distance: 3,
-          color: colors.rangeExit,
-          fontSize: 8,
-          fontWeight: 650,
-        },
-        z: 19,
-      },
-    );
+    series.push(...buildTradeMarkerSeries(trades, labels));
 
     series.push({
       name: labels.volume,

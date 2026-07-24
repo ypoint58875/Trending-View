@@ -16,6 +16,8 @@ Implemented:
   continue holding, or remain flat from the newest available provider bar.
 - An explicit green-up/red-down legend and a neutral range-end valuation marker
   that is separate from genuine strategy exits.
+- Dedicated sky-blue buy and orange sell markers with light borders and dark
+  label backgrounds, visually separated from green-up/red-down candles.
 - A directly draggable 22-pixel chart timeline selection with visible resize
   handles; parent rerenders and applied screening results preserve the active
   zoom window for the current instrument and interval.
@@ -52,6 +54,8 @@ Implemented:
   on 2026-07-24.
 - Full 31-test TypeScript suite, production build, rendered-worker test, and
   ESLint: passed after the local no-login launcher change on 2026-07-24.
+- Dedicated blue/orange trade-marker palette test, full test/build suite,
+  ESLint, and dark-chart browser inspection: passed on 2026-07-24.
 - Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-24.
 - Live daily series for N225, SOX, and SPY passed on 2026-07-24; the broader
   daily/5-minute N225, SOX, SPY, and 510300 matrix last passed on 2026-07-23.
