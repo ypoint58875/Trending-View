@@ -6,6 +6,8 @@ import {
   Bookmark,
   CandlestickChart,
   ChevronRight,
+  Eye,
+  EyeOff,
   FlaskConical,
   LineChart,
   LoaderCircle,
@@ -21,7 +23,11 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BacktestChart } from "./components/BacktestChart";
-import { PriceChart } from "./components/PriceChart";
+import {
+  PriceChart,
+  type ChartIndicatorConfiguration,
+  type StrategyLineLabels,
+} from "./components/PriceChart";
 import { zhCN as copy } from "./i18n/zh-CN";
 import { runBacktest, type BacktestResult } from "@/lib/analysis/backtest";
 import {
@@ -51,6 +57,7 @@ import {
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
 import { buildLiveStrategyGuidance } from "@/lib/analysis/live-guidance";
+import { analyzeStrategyStability } from "@/lib/analysis/stability";
 import type {
   MarketInstrument,
   MarketInterval,
@@ -77,19 +84,17 @@ const priceChartLabels = {
   series: { ...copy.chart.series },
 };
 
+const strategyLineLabels: StrategyLineLabels = {
+  prefix: copy.chart.strategyLines.prefix,
+  roles: { ...copy.chart.strategyLines.roles },
+};
+
 const backtestChartLabels = {
   equity: copy.chart.equity,
   drawdown: copy.chart.drawdown,
 };
 
-const intervals: MarketInterval[] = [
-  "1m",
-  "5m",
-  "15m",
-  "30m",
-  "60m",
-  "1d",
-];
+const DAILY_INTERVAL: MarketInterval = "1d";
 
 const compactFormatter = new Intl.NumberFormat("zh-CN", {
   notation: "compact",
@@ -179,12 +184,15 @@ function formatObjectiveValue(
 export function MarketWorkspace() {
   const [instrument, setInstrument] =
     useState<MarketInstrument>(defaultInstrument);
-  const [interval, setInterval] = useState<MarketInterval>("1d");
   const [series, setSeries] = useState<MarketSeries | null>(null);
   const [chartType, setChartType] = useState<"candlestick" | "line">(
     "candlestick",
   );
-  const [indicator, setIndicator] = useState<IndicatorId>("macd");
+  const [focusedIndicator, setFocusedIndicator] =
+    useState<IndicatorId>("macd");
+  const [visibleIndicatorIds, setVisibleIndicatorIds] = useState<IndicatorId[]>(
+    ["macd"],
+  );
   const [indicatorSettings, setIndicatorSettings] = useState(
     createDefaultIndicatorSettings,
   );
@@ -230,15 +238,25 @@ export function MarketWorkspace() {
   const currentSeriesKeyRef = useRef("");
   const latestSeriesDateRef = useRef("");
   const marketSeriesRef = useRef<MarketSeries | null>(null);
-  const activeIndicator = getIndicator(indicator);
-  const indicatorParameters = indicatorSettings[indicator];
+  const activeIndicator = getIndicator(focusedIndicator);
+  const indicatorParameters = indicatorSettings[focusedIndicator];
+  const focusedIndicatorVisible =
+    visibleIndicatorIds.includes(focusedIndicator);
+  const visibleIndicators = useMemo<readonly ChartIndicatorConfiguration[]>(
+    () =>
+      visibleIndicatorIds.map((id) => ({
+        id,
+        parameters: indicatorSettings[id],
+      })),
+    [indicatorSettings, visibleIndicatorIds],
+  );
 
   const fetchMarket = useCallback(
     async (signal: AbortSignal) => {
       setLoading(true);
       setErrorCode("");
-      const seriesKey = `${instrument.provider}:${instrument.secid}:${interval}`;
-      const seriesLimit = interval === "1d" ? 1000 : 1500;
+      const seriesKey = `${instrument.provider}:${instrument.secid}:${DAILY_INTERVAL}`;
+      const seriesLimit = 1000;
       const loadSeries = async (
         requestInstrument: MarketInstrument,
         mode: "history" | "latest",
@@ -251,7 +269,7 @@ export function MarketWorkspace() {
           exchange: requestInstrument.exchange,
           provider: requestInstrument.provider,
           assetType: requestInstrument.assetType,
-          interval,
+          interval: DAILY_INTERVAL,
           limit: String(limit),
           mode,
         });
@@ -326,8 +344,7 @@ export function MarketWorkspace() {
           const saved = pendingSavedBacktestRef.current;
           const restoresSavedRange =
             saved?.instrument.secid === instrument.secid &&
-            saved.instrument.provider === instrument.provider &&
-            saved.interval === interval;
+            saved.instrument.provider === instrument.provider;
           setStartDate((current) => {
             if (
               restoresSavedRange &&
@@ -369,7 +386,7 @@ export function MarketWorkspace() {
         if (!signal.aborted) setLoading(false);
       }
     },
-    [instrument, interval],
+    [instrument],
   );
 
   useEffect(() => {
@@ -512,7 +529,7 @@ export function MarketWorkspace() {
         slippageRate: slippagePercent / 100,
         startTime: startDate,
         endTime: endDate,
-        interval,
+        interval: DAILY_INTERVAL,
       });
     } catch {
       return null;
@@ -521,7 +538,37 @@ export function MarketWorkspace() {
     commissionPercent,
     endDate,
     initialCash,
-    interval,
+    parameters,
+    series,
+    slippagePercent,
+    startDate,
+    strategyId,
+  ]);
+
+  const stability = useMemo(() => {
+    if (!series?.bars.length || !startDate || !endDate) return null;
+    try {
+      const analysis = analyzeStrategyStability(
+        series.bars,
+        strategyId,
+        parameters,
+        {
+          initialCash,
+          commissionRate: commissionPercent / 100,
+          slippageRate: slippagePercent / 100,
+          startTime: startDate,
+          endTime: endDate,
+          interval: DAILY_INTERVAL,
+        },
+      );
+      return analysis.variantResults.length > 0 ? analysis : null;
+    } catch {
+      return null;
+    }
+  }, [
+    commissionPercent,
+    endDate,
+    initialCash,
     parameters,
     series,
     slippagePercent,
@@ -541,6 +588,23 @@ export function MarketWorkspace() {
     });
   };
 
+  const focusIndicator = (nextIndicator: IndicatorId) => {
+    setFocusedIndicator(nextIndicator);
+    setVisibleIndicatorIds((current) =>
+      current.includes(nextIndicator)
+        ? current
+        : [...current, nextIndicator],
+    );
+  };
+
+  const toggleFocusedIndicator = () => {
+    setVisibleIndicatorIds((current) =>
+      current.includes(focusedIndicator)
+        ? current.filter((id) => id !== focusedIndicator)
+        : [...current, focusedIndicator],
+    );
+  };
+
   const updateIndicatorParameter = (key: string, value: number) => {
     const definition = activeIndicator.parameters.find(
       (parameter) => parameter.key === key,
@@ -556,8 +620,8 @@ export function MarketWorkspace() {
 
     setIndicatorSettings((current) => ({
       ...current,
-      [indicator]: {
-        ...current[indicator],
+      [focusedIndicator]: {
+        ...current[focusedIndicator],
         [key]: nextValue,
       },
     }));
@@ -566,7 +630,7 @@ export function MarketWorkspace() {
   const resetIndicator = () => {
     setIndicatorSettings((current) => ({
       ...current,
-      [indicator]: getDefaultIndicatorParameters(indicator),
+      [focusedIndicator]: getDefaultIndicatorParameters(focusedIndicator),
     }));
   };
 
@@ -580,7 +644,7 @@ export function MarketWorkspace() {
         body: JSON.stringify(
           createSaveBacktestInput(
             instrument,
-            interval,
+            DAILY_INTERVAL,
             strategyId,
             parameters,
             startDate,
@@ -625,13 +689,17 @@ export function MarketWorkspace() {
 
   const openSavedBacktest = (saved: SavedBacktestRecord) => {
     resetScreening();
-    const requiresMarketReload =
+    const changesInstrument =
       saved.instrument.secid !== instrument.secid ||
-      saved.instrument.provider !== instrument.provider ||
-      saved.interval !== interval;
+      saved.instrument.provider !== instrument.provider;
+    const requiresMarketReload =
+      changesInstrument || !series || series.interval !== DAILY_INTERVAL;
     pendingSavedBacktestRef.current = requiresMarketReload ? saved : null;
-    setInstrument(saved.instrument);
-    setInterval(saved.interval);
+    if (changesInstrument) {
+      setInstrument(saved.instrument);
+    } else if (requiresMarketReload) {
+      setRefreshVersion((value) => value + 1);
+    }
     selectStrategy(saved.strategyId, saved.parameters);
     setStartDate(saved.startDate);
     setEndDate(saved.endDate);
@@ -676,7 +744,7 @@ export function MarketWorkspace() {
         slippageRate: slippagePercent / 100,
         startTime: startDate,
         endTime: endDate,
-        interval,
+        interval: DAILY_INTERVAL,
       },
       {
         maxPerStrategy: maxParameterSets,
@@ -716,12 +784,6 @@ export function MarketWorkspace() {
       setSearchResults([]);
       setSearching(false);
     }
-  };
-
-  const chooseInterval = (nextInterval: MarketInterval) => {
-    resetScreening();
-    pendingSavedBacktestRef.current = null;
-    setInterval(nextInterval);
   };
 
   const minDate = series?.bars.length ? datePart(series.bars[0].time) : "";
@@ -866,19 +928,6 @@ export function MarketWorkspace() {
       </section>
 
       <section className="chart-toolbar">
-        <div className="toolbar-group interval-tabs">
-          {intervals.map((item) => (
-            <button
-              type="button"
-              key={item}
-              className={interval === item ? "active" : ""}
-              onClick={() => chooseInterval(item)}
-            >
-              {copy.intervals[item]}
-            </button>
-          ))}
-        </div>
-        <span className="toolbar-divider" />
         <div className="toolbar-group chart-type-tabs">
           <button
             type="button"
@@ -898,28 +947,51 @@ export function MarketWorkspace() {
           </button>
         </div>
         <span className="toolbar-divider" />
-        <div className="indicator-tabs" aria-label={copy.indicatorsTitle}>
-          {INDICATORS.map((item) => (
-            <button
-              type="button"
-              key={item.id}
-              className={indicator === item.id ? "active" : ""}
-              onClick={() => setIndicator(item.id)}
-              title={copy.indicators[item.id].name}
-            >
-              {copy.indicators[item.id].short}
-            </button>
-          ))}
+        <div
+          className="indicator-tabs"
+          role="tablist"
+          aria-label={copy.indicatorsTitle}
+        >
+          {INDICATORS.map((item) => {
+            const focused = focusedIndicator === item.id;
+            const visible = visibleIndicatorIds.includes(item.id);
+            const accessibleLabel = `${copy.indicators[item.id].name} ${copy.common.separator} ${
+              visible
+                ? copy.indicatorSettings.visible
+                : copy.indicatorSettings.hidden
+            }`;
+            return (
+              <button
+                type="button"
+                role="tab"
+                id={`indicator-tab-${item.id}`}
+                aria-controls="indicator-settings-panel"
+                aria-selected={focused}
+                aria-label={accessibleLabel}
+                key={item.id}
+                className={`${focused ? "focused" : ""} ${
+                  visible ? "visible" : ""
+                }`.trim()}
+                onClick={() => focusIndicator(item.id)}
+                title={accessibleLabel}
+              >
+                {copy.indicators[item.id].short}
+              </button>
+            );
+          })}
         </div>
       </section>
 
       <section
+        id="indicator-settings-panel"
         className="indicator-settings-bar"
+        role="tabpanel"
+        aria-labelledby={`indicator-tab-${focusedIndicator}`}
         aria-label={copy.indicatorSettings.title}
       >
         <div className="indicator-settings-title">
           <span>{copy.indicatorSettings.eyebrow}</span>
-          <strong>{copy.indicators[indicator].name}</strong>
+          <strong>{copy.indicators[focusedIndicator].name}</strong>
         </div>
         {activeIndicator.parameters.length > 0 ? (
           <div className="indicator-parameter-controls">
@@ -951,6 +1023,28 @@ export function MarketWorkspace() {
             {copy.indicatorSettings.noParameters}
           </span>
         )}
+        <button
+          className={`indicator-visibility-button ${
+            focusedIndicatorVisible ? "visible" : ""
+          }`}
+          type="button"
+          onClick={toggleFocusedIndicator}
+          aria-pressed={focusedIndicatorVisible}
+          aria-label={`${
+            focusedIndicatorVisible
+              ? copy.indicatorSettings.hide
+              : copy.indicatorSettings.show
+          } ${copy.indicators[focusedIndicator].name}`}
+        >
+          {focusedIndicatorVisible ? (
+            <EyeOff size={13} aria-hidden="true" />
+          ) : (
+            <Eye size={13} aria-hidden="true" />
+          )}
+          {focusedIndicatorVisible
+            ? copy.indicatorSettings.hide
+            : copy.indicatorSettings.show}
+        </button>
         {activeIndicator.parameters.length > 0 ? (
           <button
             className="indicator-reset-button"
@@ -970,11 +1064,17 @@ export function MarketWorkspace() {
               <span className="eyebrow">{copy.chart.title}</span>
               <strong>
                 <span>
-                  {copy.indicatorSettings.activeIndicator}{" "}
-                  {copy.common.separator} {copy.indicators[indicator].name}
+                  {copy.indicatorSettings.visibleIndicators}{" "}
+                  {copy.common.separator}{" "}
+                  {visibleIndicatorIds.length > 0
+                    ? visibleIndicatorIds
+                        .map((id) => copy.indicators[id].short)
+                        .join(" / ")
+                    : copy.indicatorSettings.none}
                 </span>
                 <small>
                   {copy.indicatorSettings.activeStrategy}{" "}
+                  {copy.common.separator} {strategyLineLabels.prefix}{" "}
                   {copy.common.separator} {copy.strategies[strategyId].name}
                 </small>
               </strong>
@@ -994,6 +1094,13 @@ export function MarketWorkspace() {
                 </span>
               </div>
               <div className="chart-meta">
+                <span>
+                  {copy.chart.priceAdjustment.label}{" "}
+                  {copy.common.separator}{" "}
+                  {series
+                    ? copy.chart.priceAdjustment[series.priceAdjustment]
+                    : copy.common.unavailable}
+                </span>
                 {series && (
                   <>
                     <span>
@@ -1036,10 +1143,12 @@ export function MarketWorkspace() {
               <PriceChart
                 bars={series.bars}
                 trades={backtest?.trades ?? []}
-                dataKey={`${instrument.secid}:${interval}`}
+                dataKey={`${instrument.secid}:${DAILY_INTERVAL}`}
                 chartType={chartType}
-                indicator={indicator}
-                indicatorParameters={indicatorParameters}
+                visibleIndicators={visibleIndicators}
+                strategyId={strategyId}
+                strategyParameters={parameters}
+                strategyLineLabels={strategyLineLabels}
                 ariaLabel={copy.chart.aria}
                 labels={priceChartLabels}
               />
@@ -1110,7 +1219,8 @@ export function MarketWorkspace() {
                         <small>
                           {saved.instrument.exchange}:{saved.instrument.code}
                           {" "}
-                          {copy.common.separator} {copy.intervals[saved.interval]}
+                          {copy.common.separator}{" "}
+                          {copy.intervals[DAILY_INTERVAL]}
                           {" "}
                           {copy.common.separator}{" "}
                           {copy.strategies[saved.strategyId].name}
@@ -1290,8 +1400,8 @@ export function MarketWorkspace() {
             </div>
           </div>
 
-          {backtest ? (
-            <>
+          <div className="backtest-summary-grid">
+            {backtest ? (
               <div className="metric-grid">
                 {[
                   [
@@ -1327,15 +1437,130 @@ export function MarketWorkspace() {
                   </div>
                 ))}
               </div>
-              <BacktestChart
-                result={backtest}
-                ariaLabel={copy.chart.backtestAria}
-                labels={backtestChartLabels}
-              />
-            </>
-          ) : (
-            <div className="empty-result">{copy.lab.noResult}</div>
-          )}
+            ) : (
+              <div className="empty-result">{copy.lab.noResult}</div>
+            )}
+
+            <section
+              className={`stability-card ${
+                stability
+                  ? stability.nearby.stable
+                    ? "stable"
+                    : "sensitive"
+                  : "unavailable"
+              }`}
+              aria-labelledby="stability-card-title"
+            >
+              <div className="stability-card-heading">
+                <div>
+                  <span className="eyebrow">{copy.stability.eyebrow}</span>
+                  <strong id="stability-card-title">
+                    {copy.stability.title}
+                  </strong>
+                </div>
+                <span className="stability-status">
+                  {stability
+                    ? stability.nearby.stable
+                      ? copy.stability.stable
+                      : copy.stability.sensitive
+                    : copy.common.unavailable}
+                </span>
+              </div>
+              <p>{copy.stability.description}</p>
+
+              {stability ? (
+                <>
+                  <dl className="stability-stat-grid">
+                    <div>
+                      <dt>{copy.stability.nearbyVariants}</dt>
+                      <dd>{stability.variantResults.length}</dd>
+                    </div>
+                    <div>
+                      <dt>{copy.stability.signAgreement}</dt>
+                      <dd>
+                        {formatPercent(
+                          stability.nearby.signAgreement.ratio * 100,
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.stability.totalReturnRange}</dt>
+                      <dd>
+                        {formatPercent(
+                          stability.nearby.totalReturnRange.minimum,
+                          true,
+                        )}{" "}
+                        {copy.stability.rangeSeparator}{" "}
+                        {formatPercent(
+                          stability.nearby.totalReturnRange.maximum,
+                          true,
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.stability.drawdownRange}</dt>
+                      <dd>
+                        {formatPercent(
+                          stability.nearby.drawdownRange.minimum,
+                        )}{" "}
+                        {copy.stability.rangeSeparator}{" "}
+                        {formatPercent(
+                          stability.nearby.drawdownRange.maximum,
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>{copy.stability.tradeCountRange}</dt>
+                      <dd>
+                        {stability.nearby.tradeCountRange.minimum}{" "}
+                        {copy.stability.rangeSeparator}{" "}
+                        {stability.nearby.tradeCountRange.maximum}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  <div className="stability-regime-block">
+                    <span>{copy.stability.regimes}</span>
+                    <dl className="stability-regime-grid">
+                      {(["up", "sideways", "down"] as const).map((regime) => {
+                        const summary = stability.regimes[regime];
+                        return (
+                          <div key={regime}>
+                            <dt>{copy.stability[regime]}</dt>
+                            <dd>
+                              <strong>
+                                {summary.returnPercent === null
+                                  ? copy.common.unavailable
+                                  : formatPercent(
+                                      summary.returnPercent,
+                                      true,
+                                    )}
+                              </strong>
+                              <small>
+                                {summary.periodCount} {copy.stability.periods}
+                              </small>
+                            </dd>
+                          </div>
+                        );
+                      })}
+                    </dl>
+                  </div>
+                </>
+              ) : (
+                <div className="stability-unavailable">
+                  {copy.stability.unavailable}
+                </div>
+              )}
+            </section>
+          </div>
+
+          {backtest ? (
+            <BacktestChart
+              result={backtest}
+              ariaLabel={copy.chart.backtestAria}
+              labels={backtestChartLabels}
+            />
+          ) : null}
         </aside>
 
       <section className="screening-panel panel">
