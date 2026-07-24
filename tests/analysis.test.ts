@@ -30,7 +30,10 @@ import {
   SCREENING_CANDIDATES,
   screenStrategies,
 } from "../lib/analysis/screening";
-import { STRATEGIES } from "../lib/analysis/strategies";
+import {
+  getStrategy,
+  STRATEGIES,
+} from "../lib/analysis/strategies";
 import { TRADINGVIEW_BUILT_IN_STRATEGY_IDS } from "../lib/analysis/built-in-strategies";
 import { buildTradeMarkers } from "../lib/analysis/trade-markers";
 import {
@@ -391,9 +394,56 @@ test("screens every candidate and sorts by descending score", () => {
     interval: "1d",
   });
 
-  assert.equal(SCREENING_CANDIDATES.length, 74);
-  assert.equal(results.length, 74);
+  assert.equal(SCREENING_CANDIDATES.length, 96);
+  assert.equal(results.length, 96);
   for (let index = 1; index < results.length; index += 1) {
     assert.ok(results[index - 1].score >= results[index].score);
   }
+});
+
+test("screens three distinct parameter sets for every strategy", () => {
+  const candidatesByStrategy = new Map<
+    string,
+    Array<Record<string, number>>
+  >();
+
+  for (const candidate of SCREENING_CANDIDATES) {
+    const candidates = candidatesByStrategy.get(candidate.strategyId) ?? [];
+    candidates.push(candidate.parameters);
+    candidatesByStrategy.set(candidate.strategyId, candidates);
+  }
+
+  assert.equal(candidatesByStrategy.size, STRATEGIES.length);
+  for (const strategy of STRATEGIES) {
+    const candidates = candidatesByStrategy.get(strategy.id) ?? [];
+    assert.equal(candidates.length, 3, strategy.id);
+    assert.equal(
+      new Set(candidates.map((parameters) => JSON.stringify(parameters))).size,
+      3,
+      strategy.id,
+    );
+  }
+});
+
+test("filters weak candle signals with the minimum body parameter", () => {
+  const bars = makeBars([10, 10.04, 10.08]);
+  bars[0] = { ...bars[0], open: 9.9, high: 10.1, low: 9.8 };
+  bars[1] = {
+    ...bars[1],
+    open: 10.01,
+    close: 10.04,
+    high: 10.05,
+    low: 10,
+  };
+
+  const strategy = getStrategy("tv-bar-up-down");
+  const unfiltered = strategy.buildTarget(bars, {
+    minimumBodyPercent: 0,
+  });
+  const filtered = strategy.buildTarget(bars, {
+    minimumBodyPercent: 0.5,
+  });
+
+  assert.equal(unfiltered[1], 1);
+  assert.equal(filtered[1], 0);
 });

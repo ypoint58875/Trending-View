@@ -14,7 +14,8 @@ Implemented:
   TradingView built-in strategy templates.
 - Date-range backtesting with next-bar-open execution, costs, metrics, equity,
   drawdown, long-only positions, and chart-level buy/sell markers.
-- Automated screening across 74 parameter candidates.
+- Automated screening across 96 parameter candidates, with three distinct
+  parameter sets for each of the 32 strategies.
 - Chinese responsive UI with centralized locale copy.
 
 ## Verification status
@@ -22,12 +23,14 @@ Implemented:
 - Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-24.
 - Live daily series for N225, SOX, and SPY passed on 2026-07-24; the broader
   daily/5-minute N225, SOX, SPY, and 510300 matrix last passed on 2026-07-23.
-- Analysis and adapter unit tests: 12 passed on 2026-07-24.
+- Analysis and adapter unit tests: 14 passed on 2026-07-24.
 - Built-worker rendering test: 1 passed on 2026-07-24.
 - Production build: passed on 2026-07-24.
 - ESLint: passed on 2026-07-24.
 - Browser workflow for Channel BreakOut, 74/74 screening, Apply, and visible
   buy/sell markers on N225: passed on 2026-07-24.
+- Automated 96-candidate parameter coverage and distinctness tests: passed on
+  2026-07-24.
 - Long-only catalog, execution, and marker rules: passed on 2026-07-24.
 
 ## Next priorities

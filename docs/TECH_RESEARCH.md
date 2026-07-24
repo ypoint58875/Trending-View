@@ -105,9 +105,10 @@ Sources:
 - https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
 - https://vectorbt.dev/api/portfolio/
 
-Decision: use a transparent TypeScript engine for the 74-candidate current
-version. Move to a queued Python service for walk-forward studies or thousands
-of combinations.
+Decision: use a transparent TypeScript engine for the 96-candidate current
+version. Each of the 32 strategies receives three distinct presets spanning a
+responsive, normal, and slower or stricter region. Move to a queued Python
+service for walk-forward studies or thousands of combinations.
 
 ## TradingView strategy reference boundary
 

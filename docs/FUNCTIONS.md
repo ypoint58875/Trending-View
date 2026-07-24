@@ -40,4 +40,5 @@
   screening score.
 - `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
   long exit to a sell marker.
-- `screenStrategies(...)`: runs 74 declared candidates and sorts them by score.
+- `screenStrategies(...)`: runs 96 declared candidates, comprising three
+  distinct parameter sets for every strategy, and sorts them by score.

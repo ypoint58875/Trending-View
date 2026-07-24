@@ -34,6 +34,12 @@ belong in a dedicated module and are spread into the shared registry. Every
 reference catalog exports an ordered ID list so a catalog test can prove that
 no documented entry is missing.
 
+Every registered strategy must have exactly three distinct parameter objects in
+`SCREENING_CANDIDATES`: a responsive preset, the normal/default region, and a
+slower or stricter preset. Parameterless signal rules must expose a meaningful
+filter before entering screening. The catalog test enforces coverage, count,
+and JSON-level parameter distinctness.
+
 Trade annotations are derived from completed `BacktestTrade` records by a pure
 mapping helper. Every entry is a buy and every exit is a sell. Chart components
 consume the mapped markers but never infer trades from indicator lines.

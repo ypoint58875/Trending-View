@@ -153,7 +153,22 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
     strategyId: "vwap-reversion",
     parameters: { entryPercent: 2.5, exitPercent: 0.5 },
   },
-  { strategyId: "tv-bar-up-down", parameters: {} },
+  {
+    strategyId: "tv-bar-up-down",
+    parameters: { minimumBodyPercent: 0 },
+  },
+  {
+    strategyId: "tv-bar-up-down",
+    parameters: { minimumBodyPercent: 0.2 },
+  },
+  {
+    strategyId: "tv-bar-up-down",
+    parameters: { minimumBodyPercent: 0.5 },
+  },
+  {
+    strategyId: "tv-bollinger-bands",
+    parameters: { period: 14, width: 1.8 },
+  },
   {
     strategyId: "tv-bollinger-bands",
     parameters: { period: 20, width: 2 },
@@ -161,6 +176,10 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   {
     strategyId: "tv-bollinger-bands",
     parameters: { period: 30, width: 2.5 },
+  },
+  {
+    strategyId: "tv-bollinger-directed",
+    parameters: { period: 14, width: 1.8 },
   },
   {
     strategyId: "tv-bollinger-directed",
@@ -175,14 +194,44 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   { strategyId: "tv-channel-breakout", parameters: { length: 55 } },
   {
     strategyId: "tv-consecutive-up-down",
+    parameters: { upBars: 2, downBars: 2 },
+  },
+  {
+    strategyId: "tv-consecutive-up-down",
     parameters: { upBars: 3, downBars: 3 },
   },
   {
     strategyId: "tv-consecutive-up-down",
     parameters: { upBars: 5, downBars: 5 },
   },
-  { strategyId: "tv-greedy", parameters: {} },
-  { strategyId: "tv-inside-bar", parameters: {} },
+  {
+    strategyId: "tv-greedy",
+    parameters: { minimumBodyPercent: 0 },
+  },
+  {
+    strategyId: "tv-greedy",
+    parameters: { minimumBodyPercent: 0.2 },
+  },
+  {
+    strategyId: "tv-greedy",
+    parameters: { minimumBodyPercent: 0.5 },
+  },
+  {
+    strategyId: "tv-inside-bar",
+    parameters: { minimumBodyPercent: 0 },
+  },
+  {
+    strategyId: "tv-inside-bar",
+    parameters: { minimumBodyPercent: 0.1 },
+  },
+  {
+    strategyId: "tv-inside-bar",
+    parameters: { minimumBodyPercent: 0.3 },
+  },
+  {
+    strategyId: "tv-keltner-channels",
+    parameters: { period: 14, multiplier: 1.5 },
+  },
   {
     strategyId: "tv-keltner-channels",
     parameters: { period: 20, multiplier: 2 },
@@ -193,22 +242,46 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   },
   {
     strategyId: "tv-macd",
+    parameters: { fast: 6, slow: 19, signal: 5 },
+  },
+  {
+    strategyId: "tv-macd",
     parameters: { fast: 12, slow: 26, signal: 9 },
   },
   {
     strategyId: "tv-macd",
-    parameters: { fast: 6, slow: 19, signal: 5 },
+    parameters: { fast: 19, slow: 39, signal: 9 },
   },
+  { strategyId: "tv-momentum", parameters: { period: 6 } },
   { strategyId: "tv-momentum", parameters: { period: 12 } },
   { strategyId: "tv-momentum", parameters: { period: 20 } },
-  { strategyId: "tv-outside-bar", parameters: {} },
+  {
+    strategyId: "tv-outside-bar",
+    parameters: { minimumBodyPercent: 0 },
+  },
+  {
+    strategyId: "tv-outside-bar",
+    parameters: { minimumBodyPercent: 0.1 },
+  },
+  {
+    strategyId: "tv-outside-bar",
+    parameters: { minimumBodyPercent: 0.3 },
+  },
+  {
+    strategyId: "tv-parabolic-sar",
+    parameters: { start: 0.01, increment: 0.01, maximum: 0.1 },
+  },
   {
     strategyId: "tv-parabolic-sar",
     parameters: { start: 0.02, increment: 0.02, maximum: 0.2 },
   },
   {
     strategyId: "tv-parabolic-sar",
-    parameters: { start: 0.01, increment: 0.01, maximum: 0.1 },
+    parameters: { start: 0.03, increment: 0.03, maximum: 0.3 },
+  },
+  {
+    strategyId: "tv-pivot-extension",
+    parameters: { leftBars: 2, rightBars: 1 },
   },
   {
     strategyId: "tv-pivot-extension",
@@ -217,6 +290,10 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   {
     strategyId: "tv-pivot-extension",
     parameters: { leftBars: 8, rightBars: 4 },
+  },
+  {
+    strategyId: "tv-pivot-reversal",
+    parameters: { leftBars: 2, rightBars: 1 },
   },
   {
     strategyId: "tv-pivot-reversal",
@@ -231,11 +308,19 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   { strategyId: "tv-price-channel", parameters: { length: 55 } },
   {
     strategyId: "tv-rsi",
+    parameters: { period: 7, oversold: 25, overbought: 75 },
+  },
+  {
+    strategyId: "tv-rsi",
     parameters: { period: 14, oversold: 30, overbought: 70 },
   },
   {
     strategyId: "tv-rsi",
-    parameters: { period: 7, oversold: 25, overbought: 75 },
+    parameters: { period: 21, oversold: 35, overbought: 65 },
+  },
+  {
+    strategyId: "tv-stochastic-slow",
+    parameters: { period: 9, smoothK: 3, smoothD: 3 },
   },
   {
     strategyId: "tv-stochastic-slow",
@@ -243,7 +328,11 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   },
   {
     strategyId: "tv-stochastic-slow",
-    parameters: { period: 9, smoothK: 3, smoothD: 3 },
+    parameters: { period: 21, smoothK: 3, smoothD: 3 },
+  },
+  {
+    strategyId: "tv-supertrend",
+    parameters: { period: 7, multiplier: 2 },
   },
   {
     strategyId: "tv-supertrend",
@@ -251,7 +340,11 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   },
   {
     strategyId: "tv-supertrend",
-    parameters: { period: 7, multiplier: 2 },
+    parameters: { period: 14, multiplier: 4 },
+  },
+  {
+    strategyId: "tv-technical-ratings",
+    parameters: { threshold: 3 },
   },
   {
     strategyId: "tv-technical-ratings",
@@ -260,6 +353,10 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
   {
     strategyId: "tv-technical-ratings",
     parameters: { threshold: 5 },
+  },
+  {
+    strategyId: "tv-volty-expan-close",
+    parameters: { period: 20, multiplier: 2.5 },
   },
   {
     strategyId: "tv-volty-expan-close",

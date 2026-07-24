@@ -37,7 +37,7 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u65e5\u7ecf 225/);
   assert.match(
     html,
-    /\u904d\u5386 32 \u7c7b\u7b56\u7565\u300174 \u7ec4\u53c2\u6570/,
+    /\u904d\u5386 32 \u7c7b\u7b56\u7565\u300196 \u7ec4\u53c2\u6570/,
   );
   assert.match(html, /Channel BreakOut/);
   assert.match(html, /Technical Ratings/);

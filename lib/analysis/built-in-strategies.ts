@@ -59,6 +59,21 @@ function value(parameters: StrategyParameters, key: string, fallback: number) {
   return Number.isFinite(parameters[key]) ? parameters[key] : fallback;
 }
 
+function meetsMinimumBody(
+  bar: MarketBar,
+  parameters: StrategyParameters,
+) {
+  const minimum = Math.max(
+    value(parameters, "minimumBodyPercent", 0),
+    0,
+  );
+  const bodyPercent =
+    (Math.abs(bar.close - bar.open) /
+      Math.max(Math.abs(bar.open), Number.EPSILON)) *
+    100;
+  return bodyPercent >= minimum;
+}
+
 function holdTarget(length: number) {
   return new Array<number>(length).fill(0);
 }
@@ -79,15 +94,23 @@ function asLongOnlyStrategy(
   };
 }
 
-function barUpDown(bars: MarketBar[]): number[] {
+function barUpDown(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
   const target = holdTarget(bars.length);
   for (let index = 1; index < bars.length; index += 1) {
     carry(target, index);
     const current = bars[index];
     const previous = bars[index - 1];
-    if (current.close > current.open && current.open > previous.close) {
+    if (
+      meetsMinimumBody(current, parameters) &&
+      current.close > current.open &&
+      current.open > previous.close
+    ) {
       target[index] = 1;
     } else if (
+      meetsMinimumBody(current, parameters) &&
       current.close < current.open &&
       current.open < previous.close
     ) {
@@ -211,17 +234,23 @@ function consecutiveUpDown(
   return target;
 }
 
-function greedy(bars: MarketBar[]): number[] {
+function greedy(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
   const target = holdTarget(bars.length);
   for (let index = 1; index < bars.length; index += 1) {
     carry(target, index);
     const current = bars[index];
     const previous = bars[index - 1];
-    if (current.open > previous.high || current.close > current.open) {
+    if (
+      meetsMinimumBody(current, parameters) &&
+      (current.open > previous.high || current.close > current.open)
+    ) {
       target[index] = 1;
     } else if (
-      current.open < previous.low ||
-      current.close < current.open
+      meetsMinimumBody(current, parameters) &&
+      (current.open < previous.low || current.close < current.open)
     ) {
       target[index] = 0;
     }
@@ -229,13 +258,20 @@ function greedy(bars: MarketBar[]): number[] {
   return target;
 }
 
-function insideBar(bars: MarketBar[]): number[] {
+function insideBar(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
   const target = holdTarget(bars.length);
   for (let index = 1; index < bars.length; index += 1) {
     carry(target, index);
     const current = bars[index];
     const previous = bars[index - 1];
-    if (current.high <= previous.high && current.low >= previous.low) {
+    if (
+      meetsMinimumBody(current, parameters) &&
+      current.high <= previous.high &&
+      current.low >= previous.low
+    ) {
       if (current.close > current.open) target[index] = 1;
       if (current.close < current.open) target[index] = 0;
     }
@@ -324,13 +360,20 @@ function momentum(
   return target;
 }
 
-function outsideBar(bars: MarketBar[]): number[] {
+function outsideBar(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
   const target = holdTarget(bars.length);
   for (let index = 1; index < bars.length; index += 1) {
     carry(target, index);
     const current = bars[index];
     const previous = bars[index - 1];
-    if (current.high > previous.high && current.low < previous.low) {
+    if (
+      meetsMinimumBody(current, parameters) &&
+      current.high > previous.high &&
+      current.low < previous.low
+    ) {
       if (current.close > current.open) target[index] = 1;
       if (current.close < current.open) target[index] = 0;
     }
@@ -611,7 +654,7 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-bar-up-down",
     indicatorId: "sma",
-    defaultParameters: {},
+    defaultParameters: { minimumBodyPercent: 0 },
     buildTarget: barUpDown,
   },
   {
@@ -641,13 +684,13 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-greedy",
     indicatorId: "atr",
-    defaultParameters: {},
+    defaultParameters: { minimumBodyPercent: 0 },
     buildTarget: greedy,
   },
   {
     id: "tv-inside-bar",
     indicatorId: "atr",
-    defaultParameters: {},
+    defaultParameters: { minimumBodyPercent: 0 },
     buildTarget: insideBar,
   },
   {
@@ -671,7 +714,7 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-outside-bar",
     indicatorId: "atr",
-    defaultParameters: {},
+    defaultParameters: { minimumBodyPercent: 0 },
     buildTarget: outsideBar,
   },
   {

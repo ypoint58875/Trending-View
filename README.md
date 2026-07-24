@@ -18,8 +18,9 @@ parameter screening in one responsive page.
 - Date-range backtests with initial cash, commission, and slippage settings.
 - Long-only buy/flat targets, next-bar-open execution, and chart-level buy/sell
   markers for the active backtest.
-- Seventy-four-candidate automated screening ranked by a return, Sharpe,
-  drawdown, and trade-count score.
+- Ninety-six-candidate automated screening with three distinct parameter sets
+  for every strategy, ranked by a return, Sharpe, drawdown, and trade-count
+  score.
 
 ## Run locally
 
@@ -31,6 +32,9 @@ npm run dev
 ```
 
 Open `http://localhost:3000`.
+
+For the deployed version, double-click `open-quantscope.bat` in the project
+folder.
 
 ## Test and build
 

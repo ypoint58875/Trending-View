@@ -2,6 +2,11 @@
 
 ## 2026-07-24
 
+- Added a root-level Windows launcher for the deployed application.
+- Expanded screening to 96 candidates so every strategy is tested with three
+  distinct parameter sets, with automated coverage and distinctness checks.
+- Added a minimum candle-body filter to parameterize the four previously
+  parameterless candle-pattern strategies.
 - Restricted every strategy and backtest to long-only execution: buy opens a
   long position and sell closes it; negative reference signals now remain flat.
 - Removed short-direction parameters, short trade accounting, and short marker

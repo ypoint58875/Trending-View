@@ -20,8 +20,10 @@ entry and exit.
 
 ## D-004: Client-side first-version screening
 
-Run 74 candidates in the browser for immediate feedback. Revisit this decision
-when jobs become durable, multi-user, or materially CPU-intensive.
+Run 96 candidates in the browser for immediate feedback. Every strategy must
+contribute exactly three distinct parameter sets so the ranking never compares
+single-default strategies against tuned strategies. Revisit this decision when
+jobs become durable, multi-user, or materially CPU-intensive.
 
 ## D-005: Index and ETF product scope
 

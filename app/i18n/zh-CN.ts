@@ -298,6 +298,7 @@ export const zhCN = {
     smoothK: "K 平滑周期",
     smoothD: "D 平滑周期",
     threshold: "强评级票数",
+    minimumBodyPercent: "最小实体幅度 %",
   },
   metrics: {
     totalReturn: "总收益",
@@ -312,7 +313,7 @@ export const zhCN = {
   screening: {
     eyebrow: "AUTO LAB",
     title: "一键筛选",
-    description: "遍历 32 类策略、74 组参数，按收益、夏普和回撤综合评分。",
+    description: "遍历 32 类策略、96 组参数，每种策略测试 3 组参数，按收益、夏普和回撤综合评分。",
     action: "开始自动筛选",
     running: "正在遍历策略…",
     completed: "筛选完成",

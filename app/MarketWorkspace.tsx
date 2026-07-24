@@ -128,6 +128,7 @@ function isDecimalParameter(key: string) {
     "start",
     "increment",
     "maximum",
+    "minimumBodyPercent",
   ].includes(key);
 }
 
