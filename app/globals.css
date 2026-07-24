@@ -216,10 +216,10 @@ button {
 
 .instrument-strip {
   display: grid;
-  grid-template-columns: 250px 190px 1fr auto;
-  min-height: 86px;
+  grid-template-columns: 240px 175px minmax(260px, 1fr) 210px auto;
+  min-height: 96px;
   align-items: center;
-  gap: 24px;
+  gap: 20px;
   padding: 13px 22px;
   border-bottom: 1px solid var(--line);
 }
@@ -305,6 +305,66 @@ button {
   font-family: var(--font-geist-mono), monospace;
   font-size: 10px;
   font-weight: 520;
+}
+
+.live-guidance-card {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(10, 17, 14, 0.72);
+}
+
+.live-guidance-card > span {
+  color: var(--subtle);
+  font-size: 8px;
+}
+
+.live-guidance-card > strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.live-guidance-card > small,
+.live-guidance-card > em {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 7px;
+  font-style: normal;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.live-guidance-card > em {
+  color: var(--subtle);
+}
+
+.live-guidance-card.buy,
+.live-guidance-card.hold {
+  border-color: rgba(34, 197, 94, 0.32);
+  background: rgba(34, 197, 94, 0.07);
+}
+
+.live-guidance-card.buy > strong,
+.live-guidance-card.hold > strong {
+  color: var(--green);
+}
+
+.live-guidance-card.sell {
+  border-color: rgba(239, 83, 80, 0.35);
+  background: rgba(239, 83, 80, 0.07);
+}
+
+.live-guidance-card.sell > strong {
+  color: var(--red);
+}
+
+.live-guidance-card.wait > strong,
+.live-guidance-card.loading > strong {
+  color: var(--text);
 }
 
 .icon-button {
@@ -449,6 +509,42 @@ button {
 
 .chart-heading {
   min-height: 48px;
+}
+
+.chart-heading-side {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.chart-direction-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.chart-direction-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-direction-legend i {
+  width: 10px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.chart-direction-legend i.rise {
+  background: var(--green);
+}
+
+.chart-direction-legend i.fall {
+  background: var(--red);
 }
 
 .chart-meta {
@@ -1177,7 +1273,8 @@ button {
   }
 
   .instrument-strip {
-    grid-template-columns: 220px 150px 1fr auto;
+    grid-template-columns: 210px 145px minmax(180px, 1fr) 190px auto;
+    gap: 14px;
   }
 
   .market-stat-row {
@@ -1246,6 +1343,15 @@ button {
     align-items: flex-end;
   }
 
+  .live-guidance-card {
+    grid-column: 1 / -1;
+  }
+
+  .live-guidance-card > small,
+  .live-guidance-card > em {
+    white-space: normal;
+  }
+
   .chart-toolbar {
     padding-right: 12px;
     padding-left: 12px;
@@ -1267,6 +1373,10 @@ button {
 
   .chart-meta {
     display: none;
+  }
+
+  .chart-heading-side {
+    flex: 0 0 auto;
   }
 
   .date-grid,

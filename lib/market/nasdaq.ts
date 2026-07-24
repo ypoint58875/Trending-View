@@ -93,8 +93,9 @@ export async function fetchNasdaqDailySeries(
   instrument: MarketInstrument,
   requestedLimit = 1000,
   fetchImpl: typeof fetch = fetch,
+  requestCache: RequestCache = "default",
 ): Promise<MarketSeries> {
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 60), 1500);
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 2), 1500);
   const end = new Date();
   const start = new Date(end);
   start.setUTCFullYear(start.getUTCFullYear() - 5);
@@ -110,6 +111,7 @@ export async function fetchNasdaqDailySeries(
   const response = await fetchImpl(url, {
     headers: DEFAULT_HEADERS,
     signal: AbortSignal.timeout(12_000),
+    ...(requestCache === "no-store" ? { cache: requestCache } : {}),
   });
   if (!response.ok) {
     throw new Error(`Nasdaq request failed with status ${response.status}`);

@@ -65,6 +65,7 @@ interface PriceChartProps {
     volume: string;
     buy: string;
     sell: string;
+    rangeExit: string;
     series: Record<string, string>;
   };
 }
@@ -77,6 +78,7 @@ const colors = {
   amber: "#fbbf24",
   violet: "#a78bfa",
   muted: "#64748b",
+  rangeExit: "#94a3b8",
 };
 
 function lineSeries(
@@ -271,6 +273,31 @@ export function PriceChart({
           fontWeight: 700,
         },
         z: 20,
+      },
+      {
+        name: labels.rangeExit,
+        type: "scatter",
+        data: tradeMarkers.rangeExits.map((marker) => ({
+          value: [marker.time, marker.price],
+        })),
+        symbol: "diamond",
+        symbolSize: 10,
+        symbolOffset: [0, -7],
+        itemStyle: {
+          color: colors.rangeExit,
+          borderColor: "#e2e8f0",
+          borderWidth: 1,
+        },
+        label: {
+          show: true,
+          formatter: labels.rangeExit,
+          position: "top",
+          distance: 3,
+          color: colors.rangeExit,
+          fontSize: 8,
+          fontWeight: 650,
+        },
+        z: 19,
       },
     );
 

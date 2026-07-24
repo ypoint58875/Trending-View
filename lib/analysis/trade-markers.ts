@@ -3,16 +3,17 @@ import type { BacktestTrade } from "./backtest";
 export interface TradeMarker {
   time: string;
   price: number;
-  event: "entry" | "exit";
+  event: "entry" | "exit" | "range-exit";
 }
 
 export interface TradeMarkers {
   buys: TradeMarker[];
   sells: TradeMarker[];
+  rangeExits: TradeMarker[];
 }
 
 export function buildTradeMarkers(trades: BacktestTrade[]): TradeMarkers {
-  const markers: TradeMarkers = { buys: [], sells: [] };
+  const markers: TradeMarkers = { buys: [], sells: [], rangeExits: [] };
 
   trades.forEach((trade) => {
     const entry: TradeMarker = {
@@ -23,11 +24,15 @@ export function buildTradeMarkers(trades: BacktestTrade[]): TradeMarkers {
     const exit: TradeMarker = {
       time: trade.exitTime,
       price: trade.exitPrice,
-      event: "exit",
+      event: trade.exitReason === "range-end" ? "range-exit" : "exit",
     };
 
     markers.buys.push(entry);
-    markers.sells.push(exit);
+    if (exit.event === "range-exit") {
+      markers.rangeExits.push(exit);
+    } else {
+      markers.sells.push(exit);
+    }
   });
 
   return markers;

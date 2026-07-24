@@ -17,7 +17,7 @@ Use these context-restoration prompts in later tasks.
 
 ## Change backtesting
 
-> Read FUNCTIONS.md and DECISIONS.md. Preserve next-bar execution unless the
-> task explicitly changes the fill model. Update metrics, tests, UI disclosure,
-> and FEATURE_MAP.md together.
-
+> Read FUNCTIONS.md and DECISIONS.md. Preserve the hybrid execution contract:
+> close-derived targets fill at the next open, while predefined price orders
+> may fill inside the following bar. Update metrics, tests, UI disclosure, and
+> FEATURE_MAP.md together.

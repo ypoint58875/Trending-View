@@ -124,10 +124,12 @@ export function parseKlineRow(row: string): MarketBar | null {
 async function fetchJson<T>(
   url: URL,
   fetchImpl: typeof fetch = fetch,
+  requestCache: RequestCache = "default",
 ): Promise<T> {
   const response = await fetchImpl(url, {
     headers: DEFAULT_HEADERS,
     signal: AbortSignal.timeout(12_000),
+    ...(requestCache === "no-store" ? { cache: requestCache } : {}),
   });
 
   if (!response.ok) {
@@ -189,8 +191,9 @@ export async function fetchEastmoneySeries(
   interval: MarketInterval,
   requestedLimit = 1000,
   fetchImpl: typeof fetch = fetch,
+  requestCache: RequestCache = "default",
 ): Promise<MarketSeries> {
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 60), 1500);
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 2), 1500);
   const url = new URL(KLINE_ENDPOINT);
   url.searchParams.set("secid", instrument.secid);
   url.searchParams.set("klt", intervalToKlineType[interval]);
@@ -203,7 +206,11 @@ export async function fetchEastmoneySeries(
     "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
   );
 
-  const payload = await fetchJson<EastmoneyKlineResponse>(url, fetchImpl);
+  const payload = await fetchJson<EastmoneyKlineResponse>(
+    url,
+    fetchImpl,
+    requestCache,
+  );
   const data = payload.data;
   if (!data?.klines?.length) {
     throw new Error("Eastmoney returned no kline data");

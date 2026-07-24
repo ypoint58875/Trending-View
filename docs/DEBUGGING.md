@@ -22,6 +22,17 @@ the API boundary.
 2. Confirm every bar has finite OHLC values and a valid timestamp.
 3. Check the browser console for ECharts initialization errors.
 
+## Latest strategy guidance does not update
+
+1. Confirm the page is visible; background tabs intentionally do not poll.
+2. Check the displayed update time and use the refresh button once.
+3. Confirm `/api/market?mode=latest` returns `Cache-Control: no-store` and a
+   newer `fetchedAt` value. History mode should remain cacheable.
+4. Remember that the guidance uses the provider's newest bar. A web endpoint
+   may still be delayed even when the application does not cache it.
+5. Confirm an end-of-range diamond is labeled as a valuation close, not a
+   strategy sell.
+
 ## Chart timeline cannot be dragged
 
 1. Confirm the slider data zoom has `brushSelect: false`; ECharts otherwise
@@ -46,6 +57,19 @@ opens a new maximized Edge window when Edge is installed.
 The selected parameters may produce no entry signal in the chosen date range.
 Expand the range or change the strategy. Do not weaken assertions or inject a
 trade only to make a test pass.
+
+## A breakout trade appears one bar late
+
+1. Confirm the strategy is registered with `buildOrders`, not only
+   `buildTarget`.
+2. Confirm each order at bar N uses data ending at bar N-1.
+3. For a long stop, require `high >= stop` and fill at `max(open, stop)`.
+4. For a long exit stop, require `low <= stop` and fill at
+   `min(open, stop)`.
+5. Confirm the configured tick is present after loading an older saved
+   backtest; defaults are merged into saved parameter snapshots.
+6. Run the synthetic stop, gap, and prefix-invariance tests before comparing
+   live provider data.
 
 ## Parameter screening is slow
 

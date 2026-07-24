@@ -128,6 +128,38 @@ simulation and immediate chart integration. Move to a queued Python service
 for durable multi-user jobs, walk-forward studies, or materially larger search
 spaces.
 
+### Stop-order execution
+
+Option A converts every strategy condition into a close-derived target and
+fills the change at the next open. It is simple and remains appropriate for
+market orders created after a completed bar, but it delays strategies whose
+orders were already resting at predefined breakout prices.
+
+Option B adds a typed, bar-aligned stop-order plan beside the existing target
+contract. It keeps one deterministic engine and lets a price order created from
+completed-bar data fill inside the following OHLC bar. TradingView documents
+that predefined stop orders can fill partway through a bar, and that a stop
+crossed in the gap between bars fills at the current open.
+
+Option C is a full broker-emulator event queue with persistent order IDs,
+cancel/replace behavior, pyramiding, bracket groups, and lower-timeframe Bar
+Magnifier data. It can reproduce more complex templates, but materially expands
+state, data, and test requirements.
+
+Sources:
+
+- https://www.tradingview.com/pine-script-docs/concepts/strategies/
+- https://www.tradingview.com/pine-script-docs/faq/strategies/
+- https://www.tradingview.com/support/solutions/43000599828-channel-breakout-strategy/
+- https://www.tradingview.com/support/solutions/43000601862-price-channel-strategy/
+- https://www.tradingview.com/support/solutions/43000599890-volty-expan-close-strategy/
+
+Decision: use Option B for Channel BreakOut, Momentum, Pivot Reversal, Price
+Channel, and Volty Expan Close. Retain Option A for close-derived strategies.
+Long-side stops open a position and reference short-side stops close it. Use the
+open for gap fills, do not exit and re-enter on the same bar, and reserve Option
+C for Greedy-style pyramiding and bracket fidelity.
+
 ## Parameter optimization
 
 ### Option A: constrained exhaustive grid with a hard cap
@@ -164,7 +196,7 @@ Sources:
 
 Decision: use constrained deterministic grids with a user-configurable hard
 cap of 2,500 combinations per strategy. The current default spaces expand to
-27,584 valid combinations across 32 strategies. Spaces smaller than the cap
+31,172 valid combinations across 32 strategies. Spaces smaller than the cap
 are evaluated completely; larger spaces are sampled evenly while preserving
 the default parameters. Execute small asynchronous chunks, report progress,
 allow cancellation, and retain only the best full result per strategy. Use a
@@ -236,10 +268,12 @@ official built-in templates while preserving its 12 existing extended
 strategies.
 
 The implementations are independently written, bar-aligned equivalents. The
-local engine does not reproduce pyramiding, intrabar stop/limit fills, or
-TradingView's private Technical Ratings aggregation exactly. The product uses
-long-only `0/1` targets and next-bar-open fills: positive signals buy or hold,
-while negative reference signals sell to cash rather than open short positions.
+product uses long-only positions: positive signals buy or hold, while negative
+reference signals sell to cash rather than open short positions. Close-derived
+signals fill at the next open. Five auditable price-triggered templates use
+completed-bar stop plans with OHLC and gap-aware fills. The local engine does
+not reproduce pyramiding, multi-order brackets, lower-timeframe Bar Magnifier
+fills, or TradingView's private Technical Ratings aggregation exactly.
 
 ## Saved backtest persistence
 

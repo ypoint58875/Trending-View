@@ -11,6 +11,11 @@
 - `fetchNasdaqDailySeries(instrument, limit)`: fetches supported daily index/ETF
   history.
 - `fetchMarketSeries(...)`: applies the ordered provider fallback.
+- `/api/market?mode=history`: returns cacheable normalized history.
+- `/api/market?mode=latest`: returns an uncached window of up to ten recent
+  bars for current-bar replacement.
+- `mergeLatestMarketSeries(...)`: retains cached history while replacing
+  overlapping recent bars from the same interval and source.
 - `parseKlineRow(row)`: parses daily or intraday Eastmoney CSV rows.
 - `parseYahooChart(...)` and `parseNasdaqRows(...)`: normalize provider payloads.
 
@@ -36,18 +41,25 @@
 - `getStrategy(id)`: resolves a registry entry.
 - `TRADINGVIEW_BUILT_IN_STRATEGY_IDS`: the ordered 20-entry completeness
   contract for the official built-in template directory.
-- Each strategy provides `buildTarget(bars, parameters)`, producing a long-only
-  `0/1` desired-position series without future data. Negative reference signals
-  are normalized to flat.
+- Every strategy provides `buildTarget(bars, parameters)`, producing a
+  long-only `0/1` desired-position series without future data.
+- Price-triggered strategies additionally provide
+  `buildOrders(bars, parameters)`, producing bar-aligned long-entry and
+  long-exit stop levels derived only from completed bars.
+- `INTRABAR_PRICE_ORDER_STRATEGY_IDS`: the ordered contract covering Channel
+  BreakOut, Momentum, Pivot Reversal, Price Channel, and Volty Expan Close.
 
 ## Simulation
 
-- `runBacktest(...)`: executes prior-bar targets at the next bar open, applies
-  costs to long entries and exits, and calculates equity, drawdown, return,
-  Sharpe, win rate, profit factor, trade count, benchmark return, and a
-  screening score.
+- `buildLiveStrategyGuidance(...)`: evaluates the newest available bar through
+  the shared strategy registry and returns buy, sell, hold, or wait guidance.
+- `runBacktest(...)`: executes prior-bar targets at the next bar open or fills
+  predefined stop orders when the active bar touches them. A stop crossed by a
+  gap fills at the bar open. The function applies costs to long entries and
+  exits and calculates equity, drawdown, return, Sharpe, win rate, profit
+  factor, trade count, benchmark return, and a screening score.
 - `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
-  long exit to a sell marker.
+  strategy exit to a sell marker while separating range-end valuation exits.
 - `buildScreeningCandidates(maxPerStrategy)`: expands the constrained
   parameter spaces for all registered strategies, includes each default
   parameter set, and deterministically samples any space above the 2,500 hard

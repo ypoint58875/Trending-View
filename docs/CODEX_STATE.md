@@ -10,17 +10,27 @@ Implemented:
 - Eastmoney, Yahoo Finance, and Nasdaq market adapters with ordered fallback.
 - Minute and daily intervals for tested global indexes and ETFs.
 - Candlestick/line switching, volume, zoom, and 20 indicators.
+- Cached full history plus uncached five-bar overlays on page open, manual
+  refresh, 60-second visible-page refresh, and page focus/visibility.
+- A current-bar long-only strategy guidance card that reports buy, sell,
+  continue holding, or remain flat from the newest available provider bar.
+- An explicit green-up/red-down legend and a neutral range-end valuation marker
+  that is separate from genuine strategy exits.
 - A directly draggable 22-pixel chart timeline selection with visible resize
   handles; parent rerenders and applied screening results preserve the active
   zoom window for the current instrument and interval.
 - Twelve extended strategies plus independent equivalents of all 20 official
   TradingView built-in strategy templates.
-- Date-range backtesting with next-bar-open execution, costs, metrics, equity,
-  drawdown, long-only positions, and chart-level buy/sell markers.
+- Date-range backtesting with hybrid execution: close-derived targets fill at
+  the next open, while Channel BreakOut, Momentum, Pivot Reversal, Price
+  Channel, and Volty Expan Close use completed-bar stop orders that can fill
+  inside the following bar with gap-aware prices.
+- Long-only positions, costs, metrics, equity, drawdown, and chart-level
+  buy/sell markers derived from actual fills.
 - Bounded parameter-grid optimization across all 32 strategies, with a
   configurable hard cap of 2,500 combinations per strategy, chunked progress,
   cancellation, and best-per-strategy result retention. The default grids
-  currently contain 27,584 valid combinations.
+  currently contain 31,172 valid combinations.
 - Five deterministic screening objectives: balanced score, return/drawdown
   ratio, maximum return, minimum drawdown, and maximum Sharpe.
 - Per-user D1-backed saved backtests with a dedicated upper-right shortcut bar
@@ -37,7 +47,7 @@ Implemented:
 - Live daily series for N225, SOX, and SPY passed on 2026-07-24; the broader
   daily/5-minute N225, SOX, SPY, and 510300 matrix last passed on 2026-07-23.
 - Analysis, adapter, screening-objective, and chart-configuration unit tests:
-  20 passed on 2026-07-24.
+  23 passed on 2026-07-24.
 - Built-worker rendering test: 1 passed on 2026-07-24.
 - Production build: passed on 2026-07-24.
 - ESLint: passed on 2026-07-24.
@@ -55,6 +65,25 @@ Implemented:
   remained draggable on 2026-07-24.
 - A 1,920-pixel Edge viewport reported matching 1,920-pixel document, body, and
   workspace widths on 2026-07-24.
+- Synthetic intrabar-stop, gap-fill, range-boundary, no-future-data, and
+  five-strategy order-plan tests passed on 2026-07-24.
+- Live-guidance transition, price-order guidance, and range-end marker tests
+  passed on 2026-07-24.
+- Completed-history/recent-bar merge coverage increased the local suite to 27
+  passing tests on 2026-07-24; the production build, rendered worker test, and
+  ESLint also passed.
+- Live N225 browser verification on 2026-07-24 returned 1,000 cacheable history
+  bars and a separate five-bar `no-store` update, advanced the displayed update
+  time after manual refresh, recalculated the latest strategy guidance, kept
+  the green-up/red-down legend visible, and preserved a dragged timeline window
+  across refresh.
+- A live N225 Channel BreakOut comparison for 2025-07-24 through 2026-07-24,
+  length 4 and tick 0.1, produced 45.01% return, -9.63% maximum drawdown, and
+  16 trades; its first entry and exit matched the reference dates.
+- A real Edge run displayed the new tick parameter, completed a 64/64
+  two-candidate-per-strategy screen, applied the Channel BreakOut result,
+  preserved the prior zoom window, and successfully dragged it again on
+  2026-07-24.
 
 ## Next priorities
 
@@ -63,5 +92,5 @@ Implemented:
 3. Add venue-specific trading constraints and adjustment-mode controls.
 4. Move large screening jobs to a Web Worker or durable queue when browser
    execution time becomes unacceptable.
-5. Add pyramiding and intrabar stop/limit simulation for templates that use
-   those TradingView execution features.
+5. Add pyramiding, multi-order brackets, limit orders, and optional lower-
+   timeframe Bar Magnifier data for templates that require those features.

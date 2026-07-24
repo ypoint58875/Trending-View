@@ -11,7 +11,7 @@ export const zhCN = {
   },
   searchPlaceholder: "搜索指数、ETF 或代码",
   searchHint: "仅显示全球指数与交易所交易基金",
-  marketDelayed: "多源网页行情",
+  marketDelayed: "多源网页行情 · 自动刷新",
   marketSource: "数据源：东方财富 / Yahoo Finance / Nasdaq 网页行情接口",
   sources: {
     eastmoney: "东方财富",
@@ -40,6 +40,10 @@ export const zhCN = {
     volume: "成交量",
     buy: "买入",
     sell: "卖出",
+    rangeExit: "区间平仓",
+    rise: "绿色：上涨",
+    fall: "红色：下跌",
+    directionLegend: "K 线涨跌颜色图例",
     equity: "策略权益",
     drawdown: "回撤",
     aria: "指数或 ETF 价格、成交量和技术指标图表",
@@ -101,6 +105,25 @@ export const zhCN = {
     turnover: "换手",
     asOf: "更新",
   },
+  liveGuidance: {
+    title: "最新策略建议",
+    calculating: "计算中",
+    waitingForData: "等待最新行情数据",
+    autoRefresh: "每 60 秒自动刷新",
+    actions: {
+      buy: "买入",
+      sell: "卖出",
+      hold: "继续持仓",
+      wait: "空仓等待",
+    },
+    descriptions: {
+      buy: "当前动态 K 线已转为做多",
+      sell: "当前动态 K 线已转为空仓",
+      hold: "策略仍保持多头仓位",
+      wait: "策略仍为空仓，等待下一次买点",
+    },
+    disclosure: "按数据源最新 K 线预判；未收盘时信号可能继续变化。",
+  },
   indicatorsTitle: "指标",
   indicatorsHint: "趋势指标叠加在主图，震荡指标显示在副图。",
   indicators: {
@@ -127,7 +150,8 @@ export const zhCN = {
   },
   lab: {
     title: "策略实验室",
-    subtitle: "仅做多：买入开仓、卖出平仓；信号在下一根 K 线开盘成交。",
+    subtitle:
+      "仅做多：上方最新建议使用当前动态 K 线；历史回测仍按次期开盘或预设触价成交。",
     strategy: "策略",
     period: "回测区间",
     start: "开始日期",
@@ -216,7 +240,7 @@ export const zhCN = {
     },
     "tv-channel-breakout": {
       name: "内置 · Channel BreakOut",
-      description: "突破前期最高价买入，跌破前期最低价卖出",
+      description: "以前期通道加减 Tick 挂单，当根触价买入或卖出",
     },
     "tv-consecutive-up-down": {
       name: "内置 · Consecutive Up/Down",
@@ -240,7 +264,7 @@ export const zhCN = {
     },
     "tv-momentum": {
       name: "内置 · Momentum",
-      description: "价格动量为正且增强时买入，为负且减弱时卖出",
+      description: "动量增强后挂突破止损单，下一根触价买入或卖出",
     },
     "tv-outside-bar": {
       name: "内置 · OutSide Bar",
@@ -256,11 +280,11 @@ export const zhCN = {
     },
     "tv-pivot-reversal": {
       name: "内置 · Pivot Reversal",
-      description: "向上突破枢轴高点时买入，向下跌破低点时卖出",
+      description: "在确认枢轴外加减 Tick 挂单，突破时买入或卖出",
     },
     "tv-price-channel": {
       name: "内置 · Price Channel",
-      description: "触及前期价格通道上沿时买入、下沿时卖出",
+      description: "在前期价格通道上下沿挂单，当根触及时成交",
     },
     "tv-rsi": {
       name: "内置 · RSI",
@@ -280,7 +304,7 @@ export const zhCN = {
     },
     "tv-volty-expan-close": {
       name: "内置 · Volty Expan Close",
-      description: "收盘价突破波动通道上沿时买入，跌破下沿时卖出",
+      description: "以前收盘价和 ATR 构造挂单通道，当根触价成交",
     },
   },
   parameters: {
@@ -313,6 +337,7 @@ export const zhCN = {
     smoothD: "D 平滑周期",
     threshold: "强评级票数",
     minimumBodyPercent: "最小实体幅度 %",
+    tick: "最小跳动 Tick",
   },
   metrics: {
     totalReturn: "总收益",

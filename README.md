@@ -11,13 +11,19 @@ parameter screening in one responsive page.
   excluded from results.
 - 1, 5, 15, 30, and 60-minute bars plus daily bars.
 - Candlestick and line chart modes with volume and synchronized zoom.
+- Cached completed history plus an uncached latest-bar overlay on open, every
+  60 seconds while visible, and on focus/visibility, with current-bar strategy
+  guidance recalculated after each overlay.
+- Explicit green-up/red-down chart legend and separate range-end valuation
+  markers so a forced backtest close is not presented as a strategy sell.
 - Twenty indicators, including moving-average variants, Bollinger Bands,
   Ichimoku, Supertrend, momentum, volatility, and volume studies.
 - Twelve extended strategy families plus independent equivalents of all 20
   templates in TradingView's official built-in-strategy directory.
 - Date-range backtests with initial cash, commission, and slippage settings.
-- Long-only buy/flat targets, next-bar-open execution, and chart-level buy/sell
-  markers for the active backtest.
+- Long-only execution with next-bar-open fills for close signals and intrabar
+  stop fills for predefined breakout prices, including gap-aware pricing.
+- Chart-level buy/sell markers derived from the active backtest's actual fills.
 - Per-user saved backtests with a right-side shortcut bar that restores the
   instrument, interval, strategy, parameters, date range, and cost settings.
 - Bounded parameter-grid optimization across all 32 strategies, configurable
@@ -56,15 +62,22 @@ licensed provider before production or investment use.
 
 Backtests are research simulations. They do not model every venue rule,
 tracking error, tax, suspension, lot constraint, corporate action, or real
-order-book liquidity. Index backtests are price proxies and do not represent a
-directly tradable instrument. Volume-based studies are unavailable or
-uninformative when an index source does not publish volume.
+order-book liquidity. Intrabar stop fills use chart OHLC rather than tick data.
+Index backtests are price proxies and do not represent a directly tradable
+instrument. Volume-based studies are unavailable or uninformative when an
+index source does not publish volume.
+
+The current strategy guidance intentionally evaluates the newest provider bar,
+including an unfinished intraday or daily bar. It can therefore change again
+before the bar closes. The historical backtest keeps its separate no-look-ahead
+execution rules.
 
 TradingView is a product reference only. This project does not redistribute the
 TradingView Advanced Charts library or copy protected Pine scripts. The
 built-in strategy implementations are transparent, independently written
-long-only target-state equivalents. Negative or short signals from an original
-template close an existing long position instead of opening a short position.
-Strategies whose originals depend on pyramiding, intrabar stops, or
-TradingView's private Technical Ratings engine are not claimed to be
-execution-identical.
+long-only equivalents. Negative or short signals from an original template
+close an existing long position instead of opening a short position. Five
+price-triggered templates use completed-bar stop orders with gap-aware fills.
+Strategies whose originals depend on pyramiding, multi-order brackets, Bar
+Magnifier data, or TradingView's private Technical Ratings engine are not
+claimed to be execution-identical.

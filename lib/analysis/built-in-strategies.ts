@@ -11,6 +11,10 @@ import {
   stochasticSlow,
   supertrend,
 } from "./indicators";
+import {
+  emptyOrderSeries,
+  type StrategyOrderSeries,
+} from "./strategy-orders";
 
 export const TRADINGVIEW_BUILT_IN_STRATEGY_IDS = [
   "tv-bar-up-down",
@@ -38,6 +42,14 @@ export const TRADINGVIEW_BUILT_IN_STRATEGY_IDS = [
 export type TradingViewBuiltInStrategyId =
   (typeof TRADINGVIEW_BUILT_IN_STRATEGY_IDS)[number];
 
+export const INTRABAR_PRICE_ORDER_STRATEGY_IDS = [
+  "tv-channel-breakout",
+  "tv-momentum",
+  "tv-pivot-reversal",
+  "tv-price-channel",
+  "tv-volty-expan-close",
+] as const satisfies readonly TradingViewBuiltInStrategyId[];
+
 type StrategyParameters = Record<string, number>;
 
 export interface BuiltInStrategyDefinition {
@@ -48,6 +60,10 @@ export interface BuiltInStrategyDefinition {
     bars: MarketBar[],
     parameters: StrategyParameters,
   ) => number[];
+  buildOrders?: (
+    bars: MarketBar[],
+    parameters: StrategyParameters,
+  ) => StrategyOrderSeries;
 }
 
 function period(parameters: StrategyParameters, key: string, fallback: number) {
@@ -199,17 +215,40 @@ function channelBreakout(
   parameters: StrategyParameters,
 ): number[] {
   const length = period(parameters, "length", 5);
+  const tick = Math.max(value(parameters, "tick", 0.1), 0);
   const target = holdTarget(bars.length);
 
   for (let index = length; index < bars.length; index += 1) {
     carry(target, index);
     const previousWindow = bars.slice(index - length, index);
-    const upper = Math.max(...previousWindow.map((bar) => bar.high));
-    const lower = Math.min(...previousWindow.map((bar) => bar.low));
-    if (bars[index].high > upper) target[index] = 1;
-    if (bars[index].low < lower) target[index] = 0;
+    const upper =
+      Math.max(...previousWindow.map((bar) => bar.high)) + tick;
+    const lower =
+      Math.min(...previousWindow.map((bar) => bar.low)) - tick;
+    if (bars[index].high >= upper) target[index] = 1;
+    if (bars[index].low <= lower) target[index] = 0;
   }
   return target;
+}
+
+function channelBreakoutOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const length = period(parameters, "length", 5);
+  const tick = Math.max(value(parameters, "tick", 0.1), 0);
+  const orders = emptyOrderSeries(bars.length);
+
+  for (let index = length; index < bars.length; index += 1) {
+    const previousWindow = bars.slice(index - length, index);
+    orders[index] = {
+      entryStop:
+        Math.max(...previousWindow.map((bar) => bar.high)) + tick,
+      exitStop:
+        Math.min(...previousWindow.map((bar) => bar.low)) - tick,
+    };
+  }
+  return orders;
 }
 
 function consecutiveUpDown(
@@ -360,6 +399,31 @@ function momentum(
   return target;
 }
 
+function momentumOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const length = period(parameters, "period", 12);
+  const tick = Math.max(value(parameters, "tick", 0.1), 0);
+  const orders = emptyOrderSeries(bars.length);
+  const momentumValues = bars.map((bar, index) =>
+    index < length ? null : bar.close - bars[index - length].close,
+  );
+
+  for (let index = length + 2; index < bars.length; index += 1) {
+    const signalIndex = index - 1;
+    const current = momentumValues[signalIndex]!;
+    const previous = momentumValues[signalIndex - 1]!;
+    if (current > 0 && current > previous) {
+      orders[index].entryStop = bars[signalIndex].high + tick;
+    }
+    if (current < 0 && current < previous) {
+      orders[index].exitStop = bars[signalIndex].low - tick;
+    }
+  }
+  return orders;
+}
+
 function outsideBar(
   bars: MarketBar[],
   parameters: StrategyParameters,
@@ -458,6 +522,7 @@ function pivotReversal(
 ): number[] {
   const left = period(parameters, "leftBars", 4);
   const right = period(parameters, "rightBars", 2);
+  const tick = Math.max(value(parameters, "tick", 0.1), 0);
   const target = holdTarget(bars.length);
   let pivotHigh: number | null = null;
   let pivotLow: number | null = null;
@@ -473,21 +538,75 @@ function pivotReversal(
     }
     if (
       pivotHigh !== null &&
-      bars[index].high > pivotHigh &&
-      bars[index - 1].high <= pivotHigh
+      bars[index].high >= pivotHigh + tick &&
+      bars[index - 1].high < pivotHigh + tick
     ) {
       target[index] = 1;
       pivotHigh = null;
     } else if (
       pivotLow !== null &&
-      bars[index].low < pivotLow &&
-      bars[index - 1].low >= pivotLow
+      bars[index].low <= pivotLow - tick &&
+      bars[index - 1].low > pivotLow - tick
     ) {
       target[index] = 0;
       pivotLow = null;
     }
   }
   return target;
+}
+
+function pivotReversalOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const left = period(parameters, "leftBars", 4);
+  const right = period(parameters, "rightBars", 2);
+  const tick = Math.max(value(parameters, "tick", 0.1), 0);
+  const orders = emptyOrderSeries(bars.length);
+  let pivotHigh: number | null = null;
+  let pivotLow: number | null = null;
+  let highOrderActive = false;
+  let lowOrderActive = false;
+
+  for (let index = 1; index < bars.length; index += 1) {
+    const completedIndex = index - 1;
+    const center = completedIndex - right;
+    const hasConfirmedPivot = center >= left;
+    const confirmedHigh =
+      hasConfirmedPivot && isPivotHigh(bars, center, left, right);
+    const confirmedLow =
+      hasConfirmedPivot && isPivotLow(bars, center, left, right);
+
+    if (confirmedHigh) {
+      pivotHigh = bars[center].high;
+      highOrderActive = true;
+    } else if (
+      highOrderActive &&
+      pivotHigh !== null &&
+      bars[completedIndex].high > pivotHigh
+    ) {
+      highOrderActive = false;
+    }
+
+    if (confirmedLow) {
+      pivotLow = bars[center].low;
+      lowOrderActive = true;
+    } else if (
+      lowOrderActive &&
+      pivotLow !== null &&
+      bars[completedIndex].low < pivotLow
+    ) {
+      lowOrderActive = false;
+    }
+
+    orders[index] = {
+      entryStop:
+        highOrderActive && pivotHigh !== null ? pivotHigh + tick : null,
+      exitStop:
+        lowOrderActive && pivotLow !== null ? pivotLow - tick : null,
+    };
+  }
+  return orders;
 }
 
 function priceChannel(
@@ -505,6 +624,23 @@ function priceChannel(
     if (bars[index].low <= lower) target[index] = 0;
   }
   return target;
+}
+
+function priceChannelOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const length = period(parameters, "length", 20);
+  const orders = emptyOrderSeries(bars.length);
+
+  for (let index = length; index < bars.length; index += 1) {
+    const previousWindow = bars.slice(index - length, index);
+    orders[index] = {
+      entryStop: Math.max(...previousWindow.map((bar) => bar.high)),
+      exitStop: Math.min(...previousWindow.map((bar) => bar.low)),
+    };
+  }
+  return orders;
 }
 
 function rsiStrategy(
@@ -644,10 +780,32 @@ function voltyExpanClose(
       bars[index - 1].close + volatility[index - 1]! * multiplier;
     const lower =
       bars[index - 1].close - volatility[index - 1]! * multiplier;
-    if (bars[index].close > upper) target[index] = 1;
-    if (bars[index].close < lower) target[index] = 0;
+    if (bars[index].high >= upper) target[index] = 1;
+    if (bars[index].low <= lower) target[index] = 0;
   }
   return target;
+}
+
+function voltyExpanCloseOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const length = period(parameters, "period", 5);
+  const multiplier = value(parameters, "multiplier", 1.5);
+  const volatility = atr(bars, length);
+  const orders = emptyOrderSeries(bars.length);
+
+  for (let index = 1; index < bars.length; index += 1) {
+    const previousVolatility = volatility[index - 1];
+    if (previousVolatility === null) continue;
+    orders[index] = {
+      entryStop:
+        bars[index - 1].close + previousVolatility * multiplier,
+      exitStop:
+        bars[index - 1].close - previousVolatility * multiplier,
+    };
+  }
+  return orders;
 }
 
 const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
@@ -672,8 +830,9 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-channel-breakout",
     indicatorId: "atr",
-    defaultParameters: { length: 5 },
+    defaultParameters: { length: 5, tick: 0.1 },
     buildTarget: channelBreakout,
+    buildOrders: channelBreakoutOrders,
   },
   {
     id: "tv-consecutive-up-down",
@@ -708,8 +867,9 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-momentum",
     indicatorId: "roc",
-    defaultParameters: { period: 12 },
+    defaultParameters: { period: 12, tick: 0.1 },
     buildTarget: momentum,
+    buildOrders: momentumOrders,
   },
   {
     id: "tv-outside-bar",
@@ -732,14 +892,16 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-pivot-reversal",
     indicatorId: "atr",
-    defaultParameters: { leftBars: 4, rightBars: 2 },
+    defaultParameters: { leftBars: 4, rightBars: 2, tick: 0.1 },
     buildTarget: pivotReversal,
+    buildOrders: pivotReversalOrders,
   },
   {
     id: "tv-price-channel",
     indicatorId: "atr",
     defaultParameters: { length: 20 },
     buildTarget: priceChannel,
+    buildOrders: priceChannelOrders,
   },
   {
     id: "tv-rsi",
@@ -770,6 +932,7 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
     indicatorId: "atr",
     defaultParameters: { period: 5, multiplier: 1.5 },
     buildTarget: voltyExpanClose,
+    buildOrders: voltyExpanCloseOrders,
   },
 ];
 

@@ -16,6 +16,7 @@ import {
   TRADINGVIEW_BUILT_IN_STRATEGIES,
   type TradingViewBuiltInStrategyId,
 } from "./built-in-strategies";
+import type { StrategyOrderSeries } from "./strategy-orders";
 
 export type StrategyId =
   | "sma-cross"
@@ -44,6 +45,10 @@ export interface StrategyDefinition {
     bars: MarketBar[],
     parameters: StrategyParameters,
   ) => number[];
+  buildOrders?: (
+    bars: MarketBar[],
+    parameters: StrategyParameters,
+  ) => StrategyOrderSeries;
 }
 
 function crossingTarget(

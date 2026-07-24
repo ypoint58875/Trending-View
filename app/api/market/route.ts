@@ -35,6 +35,14 @@ export async function GET(request: Request) {
     ? requestedInterval
     : "1d";
   const limit = Number(url.searchParams.get("limit") || 1000);
+  const mode =
+    url.searchParams.get("mode") === "latest" ? "latest" : "history";
+  const effectiveLimit =
+    mode === "latest"
+      ? Math.min(Math.max(Math.trunc(limit), 2), 10)
+      : Number.isFinite(limit)
+        ? limit
+        : 1000;
 
   const validProvider =
     provider === "eastmoney" ||
@@ -72,15 +80,27 @@ export async function GET(request: Request) {
         provider,
       },
       interval,
-      Number.isFinite(limit) ? limit : 1000,
+      effectiveLimit,
+      {
+        preferLongHistory: mode !== "latest",
+        requestCache: mode === "latest" ? "no-store" : "default",
+      },
     );
 
     return NextResponse.json(series, {
       headers: {
         "Cache-Control":
-          interval === "1d"
-            ? "public, max-age=300, stale-while-revalidate=1800"
-            : "public, max-age=15, stale-while-revalidate=60",
+          mode === "latest"
+            ? "no-store, no-cache, must-revalidate, max-age=0"
+            : "public, max-age=3600, stale-while-revalidate=86400",
+        "CDN-Cache-Control":
+          mode === "latest"
+            ? "no-store"
+            : "public, max-age=3600, stale-while-revalidate=86400",
+        "Cloudflare-CDN-Cache-Control":
+          mode === "latest"
+            ? "no-store"
+            : "public, max-age=3600, stale-while-revalidate=86400",
       },
     });
   } catch (error) {

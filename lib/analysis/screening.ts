@@ -146,6 +146,8 @@ const volatilityChannelSpace: ParameterSpace = {
   ],
 };
 
+const tickValues = [0.01, 0.05, 0.1, 0.5, 1, 5, 10];
+
 const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
   "sma-cross": movingAverageCrossSpace,
   "ema-cross": movingAverageCrossSpace,
@@ -199,7 +201,10 @@ const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
   "tv-bollinger-bands": bollingerSpace,
   "tv-bollinger-directed": bollingerSpace,
   "tv-channel-breakout": {
-    domains: [{ key: "length", values: integerRange(2, 200) }],
+    domains: [
+      { key: "length", values: integerRange(2, 200) },
+      { key: "tick", values: tickValues },
+    ],
   },
   "tv-consecutive-up-down": {
     domains: [
@@ -212,7 +217,10 @@ const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
   "tv-keltner-channels": volatilityChannelSpace,
   "tv-macd": macdSpace,
   "tv-momentum": {
-    domains: [{ key: "period", values: integerRange(2, 200) }],
+    domains: [
+      { key: "period", values: integerRange(2, 200) },
+      { key: "tick", values: tickValues },
+    ],
   },
   "tv-outside-bar": candleFilterSpace,
   "tv-parabolic-sar": {
@@ -235,6 +243,7 @@ const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
     domains: [
       { key: "leftBars", values: integerRange(1, 20) },
       { key: "rightBars", values: integerRange(1, 10) },
+      { key: "tick", values: tickValues },
     ],
   },
   "tv-price-channel": {

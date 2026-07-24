@@ -2,6 +2,23 @@
 
 ## 2026-07-24
 
+- Added cached full history plus uncached recent-bar overlays on open, focus,
+  visibility, and 60-second visible-page intervals.
+- Added current dynamic-bar buy, sell, continue-holding, and remain-flat
+  strategy guidance without changing historical backtest execution.
+- Added explicit green-up/red-down chart copy and separated neutral range-end
+  valuation closes from genuine strategy sell markers.
+- Added a shared price-order strategy contract and hybrid backtest execution:
+  close targets still fill at the next open, while predefined stops can fill
+  inside the following bar with gap-aware prices.
+- Migrated Channel BreakOut, Momentum, Pivot Reversal, Price Channel, and Volty
+  Expan Close to the shared stop-order model without enabling short positions.
+- Added configurable and optimizable tick values to Channel BreakOut, Momentum,
+  and Pivot Reversal, increasing the default grid to 31,172 combinations.
+- Added stop-touch, gap-fill, selected-range first-bar, prefix-invariance, and
+  price-order registry coverage tests.
+- Matched the N225 Channel BreakOut length-4/tick-0.1 reference trade dates and
+  restored the same-period result from 31.52% to 45.01%.
 - Preserved the active main-chart zoom window when an optimized strategy is
   applied by updating the existing ECharts instance instead of recreating it.
 - Added selectable balanced, return/drawdown, maximum-return,

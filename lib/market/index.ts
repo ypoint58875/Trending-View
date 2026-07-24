@@ -44,24 +44,53 @@ function shouldUseYahooHistory(
   );
 }
 
+export interface MarketSeriesFetchOptions {
+  preferLongHistory?: boolean;
+  requestCache?: RequestCache;
+}
+
 export async function fetchMarketSeries(
   instrument: MarketInstrument,
   interval: MarketInterval,
   limit: number,
+  options: MarketSeriesFetchOptions = {},
 ): Promise<MarketSeries> {
+  const requestCache = options.requestCache ?? "default";
   if (instrument.provider === "nasdaq") {
     if (interval === "1d") {
-      return fetchNasdaqDailySeries(instrument, limit);
+      return fetchNasdaqDailySeries(
+        instrument,
+        limit,
+        fetch,
+        requestCache,
+      );
     }
-    return fetchYahooSeries(instrument, interval, limit);
+    return fetchYahooSeries(
+      instrument,
+      interval,
+      limit,
+      fetch,
+      requestCache,
+    );
   }
 
   if (instrument.provider === "yahoo") {
     try {
-      return await fetchYahooSeries(instrument, interval, limit);
+      return await fetchYahooSeries(
+        instrument,
+        interval,
+        limit,
+        fetch,
+        requestCache,
+      );
     } catch (error) {
       if (interval === "1d") {
-        return fetchNasdaqDailySeries(instrument, limit);
+        return fetchNasdaqDailySeries(
+          instrument,
+          limit,
+          fetch,
+          requestCache,
+        );
       }
       throw error;
     }
@@ -73,8 +102,13 @@ export async function fetchMarketSeries(
       instrument,
       interval,
       limit,
+      fetch,
+      requestCache,
     );
-    if (!shouldUseYahooHistory(instrument, interval, eastmoneySeries)) {
+    if (
+      options.preferLongHistory === false ||
+      !shouldUseYahooHistory(instrument, interval, eastmoneySeries)
+    ) {
       return eastmoneySeries;
     }
   } catch {
@@ -82,11 +116,22 @@ export async function fetchMarketSeries(
   }
 
   try {
-    return await fetchYahooSeries(instrument, interval, limit);
+    return await fetchYahooSeries(
+      instrument,
+      interval,
+      limit,
+      fetch,
+      requestCache,
+    );
   } catch (error) {
     if (interval === "1d") {
       try {
-        return await fetchNasdaqDailySeries(instrument, limit);
+        return await fetchNasdaqDailySeries(
+          instrument,
+          limit,
+          fetch,
+          requestCache,
+        );
       } catch {
         // Preserve a shorter Eastmoney series when no long-history source works.
       }

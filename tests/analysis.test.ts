@@ -41,7 +41,11 @@ import {
   getStrategy,
   STRATEGIES,
 } from "../lib/analysis/strategies";
-import { TRADINGVIEW_BUILT_IN_STRATEGY_IDS } from "../lib/analysis/built-in-strategies";
+import {
+  INTRABAR_PRICE_ORDER_STRATEGY_IDS,
+  TRADINGVIEW_BUILT_IN_STRATEGY_IDS,
+} from "../lib/analysis/built-in-strategies";
+import { buildLiveStrategyGuidance } from "../lib/analysis/live-guidance";
 import { buildTradeMarkers } from "../lib/analysis/trade-markers";
 import {
   parseKlineRow,
@@ -52,6 +56,7 @@ import type {
   MarketBar,
   MarketInstrument,
 } from "../lib/market/types";
+import { mergeLatestMarketSeries } from "../lib/market/series";
 import { parseYahooChart, searchYahoo } from "../lib/market/yahoo";
 
 function makeBars(closes: number[]): MarketBar[] {
@@ -67,6 +72,30 @@ function makeBars(closes: number[]): MarketBar[] {
       low: close - 0.5,
       volume: 1000 + index * 10,
       amount: close * (1000 + index * 10),
+      amplitude: 0,
+      changePercent: 0,
+      change: 0,
+      turnoverRate: 0,
+    };
+  });
+}
+
+function makeOhlcBars(
+  rows: Array<{
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+  }>,
+): MarketBar[] {
+  return rows.map((row, index) => {
+    const date = new Date(Date.UTC(2025, 0, index + 1));
+    return {
+      ...row,
+      time: date.toISOString().slice(0, 10),
+      timestamp: date.getTime(),
+      volume: 1_000,
+      amount: row.close * 1_000,
       amplitude: 0,
       changePercent: 0,
       change: 0,
@@ -260,6 +289,45 @@ test("parses Nasdaq history into chronological index bars", () => {
   assert.equal(bars[1].volume, 0);
 });
 
+test("replaces only overlapping latest bars while retaining cached history", () => {
+  const instrument: MarketInstrument = {
+    secid: "100.N225",
+    code: "N225",
+    name: "N225",
+    exchange: "JPX",
+    assetType: "index",
+    provider: "eastmoney",
+  };
+  const historyBars = makeBars([10, 11, 12, 13]);
+  const latestBars = makeBars([12, 15]).map((bar, index) => ({
+    ...bar,
+    time: historyBars[index + 2].time,
+    timestamp: historyBars[index + 2].timestamp,
+  }));
+  const history = {
+    instrument,
+    interval: "1d" as const,
+    previousClose: 9,
+    bars: historyBars,
+    source: "eastmoney" as const,
+    fetchedAt: "2026-07-24T01:00:00.000Z",
+  };
+  const latest = {
+    ...history,
+    bars: latestBars,
+    fetchedAt: "2026-07-24T01:01:00.000Z",
+  };
+
+  const merged = mergeLatestMarketSeries(history, latest, 1000);
+
+  assert.deepEqual(
+    merged.bars.map((bar) => bar.close),
+    [10, 11, 12, 15],
+  );
+  assert.equal(merged.bars[0], historyBars[0]);
+  assert.equal(merged.fetchedAt, latest.fetchedAt);
+});
+
 test("calculates every catalog indicator with aligned finite output", () => {
   const bars = makeBars(
     Array.from({ length: 240 }, (_, index) => {
@@ -325,6 +393,13 @@ test("builds aligned long-only signals for every strategy", () => {
     assert.equal(target.length, bars.length);
     assert.ok(target.every((value) => value === 0 || value === 1));
   });
+
+  assert.deepEqual(
+    STRATEGIES.filter((strategy) => strategy.buildOrders).map(
+      (strategy) => strategy.id,
+    ),
+    [...INTRABAR_PRICE_ORDER_STRATEGY_IDS],
+  );
 });
 
 test("Channel BreakOut sells to flat on a lower-channel break", () => {
@@ -360,6 +435,99 @@ test("executes a close signal at the next bar open and applies costs", () => {
   assert.ok(result.maxDrawdown <= 0);
 });
 
+test("fills Channel BreakOut stops on the touched bar using the configured tick", () => {
+  const bars = makeOhlcBars([
+    { open: 9.5, high: 10, low: 9, close: 9.5 },
+    { open: 10, high: 11, low: 9.5, close: 10.5 },
+    { open: 11, high: 12, low: 10, close: 11.5 },
+    { open: 9.8, high: 10, low: 9, close: 9.2 },
+    { open: 9.2, high: 9.5, low: 8.8, close: 9 },
+  ]);
+  const result = runBacktest(
+    bars,
+    "tv-channel-breakout",
+    { length: 2, tick: 0.1 },
+    {
+      initialCash: 10_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      startTime: bars[2].time,
+      endTime: bars[4].time,
+      interval: "1d",
+    },
+  );
+
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.trades[0].entryTime, bars[2].time);
+  assert.equal(result.trades[0].entryPrice, 11.1);
+  assert.equal(result.trades[0].exitTime, bars[3].time);
+  assert.equal(result.trades[0].exitPrice, 9.4);
+});
+
+test("fills intrabar stop gaps at the bar open", () => {
+  const bars = makeOhlcBars([
+    { open: 9.5, high: 10, low: 9, close: 9.5 },
+    { open: 10, high: 11, low: 9.5, close: 10.5 },
+    { open: 12, high: 12.5, low: 11.5, close: 12 },
+    { open: 8, high: 8.5, low: 7.5, close: 8 },
+    { open: 8, high: 8.2, low: 7.8, close: 8 },
+  ]);
+  const result = runBacktest(
+    bars,
+    "tv-channel-breakout",
+    { length: 2, tick: 0.1 },
+    {
+      initialCash: 10_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      startTime: bars[2].time,
+      endTime: bars[4].time,
+      interval: "1d",
+    },
+  );
+
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.trades[0].entryPrice, 12);
+  assert.equal(result.trades[0].exitPrice, 8);
+});
+
+test("builds price orders only from information available before each bar", () => {
+  const bars = makeBars(
+    Array.from({ length: 80 }, (_, index) => {
+      return 100 + index * 0.08 + Math.sin(index / 4) * 5;
+    }),
+  );
+
+  for (const strategyId of INTRABAR_PRICE_ORDER_STRATEGY_IDS) {
+    const strategy = getStrategy(strategyId);
+    assert.ok(strategy.buildOrders, strategyId);
+    const fullOrders = strategy.buildOrders(
+      bars,
+      strategy.defaultParameters,
+    );
+    assert.ok(
+      fullOrders.some((orders) => orders.entryStop !== null),
+      `${strategyId}:entry`,
+    );
+    assert.ok(
+      fullOrders.some((orders) => orders.exitStop !== null),
+      `${strategyId}:exit`,
+    );
+
+    for (const prefixLength of [20, 40, 60]) {
+      const prefixOrders = strategy.buildOrders(
+        bars.slice(0, prefixLength),
+        strategy.defaultParameters,
+      );
+      assert.deepEqual(
+        fullOrders.slice(0, prefixLength),
+        prefixOrders,
+        `${strategyId}:${prefixLength}`,
+      );
+    }
+  }
+});
+
 test("executes only long trades and maps entries and exits to buy/sell markers", () => {
   const bars = makeBars([10, 10, 10, 12, 13, 8, 7, 9, 11]);
   const result = runBacktest(
@@ -383,9 +551,108 @@ test("executes only long trades and maps entries and exits to buy/sell markers",
 
   const markers = buildTradeMarkers(result.trades);
   assert.equal(markers.buys.length, result.tradeCount);
-  assert.equal(markers.sells.length, result.tradeCount);
+  assert.equal(
+    markers.sells.length + markers.rangeExits.length,
+    result.tradeCount,
+  );
   assert.ok(markers.buys.every((marker) => marker.event === "entry"));
   assert.ok(markers.sells.every((marker) => marker.event === "exit"));
+  assert.ok(
+    markers.rangeExits.every((marker) => marker.event === "range-exit"),
+  );
+});
+
+test("reports live buy, hold, sell, and flat guidance from the latest bar", () => {
+  const bars = makeOhlcBars([
+    { open: 10, high: 10.5, low: 9.5, close: 10 },
+    { open: 11, high: 12.5, low: 10.8, close: 12 },
+    { open: 12, high: 13.5, low: 11.8, close: 13 },
+    { open: 12, high: 12.2, low: 10.8, close: 11 },
+    { open: 11, high: 11.2, low: 10.8, close: 11 },
+  ]);
+  const parameters = { minimumBodyPercent: 0 };
+
+  assert.equal(
+    buildLiveStrategyGuidance(
+      bars.slice(0, 2),
+      "tv-bar-up-down",
+      parameters,
+    )?.action,
+    "buy",
+  );
+  assert.equal(
+    buildLiveStrategyGuidance(
+      bars.slice(0, 3),
+      "tv-bar-up-down",
+      parameters,
+    )?.action,
+    "hold",
+  );
+  assert.equal(
+    buildLiveStrategyGuidance(
+      bars.slice(0, 4),
+      "tv-bar-up-down",
+      parameters,
+    )?.action,
+    "sell",
+  );
+  assert.equal(
+    buildLiveStrategyGuidance(
+      bars,
+      "tv-bar-up-down",
+      parameters,
+    )?.action,
+    "wait",
+  );
+});
+
+test("uses touched stop orders for live price-strategy guidance", () => {
+  const bars = makeOhlcBars([
+    { open: 9.5, high: 10, low: 9, close: 9.5 },
+    { open: 10, high: 11, low: 9.5, close: 10.5 },
+    { open: 11, high: 12, low: 10, close: 11.5 },
+    { open: 9.8, high: 10, low: 9, close: 9.2 },
+  ]);
+
+  const entry = buildLiveStrategyGuidance(
+    bars.slice(0, 3),
+    "tv-channel-breakout",
+    { length: 2, tick: 0.1 },
+  );
+  const exit = buildLiveStrategyGuidance(
+    bars,
+    "tv-channel-breakout",
+    { length: 2, tick: 0.1 },
+  );
+
+  assert.equal(entry?.action, "buy");
+  assert.equal(entry?.triggerPrice, 11.1);
+  assert.equal(exit?.action, "sell");
+  assert.equal(exit?.triggerPrice, 9.4);
+});
+
+test("marks a final valuation close separately from a strategy sell", () => {
+  const bars = makeOhlcBars([
+    { open: 10, high: 10.5, low: 9.5, close: 10 },
+    { open: 11, high: 12.5, low: 10.8, close: 12 },
+    { open: 12, high: 13.5, low: 11.8, close: 13 },
+  ]);
+  const result = runBacktest(
+    bars,
+    "tv-bar-up-down",
+    { minimumBodyPercent: 0 },
+    {
+      initialCash: 10_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+  );
+
+  assert.equal(result.trades.at(-1)?.exitReason, "range-end");
+  const markers = buildTradeMarkers(result.trades);
+  assert.equal(markers.sells.length, 0);
+  assert.equal(markers.rangeExits.length, 1);
 });
 
 test("optimizes every strategy and sorts best results by score", async () => {
@@ -488,7 +755,7 @@ test("builds broad unique parameter grids within the per-strategy cap", () => {
   const screeningCandidates = buildScreeningCandidates(
     MAX_PARAMETER_SETS_PER_STRATEGY,
   );
-  assert.equal(screeningCandidates.length, 27_584);
+  assert.equal(screeningCandidates.length, 31_172);
   const candidatesByStrategy = new Map<
     string,
     Array<Record<string, number>>
@@ -520,6 +787,19 @@ test("builds broad unique parameter grids within the per-strategy cap", () => {
           JSON.stringify(strategy.defaultParameters),
       ),
       strategy.id,
+    );
+  }
+
+  for (const strategyId of [
+    "tv-channel-breakout",
+    "tv-momentum",
+    "tv-pivot-reversal",
+  ] as const) {
+    const candidates = candidatesByStrategy.get(strategyId) ?? [];
+    assert.deepEqual(
+      [...new Set(candidates.map((parameters) => parameters.tick))],
+      [0.01, 0.05, 0.1, 0.5, 1, 5, 10],
+      strategyId,
     );
   }
 });

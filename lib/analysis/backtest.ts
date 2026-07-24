@@ -29,6 +29,7 @@ export interface BacktestTrade {
   entryPrice: number;
   exitPrice: number;
   returnPercent: number;
+  exitReason: "strategy" | "range-end";
 }
 
 export interface BacktestResult {
@@ -82,10 +83,15 @@ export function runBacktest(
 ): BacktestResult {
   const strategy = getStrategy(strategyId);
   const fullTarget = strategy.buildTarget(allBars, parameters);
+  const fullOrders = strategy.buildOrders?.(allBars, parameters);
+  if (fullOrders && fullOrders.length !== allBars.length) {
+    throw new Error("Strategy order plan must align with market bars");
+  }
   const indexedBars = allBars
     .map((bar, index) => ({
       bar,
       target: (fullTarget[index] ?? 0) > 0 ? 1 : 0,
+      orders: fullOrders?.[index],
     }))
     .filter(({ bar }) => filterRange([bar], settings.startTime, settings.endTime).length);
 
@@ -104,7 +110,11 @@ export function runBacktest(
   const trades: BacktestTrade[] = [];
   const equity: EquityPoint[] = [];
 
-  const closePosition = (marketPrice: number, exitTime: string) => {
+  const closePosition = (
+    marketPrice: number,
+    exitTime: string,
+    exitReason: BacktestTrade["exitReason"] = "strategy",
+  ) => {
     if (units === 0) return;
 
     const fillPrice = marketPrice * (1 - slippageRate);
@@ -118,6 +128,7 @@ export function runBacktest(
       exitPrice: fillPrice,
       returnPercent:
         ((proceeds - fee - entryCost) / Math.max(entryCost, 1)) * 100,
+      exitReason,
     });
     units = 0;
     entryPrice = 0;
@@ -138,9 +149,25 @@ export function runBacktest(
   };
 
   for (let index = 0; index < indexedBars.length; index += 1) {
-    const { bar } = indexedBars[index];
+    const { bar, orders } = indexedBars[index];
 
-    if (index > 0) {
+    if (orders) {
+      if (
+        units > 0 &&
+        orders.exitStop !== null &&
+        Number.isFinite(orders.exitStop) &&
+        bar.low <= orders.exitStop
+      ) {
+        closePosition(Math.min(bar.open, orders.exitStop), bar.time);
+      } else if (
+        units === 0 &&
+        orders.entryStop !== null &&
+        Number.isFinite(orders.entryStop) &&
+        bar.high >= orders.entryStop
+      ) {
+        openPosition(Math.max(bar.open, orders.entryStop), bar.time);
+      }
+    } else if (index > 0) {
       const priorTarget = indexedBars[index - 1].target;
       if (priorTarget === 1 && units === 0) {
         openPosition(bar.open, bar.time);
@@ -160,7 +187,7 @@ export function runBacktest(
 
   if (units > 0) {
     const lastBar = indexedBars[indexedBars.length - 1].bar;
-    closePosition(lastBar.close, lastBar.time);
+    closePosition(lastBar.close, lastBar.time, "range-end");
     equity[equity.length - 1].equity = cash;
   }
 

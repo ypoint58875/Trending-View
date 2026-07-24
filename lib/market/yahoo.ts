@@ -117,6 +117,7 @@ function exchangeFromYahoo(
 async function fetchJson<T>(
   url: URL,
   fetchImpl: typeof fetch = fetch,
+  requestCache: RequestCache = "default",
 ): Promise<T> {
   const endpoints = [
     url,
@@ -128,6 +129,7 @@ async function fetchJson<T>(
     const response = await fetchImpl(endpoint, {
       headers: DEFAULT_HEADERS,
       signal: AbortSignal.timeout(12_000),
+      ...(requestCache === "no-store" ? { cache: requestCache } : {}),
     });
     if (response.ok) return (await response.json()) as T;
     lastStatus = response.status;
@@ -272,6 +274,7 @@ export async function fetchYahooSeries(
   interval: MarketInterval,
   requestedLimit = 1000,
   fetchImpl: typeof fetch = fetch,
+  requestCache: RequestCache = "default",
 ): Promise<MarketSeries> {
   const symbol = yahooSymbolForInstrument(instrument);
   const settings = intervalSettings[interval];
@@ -281,9 +284,13 @@ export async function fetchYahooSeries(
   url.searchParams.set("includePrePost", "false");
   url.searchParams.set("events", "div,splits");
 
-  const payload = await fetchJson<YahooChartResponse>(url, fetchImpl);
+  const payload = await fetchJson<YahooChartResponse>(
+    url,
+    fetchImpl,
+    requestCache,
+  );
   const series = parseYahooChart(payload, instrument, interval);
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 60), 1500);
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 2), 1500);
   return {
     ...series,
     bars: series.bars.slice(-limit),

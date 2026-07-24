@@ -45,11 +45,13 @@ import {
   createSaveBacktestInput,
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
+import { buildLiveStrategyGuidance } from "@/lib/analysis/live-guidance";
 import type {
   MarketInstrument,
   MarketInterval,
   MarketSeries,
 } from "@/lib/market/types";
+import { mergeLatestMarketSeries } from "@/lib/market/series";
 
 const defaultInstrument: MarketInstrument = {
   secid: "100.N225",
@@ -89,6 +91,7 @@ const priceChartLabels = {
   volume: copy.chart.volume,
   buy: copy.chart.buy,
   sell: copy.chart.sell,
+  rangeExit: copy.chart.rangeExit,
   series: { ...copy.chart.series },
 };
 
@@ -110,6 +113,15 @@ const compactFormatter = new Intl.NumberFormat("zh-CN", {
   notation: "compact",
   maximumFractionDigits: 2,
 });
+
+const updateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+const LIVE_REFRESH_INTERVAL_MS = 60_000;
 
 function formatPercent(value: number, signed = false) {
   const prefix = signed && value > 0 ? "+" : "";
@@ -156,7 +168,13 @@ function isDecimalParameter(key: string) {
     "increment",
     "maximum",
     "minimumBodyPercent",
+    "tick",
   ].includes(key);
+}
+
+function parameterStep(key: string) {
+  if (key === "tick") return 0.01;
+  return isDecimalParameter(key) ? 0.1 : 1;
 }
 
 function resultTone(result: BacktestResult) {
@@ -224,26 +242,35 @@ export function MarketWorkspace() {
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const pendingSavedBacktestRef = useRef<SavedBacktestRecord | null>(null);
   const screeningAbortRef = useRef<AbortController | null>(null);
+  const currentSeriesKeyRef = useRef("");
+  const latestSeriesDateRef = useRef("");
+  const marketSeriesRef = useRef<MarketSeries | null>(null);
 
   const fetchMarket = useCallback(
     async (signal: AbortSignal) => {
       setLoading(true);
       setErrorCode("");
-      const params = new URLSearchParams({
-        secid: instrument.secid,
-        code: instrument.code,
-        name: instrument.name,
-        exchange: instrument.exchange,
-        provider: instrument.provider,
-        assetType: instrument.assetType,
-        interval,
-        limit: interval === "1d" ? "1000" : "1500",
-      });
-
-      try {
+      const seriesKey = `${instrument.provider}:${instrument.secid}:${interval}`;
+      const seriesLimit = interval === "1d" ? 1000 : 1500;
+      const loadSeries = async (
+        requestInstrument: MarketInstrument,
+        mode: "history" | "latest",
+        limit: number,
+      ) => {
+        const params = new URLSearchParams({
+          secid: requestInstrument.secid,
+          code: requestInstrument.code,
+          name: requestInstrument.name,
+          exchange: requestInstrument.exchange,
+          provider: requestInstrument.provider,
+          assetType: requestInstrument.assetType,
+          interval,
+          limit: String(limit),
+          mode,
+        });
         const response = await fetch(`/api/market?${params}`, {
           signal,
-          cache: "no-store",
+          cache: mode === "latest" ? "no-store" : "default",
         });
         const payload = (await response.json()) as MarketSeries & {
           error?: string;
@@ -251,9 +278,57 @@ export function MarketWorkspace() {
         if (!response.ok || payload.error) {
           throw new Error(payload.error || "UNKNOWN");
         }
+        return payload;
+      };
+
+      try {
+        const currentSeries = marketSeriesRef.current;
+        const refreshesLatestOnly =
+          currentSeries !== null &&
+          currentSeriesKeyRef.current === seriesKey;
+        let payload: MarketSeries;
+
+        if (refreshesLatestOnly) {
+          const latest = await loadSeries(
+            currentSeries.instrument,
+            "latest",
+            5,
+          );
+          payload =
+            latest.source === currentSeries.source
+              ? mergeLatestMarketSeries(currentSeries, latest, seriesLimit)
+              : currentSeries;
+        } else {
+          const history = await loadSeries(
+            instrument,
+            "history",
+            seriesLimit,
+          );
+          payload = history;
+          try {
+            const latest = await loadSeries(
+              history.instrument,
+              "latest",
+              5,
+            );
+            if (latest.source === history.source) {
+              payload = mergeLatestMarketSeries(
+                history,
+                latest,
+                seriesLimit,
+              );
+            }
+          } catch (error) {
+            if ((error as Error).name === "AbortError") throw error;
+            // Cached history remains usable when the latest-bar request fails.
+          }
+        }
+        marketSeriesRef.current = payload;
         setSeries(payload);
 
         if (payload.bars.length) {
+          const sameSeries = currentSeriesKeyRef.current === seriesKey;
+          const previousLatestDate = latestSeriesDateRef.current;
           const firstDate = datePart(payload.bars[0].time);
           const rangeStart = datePart(
             payload.bars[Math.max(0, payload.bars.length - 500)].time,
@@ -266,21 +341,38 @@ export function MarketWorkspace() {
             saved?.instrument.secid === instrument.secid &&
             saved.instrument.provider === instrument.provider &&
             saved.interval === interval;
-          setStartDate(
-            restoresSavedRange &&
+          setStartDate((current) => {
+            if (
+              restoresSavedRange &&
               saved.startDate >= firstDate &&
               saved.startDate <= lastDate
-              ? saved.startDate
-              : rangeStart,
-          );
-          setEndDate(
-            restoresSavedRange &&
+            ) {
+              return saved.startDate;
+            }
+            if (sameSeries && current >= firstDate && current <= lastDate) {
+              return current;
+            }
+            return rangeStart;
+          });
+          setEndDate((current) => {
+            if (
+              restoresSavedRange &&
               saved.endDate >= firstDate &&
               saved.endDate <= lastDate
-              ? saved.endDate
-              : lastDate,
-          );
+            ) {
+              return saved.endDate;
+            }
+            const followsLatest =
+              sameSeries &&
+              (!current ||
+                current === previousLatestDate ||
+                current > lastDate);
+            if (followsLatest || !sameSeries) return lastDate;
+            return current;
+          });
           if (restoresSavedRange) pendingSavedBacktestRef.current = null;
+          currentSeriesKeyRef.current = seriesKey;
+          latestSeriesDateRef.current = lastDate;
         }
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
@@ -303,6 +395,28 @@ export function MarketWorkspace() {
       controller.abort();
     };
   }, [fetchMarket, refreshVersion]);
+
+  useEffect(() => {
+    const refreshVisibleMarket = () => {
+      if (document.visibilityState === "visible") {
+        setRefreshVersion((value) => value + 1);
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") refreshVisibleMarket();
+    };
+    const refreshTimer = window.setInterval(
+      refreshVisibleMarket,
+      LIVE_REFRESH_INTERVAL_MS,
+    );
+    window.addEventListener("focus", refreshVisibleMarket);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("focus", refreshVisibleMarket);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     if (query.trim().length < 1) return;
@@ -386,6 +500,21 @@ export function MarketWorkspace() {
   const priceChange = latest ? latest.close - comparisonPrice : 0;
   const priceChangePercent =
     comparisonPrice === 0 ? 0 : (priceChange / comparisonPrice) * 100;
+  const liveGuidance = useMemo(() => {
+    if (!series?.bars.length) return null;
+    try {
+      return buildLiveStrategyGuidance(
+        series.bars,
+        strategyId,
+        parameters,
+      );
+    } catch {
+      return null;
+    }
+  }, [parameters, series, strategyId]);
+  const lastUpdated = series?.fetchedAt
+    ? updateTimeFormatter.format(new Date(series.fetchedAt))
+    : copy.common.unavailable;
 
   const backtest = useMemo(() => {
     if (!series?.bars.length || !startDate || !endDate) return null;
@@ -419,7 +548,10 @@ export function MarketWorkspace() {
   ) => {
     const next = getStrategy(nextStrategyId);
     setStrategyId(nextStrategyId);
-    setParameters(nextParameters ?? { ...next.defaultParameters });
+    setParameters({
+      ...next.defaultParameters,
+      ...nextParameters,
+    });
     setIndicator(next.indicatorId as IndicatorId);
   };
 
@@ -686,6 +818,27 @@ export function MarketWorkspace() {
           ))}
         </div>
 
+        <div
+          className={`live-guidance-card ${liveGuidance?.action ?? "loading"}`}
+          aria-live="polite"
+        >
+          <span>{copy.liveGuidance.title}</span>
+          <strong>
+            {liveGuidance
+              ? copy.liveGuidance.actions[liveGuidance.action]
+              : copy.liveGuidance.calculating}
+          </strong>
+          <small>
+            {liveGuidance
+              ? `${copy.liveGuidance.descriptions[liveGuidance.action]} ${copy.common.separator} ${liveGuidance.barTime}`
+              : copy.liveGuidance.waitingForData}
+          </small>
+          <em>
+            {copy.liveGuidance.disclosure} {copy.common.separator}{" "}
+            {copy.liveGuidance.autoRefresh}
+          </em>
+        </div>
+
         <button
           className="icon-button"
           type="button"
@@ -755,17 +908,34 @@ export function MarketWorkspace() {
                 <small>{copy.indicators[indicator].description}</small>
               </strong>
             </div>
-            <div className="chart-meta">
-              {series && (
-                <>
-                  <span>
-                    {series.bars.length} {copy.chart.bars}
-                  </span>
-                  <span>
-                    {copy.sources[series.source]}
-                  </span>
-                </>
-              )}
+            <div className="chart-heading-side">
+              <div
+                className="chart-direction-legend"
+                aria-label={copy.chart.directionLegend}
+              >
+                <span>
+                  <i className="rise" />
+                  {copy.chart.rise}
+                </span>
+                <span>
+                  <i className="fall" />
+                  {copy.chart.fall}
+                </span>
+              </div>
+              <div className="chart-meta">
+                {series && (
+                  <>
+                    <span>
+                      {series.bars.length} {copy.chart.bars}
+                    </span>
+                    <span>{copy.sources[series.source]}</span>
+                    <span>
+                      {copy.marketStats.asOf} {lastUpdated}
+                    </span>
+                    <span>{copy.liveGuidance.autoRefresh}</span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1032,8 +1202,10 @@ export function MarketWorkspace() {
                   <input
                     type="number"
                     value={value}
-                    min={isPeriodParameter(key) ? 1 : undefined}
-                    step={isDecimalParameter(key) ? 0.1 : 1}
+                    min={
+                      isPeriodParameter(key) ? 1 : key === "tick" ? 0 : undefined
+                    }
+                    step={parameterStep(key)}
                     onChange={(event) =>
                       setParameters((current) => ({
                         ...current,

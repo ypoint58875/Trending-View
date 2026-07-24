@@ -9,6 +9,9 @@
   forward adjustment `fqt=1`; selected OHLCV fields; bounded result limit.
 - Raw sample: `data/raw/eastmoney_n225_daily_sample.json`
 - Registry: `data/source_registry.jsonl`
+- Runtime freshness: full history is cacheable for one hour. A separate
+  uncached recent-bar request runs every 60 seconds while visible and on
+  focus/visibility, replacing matching current bars.
 
 Volume is retained in the provider's quote-page unit. The application displays
 it as provider volume and does not silently convert it to shares.
@@ -26,6 +29,9 @@ feed.
 - Current parameters: interval-specific range, no pre/post-market bars, and
   bounded local output.
 - Raw sample: `data/raw/yahoo_sox_daily_sample.json`
+- Runtime freshness: full history is cacheable; recent-bar overlays use
+  `no-store`. The newest returned bar may still reflect Yahoo's own publication
+  delay.
 
 Yahoo expands global index/ETF discovery and history. The adapter retries the
 equivalent query2 host, but regional HTTP 403 responses remain possible.
@@ -37,6 +43,8 @@ equivalent query2 host, but regional HTTP 403 responses remain possible.
 - Current parameters: `assetclass` index or ETF, five-year date range, and a
   bounded row limit.
 - Raw sample: `data/raw/nasdaq_sox_daily_sample.json`
+- Runtime freshness: recent-bar overlays use `no-store`; Nasdaq remains a
+  daily-history fallback rather than an intraday feed.
 
 Nasdaq is used only as a daily-history fallback for supported symbols. It is
 not an intraday replacement and may publish no volume for indexes.
