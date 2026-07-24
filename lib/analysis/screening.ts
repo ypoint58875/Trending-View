@@ -153,6 +153,122 @@ export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
     strategyId: "vwap-reversion",
     parameters: { entryPercent: 2.5, exitPercent: 0.5 },
   },
+  { strategyId: "tv-bar-up-down", parameters: {} },
+  {
+    strategyId: "tv-bollinger-bands",
+    parameters: { period: 20, width: 2 },
+  },
+  {
+    strategyId: "tv-bollinger-bands",
+    parameters: { period: 30, width: 2.5 },
+  },
+  {
+    strategyId: "tv-bollinger-directed",
+    parameters: { period: 20, width: 2, direction: 0 },
+  },
+  {
+    strategyId: "tv-bollinger-directed",
+    parameters: { period: 30, width: 2.5, direction: 0 },
+  },
+  { strategyId: "tv-channel-breakout", parameters: { length: 5 } },
+  { strategyId: "tv-channel-breakout", parameters: { length: 20 } },
+  { strategyId: "tv-channel-breakout", parameters: { length: 55 } },
+  {
+    strategyId: "tv-consecutive-up-down",
+    parameters: { upBars: 3, downBars: 3 },
+  },
+  {
+    strategyId: "tv-consecutive-up-down",
+    parameters: { upBars: 5, downBars: 5 },
+  },
+  { strategyId: "tv-greedy", parameters: {} },
+  { strategyId: "tv-inside-bar", parameters: {} },
+  {
+    strategyId: "tv-keltner-channels",
+    parameters: { period: 20, multiplier: 2 },
+  },
+  {
+    strategyId: "tv-keltner-channels",
+    parameters: { period: 30, multiplier: 2.5 },
+  },
+  {
+    strategyId: "tv-macd",
+    parameters: { fast: 12, slow: 26, signal: 9 },
+  },
+  {
+    strategyId: "tv-macd",
+    parameters: { fast: 6, slow: 19, signal: 5 },
+  },
+  { strategyId: "tv-momentum", parameters: { period: 12 } },
+  { strategyId: "tv-momentum", parameters: { period: 20 } },
+  { strategyId: "tv-outside-bar", parameters: {} },
+  {
+    strategyId: "tv-parabolic-sar",
+    parameters: { start: 0.02, increment: 0.02, maximum: 0.2 },
+  },
+  {
+    strategyId: "tv-parabolic-sar",
+    parameters: { start: 0.01, increment: 0.01, maximum: 0.1 },
+  },
+  {
+    strategyId: "tv-pivot-extension",
+    parameters: { leftBars: 4, rightBars: 2 },
+  },
+  {
+    strategyId: "tv-pivot-extension",
+    parameters: { leftBars: 8, rightBars: 4 },
+  },
+  {
+    strategyId: "tv-pivot-reversal",
+    parameters: { leftBars: 4, rightBars: 2 },
+  },
+  {
+    strategyId: "tv-pivot-reversal",
+    parameters: { leftBars: 8, rightBars: 4 },
+  },
+  { strategyId: "tv-price-channel", parameters: { length: 10 } },
+  { strategyId: "tv-price-channel", parameters: { length: 20 } },
+  { strategyId: "tv-price-channel", parameters: { length: 55 } },
+  {
+    strategyId: "tv-rsi",
+    parameters: { period: 14, oversold: 30, overbought: 70 },
+  },
+  {
+    strategyId: "tv-rsi",
+    parameters: { period: 7, oversold: 25, overbought: 75 },
+  },
+  {
+    strategyId: "tv-stochastic-slow",
+    parameters: { period: 14, smoothK: 3, smoothD: 3 },
+  },
+  {
+    strategyId: "tv-stochastic-slow",
+    parameters: { period: 9, smoothK: 3, smoothD: 3 },
+  },
+  {
+    strategyId: "tv-supertrend",
+    parameters: { period: 10, multiplier: 3 },
+  },
+  {
+    strategyId: "tv-supertrend",
+    parameters: { period: 7, multiplier: 2 },
+  },
+  {
+    strategyId: "tv-technical-ratings",
+    parameters: { threshold: 4 },
+  },
+  {
+    strategyId: "tv-technical-ratings",
+    parameters: { threshold: 5 },
+  },
+  {
+    strategyId: "tv-volty-expan-close",
+    parameters: { period: 5, multiplier: 1.5 },
+  },
+  {
+    strategyId: "tv-volty-expan-close",
+    parameters: { period: 14, multiplier: 2 },
+  },
 ];
 
 export function screenStrategies(

@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-24
+
+- Added buy and sell annotations to the main chart for the active backtest,
+  including immediately applied screening results.
+- Upgraded the backtest engine from long-only targets to next-open long, flat,
+  short, and reversal execution with direction-aware costs.
+- Added independent equivalents of all 20 official TradingView built-in
+  strategy templates, including Channel BreakOut.
+- Expanded automated screening from 36 to 74 parameter candidates.
+- Added catalog completeness, Channel BreakOut, short execution, and trade
+  marker mapping tests.
+
 ## 2026-07-23
 
 - Created the QuantScope market strategy workspace.

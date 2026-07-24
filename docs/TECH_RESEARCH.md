@@ -1,6 +1,6 @@
 # Technical Research
 
-Research date: 2026-07-23.
+Research date: 2026-07-24.
 
 ## Charting
 
@@ -105,6 +105,51 @@ Sources:
 - https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
 - https://vectorbt.dev/api/portfolio/
 
-Decision: use a transparent TypeScript engine for the 36-candidate current
+Decision: use a transparent TypeScript engine for the 74-candidate current
 version. Move to a queued Python service for walk-forward studies or thousands
 of combinations.
+
+## TradingView strategy reference boundary
+
+TradingView's official built-in-strategy support directory listed 20 templates
+on 2026-07-24:
+
+1. BarUpDn Strategy
+2. Bollinger Bands Strategy
+3. Bollinger Bands Strategy Directed
+4. Channel BreakOut Strategy
+5. Consecutive Up/Down Strategy
+6. Greedy Strategy
+7. InSide Bar Strategy
+8. Keltner Channels Strategy
+9. MACD Strategy
+10. Momentum Strategy
+11. OutSide Bar Strategy
+12. Parabolic SAR Strategy
+13. Pivot Extension Strategy
+14. Pivot Reversal Strategy
+15. Price Channel Strategy
+16. RSI Strategy
+17. Stochastic Slow Strategy
+18. Supertrend Strategy
+19. Technical Ratings Strategy
+20. Volty Expan Close Strategy
+
+Sources:
+
+- https://www.tradingview.com/support/folders/43000587406-built-in-strategies/
+- https://www.tradingview.com/support/solutions/43000599828-channel-breakout-strategy/
+- https://www.tradingview.com/support/solutions/43000681749-strategy-report/
+
+The Strategy Report documentation distinguishes built-in strategies from free
+community strategies. Community scripts are an open-ended, user-published
+collection with independent licensing, so "complete" cannot be represented as
+a stable finite list. The product therefore implements and catalog-tests all 20
+official built-in templates while preserving its 12 existing extended
+strategies.
+
+The implementations are independently written, bar-aligned equivalents. The
+local engine does not yet reproduce pyramiding, intrabar stop/limit fills, or
+TradingView's private Technical Ratings aggregation exactly. Signed position
+targets and next-bar-open fills were selected because they cover the common
+long, short, and reversal semantics without look-ahead.

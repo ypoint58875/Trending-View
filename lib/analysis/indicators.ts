@@ -256,6 +256,101 @@ export function stochasticRsi(
   return { k, d };
 }
 
+export function stochasticSlow(
+  bars: MarketBar[],
+  period = 14,
+  smoothK = 3,
+  smoothD = 3,
+) {
+  const raw: NumericSeries = new Array(bars.length).fill(null);
+
+  for (let index = period - 1; index < bars.length; index += 1) {
+    const window = bars.slice(index - period + 1, index + 1);
+    const highest = Math.max(...window.map((bar) => bar.high));
+    const lowest = Math.min(...window.map((bar) => bar.low));
+    raw[index] =
+      highest === lowest
+        ? 50
+        : ((bars[index].close - lowest) / (highest - lowest)) * 100;
+  }
+
+  const smooth = (source: NumericSeries, length: number) => {
+    const output: NumericSeries = new Array(source.length).fill(null);
+    for (let index = length - 1; index < source.length; index += 1) {
+      const window = source
+        .slice(index - length + 1, index + 1)
+        .filter((value): value is number => value !== null);
+      if (window.length === length) output[index] = average(window);
+    }
+    return output;
+  };
+
+  const k = smooth(raw, Math.max(Math.round(smoothK), 1));
+  const d = smooth(k, Math.max(Math.round(smoothD), 1));
+  return { k, d };
+}
+
+export function parabolicSar(
+  bars: MarketBar[],
+  start = 0.02,
+  increment = 0.02,
+  maximum = 0.2,
+): NumericSeries {
+  const output: NumericSeries = new Array(bars.length).fill(null);
+  if (bars.length < 2) return output;
+
+  const initialAcceleration = Math.max(start, 0.0001);
+  const accelerationStep = Math.max(increment, 0);
+  const accelerationLimit = Math.max(maximum, initialAcceleration);
+  let isLong = bars[1].close >= bars[0].close;
+  let acceleration = initialAcceleration;
+  let extreme = isLong
+    ? Math.max(bars[0].high, bars[1].high)
+    : Math.min(bars[0].low, bars[1].low);
+  let current = isLong
+    ? Math.min(bars[0].low, bars[1].low)
+    : Math.max(bars[0].high, bars[1].high);
+  output[1] = current;
+
+  for (let index = 2; index < bars.length; index += 1) {
+    current += acceleration * (extreme - current);
+
+    if (isLong) {
+      current = Math.min(current, bars[index - 1].low, bars[index - 2].low);
+      if (bars[index].low < current) {
+        isLong = false;
+        current = extreme;
+        extreme = bars[index].low;
+        acceleration = initialAcceleration;
+      } else if (bars[index].high > extreme) {
+        extreme = bars[index].high;
+        acceleration = Math.min(
+          acceleration + accelerationStep,
+          accelerationLimit,
+        );
+      }
+    } else {
+      current = Math.max(current, bars[index - 1].high, bars[index - 2].high);
+      if (bars[index].high > current) {
+        isLong = true;
+        current = extreme;
+        extreme = bars[index].high;
+        acceleration = initialAcceleration;
+      } else if (bars[index].low < extreme) {
+        extreme = bars[index].low;
+        acceleration = Math.min(
+          acceleration + accelerationStep,
+          accelerationLimit,
+        );
+      }
+    }
+
+    output[index] = current;
+  }
+
+  return output;
+}
+
 export function cci(bars: MarketBar[], period = 20): NumericSeries {
   const typicalPrices = bars.map(
     (bar) => (bar.high + bar.low + bar.close) / 3,

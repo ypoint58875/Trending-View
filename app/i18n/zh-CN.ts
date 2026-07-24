@@ -38,6 +38,8 @@ export const zhCN = {
     price: "价格",
     close: "收盘价",
     volume: "成交量",
+    buy: "买入",
+    sell: "卖出",
     equity: "策略权益",
     drawdown: "回撤",
     aria: "指数或 ETF 价格、成交量和技术指标图表",
@@ -125,7 +127,7 @@ export const zhCN = {
   },
   lab: {
     title: "策略实验室",
-    subtitle: "信号在收盘后生成，下一根 K 线开盘成交。",
+    subtitle: "信号在收盘后生成，下一根 K 线开盘成交；买卖点同步显示在主图。",
     strategy: "策略",
     period: "回测区间",
     start: "开始日期",
@@ -186,6 +188,86 @@ export const zhCN = {
       name: "VWAP 均值回归",
       description: "价格偏离成交量加权均价后等待回归",
     },
+    "tv-bar-up-down": {
+      name: "内置 · BarUpDn",
+      description: "根据 K 线方向及相对前收盘的跳空方向切换多空",
+    },
+    "tv-bollinger-bands": {
+      name: "内置 · Bollinger Bands",
+      description: "跌破下轨后做多，突破上轨后退出",
+    },
+    "tv-bollinger-directed": {
+      name: "内置 · Bollinger Directed",
+      description: "价格重新穿越布林轨道时按设定方向交易",
+    },
+    "tv-channel-breakout": {
+      name: "内置 · Channel BreakOut",
+      description: "突破前期最高价做多，跌破前期最低价做空",
+    },
+    "tv-consecutive-up-down": {
+      name: "内置 · Consecutive Up/Down",
+      description: "连续上涨或连续下跌达到设定根数后切换方向",
+    },
+    "tv-greedy": {
+      name: "内置 · Greedy",
+      description: "结合跳空与当前 K 线方向连续跟随多空",
+    },
+    "tv-inside-bar": {
+      name: "内置 · InSide Bar",
+      description: "识别母 K 线内部的收缩 K 线并按其方向交易",
+    },
+    "tv-keltner-channels": {
+      name: "内置 · Keltner Channels",
+      description: "价格突破 EMA 与 ATR 构成的通道时切换多空",
+    },
+    "tv-macd": {
+      name: "内置 · MACD",
+      description: "MACD 柱体穿越零轴时切换多空",
+    },
+    "tv-momentum": {
+      name: "内置 · Momentum",
+      description: "价格动量为正且增强时做多，为负且减弱时做空",
+    },
+    "tv-outside-bar": {
+      name: "内置 · OutSide Bar",
+      description: "识别同时突破前高和前低的外包 K 线",
+    },
+    "tv-parabolic-sar": {
+      name: "内置 · Parabolic SAR",
+      description: "价格与抛物线转向点交叉时反转持仓",
+    },
+    "tv-pivot-extension": {
+      name: "内置 · Pivot Extension",
+      description: "确认局部高低枢轴后按反转方向交易",
+    },
+    "tv-pivot-reversal": {
+      name: "内置 · Pivot Reversal",
+      description: "确认枢轴后，在价格突破枢轴位时切换方向",
+    },
+    "tv-price-channel": {
+      name: "内置 · Price Channel",
+      description: "触及前期价格通道上沿做多、下沿做空",
+    },
+    "tv-rsi": {
+      name: "内置 · RSI",
+      description: "RSI 离开超卖区做多，离开超买区做空",
+    },
+    "tv-stochastic-slow": {
+      name: "内置 · Stochastic Slow",
+      description: "慢速随机指标 K、D 线交叉时切换多空",
+    },
+    "tv-supertrend": {
+      name: "内置 · Supertrend",
+      description: "ATR 趋势方向翻转时同步反转持仓",
+    },
+    "tv-technical-ratings": {
+      name: "内置 · Technical Ratings",
+      description: "综合均线、振荡器和趋向指标生成强多空评级",
+    },
+    "tv-volty-expan-close": {
+      name: "内置 · Volty Expan Close",
+      description: "收盘价突破前收盘与 ATR 构成的波动通道时交易",
+    },
   },
   parameters: {
     fast: "快线周期",
@@ -203,6 +285,20 @@ export const zhCN = {
     spanPeriod: "先行带周期",
     entryPercent: "入场偏离 %",
     exitPercent: "退出偏离 %",
+    length: "通道周期",
+    direction: "方向（0 多空 / 1 多 / -1 空）",
+    upBars: "连续上涨根数",
+    downBars: "连续下跌根数",
+    start: "SAR 初始步长",
+    increment: "SAR 递增步长",
+    maximum: "SAR 最大步长",
+    leftBars: "左侧枢轴根数",
+    rightBars: "右侧确认根数",
+    oversold: "超卖阈值",
+    overbought: "超买阈值",
+    smoothK: "K 平滑周期",
+    smoothD: "D 平滑周期",
+    threshold: "强评级票数",
   },
   metrics: {
     totalReturn: "总收益",
@@ -217,7 +313,7 @@ export const zhCN = {
   screening: {
     eyebrow: "AUTO LAB",
     title: "一键筛选",
-    description: "遍历 12 类策略、36 组参数，按收益、夏普和回撤综合评分。",
+    description: "遍历 32 类策略、74 组参数，按收益、夏普和回撤综合评分。",
     action: "开始自动筛选",
     running: "正在遍历策略…",
     completed: "筛选完成",

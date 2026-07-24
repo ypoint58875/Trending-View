@@ -10,21 +10,24 @@ Implemented:
 - Eastmoney, Yahoo Finance, and Nasdaq market adapters with ordered fallback.
 - Minute and daily intervals for tested global indexes and ETFs.
 - Candlestick/line switching, volume, zoom, and 20 indicators.
-- Twelve configurable long-only strategy families.
+- Twelve extended strategies plus independent equivalents of all 20 official
+  TradingView built-in strategy templates.
 - Date-range backtesting with next-bar-open execution, costs, metrics, equity,
-  and drawdown.
-- Automated screening across 36 parameter candidates.
+  drawdown, signed long/short positions, and chart-level buy/sell markers.
+- Automated screening across 74 parameter candidates.
 - Chinese responsive UI with centralized locale copy.
 
 ## Verification status
 
-- Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-23.
-- Live daily and 5-minute series for N225, SOX, SPY, and 510300: 8 passed on
-  2026-07-23.
-- Analysis and adapter unit tests: 10 passed on 2026-07-23.
-- Built-worker rendering test: 1 passed on 2026-07-23.
-- Production build: passed on 2026-07-23.
-- ESLint: passed on 2026-07-23.
+- Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-24.
+- Live daily series for N225, SOX, and SPY passed on 2026-07-24; the broader
+  daily/5-minute N225, SOX, SPY, and 510300 matrix last passed on 2026-07-23.
+- Analysis and adapter unit tests: 12 passed on 2026-07-24.
+- Built-worker rendering test: 1 passed on 2026-07-24.
+- Production build: passed on 2026-07-24.
+- ESLint: passed on 2026-07-24.
+- Browser workflow for Channel BreakOut, 74/74 screening, Apply, and visible
+  buy/sell markers on N225: passed on 2026-07-24.
 
 ## Next priorities
 
@@ -32,3 +35,5 @@ Implemented:
 2. Add walk-forward and out-of-sample validation.
 3. Add venue-specific trading constraints and adjustment-mode controls.
 4. Move large screening jobs to a worker queue when the candidate space grows.
+5. Add pyramiding and intrabar stop/limit simulation for templates that use
+   those TradingView execution features.

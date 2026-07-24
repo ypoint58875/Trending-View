@@ -3,6 +3,8 @@
 import { useMemo } from "react";
 import type { EChartsOption, SeriesOption } from "echarts";
 import type { MarketBar } from "@/lib/market/types";
+import type { BacktestTrade } from "@/lib/analysis/backtest";
+import { buildTradeMarkers } from "@/lib/analysis/trade-markers";
 import {
   adx,
   atr,
@@ -52,6 +54,7 @@ export type IndicatorId =
 
 interface PriceChartProps {
   bars: MarketBar[];
+  trades: BacktestTrade[];
   chartType: "candlestick" | "line";
   indicator: IndicatorId;
   ariaLabel: string;
@@ -59,6 +62,8 @@ interface PriceChartProps {
     price: string;
     close: string;
     volume: string;
+    buy: string;
+    sell: string;
     series: Record<string, string>;
   };
 }
@@ -102,6 +107,7 @@ const compactFormatter = new Intl.NumberFormat("zh-CN", {
 
 export function PriceChart({
   bars,
+  trades,
   chartType,
   indicator,
   ariaLabel,
@@ -157,6 +163,61 @@ export function PriceChart({
         },
       } as SeriesOption);
     }
+
+    const tradeMarkers = buildTradeMarkers(trades);
+    series.push(
+      {
+        name: labels.buy,
+        type: "scatter",
+        data: tradeMarkers.buys.map((marker) => ({
+          value: [marker.time, marker.price],
+        })),
+        symbol: "triangle",
+        symbolSize: 14,
+        symbolOffset: [0, 8],
+        itemStyle: {
+          color: colors.up,
+          borderColor: "#d9ffe5",
+          borderWidth: 1,
+        },
+        label: {
+          show: true,
+          formatter: labels.buy,
+          position: "bottom",
+          distance: 3,
+          color: colors.up,
+          fontSize: 9,
+          fontWeight: 700,
+        },
+        z: 20,
+      },
+      {
+        name: labels.sell,
+        type: "scatter",
+        data: tradeMarkers.sells.map((marker) => ({
+          value: [marker.time, marker.price],
+        })),
+        symbol: "triangle",
+        symbolRotate: 180,
+        symbolSize: 14,
+        symbolOffset: [0, -8],
+        itemStyle: {
+          color: colors.down,
+          borderColor: "#ffe1e1",
+          borderWidth: 1,
+        },
+        label: {
+          show: true,
+          formatter: labels.sell,
+          position: "top",
+          distance: 3,
+          color: colors.down,
+          fontSize: 9,
+          fontWeight: 700,
+        },
+        z: 20,
+      },
+    );
 
     series.push({
       name: labels.volume,
@@ -483,7 +544,7 @@ export function PriceChart({
       ],
       series,
     };
-  }, [bars, chartType, indicator, labels]);
+  }, [bars, chartType, indicator, labels, trades]);
 
   return <EChart option={option} className="price-chart" ariaLabel={ariaLabel} />;
 }

@@ -103,14 +103,32 @@ function datePart(time: string) {
 function isPeriodParameter(key: string) {
   return (
     key.endsWith("Period") ||
-    ["fast", "slow", "period", "signal"].includes(key)
+    [
+      "fast",
+      "slow",
+      "period",
+      "signal",
+      "length",
+      "upBars",
+      "downBars",
+      "leftBars",
+      "rightBars",
+      "smoothK",
+      "smoothD",
+    ].includes(key)
   );
 }
 
 function isDecimalParameter(key: string) {
-  return ["width", "multiplier", "entryPercent", "exitPercent"].includes(
-    key,
-  );
+  return [
+    "width",
+    "multiplier",
+    "entryPercent",
+    "exitPercent",
+    "start",
+    "increment",
+    "maximum",
+  ].includes(key);
 }
 
 function resultTone(result: BacktestResult) {
@@ -543,6 +561,7 @@ export function MarketWorkspace() {
             {series && (
               <PriceChart
                 bars={series.bars}
+                trades={backtest?.trades ?? []}
                 chartType={chartType}
                 indicator={indicator}
                 ariaLabel={copy.chart.aria}
@@ -550,6 +569,8 @@ export function MarketWorkspace() {
                   price: copy.chart.price,
                   close: copy.chart.close,
                   volume: copy.chart.volume,
+                  buy: copy.chart.buy,
+                  sell: copy.chart.sell,
                   series: copy.chart.series,
                 }}
               />

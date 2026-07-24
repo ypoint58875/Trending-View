@@ -12,6 +12,10 @@ import {
   supertrend,
   vwap,
 } from "./indicators";
+import {
+  TRADINGVIEW_BUILT_IN_STRATEGIES,
+  type TradingViewBuiltInStrategyId,
+} from "./built-in-strategies";
 
 export type StrategyId =
   | "sma-cross"
@@ -25,7 +29,8 @@ export type StrategyId =
   | "ichimoku-trend"
   | "mfi-reversal"
   | "roc-momentum"
-  | "vwap-reversion";
+  | "vwap-reversion"
+  | TradingViewBuiltInStrategyId;
 
 export interface StrategyParameters {
   [key: string]: number;
@@ -409,6 +414,7 @@ export const STRATEGIES: StrategyDefinition[] = [
     defaultParameters: { entryPercent: 1.5, exitPercent: 0 },
     buildTarget: vwapReversion,
   },
+  ...TRADINGVIEW_BUILT_IN_STRATEGIES,
 ];
 
 export function getStrategy(id: StrategyId): StrategyDefinition {

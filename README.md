@@ -13,11 +13,13 @@ parameter screening in one responsive page.
 - Candlestick and line chart modes with volume and synchronized zoom.
 - Twenty indicators, including moving-average variants, Bollinger Bands,
   Ichimoku, Supertrend, momentum, volatility, and volume studies.
-- Twelve strategy families with editable parameters.
+- Twelve extended strategy families plus independent equivalents of all 20
+  templates in TradingView's official built-in-strategy directory.
 - Date-range backtests with initial cash, commission, and slippage settings.
-- Next-bar-open execution to avoid same-bar look-ahead.
-- Thirty-six-candidate automated screening ranked by a return, Sharpe, drawdown,
-  and trade-count score.
+- Signed long/short targets, next-bar-open execution, and chart-level buy/sell
+  markers for the active backtest.
+- Seventy-four-candidate automated screening ranked by a return, Sharpe,
+  drawdown, and trade-count score.
 
 ## Run locally
 
@@ -51,4 +53,8 @@ directly tradable instrument. Volume-based studies are unavailable or
 uninformative when an index source does not publish volume.
 
 TradingView is a product reference only. This project does not redistribute the
-TradingView Advanced Charts library or copy protected Pine scripts.
+TradingView Advanced Charts library or copy protected Pine scripts. The
+built-in strategy implementations are transparent, independently written
+target-state equivalents. Strategies whose originals depend on pyramiding,
+intrabar stops, or TradingView's private Technical Ratings engine are not
+claimed to be execution-identical.
