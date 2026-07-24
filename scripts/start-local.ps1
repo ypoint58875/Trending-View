@@ -31,6 +31,46 @@ function Test-LocalPortInUse {
   return [bool]($listeners | Where-Object { $_.Port -eq 3000 })
 }
 
+function Test-DependenciesReady {
+  param(
+    [string]$Root = $projectRoot,
+    [string]$NpmCommand = "npm.cmd"
+  )
+
+  if (-not (Test-Path -LiteralPath (Join-Path $Root "node_modules"))) {
+    return $false
+  }
+
+  try {
+    & $NpmCommand ls --depth=0 --silent *> $null
+    return $LASTEXITCODE -eq 0
+  } catch {
+    return $false
+  }
+}
+
+function Wait-QuantScopeStartup {
+  param(
+    [Parameter(Mandatory = $true)]$ServerProcess,
+    [scriptblock]$ReadyProbe = { Test-QuantScopeReady },
+    [int]$TimeoutMilliseconds = 60000,
+    [int]$PollMilliseconds = 500
+  )
+
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if ([bool](& $ReadyProbe)) {
+      return "Ready"
+    }
+    if ($ServerProcess.HasExited) {
+      return "Exited"
+    }
+    Start-Sleep -Milliseconds $PollMilliseconds
+  }
+
+  return "TimedOut"
+}
+
 function Open-QuantScope {
   $edgeCandidates = @(
     "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
@@ -48,6 +88,10 @@ function Open-QuantScope {
   }
 
   Start-Process -FilePath $localUrl
+}
+
+if ($MyInvocation.InvocationName -eq ".") {
+  return
 }
 
 Set-Location -LiteralPath $projectRoot
@@ -70,7 +114,7 @@ if ($nodeVersion -lt $minimumNodeVersion) {
   )
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $projectRoot "node_modules"))) {
+if (-not (Test-DependenciesReady)) {
   Write-Host "Installing locked npm dependencies..."
   & npm.cmd ci
   if ($LASTEXITCODE -ne 0) {
@@ -116,7 +160,6 @@ Write-Host "Starting the local QuantScope server..."
 $serverProcess = Start-Process `
   -FilePath "powershell.exe" `
   -ArgumentList @(
-    "-NoExit",
     "-NoProfile",
     "-ExecutionPolicy",
     "Bypass",
@@ -126,19 +169,19 @@ $serverProcess = Start-Process `
   -WindowStyle Normal `
   -PassThru
 
-$deadline = [DateTime]::UtcNow.AddSeconds(60)
-while ([DateTime]::UtcNow -lt $deadline) {
-  if (Test-QuantScopeReady) {
+$startupStatus = Wait-QuantScopeStartup -ServerProcess $serverProcess
+switch ($startupStatus) {
+  "Ready" {
     Write-Host "QuantScope is ready at $localUrl."
     Open-QuantScope
     exit 0
   }
-  if ($serverProcess.HasExited) {
+  "Exited" {
     Stop-WithError "The local server exited before it became ready."
   }
-  Start-Sleep -Milliseconds 500
+  default {
+    Stop-WithError (
+      "The local server did not become ready within 60 seconds. Check the QuantScope Local Server window."
+    )
+  }
 }
-
-Stop-WithError (
-  "The local server did not become ready within 60 seconds. Check the QuantScope Local Server window."
-)

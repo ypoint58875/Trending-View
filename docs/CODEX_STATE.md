@@ -49,11 +49,13 @@ Implemented:
 
 - Local launcher contract tests and PowerShell parser validation: passed on
   2026-07-24.
+- PowerShell behavior tests for missing, damaged, and ready dependencies plus
+  ready and early-exit server states: passed on 2026-07-24.
 - Clean temporary D1 migration, local HTTP readiness, launcher reuse, and a
   create/list/delete saved-backtest round trip without authentication: passed
   on 2026-07-24.
-- Full 31-test TypeScript suite, production build, rendered-worker test, and
-  ESLint: passed after the local no-login launcher change on 2026-07-24.
+- Full 34-test TypeScript suite, production build, rendered-worker test, and
+  ESLint: passed after the local launcher reliability review on 2026-07-24.
 - Dedicated blue/orange trade-marker palette test, full test/build suite,
   ESLint, and dark-chart browser inspection: passed on 2026-07-24.
 - Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-24.

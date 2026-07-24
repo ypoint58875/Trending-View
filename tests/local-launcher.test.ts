@@ -1,8 +1,21 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const projectRoot = new URL("../", import.meta.url);
+const launcherPath = fileURLToPath(
+  new URL("scripts/start-local.ps1", projectRoot),
+);
 
 function readProjectFile(relativePath: string): string {
   try {
@@ -11,6 +24,25 @@ function readProjectFile(relativePath: string): string {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return "";
     throw error;
   }
+}
+
+function quotePowerShell(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function runLauncherFunction(command: string) {
+  return spawnSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-Command",
+      `. ${quotePowerShell(launcherPath)}; ${command}`,
+    ],
+    {
+      encoding: "utf8",
+      timeout: 10_000,
+    },
+  );
 }
 
 test("Windows launcher delegates only to the local PowerShell launcher", () => {
@@ -64,9 +96,64 @@ test("PowerShell launcher validates, migrates, verifies, and opens localhost", (
   assert.match(launcher, /http:\/\/127\.0\.0\.1:3000/);
   assert.match(launcher, /GetActiveTcpListeners/);
   assert.match(launcher, /npm\.cmd run local:dev/);
-  assert.match(launcher, /AddSeconds\(60\)/);
+  assert.match(launcher, /TimeoutMilliseconds = 60000/);
   assert.match(launcher, /QuantScope/);
   assert.doesNotMatch(launcher, /chatgpt\.site/i);
+});
+
+test("dependency readiness rejects missing and damaged installs", () => {
+  const launcher = readProjectFile("scripts/start-local.ps1");
+
+  assert.match(launcher, /function Test-DependenciesReady/);
+
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "quantscope-dependencies-"));
+  const readyNpm = join(fixtureRoot, "npm-ready.cmd");
+  const brokenNpm = join(fixtureRoot, "npm-broken.cmd");
+
+  try {
+    writeFileSync(readyNpm, "@exit /b 0\r\n", "ascii");
+    writeFileSync(brokenNpm, "@exit /b 1\r\n", "ascii");
+
+    const missing = runLauncherFunction(
+      `if (Test-DependenciesReady -Root ${quotePowerShell(fixtureRoot)} -NpmCommand ${quotePowerShell(readyNpm)}) { 'ready' } else { 'missing' }`,
+    );
+    assert.equal(missing.status, 0, missing.stderr);
+    assert.equal(missing.stdout.trim(), "missing");
+
+    mkdirSync(join(fixtureRoot, "node_modules"));
+    const damaged = runLauncherFunction(
+      `if (Test-DependenciesReady -Root ${quotePowerShell(fixtureRoot)} -NpmCommand ${quotePowerShell(brokenNpm)}) { 'ready' } else { 'damaged' }`,
+    );
+    assert.equal(damaged.status, 0, damaged.stderr);
+    assert.equal(damaged.stdout.trim(), "damaged");
+
+    const ready = runLauncherFunction(
+      `if (Test-DependenciesReady -Root ${quotePowerShell(fixtureRoot)} -NpmCommand ${quotePowerShell(readyNpm)}) { 'ready' } else { 'damaged' }`,
+    );
+    assert.equal(ready.status, 0, ready.stderr);
+    assert.equal(ready.stdout.trim(), "ready");
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("startup wait reports ready and an exited server without timing out", () => {
+  const launcher = readProjectFile("scripts/start-local.ps1");
+
+  assert.match(launcher, /function Wait-QuantScopeStartup/);
+  assert.doesNotMatch(launcher, /"-NoExit"/);
+
+  const ready = runLauncherFunction(
+    "$result = Wait-QuantScopeStartup -ServerProcess ([pscustomobject]@{ HasExited = $false }) -ReadyProbe { $true } -TimeoutMilliseconds 50 -PollMilliseconds 1; Write-Output $result",
+  );
+  assert.equal(ready.status, 0, ready.stderr);
+  assert.equal(ready.stdout.trim(), "Ready");
+
+  const exited = runLauncherFunction(
+    "$result = Wait-QuantScopeStartup -ServerProcess ([pscustomobject]@{ HasExited = $true }) -ReadyProbe { $false } -TimeoutMilliseconds 50 -PollMilliseconds 1; Write-Output $result",
+  );
+  assert.equal(exited.status, 0, exited.stderr);
+  assert.equal(exited.stdout.trim(), "Exited");
 });
 
 test("saved-backtest route retains the localhost owner fallback", () => {
