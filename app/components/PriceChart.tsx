@@ -1,10 +1,25 @@
 "use client";
 
 import { useMemo } from "react";
-import type { EChartsOption, SeriesOption } from "echarts";
+import type {
+  EChartsOption,
+  GridComponentOption,
+  SeriesOption,
+  XAxisComponentOption,
+  YAxisComponentOption,
+} from "echarts";
 import type { MarketBar } from "@/lib/market/types";
 import type { BacktestTrade } from "@/lib/analysis/backtest";
 import { buildTradeMarkers } from "@/lib/analysis/trade-markers";
+import {
+  buildStrategyPriceLines,
+  type StrategyPriceLine,
+  type StrategyPriceLineRole,
+} from "@/lib/analysis/strategy-visuals";
+import type {
+  StrategyId,
+  StrategyParameters,
+} from "@/lib/analysis/strategies";
 import {
   adx,
   atr,
@@ -38,13 +53,27 @@ import { EChart } from "./EChart";
 
 export type { IndicatorId } from "@/lib/analysis/indicator-registry";
 
+export interface ChartIndicatorConfiguration {
+  id: IndicatorId;
+  parameters: IndicatorParameters;
+}
+
+export interface StrategyLineLabels {
+  prefix: string;
+  roles: Record<StrategyPriceLineRole, string>;
+}
+
 interface PriceChartProps {
   bars: MarketBar[];
   trades: BacktestTrade[];
   dataKey: string;
   chartType: "candlestick" | "line";
-  indicator: IndicatorId;
+  visibleIndicators?: readonly ChartIndicatorConfiguration[];
+  indicator?: IndicatorId;
   indicatorParameters?: IndicatorParameters;
+  strategyId?: StrategyId;
+  strategyParameters?: StrategyParameters;
+  strategyLineLabels?: StrategyLineLabels;
   ariaLabel: string;
   labels: {
     price: string;
@@ -71,6 +100,22 @@ const colors = {
   tradeSellText: "#ffedd5",
   tradeLabelBackground: "rgba(7, 15, 22, 0.82)",
   rangeExit: "#94a3b8",
+};
+
+const strategyRoleColors: Record<StrategyPriceLineRole, string> = {
+  entry: "#22c55e",
+  exit: "#ef5350",
+  fast: "#22d3ee",
+  slow: "#fbbf24",
+  middle: "#a78bfa",
+  upper: "#38bdf8",
+  lower: "#fb923c",
+  trend: "#34d399",
+  conversion: "#06b6d4",
+  base: "#f59e0b",
+  "span-a": "#2dd4bf",
+  "span-b": "#f472b6",
+  reference: "#94a3b8",
 };
 
 function lineSeries(
@@ -203,35 +248,70 @@ export function buildIndicatorSeries(
   indicator: IndicatorId,
   inputParameters: IndicatorParameters,
   labels: Record<string, string>,
+  xAxisIndex: number,
+  yAxisIndex: number,
 ): SeriesOption[] {
   const parameters = {
     ...getDefaultIndicatorParameters(indicator),
     ...inputParameters,
   };
   const closes = bars.map((bar) => bar.close);
+  const indicatorLine = (
+    name: string,
+    data: NumericSeries | number[],
+    color: string,
+  ) => lineSeries(name, data, color, xAxisIndex, yAxisIndex);
 
   if (indicator === "sma") {
     return [
-      lineSeries(labels.smaFast, sma(closes, parameters.fast), colors.cyan),
-      lineSeries(labels.smaSlow, sma(closes, parameters.slow), colors.amber),
+      indicatorLine(
+        labels.smaFast,
+        sma(closes, parameters.fast),
+        colors.cyan,
+      ),
+      indicatorLine(
+        labels.smaSlow,
+        sma(closes, parameters.slow),
+        colors.amber,
+      ),
     ];
   }
   if (indicator === "ema") {
     return [
-      lineSeries(labels.emaFast, ema(closes, parameters.fast), colors.cyan),
-      lineSeries(labels.emaSlow, ema(closes, parameters.slow), colors.violet),
+      indicatorLine(
+        labels.emaFast,
+        ema(closes, parameters.fast),
+        colors.cyan,
+      ),
+      indicatorLine(
+        labels.emaSlow,
+        ema(closes, parameters.slow),
+        colors.violet,
+      ),
     ];
   }
   if (indicator === "wma") {
     return [
-      lineSeries(labels.wmaFast, wma(closes, parameters.fast), colors.cyan),
-      lineSeries(labels.wmaSlow, wma(closes, parameters.slow), colors.amber),
+      indicatorLine(
+        labels.wmaFast,
+        wma(closes, parameters.fast),
+        colors.cyan,
+      ),
+      indicatorLine(
+        labels.wmaSlow,
+        wma(closes, parameters.slow),
+        colors.amber,
+      ),
     ];
   }
   if (indicator === "dema") {
     return [
-      lineSeries(labels.demaFast, dema(closes, parameters.fast), colors.cyan),
-      lineSeries(
+      indicatorLine(
+        labels.demaFast,
+        dema(closes, parameters.fast),
+        colors.cyan,
+      ),
+      indicatorLine(
         labels.demaSlow,
         dema(closes, parameters.slow),
         colors.violet,
@@ -245,13 +325,13 @@ export function buildIndicatorSeries(
       parameters.width,
     );
     return [
-      lineSeries(labels.bollMiddle, bands.middle, colors.amber),
-      lineSeries(labels.bollUpper, bands.upper, colors.cyan),
-      lineSeries(labels.bollLower, bands.lower, colors.cyan),
+      indicatorLine(labels.bollMiddle, bands.middle, colors.amber),
+      indicatorLine(labels.bollUpper, bands.upper, colors.cyan),
+      indicatorLine(labels.bollLower, bands.lower, colors.cyan),
     ];
   }
   if (indicator === "vwap") {
-    return [lineSeries(labels.vwap, vwap(bars), colors.amber)];
+    return [indicatorLine(labels.vwap, vwap(bars), colors.amber)];
   }
   if (indicator === "supertrend") {
     const values = supertrend(
@@ -260,7 +340,7 @@ export function buildIndicatorSeries(
       parameters.multiplier,
     );
     return [
-      lineSeries(labels.supertrend, values.trend, colors.up),
+      indicatorLine(labels.supertrend, values.trend, colors.up),
     ];
   }
   if (indicator === "ichimoku") {
@@ -271,24 +351,22 @@ export function buildIndicatorSeries(
       parameters.spanPeriod,
     );
     return [
-      lineSeries(
+      indicatorLine(
         labels.ichimokuConversion,
         values.conversion,
         colors.cyan,
       ),
-      lineSeries(labels.ichimokuBase, values.base, colors.amber),
-      lineSeries(labels.ichimokuSpanA, values.spanA, colors.up),
-      lineSeries(labels.ichimokuSpanB, values.spanB, colors.down),
+      indicatorLine(labels.ichimokuBase, values.base, colors.amber),
+      indicatorLine(labels.ichimokuSpanA, values.spanA, colors.up),
+      indicatorLine(labels.ichimokuSpanB, values.spanB, colors.down),
     ];
   }
   if (indicator === "rsi") {
     return [
-      lineSeries(
+      indicatorLine(
         labels.rsi,
         rsi(closes, parameters.period),
         colors.violet,
-        2,
-        2,
       ),
     ];
   }
@@ -300,8 +378,8 @@ export function buildIndicatorSeries(
       parameters.signal,
     );
     return [
-      lineSeries(labels.macdLine, values.line, colors.cyan, 2, 2),
-      lineSeries(labels.macdSignal, values.signal, colors.amber, 2, 2),
+      indicatorLine(labels.macdLine, values.line, colors.cyan),
+      indicatorLine(labels.macdSignal, values.signal, colors.amber),
       {
         name: labels.macdHistogram,
         type: "bar",
@@ -314,8 +392,8 @@ export function buildIndicatorSeries(
                 : "rgba(239,83,80,.62)",
           },
         })),
-        xAxisIndex: 2,
-        yAxisIndex: 2,
+        xAxisIndex,
+        yAxisIndex,
         barMaxWidth: 5,
       },
     ];
@@ -323,9 +401,9 @@ export function buildIndicatorSeries(
   if (indicator === "kdj") {
     const values = kdj(bars, parameters.period);
     return [
-      lineSeries(labels.kdjK, values.k, colors.cyan, 2, 2),
-      lineSeries(labels.kdjD, values.d, colors.amber, 2, 2),
-      lineSeries(labels.kdjJ, values.j, colors.violet, 2, 2),
+      indicatorLine(labels.kdjK, values.k, colors.cyan),
+      indicatorLine(labels.kdjD, values.d, colors.amber),
+      indicatorLine(labels.kdjJ, values.j, colors.violet),
     ];
   }
   if (indicator === "stochasticRsi") {
@@ -336,95 +414,194 @@ export function buildIndicatorSeries(
       parameters.smoothPeriod,
     );
     return [
-      lineSeries(labels.stochRsiK, values.k, colors.cyan, 2, 2),
-      lineSeries(labels.stochRsiD, values.d, colors.amber, 2, 2),
+      indicatorLine(labels.stochRsiK, values.k, colors.cyan),
+      indicatorLine(labels.stochRsiD, values.d, colors.amber),
     ];
   }
   if (indicator === "cci") {
     return [
-      lineSeries(
+      indicatorLine(
         labels.cci,
         cci(bars, parameters.period),
         colors.violet,
-        2,
-        2,
       ),
     ];
   }
   if (indicator === "williamsR") {
     return [
-      lineSeries(
+      indicatorLine(
         labels.williamsR,
         williamsR(bars, parameters.period),
         colors.cyan,
-        2,
-        2,
       ),
     ];
   }
   if (indicator === "adx") {
     const values = adx(bars, parameters.period);
     return [
-      lineSeries(labels.adx, values.adx, colors.violet, 2, 2),
-      lineSeries(labels.plusDi, values.plusDi, colors.up, 2, 2),
-      lineSeries(labels.minusDi, values.minusDi, colors.down, 2, 2),
+      indicatorLine(labels.adx, values.adx, colors.violet),
+      indicatorLine(labels.plusDi, values.plusDi, colors.up),
+      indicatorLine(labels.minusDi, values.minusDi, colors.down),
     ];
   }
   if (indicator === "roc") {
     return [
-      lineSeries(
+      indicatorLine(
         labels.roc,
         roc(closes, parameters.period),
         colors.amber,
-        2,
-        2,
       ),
     ];
   }
   if (indicator === "mfi") {
     return [
-      lineSeries(
+      indicatorLine(
         labels.mfi,
         mfi(bars, parameters.period),
         colors.violet,
-        2,
-        2,
       ),
     ];
   }
   if (indicator === "cmf") {
     return [
-      lineSeries(
+      indicatorLine(
         labels.cmf,
         cmf(bars, parameters.period),
         colors.cyan,
-        2,
-        2,
       ),
     ];
   }
   if (indicator === "atr") {
     return [
-      lineSeries(
+      indicatorLine(
         labels.atr,
         atr(bars, parameters.period),
         colors.amber,
-        2,
-        2,
       ),
     ];
   }
   if (indicator === "obv") {
-    return [lineSeries(labels.obv, obv(bars), colors.cyan, 2, 2)];
+    return [indicatorLine(labels.obv, obv(bars), colors.cyan)];
   }
   return [];
 }
 
+export function buildStrategyLineSeries(
+  lines: StrategyPriceLine[],
+  labels: StrategyLineLabels,
+): SeriesOption[] {
+  return lines.map((line) => {
+    const color = strategyRoleColors[line.role];
+    return {
+      name: `${labels.prefix} · ${labels.roles[line.role]}`,
+      type: "line",
+      data: line.data,
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      showSymbol: false,
+      connectNulls: false,
+      smooth: false,
+      lineStyle: {
+        width: 2.25,
+        type: "dashed",
+        color,
+      },
+      itemStyle: { color },
+      emphasis: { disabled: true },
+      z: 8,
+    };
+  });
+}
+
+const baseChartHeight = 520;
+const paneChartHeight = 150;
+
+export function buildPriceChartLayout(
+  times: string[],
+  paneCount: number,
+) {
+  const normalizedPaneCount = Math.max(0, Math.floor(paneCount));
+  const grids: GridComponentOption[] = [
+    { left: 12, right: 62, top: 30, height: 335 },
+    { left: 12, right: 62, top: 375, height: 90 },
+  ];
+
+  for (let index = 0; index < normalizedPaneCount; index += 1) {
+    grids.push({
+      left: 12,
+      right: 62,
+      top: 480 + index * paneChartHeight,
+      height: 135,
+    });
+  }
+
+  const finalAxisIndex = grids.length - 1;
+  const xAxes: XAxisComponentOption[] = grids.map((_, gridIndex) => ({
+    type: "category",
+    gridIndex,
+    data: times,
+    boundaryGap: true,
+    axisLine: { lineStyle: { color: "#26332f" } },
+    axisTick: { show: false },
+    axisLabel: {
+      show: gridIndex === finalAxisIndex,
+      color: "#6f807a",
+      fontSize: 10,
+      hideOverlap: true,
+    },
+    splitLine: { show: false },
+    ...(gridIndex === 0
+      ? {
+          min: "dataMin" as const,
+          max: "dataMax" as const,
+        }
+      : {}),
+  }));
+  const yAxes: YAxisComponentOption[] = grids.map((_, gridIndex) => {
+    if (gridIndex === 1) {
+      return {
+        scale: true,
+        gridIndex,
+        position: "right",
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          color: "#6f807a",
+          fontSize: 9,
+          formatter: (value: number) => compactFormatter.format(value),
+        },
+        splitLine: { show: false },
+      };
+    }
+    return {
+      scale: true,
+      gridIndex,
+      position: "right",
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: {
+        color: "#8ea099",
+        fontSize: gridIndex === 0 ? 10 : 9,
+      },
+      splitLine: {
+        lineStyle: { color: "#1b2723", type: "dashed" },
+      },
+    };
+  });
+
+  return {
+    height: baseChartHeight + normalizedPaneCount * paneChartHeight,
+    grids,
+    xAxes,
+    yAxes,
+    xAxisIndexes: grids.map((_, index) => index),
+  };
+}
+
 export function buildPriceDataZoom(
   barsLength: number,
-  overlayIndicator: boolean,
+  xAxisIndexes: number[],
 ): EChartsOption["dataZoom"] {
-  const xAxisIndex = overlayIndicator ? [0, 1] : [0, 1, 2];
   const start = Math.max(
     0,
     100 - (120 / Math.max(barsLength, 120)) * 100,
@@ -434,7 +611,7 @@ export function buildPriceDataZoom(
     {
       id: "price-zoom-inside",
       type: "inside",
-      xAxisIndex,
+      xAxisIndex: xAxisIndexes,
       start,
       end: 100,
       zoomLock: false,
@@ -442,7 +619,7 @@ export function buildPriceDataZoom(
     {
       id: "price-zoom-slider",
       type: "slider",
-      xAxisIndex,
+      xAxisIndex: xAxisIndexes,
       start,
       end: 100,
       bottom: 2,
@@ -478,19 +655,37 @@ export function PriceChart({
   trades,
   dataKey,
   chartType,
+  visibleIndicators,
   indicator,
   indicatorParameters,
+  strategyId,
+  strategyParameters,
+  strategyLineLabels,
   ariaLabel,
   labels,
 }: PriceChartProps) {
-  const option = useMemo<EChartsOption>(() => {
+  const chartIndicators = useMemo<readonly ChartIndicatorConfiguration[]>(
+    () => {
+      if (visibleIndicators !== undefined) return visibleIndicators;
+      if (!indicator) return [];
+      return [
+        {
+          id: indicator,
+          parameters: indicatorParameters ?? {},
+        },
+      ];
+    },
+    [indicator, indicatorParameters, visibleIndicators],
+  );
+
+  const chart = useMemo(() => {
     const times = bars.map((bar) => bar.time);
     const closes = bars.map((bar) => bar.close);
-    const overlayIndicator = getIndicator(indicator).placement === "overlay";
-    const mainHeight = overlayIndicator ? 68 : 57;
-    const volumeTop = overlayIndicator ? 75 : 64;
-    const volumeHeight = overlayIndicator ? 14 : 10;
-    const indicatorTop = 78;
+    const paneCount = chartIndicators.filter(
+      (configuredIndicator) =>
+        getIndicator(configuredIndicator.id).placement === "pane",
+    ).length;
+    const layout = buildPriceChartLayout(times, paneCount);
     const series: SeriesOption[] = [];
 
     if (chartType === "candlestick") {
@@ -545,98 +740,37 @@ export function PriceChart({
       emphasis: { disabled: true },
     });
 
-    series.push(
-      ...buildIndicatorSeries(
-        bars,
-        indicator,
-        indicatorParameters ?? {},
-        labels.series,
-      ),
-    );
-
-    const xAxes: EChartsOption["xAxis"] = [
-      {
-        type: "category",
-        data: times,
-        boundaryGap: true,
-        axisLine: { lineStyle: { color: "#26332f" } },
-        axisTick: { show: false },
-        axisLabel: { show: false },
-        splitLine: { show: false },
-        min: "dataMin",
-        max: "dataMax",
-      },
-      {
-        type: "category",
-        gridIndex: 1,
-        data: times,
-        boundaryGap: true,
-        axisLine: { lineStyle: { color: "#26332f" } },
-        axisTick: { show: false },
-        axisLabel: {
-          show: overlayIndicator,
-          color: "#6f807a",
-          fontSize: 10,
-          hideOverlap: true,
-        },
-        splitLine: { show: false },
-      },
-    ];
-
-    if (!overlayIndicator) {
-      xAxes.push({
-        type: "category",
-        gridIndex: 2,
-        data: times,
-        boundaryGap: true,
-        axisLine: { lineStyle: { color: "#26332f" } },
-        axisTick: { show: false },
-        axisLabel: {
-          color: "#6f807a",
-          fontSize: 10,
-          hideOverlap: true,
-        },
-        splitLine: { show: false },
-      });
+    let nextPaneAxisIndex = 2;
+    for (const configuredIndicator of chartIndicators) {
+      const overlay =
+        getIndicator(configuredIndicator.id).placement === "overlay";
+      const targetAxisIndex = overlay ? 0 : nextPaneAxisIndex++;
+      series.push(
+        ...buildIndicatorSeries(
+          bars,
+          configuredIndicator.id,
+          configuredIndicator.parameters,
+          labels.series,
+          targetAxisIndex,
+          targetAxisIndex,
+        ),
+      );
     }
 
-    const yAxes: EChartsOption["yAxis"] = [
-      {
-        scale: true,
-        position: "right",
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: { color: "#8ea099", fontSize: 10 },
-        splitLine: { lineStyle: { color: "#1b2723", type: "dashed" } },
-      },
-      {
-        scale: true,
-        gridIndex: 1,
-        position: "right",
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: {
-          color: "#6f807a",
-          fontSize: 9,
-          formatter: (value: number) => compactFormatter.format(value),
-        },
-        splitLine: { show: false },
-      },
-    ];
-
-    if (!overlayIndicator) {
-      yAxes.push({
-        scale: true,
-        gridIndex: 2,
-        position: "right",
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: { color: "#8ea099", fontSize: 9 },
-        splitLine: { lineStyle: { color: "#1b2723", type: "dashed" } },
-      });
+    if (strategyId && strategyLineLabels) {
+      series.push(
+        ...buildStrategyLineSeries(
+          buildStrategyPriceLines(
+            bars,
+            strategyId,
+            strategyParameters ?? {},
+          ),
+          strategyLineLabels,
+        ),
+      );
     }
 
-    return {
+    const option: EChartsOption = {
       animation: false,
       backgroundColor: "transparent",
       legend: {
@@ -659,49 +793,32 @@ export function PriceChart({
         textStyle: { color: "#dfe8e4", fontSize: 11 },
         extraCssText: "box-shadow:0 14px 38px rgba(0,0,0,.35);",
       },
-      grid: overlayIndicator
-        ? [
-            { left: 12, right: 62, top: 30, height: `${mainHeight}%` },
-            {
-              left: 12,
-              right: 62,
-              top: `${volumeTop}%`,
-              height: `${volumeHeight}%`,
-            },
-          ]
-        : [
-            { left: 12, right: 62, top: 30, height: `${mainHeight}%` },
-            {
-              left: 12,
-              right: 62,
-              top: `${volumeTop}%`,
-              height: `${volumeHeight}%`,
-            },
-            {
-              left: 12,
-              right: 62,
-              top: `${indicatorTop}%`,
-              height: "14%",
-            },
-          ],
-      xAxis: xAxes,
-      yAxis: yAxes,
-      dataZoom: buildPriceDataZoom(bars.length, overlayIndicator),
+      grid: layout.grids,
+      xAxis: layout.xAxes,
+      yAxis: layout.yAxes,
+      dataZoom: buildPriceDataZoom(
+        bars.length,
+        layout.xAxisIndexes,
+      ),
       series,
     };
+    return { option, height: layout.height };
   }, [
     bars,
+    chartIndicators,
     chartType,
-    indicator,
-    indicatorParameters,
     labels,
+    strategyId,
+    strategyLineLabels,
+    strategyParameters,
     trades,
   ]);
 
   return (
     <EChart
-      option={option}
+      option={chart.option}
       className="price-chart"
+      height={chart.height}
       ariaLabel={ariaLabel}
       preserveDataZoom
       dataZoomResetKey={dataKey}

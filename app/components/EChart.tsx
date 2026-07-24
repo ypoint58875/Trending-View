@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 interface EChartProps {
   option: echarts.EChartsOption;
   className?: string;
+  height?: number;
   ariaLabel: string;
   preserveDataZoom?: boolean;
   dataZoomResetKey?: string;
@@ -53,6 +54,7 @@ function readDataZoomWindow(event: DataZoomEvent): DataZoomWindow | null {
 export function EChart({
   option,
   className,
+  height,
   ariaLabel,
   preserveDataZoom = false,
   dataZoomResetKey,
@@ -100,10 +102,15 @@ export function EChart({
     dataZoomResetKeyRef.current = dataZoomResetKey;
   }, [dataZoomResetKey, option, preserveDataZoom]);
 
+  useEffect(() => {
+    chartRef.current?.resize();
+  }, [height]);
+
   return (
     <div
       ref={containerRef}
       className={className}
+      style={height === undefined ? undefined : { height }}
       role="img"
       aria-label={ariaLabel}
     />
