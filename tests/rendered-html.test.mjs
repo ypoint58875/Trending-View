@@ -35,18 +35,84 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u4e00\u952e\u7b5b\u9009/);
   assert.match(html, /\u7b56\u7565\u5b9e\u9a8c\u5ba4/);
   assert.match(html, /\u6307\u6807\u8bbe\u7f6e/);
-  assert.match(html, /\u7b56\u7565\u53e0\u52a0/);
   assert.match(html, /\u6062\u590d\u9ed8\u8ba4/);
   assert.doesNotMatch(
     html,
     />\s*(?:1|5|15|30|60) \u5206\s*</,
   );
   assert.doesNotMatch(html, /interval-tabs/);
-  assert.match(html, /\u9690\u85cf\u6307\u6807/);
+
+  const indicatorToolbar = html.match(
+    /<div\b[^>]*class="indicator-controls"[^>]*>/,
+  )?.[0];
+  assert.ok(indicatorToolbar, "indicator toolbar should render");
+  assert.match(indicatorToolbar, /role="toolbar"/);
+  assert.match(indicatorToolbar, /aria-label="\u6307\u6807"/);
+  assert.doesNotMatch(indicatorToolbar, /role="tablist"/);
+
+  const macdButton = html.match(/<button\b[^>]*>MACD<\/button>/)?.[0];
+  assert.ok(macdButton, "default MACD indicator button should render");
+  assert.doesNotMatch(macdButton, /role="tab"/);
+  assert.match(macdButton, /class="focused visible"/);
+  assert.match(macdButton, /aria-pressed="true"/);
+  assert.match(macdButton, /aria-current="true"/);
+  assert.match(
+    macdButton,
+    /aria-label="\u6307\u6570\u5e73\u6ed1\u5f02\u540c\u79fb\u52a8\u5e73\u5747\u7ebf \u00b7 \u5df2\u663e\u793a"/,
+  );
+
+  const visibilityButton = html.match(
+    /<button\b[^>]*class="indicator-visibility-button visible"[^>]*>[\s\S]*?<\/button>/,
+  )?.[0];
+  assert.ok(visibilityButton, "focused indicator visibility button should render");
+  assert.match(visibilityButton, /aria-pressed="true"/);
+  assert.match(
+    visibilityButton,
+    /aria-label="\u9690\u85cf\u6307\u6807 \u6307\u6570\u5e73\u6ed1\u5f02\u540c\u79fb\u52a8\u5e73\u5747\u7ebf"/,
+  );
+  assert.ok(
+    visibilityButton.endsWith("\u9690\u85cf\u6307\u6807</button>"),
+    "visibility button should expose its localized action as text",
+  );
+
+  const settingsGroup = html.match(
+    /<section\b[^>]*id="indicator-settings-panel"[^>]*>/,
+  )?.[0];
+  assert.ok(settingsGroup, "indicator settings group should render");
+  assert.match(settingsGroup, /role="group"/);
+  assert.doesNotMatch(settingsGroup, /role="tabpanel"/);
+  assert.match(settingsGroup, /aria-label="\u6307\u6807\u8bbe\u7f6e"/);
+
+  const chartHeadingStart = html.indexOf(
+    '<div class="panel-heading chart-heading">',
+  );
+  const chartHeadingEnd = html.indexOf(
+    '<div class="chart-heading-side">',
+    chartHeadingStart,
+  );
+  assert.ok(
+    chartHeadingStart >= 0 && chartHeadingEnd > chartHeadingStart,
+    "chart heading should render before chart metadata",
+  );
+  const chartHeading = html.slice(chartHeadingStart, chartHeadingEnd);
+  assert.match(
+    chartHeading,
+    /\u7b56\u7565\u53e0\u52a0[\s\S]*?\u7b56\u7565\u53c2\u8003\u7ebf[\s\S]*?SMA \u53cc\u5747\u7ebf/,
+  );
+
+  const chartMeta = html.match(/<div\b[^>]*class="chart-meta"[^>]*>/)?.[0];
+  assert.ok(chartMeta, "chart metadata should render");
+  assert.match(
+    chartMeta,
+    /title="\u4ef7\u683c\u53e3\u5f84: \u516c\u53f8\u884c\u4e3a\u8c03\u6574\u4ef7 \/ \u539f\u59cb\u672a\u590d\u6743\u4ef7"/,
+  );
+  assert.match(
+    chartMeta,
+    /data-supported-price-adjustments="corporate-action-adjusted=\u516c\u53f8\u884c\u4e3a\u8c03\u6574\u4ef7\|raw=\u539f\u59cb\u672a\u590d\u6743\u4ef7"/,
+  );
+
   assert.match(html, /\u53c2\u6570\u7a33\u5b9a\u6027/);
   assert.match(html, /\u4e0d\u8fdb\u884c\u53c2\u6570\u4f18\u5316/);
-  assert.match(html, /\u7b56\u7565\u53c2\u8003\u7ebf/);
-  assert.match(html, /\u4ef7\u683c\u53e3\u5f84/);
   assert.match(html, /name="indicator-fast"/);
   assert.match(html, /name="indicator-slow"/);
   assert.match(html, /\u6700\u65b0\u7b56\u7565\u5efa\u8bae/);

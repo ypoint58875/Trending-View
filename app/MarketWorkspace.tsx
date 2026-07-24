@@ -948,8 +948,8 @@ export function MarketWorkspace() {
         </div>
         <span className="toolbar-divider" />
         <div
-          className="indicator-tabs"
-          role="tablist"
+          className="indicator-controls"
+          role="toolbar"
           aria-label={copy.indicatorsTitle}
         >
           {INDICATORS.map((item) => {
@@ -963,10 +963,10 @@ export function MarketWorkspace() {
             return (
               <button
                 type="button"
-                role="tab"
                 id={`indicator-tab-${item.id}`}
                 aria-controls="indicator-settings-panel"
-                aria-selected={focused}
+                aria-pressed={visible}
+                aria-current={focused ? "true" : undefined}
                 aria-label={accessibleLabel}
                 key={item.id}
                 className={`${focused ? "focused" : ""} ${
@@ -985,8 +985,7 @@ export function MarketWorkspace() {
       <section
         id="indicator-settings-panel"
         className="indicator-settings-bar"
-        role="tabpanel"
-        aria-labelledby={`indicator-tab-${focusedIndicator}`}
+        role="group"
         aria-label={copy.indicatorSettings.title}
       >
         <div className="indicator-settings-title">
@@ -1093,7 +1092,11 @@ export function MarketWorkspace() {
                   {copy.chart.fall}
                 </span>
               </div>
-              <div className="chart-meta">
+              <div
+                className="chart-meta"
+                title={`${copy.chart.priceAdjustment.label}: ${copy.chart.priceAdjustment["corporate-action-adjusted"]} / ${copy.chart.priceAdjustment.raw}`}
+                data-supported-price-adjustments={`corporate-action-adjusted=${copy.chart.priceAdjustment["corporate-action-adjusted"]}|raw=${copy.chart.priceAdjustment.raw}`}
+              >
                 <span>
                   {copy.chart.priceAdjustment.label}{" "}
                   {copy.common.separator}{" "}
