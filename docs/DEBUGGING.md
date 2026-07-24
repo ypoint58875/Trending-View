@@ -28,6 +28,18 @@ The selected parameters may produce no entry signal in the chosen date range.
 Expand the range or change the strategy. Do not weaken assertions or inject a
 trade only to make a test pass.
 
+## Parameter screening is slow
+
+1. Confirm the selected date range is not larger than needed.
+2. Reduce the per-strategy parameter cap from 2,500 for a faster exploratory
+   pass.
+3. Use the stop action to retain the best results found so far.
+4. Confirm progress continues to advance. The optimizer intentionally yields
+   after small batches so chart and stop controls remain responsive.
+5. If a production workload regularly needs larger grids or concurrent users,
+   move execution to a Web Worker or durable server queue rather than removing
+   the cap.
+
 ## Saved shortcut bar cannot load
 
 1. Confirm `.openai/hosting.json` declares the `DB` D1 binding.

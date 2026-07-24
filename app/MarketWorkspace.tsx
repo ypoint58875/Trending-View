@@ -14,6 +14,7 @@ import {
   Search,
   ShieldAlert,
   Sparkles,
+  Square,
   Trash2,
   Trophy,
 } from "lucide-react";
@@ -26,8 +27,10 @@ import {
 import { zhCN as copy } from "./i18n/zh-CN";
 import { runBacktest, type BacktestResult } from "@/lib/analysis/backtest";
 import {
-  SCREENING_CANDIDATES,
-  screenStrategies,
+  DEFAULT_PARAMETER_SETS_PER_STRATEGY,
+  MAX_PARAMETER_SETS_PER_STRATEGY,
+  optimizeStrategies,
+  type ScreeningProgress,
 } from "@/lib/analysis/screening";
 import {
   STRATEGIES,
@@ -171,6 +174,15 @@ export function MarketWorkspace() {
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [screening, setScreening] = useState(false);
   const [screenResults, setScreenResults] = useState<BacktestResult[]>([]);
+  const [maxParameterSets, setMaxParameterSets] = useState(
+    DEFAULT_PARAMETER_SETS_PER_STRATEGY,
+  );
+  const [screenProgress, setScreenProgress] = useState<ScreeningProgress>({
+    completed: 0,
+    total: 0,
+    failed: 0,
+    strategyId: null,
+  });
   const [savedBacktests, setSavedBacktests] = useState<
     SavedBacktestRecord[]
   >([]);
@@ -181,6 +193,7 @@ export function MarketWorkspace() {
   >("idle");
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const pendingSavedBacktestRef = useRef<SavedBacktestRecord | null>(null);
+  const screeningAbortRef = useRef<AbortController | null>(null);
 
   const fetchMarket = useCallback(
     async (signal: AbortSignal) => {
@@ -302,6 +315,13 @@ export function MarketWorkspace() {
     return () => document.removeEventListener("mousedown", closeSearch);
   }, []);
 
+  useEffect(
+    () => () => {
+      screeningAbortRef.current?.abort();
+    },
+    [],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
     const loadSavedBacktests = async () => {
@@ -413,7 +433,21 @@ export function MarketWorkspace() {
     }
   };
 
+  const resetScreening = () => {
+    screeningAbortRef.current?.abort();
+    screeningAbortRef.current = null;
+    setScreening(false);
+    setScreenResults([]);
+    setScreenProgress({
+      completed: 0,
+      total: 0,
+      failed: 0,
+      strategyId: null,
+    });
+  };
+
   const openSavedBacktest = (saved: SavedBacktestRecord) => {
+    resetScreening();
     const requiresMarketReload =
       saved.instrument.secid !== instrument.secid ||
       saved.instrument.provider !== instrument.provider ||
@@ -427,7 +461,6 @@ export function MarketWorkspace() {
     setInitialCash(saved.initialCash);
     setCommissionPercent(saved.commissionPercent);
     setSlippagePercent(saved.slippagePercent);
-    setScreenResults([]);
   };
 
   const deleteSavedBacktest = async (id: number) => {
@@ -444,30 +477,59 @@ export function MarketWorkspace() {
     }
   };
 
-  const startScreening = () => {
+  const startScreening = async () => {
     if (!series?.bars.length) return;
+    screeningAbortRef.current?.abort();
+    const controller = new AbortController();
+    screeningAbortRef.current = controller;
     setScreening(true);
     setScreenResults([]);
-    window.setTimeout(() => {
-      const results = screenStrategies(series.bars, {
+    setScreenProgress({
+      completed: 0,
+      total: 0,
+      failed: 0,
+      strategyId: null,
+    });
+
+    const outcome = await optimizeStrategies(
+      series.bars,
+      {
         initialCash,
         commissionRate: commissionPercent / 100,
         slippageRate: slippagePercent / 100,
         startTime: startDate,
         endTime: endDate,
         interval,
-      });
-      setScreenResults(results);
-      setScreening(false);
-    }, 40);
+      },
+      {
+        maxPerStrategy: maxParameterSets,
+        signal: controller.signal,
+        onProgress: setScreenProgress,
+      },
+    );
+
+    if (screeningAbortRef.current !== controller) return;
+    setScreenResults(outcome.results);
+    setScreenProgress((current) => ({
+      ...current,
+      completed: outcome.evaluatedCount,
+      total: outcome.totalCandidates,
+      failed: outcome.failedCount,
+    }));
+    setScreening(false);
+    screeningAbortRef.current = null;
+  };
+
+  const stopScreening = () => {
+    screeningAbortRef.current?.abort();
   };
 
   const chooseInstrument = (nextInstrument: MarketInstrument) => {
+    resetScreening();
     pendingSavedBacktestRef.current = null;
     setInstrument(nextInstrument);
     setQuery("");
     setSearchResults([]);
-    setScreenResults([]);
   };
 
   const updateQuery = (value: string) => {
@@ -479,9 +541,9 @@ export function MarketWorkspace() {
   };
 
   const chooseInterval = (nextInterval: MarketInterval) => {
+    resetScreening();
     pendingSavedBacktestRef.current = null;
     setInterval(nextInterval);
-    setScreenResults([]);
   };
 
   const minDate = series?.bars.length ? datePart(series.bars[0].time) : "";
@@ -718,50 +780,22 @@ export function MarketWorkspace() {
           </div>
         </section>
 
-        <aside className="strategy-panel panel">
+        <aside className="saved-shortcuts-panel panel">
           <div className="panel-heading">
             <div>
-              <span className="eyebrow">{copy.lab.title}</span>
-              <strong>{copy.strategies[strategyId].name}</strong>
+              <span className="eyebrow">{copy.savedBacktests.eyebrow}</span>
+              <strong>{copy.savedBacktests.title}</strong>
             </div>
-            <div className="lab-heading-actions">
-              <button
-                className={`save-backtest-button ${saveStatus}`}
-                type="button"
-                disabled={!backtest || saveStatus === "saving"}
-                onClick={() => void saveCurrentBacktest()}
-                aria-label={copy.savedBacktests.save}
-                title={copy.savedBacktests.save}
-              >
-                {saveStatus === "saving" ? (
-                  <LoaderCircle className="spin" size={14} />
-                ) : (
-                  <Save size={14} />
-                )}
-                <span>
-                  {saveStatus === "saving"
-                    ? copy.savedBacktests.saving
-                    : saveStatus === "saved"
-                      ? copy.savedBacktests.saved
-                      : saveStatus === "error"
-                        ? copy.savedBacktests.saveError
-                        : copy.savedBacktests.save}
-                </span>
-              </button>
-              <FlaskConical size={19} />
-            </div>
+            <Bookmark size={19} />
           </div>
 
           <section
             className="saved-backtest-shortcuts"
             aria-label={copy.savedBacktests.title}
           >
-            <div className="saved-shortcuts-heading">
-              <span>
-                <Bookmark size={14} />
-                {copy.savedBacktests.title}
-              </span>
-              <small>{savedBacktests.length}</small>
+            <div className="saved-shortcuts-summary">
+              <span>{copy.savedBacktests.savedCount}</span>
+              <strong>{savedBacktests.length}</strong>
             </div>
             {savedBacktestsLoading ? (
               <div className="saved-shortcuts-state">
@@ -830,6 +864,43 @@ export function MarketWorkspace() {
               </div>
             )}
           </section>
+        </aside>
+      </div>
+
+      <section className="research-lab-grid">
+        <aside className="strategy-panel panel">
+          <div className="panel-heading">
+            <div>
+              <span className="eyebrow">{copy.lab.title}</span>
+              <strong>{copy.strategies[strategyId].name}</strong>
+            </div>
+            <div className="lab-heading-actions">
+              <button
+                className={`save-backtest-button ${saveStatus}`}
+                type="button"
+                disabled={!backtest || saveStatus === "saving"}
+                onClick={() => void saveCurrentBacktest()}
+                aria-label={copy.savedBacktests.save}
+                title={copy.savedBacktests.save}
+              >
+                {saveStatus === "saving" ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : (
+                  <Save size={14} />
+                )}
+                <span>
+                  {saveStatus === "saving"
+                    ? copy.savedBacktests.saving
+                    : saveStatus === "saved"
+                      ? copy.savedBacktests.saved
+                      : saveStatus === "error"
+                        ? copy.savedBacktests.saveError
+                        : copy.savedBacktests.save}
+                </span>
+              </button>
+              <FlaskConical size={19} />
+            </div>
+          </div>
           <p className="panel-copy">{copy.lab.subtitle}</p>
 
           <label className="field-label">
@@ -860,8 +931,8 @@ export function MarketWorkspace() {
                 min={minDate}
                 max={endDate || maxDate}
                 onChange={(event) => {
+                  resetScreening();
                   setStartDate(event.target.value);
-                  setScreenResults([]);
                 }}
               />
             </label>
@@ -873,8 +944,8 @@ export function MarketWorkspace() {
                 min={startDate || minDate}
                 max={maxDate}
                 onChange={(event) => {
+                  resetScreening();
                   setEndDate(event.target.value);
-                  setScreenResults([]);
                 }}
               />
             </label>
@@ -888,9 +959,10 @@ export function MarketWorkspace() {
                 value={initialCash}
                 min={1000}
                 step={10000}
-                onChange={(event) =>
+                onChange={(event) => {
+                  resetScreening();
                   setInitialCash(Math.max(Number(event.target.value), 1000))
-                }
+                }}
               />
             </label>
             <label className="field-label">
@@ -900,9 +972,10 @@ export function MarketWorkspace() {
                 value={commissionPercent}
                 min={0}
                 step={0.01}
-                onChange={(event) =>
+                onChange={(event) => {
+                  resetScreening();
                   setCommissionPercent(Math.max(Number(event.target.value), 0))
-                }
+                }}
               />
             </label>
             <label className="field-label">
@@ -912,9 +985,10 @@ export function MarketWorkspace() {
                 value={slippagePercent}
                 min={0}
                 step={0.01}
-                onChange={(event) =>
+                onChange={(event) => {
+                  resetScreening();
                   setSlippagePercent(Math.max(Number(event.target.value), 0))
-                }
+                }}
               />
             </label>
           </div>
@@ -997,7 +1071,6 @@ export function MarketWorkspace() {
             <div className="empty-result">{copy.lab.noResult}</div>
           )}
         </aside>
-      </div>
 
       <section className="screening-panel panel">
         <div className="screening-intro">
@@ -1007,19 +1080,77 @@ export function MarketWorkspace() {
             {copy.screening.title}
           </h2>
           <p>{copy.screening.description}</p>
+          <label className="screening-limit-field">
+            <span>{copy.screening.maxPerStrategy}</span>
+            <input
+              type="number"
+              min={1}
+              max={MAX_PARAMETER_SETS_PER_STRATEGY}
+              step={50}
+              value={maxParameterSets}
+              disabled={screening}
+              onChange={(event) => {
+                const nextValue = Number(event.target.value);
+                setMaxParameterSets(
+                  Math.min(
+                    Math.max(
+                      Number.isFinite(nextValue) ? Math.floor(nextValue) : 1,
+                      1,
+                    ),
+                    MAX_PARAMETER_SETS_PER_STRATEGY,
+                  ),
+                );
+                setScreenResults([]);
+                setScreenProgress({
+                  completed: 0,
+                  total: 0,
+                  failed: 0,
+                  strategyId: null,
+                });
+              }}
+            />
+            <small>
+              {copy.screening.limitHint} {MAX_PARAMETER_SETS_PER_STRATEGY}
+            </small>
+          </label>
           <button
             type="button"
-            className="primary-action"
-            disabled={screening || !series}
-            onClick={startScreening}
+            className={`primary-action ${screening ? "stop" : ""}`}
+            disabled={!series}
+            onClick={() =>
+              screening ? stopScreening() : void startScreening()
+            }
           >
             {screening ? (
-              <LoaderCircle className="spin" size={16} />
+              <Square size={14} fill="currentColor" />
             ) : (
               <Sparkles size={16} />
             )}
-            {screening ? copy.screening.running : copy.screening.action}
+            {screening ? copy.screening.stop : copy.screening.action}
           </button>
+          {screenProgress.total > 0 && (
+            <div className="screening-progress" aria-live="polite">
+              <div>
+                <span>
+                  {screening
+                    ? copy.screening.running
+                    : screenProgress.completed < screenProgress.total
+                      ? copy.screening.stopped
+                    : copy.screening.completed}
+                </span>
+                <strong>
+                  {screenProgress.completed} / {screenProgress.total}
+                  {screenProgress.failed > 0
+                    ? ` · ${screenProgress.failed} ${copy.screening.skipped}`
+                    : ""}
+                </strong>
+              </div>
+              <progress
+                max={screenProgress.total}
+                value={screenProgress.completed}
+              />
+            </div>
+          )}
           <div className="risk-note">
             <ShieldAlert size={15} />
             <span>{copy.screening.overfit}</span>
@@ -1038,7 +1169,10 @@ export function MarketWorkspace() {
             </div>
             {screenResults.length > 0 && (
               <span>
-                {screenResults.length} / {SCREENING_CANDIDATES.length}
+                {screenResults.length} {copy.screening.bestResults}
+                {" "}
+                {copy.common.separator} {screenProgress.completed}{" "}
+                {copy.screening.backtests}
               </span>
             )}
           </div>
@@ -1124,6 +1258,7 @@ export function MarketWorkspace() {
             </div>
           )}
         </div>
+      </section>
       </section>
 
       <footer className="app-footer">

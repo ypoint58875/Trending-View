@@ -27,8 +27,9 @@ import {
   type NumericSeries,
 } from "../lib/analysis/indicators";
 import {
-  SCREENING_CANDIDATES,
-  screenStrategies,
+  MAX_PARAMETER_SETS_PER_STRATEGY,
+  buildScreeningCandidates,
+  optimizeStrategies,
 } from "../lib/analysis/screening";
 import { parseSaveBacktestInput } from "../lib/analysis/saved-backtests";
 import {
@@ -382,33 +383,57 @@ test("executes only long trades and maps entries and exits to buy/sell markers",
   assert.ok(markers.sells.every((marker) => marker.event === "exit"));
 });
 
-test("screens every candidate and sorts by descending score", () => {
+test("optimizes every strategy and sorts best results by score", async () => {
   const bars = makeBars(
     Array.from({ length: 180 }, (_, index) => {
       return 20 + index * 0.04 + Math.sin(index / 5) * 1.8;
     }),
   );
-  const results = screenStrategies(bars, {
-    initialCash: 100_000,
-    commissionRate: 0.0003,
-    slippageRate: 0.0002,
-    interval: "1d",
-  });
+  const progress: number[] = [];
+  const outcome = await optimizeStrategies(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0.0003,
+      slippageRate: 0.0002,
+      interval: "1d",
+    },
+    {
+      maxPerStrategy: 3,
+      yieldEvery: 24,
+      onProgress: (update) => progress.push(update.completed),
+    },
+  );
 
-  assert.equal(SCREENING_CANDIDATES.length, 96);
-  assert.equal(results.length, 96);
-  for (let index = 1; index < results.length; index += 1) {
-    assert.ok(results[index - 1].score >= results[index].score);
+  assert.equal(outcome.totalCandidates, STRATEGIES.length * 3);
+  assert.equal(outcome.evaluatedCount, outcome.totalCandidates);
+  assert.equal(outcome.results.length, STRATEGIES.length);
+  assert.equal(outcome.cancelled, false);
+  assert.equal(outcome.failedCount, 0);
+  assert.equal(progress.at(0), 0);
+  assert.equal(progress.at(-1), outcome.totalCandidates);
+  assert.equal(
+    new Set(outcome.results.map((result) => result.strategyId)).size,
+    STRATEGIES.length,
+  );
+  for (let index = 1; index < outcome.results.length; index += 1) {
+    assert.ok(
+      outcome.results[index - 1].score >= outcome.results[index].score,
+    );
   }
 });
 
-test("screens three distinct parameter sets for every strategy", () => {
+test("builds broad unique parameter grids within the per-strategy cap", () => {
+  const screeningCandidates = buildScreeningCandidates(
+    MAX_PARAMETER_SETS_PER_STRATEGY,
+  );
+  assert.equal(screeningCandidates.length, 27_584);
   const candidatesByStrategy = new Map<
     string,
     Array<Record<string, number>>
   >();
 
-  for (const candidate of SCREENING_CANDIDATES) {
+  for (const candidate of screeningCandidates) {
     const candidates = candidatesByStrategy.get(candidate.strategyId) ?? [];
     candidates.push(candidate.parameters);
     candidatesByStrategy.set(candidate.strategyId, candidates);
@@ -417,13 +442,53 @@ test("screens three distinct parameter sets for every strategy", () => {
   assert.equal(candidatesByStrategy.size, STRATEGIES.length);
   for (const strategy of STRATEGIES) {
     const candidates = candidatesByStrategy.get(strategy.id) ?? [];
-    assert.equal(candidates.length, 3, strategy.id);
+    assert.ok(candidates.length > 3, strategy.id);
+    assert.ok(
+      candidates.length <= MAX_PARAMETER_SETS_PER_STRATEGY,
+      strategy.id,
+    );
     assert.equal(
       new Set(candidates.map((parameters) => JSON.stringify(parameters))).size,
-      3,
+      candidates.length,
+      strategy.id,
+    );
+    assert.ok(
+      candidates.some(
+        (parameters) =>
+          JSON.stringify(parameters) ===
+          JSON.stringify(strategy.defaultParameters),
+      ),
       strategy.id,
     );
   }
+});
+
+test("cancels a parameter optimization between chunks", async () => {
+  const controller = new AbortController();
+  const bars = makeBars(
+    Array.from({ length: 80 }, (_, index) => 20 + index * 0.1),
+  );
+  const outcome = await optimizeStrategies(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0.0003,
+      slippageRate: 0.0002,
+      interval: "1d",
+    },
+    {
+      maxPerStrategy: 10,
+      signal: controller.signal,
+      yieldEvery: 1,
+      onProgress: ({ completed }) => {
+        if (completed === 3) controller.abort();
+      },
+    },
+  );
+
+  assert.equal(outcome.cancelled, true);
+  assert.equal(outcome.evaluatedCount, 3);
+  assert.ok(outcome.evaluatedCount < outcome.totalCandidates);
 });
 
 test("filters weak candle signals with the minimum body parameter", () => {

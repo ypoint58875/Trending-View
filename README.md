@@ -20,9 +20,11 @@ parameter screening in one responsive page.
   markers for the active backtest.
 - Per-user saved backtests with a right-side shortcut bar that restores the
   instrument, interval, strategy, parameters, date range, and cost settings.
-- Ninety-six-candidate automated screening with three distinct parameter sets
-  for every strategy, ranked by a return, Sharpe, drawdown, and trade-count
-  score.
+- Bounded parameter-grid optimization across all 32 strategies, configurable
+  up to 2,500 combinations per strategy and ranked by a return, Sharpe,
+  drawdown, and trade-count score.
+- Chunked screening progress and cancellation, retaining only the best
+  parameter set for each strategy.
 
 ## Run locally
 

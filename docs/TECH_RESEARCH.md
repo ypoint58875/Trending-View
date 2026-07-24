@@ -105,10 +105,53 @@ Sources:
 - https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
 - https://vectorbt.dev/api/portfolio/
 
-Decision: use a transparent TypeScript engine for the 96-candidate current
-version. Each of the 32 strategies receives three distinct presets spanning a
-responsive, normal, and slower or stricter region. Move to a queued Python
-service for walk-forward studies or thousands of combinations.
+Decision: keep the transparent TypeScript engine for deterministic local
+simulation and immediate chart integration. Move to a queued Python service
+for durable multi-user jobs, walk-forward studies, or materially larger search
+spaces.
+
+## Parameter optimization
+
+### Option A: constrained exhaustive grid with a hard cap
+
+Backtesting.py's official optimization interface supports grid search,
+cross-parameter constraints, and an absolute `max_tries` boundary. Its heatmap
+example also exposes parameter combinations for sensitivity analysis. This
+approach is reproducible and easy to audit, but runtime grows with the grid.
+
+Sources:
+
+- https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
+- https://kernc.github.io/backtesting.py/doc/examples/Parameter%20Heatmap%20%26%20Optimization.html
+
+### Option B: randomized or model-based search
+
+Randomized search can cover a large space with fewer evaluations, while
+model-based optimization can prioritize promising regions. Both reduce
+evaluation count but make the selected sample less transparent and require
+seed, convergence, and exploration-policy controls before results are
+reproducible.
+
+### Browser execution approaches
+
+A single uninterrupted main-thread search is simple but blocks rendering and
+input. MDN defines browser long tasks as uninterrupted main-thread work of at
+least 50 milliseconds and recommends splitting work into smaller tasks or
+using workers for expensive computation.
+
+Sources:
+
+- https://developer.mozilla.org/en-US/docs/Web/API/PerformanceLongTaskTiming
+- https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Performance/JavaScript
+
+Decision: use constrained deterministic grids with a user-configurable hard
+cap of 2,500 combinations per strategy. The current default spaces expand to
+27,584 valid combinations across 32 strategies. Spaces smaller than the cap
+are evaluated completely; larger spaces are sampled evenly while preserving
+the default parameters. Execute small asynchronous chunks, report progress,
+allow cancellation, and retain only the best full result per strategy. Use a
+Web Worker or durable queue if measured job duration or concurrent usage
+outgrows this browser-local design.
 
 ## TradingView strategy reference boundary
 

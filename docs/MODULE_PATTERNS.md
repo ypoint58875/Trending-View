@@ -34,11 +34,17 @@ belong in a dedicated module and are spread into the shared registry. Every
 reference catalog exports an ordered ID list so a catalog test can prove that
 no documented entry is missing.
 
-Every registered strategy must have exactly three distinct parameter objects in
-`SCREENING_CANDIDATES`: a responsive preset, the normal/default region, and a
-slower or stricter preset. Parameterless signal rules must expose a meaningful
-filter before entering screening. The catalog test enforces coverage, count,
-and JSON-level parameter distinctness.
+Every registered strategy must have one constrained parameter-space entry in
+`screening.ts`. Domains must be finite, economically meaningful, and expressed
+with stable numeric precision. Cross-field rules such as fast-period less than
+slow-period belong in the parameter-space constraint. The generated candidates
+must include the strategy default, remain JSON-distinct, and never exceed the
+shared per-strategy hard cap.
+
+Large candidate spaces are sampled deterministically across the full ordered
+grid. Screening executes in interruptible chunks and retains only the best
+result per strategy. Tests enforce registry coverage, uniqueness, the cap,
+best-result sorting, progress completion, and cancellation.
 
 Trade annotations are derived from completed `BacktestTrade` records by a pure
 mapping helper. Every entry is a buy and every exit is a sell. Chart components

@@ -40,8 +40,13 @@
   screening score.
 - `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
   long exit to a sell marker.
-- `screenStrategies(...)`: runs 96 declared candidates, comprising three
-  distinct parameter sets for every strategy, and sorts them by score.
+- `buildScreeningCandidates(maxPerStrategy)`: expands the constrained
+  parameter spaces for all registered strategies, includes each default
+  parameter set, and deterministically samples any space above the 2,500 hard
+  cap.
+- `optimizeStrategies(...)`: runs candidates in interruptible chunks, reports
+  progress, keeps only the highest-scoring result for each strategy, and sorts
+  those best results by score.
 
 ## Saved backtests
 

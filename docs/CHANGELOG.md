@@ -2,6 +2,15 @@
 
 ## 2026-07-24
 
+- Replaced the fixed three-presets-per-strategy screen with constrained
+  parameter grids, a configurable 2,500-combination per-strategy hard cap, and
+  27,584 valid default candidates.
+- Added chunked screening progress, cancellation, deterministic over-cap
+  sampling, and best-per-strategy result retention.
+- Moved the strategy lab and automated screening into one lower research area;
+  the upper-right sidebar now contains only saved backtest shortcuts.
+- Added automated coverage for grid uniqueness and caps, optimizer progress,
+  cancellation, best-result sorting, and rendered layout order.
 - Added per-user D1 persistence for saved index/ETF backtests.
 - Added a right-side save action and shortcut bar that restores the complete
   saved backtest setup and displays its saved return.

@@ -39,7 +39,12 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u65e5\u7ecf 225/);
   assert.match(
     html,
-    /\u904d\u5386 32 \u7c7b\u7b56\u7565\u300196 \u7ec4\u53c2\u6570/,
+    /\u904d\u5386\u5168\u90e8 32 \u7c7b\u7b56\u7565\u7684\u53c2\u6570\u7f51\u683c/,
+  );
+  assert.match(html, /value="2500"/);
+  assert.ok(
+    html.indexOf("\u56de\u6d4b\u5feb\u6377\u680f") <
+      html.indexOf("\u7b56\u7565\u5b9e\u9a8c\u5ba4"),
   );
   assert.match(html, /Channel BreakOut/);
   assert.match(html, /Technical Ratings/);

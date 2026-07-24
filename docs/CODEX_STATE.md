@@ -14,10 +14,14 @@ Implemented:
   TradingView built-in strategy templates.
 - Date-range backtesting with next-bar-open execution, costs, metrics, equity,
   drawdown, long-only positions, and chart-level buy/sell markers.
-- Automated screening across 96 parameter candidates, with three distinct
-  parameter sets for each of the 32 strategies.
-- Per-user D1-backed saved backtests with a right-side save action and shortcut
-  bar for restoring index/ETF research settings.
+- Bounded parameter-grid optimization across all 32 strategies, with a
+  configurable hard cap of 2,500 combinations per strategy, chunked progress,
+  cancellation, and best-per-strategy result retention. The default grids
+  currently contain 27,584 valid combinations.
+- Per-user D1-backed saved backtests with a dedicated upper-right shortcut bar
+  for restoring index/ETF research settings.
+- A lower research area that places the strategy lab and automated screening
+  together while keeping the current-backtest save action in the lab.
 - Chinese responsive UI with centralized locale copy.
 
 ## Verification status
@@ -25,14 +29,14 @@ Implemented:
 - Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-24.
 - Live daily series for N225, SOX, and SPY passed on 2026-07-24; the broader
   daily/5-minute N225, SOX, SPY, and 510300 matrix last passed on 2026-07-23.
-- Analysis and adapter unit tests: 15 passed on 2026-07-24.
+- Analysis and adapter unit tests: 16 passed on 2026-07-24.
 - Built-worker rendering test: 1 passed on 2026-07-24.
 - Production build: passed on 2026-07-24.
 - ESLint: passed on 2026-07-24.
 - Browser workflow for Channel BreakOut, 74/74 screening, Apply, and visible
   buy/sell markers on N225: passed on 2026-07-24.
-- Automated 96-candidate parameter coverage and distinctness tests: passed on
-  2026-07-24.
+- Parameter-grid coverage, cap, uniqueness, best-per-strategy ordering,
+  progress, and cancellation tests: passed on 2026-07-24.
 - Saved-backtest payload validation, migration generation, and production
   build: passed on 2026-07-24.
 - Long-only catalog, execution, and marker rules: passed on 2026-07-24.
@@ -42,6 +46,7 @@ Implemented:
 1. Replace public website endpoints with a licensed global market-data feed.
 2. Add walk-forward and out-of-sample validation.
 3. Add venue-specific trading constraints and adjustment-mode controls.
-4. Move large screening jobs to a worker queue when the candidate space grows.
+4. Move large screening jobs to a Web Worker or durable queue when browser
+   execution time becomes unacceptable.
 5. Add pyramiding and intrabar stop/limit simulation for templates that use
    those TradingView execution features.

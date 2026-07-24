@@ -14,7 +14,8 @@ Browser UI
   -> normalized MarketSeries
   -> indicator registry
   -> strategy registry
-  -> backtest and screening engines
+  -> backtest engine
+  -> bounded, chunked parameter-grid optimizer
   -> ECharts canvas views
   -> /api/saved-backtests
   -> authenticated owner key
@@ -37,6 +38,13 @@ formats to the browser.
 Saved backtests are scoped by the authenticated ChatGPT email header. One
 snapshot is retained per owner, provider, and instrument identifier; saving the
 same instrument updates its current snapshot instead of creating duplicates.
+The upper workspace pairs the price chart with saved shortcuts. The lower
+research grid pairs the strategy lab with automated parameter screening.
+
+Screening generates constrained parameter grids from the shared strategy
+registry, applies a per-strategy cap, yields between small batches, and retains
+only the highest-scoring result for each strategy. This bounds both UI blocking
+and result memory without changing the deterministic backtest engine.
 
 Eastmoney is the preferred source for search and bars. Yahoo Finance extends
 global symbol discovery and history. Nasdaq is the daily-history fallback for

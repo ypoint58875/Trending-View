@@ -1,391 +1,399 @@
-import type {
-  MarketBar,
-  MarketInterval,
-} from "@/lib/market/types";
+import type { MarketBar, MarketInterval } from "@/lib/market/types";
 import {
   runBacktest,
   type BacktestResult,
   type BacktestSettings,
 } from "./backtest";
-import type { StrategyId, StrategyParameters } from "./strategies";
+import {
+  STRATEGIES,
+  getStrategy,
+  type StrategyId,
+  type StrategyParameters,
+} from "./strategies";
+
+export const MAX_PARAMETER_SETS_PER_STRATEGY = 2_500;
+export const DEFAULT_PARAMETER_SETS_PER_STRATEGY =
+  MAX_PARAMETER_SETS_PER_STRATEGY;
 
 export interface ScreeningCandidate {
   strategyId: StrategyId;
   parameters: StrategyParameters;
 }
 
-export const SCREENING_CANDIDATES: ScreeningCandidate[] = [
-  { strategyId: "sma-cross", parameters: { fast: 5, slow: 20 } },
-  { strategyId: "sma-cross", parameters: { fast: 10, slow: 30 } },
-  { strategyId: "sma-cross", parameters: { fast: 20, slow: 60 } },
-  { strategyId: "ema-cross", parameters: { fast: 5, slow: 20 } },
-  { strategyId: "ema-cross", parameters: { fast: 12, slow: 26 } },
-  { strategyId: "ema-cross", parameters: { fast: 20, slow: 50 } },
-  {
-    strategyId: "rsi-reversal",
-    parameters: { period: 7, entry: 25, exit: 60 },
-  },
-  {
-    strategyId: "rsi-reversal",
-    parameters: { period: 14, entry: 30, exit: 65 },
-  },
-  {
-    strategyId: "rsi-reversal",
-    parameters: { period: 21, entry: 35, exit: 70 },
-  },
-  {
-    strategyId: "macd-momentum",
-    parameters: { fast: 6, slow: 19, signal: 5 },
-  },
-  {
-    strategyId: "macd-momentum",
-    parameters: { fast: 12, slow: 26, signal: 9 },
-  },
-  {
-    strategyId: "macd-momentum",
-    parameters: { fast: 19, slow: 39, signal: 9 },
-  },
-  {
-    strategyId: "bollinger-reversion",
-    parameters: { period: 14, width: 1.8 },
-  },
-  {
-    strategyId: "bollinger-reversion",
-    parameters: { period: 20, width: 2 },
-  },
-  {
-    strategyId: "bollinger-reversion",
-    parameters: { period: 30, width: 2.2 },
-  },
-  {
-    strategyId: "donchian-breakout",
-    parameters: { entryPeriod: 10, exitPeriod: 5 },
-  },
-  {
-    strategyId: "donchian-breakout",
-    parameters: { entryPeriod: 20, exitPeriod: 10 },
-  },
-  {
-    strategyId: "donchian-breakout",
-    parameters: { entryPeriod: 55, exitPeriod: 20 },
-  },
-  {
-    strategyId: "kdj-reversal",
-    parameters: { period: 7, entry: 30, exit: 65 },
-  },
-  {
-    strategyId: "kdj-reversal",
-    parameters: { period: 9, entry: 35, exit: 65 },
-  },
-  {
-    strategyId: "kdj-reversal",
-    parameters: { period: 14, entry: 40, exit: 70 },
-  },
-  {
-    strategyId: "supertrend-trend",
-    parameters: { period: 7, multiplier: 2 },
-  },
-  {
-    strategyId: "supertrend-trend",
-    parameters: { period: 10, multiplier: 3 },
-  },
-  {
-    strategyId: "supertrend-trend",
-    parameters: { period: 14, multiplier: 4 },
-  },
-  {
-    strategyId: "ichimoku-trend",
-    parameters: {
-      conversionPeriod: 6,
-      basePeriod: 18,
-      spanPeriod: 36,
-    },
-  },
-  {
-    strategyId: "ichimoku-trend",
-    parameters: {
-      conversionPeriod: 9,
-      basePeriod: 26,
-      spanPeriod: 52,
-    },
-  },
-  {
-    strategyId: "ichimoku-trend",
-    parameters: {
-      conversionPeriod: 12,
-      basePeriod: 30,
-      spanPeriod: 60,
-    },
-  },
-  {
-    strategyId: "mfi-reversal",
-    parameters: { period: 10, entry: 15, exit: 55 },
-  },
-  {
-    strategyId: "mfi-reversal",
-    parameters: { period: 14, entry: 20, exit: 60 },
-  },
-  {
-    strategyId: "mfi-reversal",
-    parameters: { period: 21, entry: 25, exit: 65 },
-  },
-  {
-    strategyId: "roc-momentum",
-    parameters: { period: 6, entry: 1, exit: -1 },
-  },
-  {
-    strategyId: "roc-momentum",
-    parameters: { period: 12, entry: 2, exit: 0 },
-  },
-  {
-    strategyId: "roc-momentum",
-    parameters: { period: 20, entry: 3, exit: 1 },
-  },
-  {
-    strategyId: "vwap-reversion",
-    parameters: { entryPercent: 0.5, exitPercent: 0 },
-  },
-  {
-    strategyId: "vwap-reversion",
-    parameters: { entryPercent: 1.5, exitPercent: 0 },
-  },
-  {
-    strategyId: "vwap-reversion",
-    parameters: { entryPercent: 2.5, exitPercent: 0.5 },
-  },
-  {
-    strategyId: "tv-bar-up-down",
-    parameters: { minimumBodyPercent: 0 },
-  },
-  {
-    strategyId: "tv-bar-up-down",
-    parameters: { minimumBodyPercent: 0.2 },
-  },
-  {
-    strategyId: "tv-bar-up-down",
-    parameters: { minimumBodyPercent: 0.5 },
-  },
-  {
-    strategyId: "tv-bollinger-bands",
-    parameters: { period: 14, width: 1.8 },
-  },
-  {
-    strategyId: "tv-bollinger-bands",
-    parameters: { period: 20, width: 2 },
-  },
-  {
-    strategyId: "tv-bollinger-bands",
-    parameters: { period: 30, width: 2.5 },
-  },
-  {
-    strategyId: "tv-bollinger-directed",
-    parameters: { period: 14, width: 1.8 },
-  },
-  {
-    strategyId: "tv-bollinger-directed",
-    parameters: { period: 20, width: 2 },
-  },
-  {
-    strategyId: "tv-bollinger-directed",
-    parameters: { period: 30, width: 2.5 },
-  },
-  { strategyId: "tv-channel-breakout", parameters: { length: 5 } },
-  { strategyId: "tv-channel-breakout", parameters: { length: 20 } },
-  { strategyId: "tv-channel-breakout", parameters: { length: 55 } },
-  {
-    strategyId: "tv-consecutive-up-down",
-    parameters: { upBars: 2, downBars: 2 },
-  },
-  {
-    strategyId: "tv-consecutive-up-down",
-    parameters: { upBars: 3, downBars: 3 },
-  },
-  {
-    strategyId: "tv-consecutive-up-down",
-    parameters: { upBars: 5, downBars: 5 },
-  },
-  {
-    strategyId: "tv-greedy",
-    parameters: { minimumBodyPercent: 0 },
-  },
-  {
-    strategyId: "tv-greedy",
-    parameters: { minimumBodyPercent: 0.2 },
-  },
-  {
-    strategyId: "tv-greedy",
-    parameters: { minimumBodyPercent: 0.5 },
-  },
-  {
-    strategyId: "tv-inside-bar",
-    parameters: { minimumBodyPercent: 0 },
-  },
-  {
-    strategyId: "tv-inside-bar",
-    parameters: { minimumBodyPercent: 0.1 },
-  },
-  {
-    strategyId: "tv-inside-bar",
-    parameters: { minimumBodyPercent: 0.3 },
-  },
-  {
-    strategyId: "tv-keltner-channels",
-    parameters: { period: 14, multiplier: 1.5 },
-  },
-  {
-    strategyId: "tv-keltner-channels",
-    parameters: { period: 20, multiplier: 2 },
-  },
-  {
-    strategyId: "tv-keltner-channels",
-    parameters: { period: 30, multiplier: 2.5 },
-  },
-  {
-    strategyId: "tv-macd",
-    parameters: { fast: 6, slow: 19, signal: 5 },
-  },
-  {
-    strategyId: "tv-macd",
-    parameters: { fast: 12, slow: 26, signal: 9 },
-  },
-  {
-    strategyId: "tv-macd",
-    parameters: { fast: 19, slow: 39, signal: 9 },
-  },
-  { strategyId: "tv-momentum", parameters: { period: 6 } },
-  { strategyId: "tv-momentum", parameters: { period: 12 } },
-  { strategyId: "tv-momentum", parameters: { period: 20 } },
-  {
-    strategyId: "tv-outside-bar",
-    parameters: { minimumBodyPercent: 0 },
-  },
-  {
-    strategyId: "tv-outside-bar",
-    parameters: { minimumBodyPercent: 0.1 },
-  },
-  {
-    strategyId: "tv-outside-bar",
-    parameters: { minimumBodyPercent: 0.3 },
-  },
-  {
-    strategyId: "tv-parabolic-sar",
-    parameters: { start: 0.01, increment: 0.01, maximum: 0.1 },
-  },
-  {
-    strategyId: "tv-parabolic-sar",
-    parameters: { start: 0.02, increment: 0.02, maximum: 0.2 },
-  },
-  {
-    strategyId: "tv-parabolic-sar",
-    parameters: { start: 0.03, increment: 0.03, maximum: 0.3 },
-  },
-  {
-    strategyId: "tv-pivot-extension",
-    parameters: { leftBars: 2, rightBars: 1 },
-  },
-  {
-    strategyId: "tv-pivot-extension",
-    parameters: { leftBars: 4, rightBars: 2 },
-  },
-  {
-    strategyId: "tv-pivot-extension",
-    parameters: { leftBars: 8, rightBars: 4 },
-  },
-  {
-    strategyId: "tv-pivot-reversal",
-    parameters: { leftBars: 2, rightBars: 1 },
-  },
-  {
-    strategyId: "tv-pivot-reversal",
-    parameters: { leftBars: 4, rightBars: 2 },
-  },
-  {
-    strategyId: "tv-pivot-reversal",
-    parameters: { leftBars: 8, rightBars: 4 },
-  },
-  { strategyId: "tv-price-channel", parameters: { length: 10 } },
-  { strategyId: "tv-price-channel", parameters: { length: 20 } },
-  { strategyId: "tv-price-channel", parameters: { length: 55 } },
-  {
-    strategyId: "tv-rsi",
-    parameters: { period: 7, oversold: 25, overbought: 75 },
-  },
-  {
-    strategyId: "tv-rsi",
-    parameters: { period: 14, oversold: 30, overbought: 70 },
-  },
-  {
-    strategyId: "tv-rsi",
-    parameters: { period: 21, oversold: 35, overbought: 65 },
-  },
-  {
-    strategyId: "tv-stochastic-slow",
-    parameters: { period: 9, smoothK: 3, smoothD: 3 },
-  },
-  {
-    strategyId: "tv-stochastic-slow",
-    parameters: { period: 14, smoothK: 3, smoothD: 3 },
-  },
-  {
-    strategyId: "tv-stochastic-slow",
-    parameters: { period: 21, smoothK: 3, smoothD: 3 },
-  },
-  {
-    strategyId: "tv-supertrend",
-    parameters: { period: 7, multiplier: 2 },
-  },
-  {
-    strategyId: "tv-supertrend",
-    parameters: { period: 10, multiplier: 3 },
-  },
-  {
-    strategyId: "tv-supertrend",
-    parameters: { period: 14, multiplier: 4 },
-  },
-  {
-    strategyId: "tv-technical-ratings",
-    parameters: { threshold: 3 },
-  },
-  {
-    strategyId: "tv-technical-ratings",
-    parameters: { threshold: 4 },
-  },
-  {
-    strategyId: "tv-technical-ratings",
-    parameters: { threshold: 5 },
-  },
-  {
-    strategyId: "tv-volty-expan-close",
-    parameters: { period: 20, multiplier: 2.5 },
-  },
-  {
-    strategyId: "tv-volty-expan-close",
-    parameters: { period: 5, multiplier: 1.5 },
-  },
-  {
-    strategyId: "tv-volty-expan-close",
-    parameters: { period: 14, multiplier: 2 },
-  },
-];
+export interface ScreeningProgress {
+  completed: number;
+  total: number;
+  failed: number;
+  strategyId: StrategyId | null;
+}
 
-export function screenStrategies(
+export interface ScreeningOptimizationResult {
+  results: BacktestResult[];
+  evaluatedCount: number;
+  totalCandidates: number;
+  failedCount: number;
+  cancelled: boolean;
+}
+
+interface OptimizeStrategiesOptions {
+  maxPerStrategy?: number;
+  signal?: AbortSignal;
+  yieldEvery?: number;
+  onProgress?: (progress: ScreeningProgress) => void;
+}
+
+interface ParameterDomain {
+  key: string;
+  values: number[];
+}
+
+interface ParameterSpace {
+  domains: ParameterDomain[];
+  isValid?: (parameters: StrategyParameters) => boolean;
+}
+
+function integerRange(start: number, end: number, step = 1): number[] {
+  const values: number[] = [];
+  for (let value = start; value <= end; value += step) values.push(value);
+  return values;
+}
+
+function decimalRange(start: number, end: number, step: number): number[] {
+  const precision = Math.max(
+    String(start).split(".")[1]?.length ?? 0,
+    String(end).split(".")[1]?.length ?? 0,
+    String(step).split(".")[1]?.length ?? 0,
+  );
+  const scale = 10 ** precision;
+  const values: number[] = [];
+  const scaledStart = Math.round(start * scale);
+  const scaledEnd = Math.round(end * scale);
+  const scaledStep = Math.round(step * scale);
+  for (
+    let value = scaledStart;
+    value <= scaledEnd;
+    value += scaledStep
+  ) {
+    values.push(value / scale);
+  }
+  return values;
+}
+
+const movingAverageCrossSpace: ParameterSpace = {
+  domains: [
+    { key: "fast", values: integerRange(2, 50, 2) },
+    { key: "slow", values: integerRange(10, 200, 5) },
+  ],
+  isValid: ({ fast, slow }) => fast < slow,
+};
+
+const oscillatorReversalSpace: ParameterSpace = {
+  domains: [
+    { key: "period", values: integerRange(5, 30) },
+    { key: "entry", values: integerRange(15, 40, 5) },
+    { key: "exit", values: integerRange(55, 80, 5) },
+  ],
+  isValid: ({ entry, exit }) => entry < exit,
+};
+
+const macdSpace: ParameterSpace = {
+  domains: [
+    { key: "fast", values: integerRange(4, 20) },
+    { key: "slow", values: integerRange(16, 52, 2) },
+    { key: "signal", values: integerRange(3, 15) },
+  ],
+  isValid: ({ fast, slow }) => fast < slow,
+};
+
+const bollingerSpace: ParameterSpace = {
+  domains: [
+    { key: "period", values: integerRange(5, 60) },
+    { key: "width", values: decimalRange(1, 3, 0.1) },
+  ],
+};
+
+const supertrendSpace: ParameterSpace = {
+  domains: [
+    { key: "period", values: integerRange(5, 50) },
+    { key: "multiplier", values: decimalRange(1, 6, 0.25) },
+  ],
+};
+
+const candleFilterSpace: ParameterSpace = {
+  domains: [
+    {
+      key: "minimumBodyPercent",
+      values: decimalRange(0, 3, 0.05),
+    },
+  ],
+};
+
+const volatilityChannelSpace: ParameterSpace = {
+  domains: [
+    { key: "period", values: integerRange(5, 60) },
+    { key: "multiplier", values: decimalRange(1, 5, 0.25) },
+  ],
+};
+
+const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
+  "sma-cross": movingAverageCrossSpace,
+  "ema-cross": movingAverageCrossSpace,
+  "rsi-reversal": oscillatorReversalSpace,
+  "macd-momentum": macdSpace,
+  "bollinger-reversion": bollingerSpace,
+  "donchian-breakout": {
+    domains: [
+      { key: "entryPeriod", values: integerRange(5, 100, 5) },
+      { key: "exitPeriod", values: integerRange(2, 50, 2) },
+    ],
+    isValid: ({ entryPeriod, exitPeriod }) => exitPeriod < entryPeriod,
+  },
+  "kdj-reversal": {
+    domains: [
+      { key: "period", values: integerRange(5, 30) },
+      { key: "entry", values: integerRange(15, 45, 5) },
+      { key: "exit", values: integerRange(55, 85, 5) },
+    ],
+    isValid: ({ entry, exit }) => entry < exit,
+  },
+  "supertrend-trend": supertrendSpace,
+  "ichimoku-trend": {
+    domains: [
+      { key: "conversionPeriod", values: integerRange(5, 20) },
+      { key: "basePeriod", values: integerRange(15, 60, 3) },
+      { key: "spanPeriod", values: integerRange(30, 120, 6) },
+    ],
+    isValid: ({ conversionPeriod, basePeriod, spanPeriod }) =>
+      conversionPeriod < basePeriod && basePeriod < spanPeriod,
+  },
+  "mfi-reversal": oscillatorReversalSpace,
+  "roc-momentum": {
+    domains: [
+      { key: "period", values: integerRange(3, 60, 2) },
+      { key: "entry", values: decimalRange(0, 5, 0.5) },
+      { key: "exit", values: decimalRange(-3, 2, 0.5) },
+    ],
+    isValid: ({ entry, exit }) => exit < entry,
+  },
+  "vwap-reversion": {
+    domains: [
+      {
+        key: "entryPercent",
+        values: decimalRange(0.25, 5, 0.25),
+      },
+      { key: "exitPercent", values: decimalRange(0, 2, 0.25) },
+    ],
+  },
+  "tv-bar-up-down": candleFilterSpace,
+  "tv-bollinger-bands": bollingerSpace,
+  "tv-bollinger-directed": bollingerSpace,
+  "tv-channel-breakout": {
+    domains: [{ key: "length", values: integerRange(2, 200) }],
+  },
+  "tv-consecutive-up-down": {
+    domains: [
+      { key: "upBars", values: integerRange(1, 20) },
+      { key: "downBars", values: integerRange(1, 20) },
+    ],
+  },
+  "tv-greedy": candleFilterSpace,
+  "tv-inside-bar": candleFilterSpace,
+  "tv-keltner-channels": volatilityChannelSpace,
+  "tv-macd": macdSpace,
+  "tv-momentum": {
+    domains: [{ key: "period", values: integerRange(2, 200) }],
+  },
+  "tv-outside-bar": candleFilterSpace,
+  "tv-parabolic-sar": {
+    domains: [
+      { key: "start", values: decimalRange(0.005, 0.05, 0.005) },
+      {
+        key: "increment",
+        values: decimalRange(0.005, 0.05, 0.005),
+      },
+      { key: "maximum", values: decimalRange(0.1, 0.5, 0.05) },
+    ],
+  },
+  "tv-pivot-extension": {
+    domains: [
+      { key: "leftBars", values: integerRange(1, 20) },
+      { key: "rightBars", values: integerRange(1, 10) },
+    ],
+  },
+  "tv-pivot-reversal": {
+    domains: [
+      { key: "leftBars", values: integerRange(1, 20) },
+      { key: "rightBars", values: integerRange(1, 10) },
+    ],
+  },
+  "tv-price-channel": {
+    domains: [{ key: "length", values: integerRange(2, 200) }],
+  },
+  "tv-rsi": {
+    domains: [
+      { key: "period", values: integerRange(5, 30) },
+      { key: "oversold", values: integerRange(15, 40, 5) },
+      { key: "overbought", values: integerRange(60, 85, 5) },
+    ],
+    isValid: ({ oversold, overbought }) => oversold < overbought,
+  },
+  "tv-stochastic-slow": {
+    domains: [
+      { key: "period", values: integerRange(5, 30) },
+      { key: "smoothK", values: integerRange(1, 7) },
+      { key: "smoothD", values: integerRange(1, 7) },
+    ],
+  },
+  "tv-supertrend": supertrendSpace,
+  "tv-technical-ratings": {
+    domains: [{ key: "threshold", values: integerRange(1, 6) }],
+  },
+  "tv-volty-expan-close": volatilityChannelSpace,
+};
+
+function buildParameterSets(space: ParameterSpace): StrategyParameters[] {
+  let combinations: StrategyParameters[] = [{}];
+  for (const domain of space.domains) {
+    combinations = combinations.flatMap((parameters) =>
+      domain.values.map((value) => ({
+        ...parameters,
+        [domain.key]: value,
+      })),
+    );
+  }
+  return space.isValid
+    ? combinations.filter(space.isValid)
+    : combinations;
+}
+
+function clampCandidateLimit(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_PARAMETER_SETS_PER_STRATEGY;
+  return Math.min(
+    Math.max(Math.floor(value), 1),
+    MAX_PARAMETER_SETS_PER_STRATEGY,
+  );
+}
+
+function selectEvenly(
+  parameters: StrategyParameters[],
+  limit: number,
+  defaultParameters: StrategyParameters,
+): StrategyParameters[] {
+  const defaultKey = JSON.stringify(defaultParameters);
+  if (parameters.length <= limit) {
+    if (
+      parameters.some((candidate) => JSON.stringify(candidate) === defaultKey)
+    ) {
+      return parameters;
+    }
+    return [defaultParameters, ...parameters].slice(0, limit);
+  }
+
+  const selected = new Map<string, StrategyParameters>();
+  selected.set(defaultKey, defaultParameters);
+
+  for (let index = 0; index < limit && selected.size < limit; index += 1) {
+    const sourceIndex = Math.round(
+      (index * (parameters.length - 1)) / Math.max(limit - 1, 1),
+    );
+    const candidate = parameters[sourceIndex];
+    selected.set(JSON.stringify(candidate), candidate);
+  }
+
+  for (const candidate of parameters) {
+    if (selected.size >= limit) break;
+    selected.set(JSON.stringify(candidate), candidate);
+  }
+
+  return [...selected.values()].slice(0, limit);
+}
+
+export function buildScreeningCandidates(
+  maxPerStrategy = DEFAULT_PARAMETER_SETS_PER_STRATEGY,
+): ScreeningCandidate[] {
+  const limit = clampCandidateLimit(maxPerStrategy);
+  return STRATEGIES.flatMap((strategy) => {
+    const parameterSets = selectEvenly(
+      buildParameterSets(PARAMETER_SPACES[strategy.id]),
+      limit,
+      getStrategy(strategy.id).defaultParameters,
+    );
+    return parameterSets.map((parameters) => ({
+      strategyId: strategy.id,
+      parameters,
+    }));
+  });
+}
+
+function scoreValue(result: BacktestResult): number {
+  return Number.isFinite(result.score)
+    ? result.score
+    : Number.NEGATIVE_INFINITY;
+}
+
+function yieldToMainThread(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+export async function optimizeStrategies(
   bars: MarketBar[],
   settings: Omit<BacktestSettings, "interval"> & {
     interval: MarketInterval;
   },
-): BacktestResult[] {
-  return SCREENING_CANDIDATES.map((candidate) => {
+  options: OptimizeStrategiesOptions = {},
+): Promise<ScreeningOptimizationResult> {
+  const candidates = buildScreeningCandidates(options.maxPerStrategy);
+  const yieldEvery = Math.max(Math.floor(options.yieldEvery ?? 24), 1);
+  const bestByStrategy = new Map<StrategyId, BacktestResult>();
+  let evaluatedCount = 0;
+  let failedCount = 0;
+
+  options.onProgress?.({
+    completed: 0,
+    total: candidates.length,
+    failed: 0,
+    strategyId: candidates[0]?.strategyId ?? null,
+  });
+
+  for (const candidate of candidates) {
+    if (options.signal?.aborted) break;
     try {
-      return runBacktest(
+      const result = runBacktest(
         bars,
         candidate.strategyId,
         candidate.parameters,
         settings,
       );
+      const currentBest = bestByStrategy.get(candidate.strategyId);
+      if (!currentBest || scoreValue(result) > scoreValue(currentBest)) {
+        bestByStrategy.set(candidate.strategyId, result);
+      }
     } catch {
-      return null;
+      failedCount += 1;
     }
-  })
-    .filter((result): result is BacktestResult => Boolean(result))
-    .sort((left, right) => right.score - left.score);
+
+    evaluatedCount += 1;
+    if (
+      evaluatedCount % yieldEvery === 0 ||
+      evaluatedCount === candidates.length
+    ) {
+      options.onProgress?.({
+        completed: evaluatedCount,
+        total: candidates.length,
+        failed: failedCount,
+        strategyId: candidate.strategyId,
+      });
+      await yieldToMainThread();
+    }
+  }
+
+  return {
+    results: [...bestByStrategy.values()].sort(
+      (left, right) => scoreValue(right) - scoreValue(left),
+    ),
+    evaluatedCount,
+    totalCandidates: candidates.length,
+    failedCount,
+    cancelled: Boolean(options.signal?.aborted),
+  };
 }

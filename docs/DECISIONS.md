@@ -18,12 +18,15 @@ Signals are generated from completed bars and executed at the next bar open.
 This avoids same-bar close look-ahead. Commission and slippage apply on both
 entry and exit.
 
-## D-004: Client-side first-version screening
+## D-004: Bounded client-side parameter optimization
 
-Run 96 candidates in the browser for immediate feedback. Every strategy must
-contribute exactly three distinct parameter sets so the ranking never compares
-single-default strategies against tuned strategies. Revisit this decision when
-jobs become durable, multi-user, or materially CPU-intensive.
+Generate constrained parameter grids for every registered strategy and allow
+at most 2,500 combinations per strategy. If a grid is larger, sample it
+deterministically across the full ordered range while retaining the default
+parameters. Run the current search in small asynchronous browser chunks, expose
+progress and cancellation, and retain only the best result for each strategy.
+Move execution to a Web Worker or durable queue when jobs become concurrent,
+durable, or materially more CPU-intensive.
 
 ## D-005: Index and ETF product scope
 
