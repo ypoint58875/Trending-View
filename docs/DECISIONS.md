@@ -69,6 +69,13 @@ restores the instrument, interval, strategy, parameters, date range, capital,
 commission, and slippage; displayed metrics remain a saved summary while the
 current chart recalculates from current market data.
 
+For one-click local Windows use, retain the same D1 schema and owner-scoped
+queries but map unauthenticated loopback requests to
+`local@quantscope.invalid`. Persist the local D1 database under
+`.wrangler/state`. This local identity is accepted only for `localhost` and
+`127.0.0.1`; non-loopback hosted requests still require injected
+authentication.
+
 ## D-009: Dynamic-bar strategy guidance
 
 Cache full history for one hour, then fetch a separate uncached window of recent

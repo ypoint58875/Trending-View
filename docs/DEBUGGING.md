@@ -1,5 +1,22 @@
 # Debugging
 
+## Local launcher does not open QuantScope
+
+1. Confirm `node --version` reports 22.13.0 or newer and `npm --version`
+   succeeds.
+2. Confirm port 3000 is free. The launcher refuses to open a different
+   application that already owns the port.
+3. Read the visible `QuantScope Local Server` window for vinext errors.
+4. Run `npm run local:db:migrate` if the saved-backtest API reports
+   `PERSISTENCE_UNAVAILABLE`.
+5. Keep `.wrangler/state` to retain local saved backtests. Removing that
+   directory resets local persistence.
+6. Run `npm ci` if `node_modules` is missing or dependencies are damaged.
+
+The launcher never falls back to the hosted site. The local UI and saved
+records do not require login, but live market-data providers still require
+internet access.
+
 ## Market route returns `UPSTREAM_UNAVAILABLE`
 
 1. Call the provider URL from the same network.
@@ -97,13 +114,15 @@ trade only to make a test pass.
 
 ## Saved shortcut bar cannot load
 
-1. Confirm `.openai/hosting.json` declares the `DB` D1 binding.
-2. Confirm `drizzle/` contains the `saved_backtests` migration.
-3. Check that the request is authenticated and includes the injected user
-   identity headers in production.
-4. Inspect `/api/saved-backtests` for `AUTH_REQUIRED`,
+1. For local use, confirm `.wrangler/state` exists and run
+   `npm run local:db:migrate`.
+2. For hosted use, confirm `.openai/hosting.json` declares the `DB` D1 binding.
+3. Confirm `drizzle/` contains the `saved_backtests` migration.
+4. For hosted use, confirm the request includes the injected user identity
+   headers.
+5. Inspect `/api/saved-backtests` for `AUTH_REQUIRED`,
    `INVALID_PAYLOAD`, or `PERSISTENCE_UNAVAILABLE`.
-5. Do not fall back to browser storage for failed durable writes.
+6. Do not fall back to browser storage for failed durable writes.
 
 ## Commands
 

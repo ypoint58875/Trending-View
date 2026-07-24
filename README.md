@@ -34,17 +34,28 @@ parameter screening in one responsive page.
 
 ## Run locally
 
-Requirements: Node.js 22.13 or newer.
+Requirements: Windows and Node.js 22.13 or newer.
+
+For one-click local use, double-click `open-quantscope.bat`. The launcher:
+
+- runs QuantScope only at `http://127.0.0.1:3000`;
+- initializes the project-local saved-backtest database;
+- opens a new maximized Edge window when Edge is available; and
+- never requires a ChatGPT or other account.
+
+Keep the `QuantScope Local Server` window open while using the application.
+Closing that window stops the local server. Saved backtests remain under
+`.wrangler/state` after the server stops.
+
+For manual development:
 
 ```bash
 npm install
-npm run dev
+npm run local:db:migrate
+npm run local:dev
 ```
 
-Open `http://localhost:3000`.
-
-For the deployed version, double-click `open-quantscope.bat` in the project
-folder.
+Open `http://127.0.0.1:3000`.
 
 ## Test and build
 

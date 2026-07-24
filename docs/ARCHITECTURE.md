@@ -6,6 +6,12 @@ QuantScope is a vinext App Router application compiled to a Cloudflare
 Worker-compatible bundle.
 
 ```text
+Windows one-click local runtime
+  -> open-quantscope.bat
+  -> scripts/start-local.ps1
+  -> 127.0.0.1:3000
+  -> local D1 under .wrangler/state
+
 Browser UI
   -> /api/search and /api/market
   -> cached history plus uncached latest-bar refresh/merge
@@ -21,8 +27,8 @@ Browser UI
   -> bounded, chunked parameter-grid optimizer
   -> ECharts canvas views
   -> /api/saved-backtests
-  -> authenticated owner key
-  -> D1 saved backtest snapshots
+  -> hosted email or fixed loopback owner key
+  -> hosted or project-local D1 saved backtest snapshots
 ```
 
 ## Boundaries
@@ -38,9 +44,12 @@ Browser UI
 The API routes return normalized data and do not expose provider-specific row
 formats to the browser.
 
-Saved backtests are scoped by the authenticated ChatGPT email header. One
-snapshot is retained per owner, provider, and instrument identifier; saving the
-same instrument updates its current snapshot instead of creating duplicates.
+Saved backtests use one owner key in every query. Hosted requests use the
+authenticated ChatGPT email header. Requests to `localhost` or `127.0.0.1`
+without that header use the fixed local owner `local@quantscope.invalid` and
+the project-local D1 state under `.wrangler/state`. One snapshot is retained
+per owner, provider, and instrument identifier; saving the same instrument
+updates its current snapshot instead of creating duplicates.
 The upper workspace pairs the price chart with saved shortcuts. The lower
 research grid pairs the strategy lab with automated parameter screening.
 

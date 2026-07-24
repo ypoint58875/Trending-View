@@ -38,11 +38,20 @@ Implemented:
 - A lower research area that places the strategy lab and automated screening
   together while keeping the current-backtest save action in the lab.
 - Chinese responsive UI with centralized locale copy.
-- A Windows launcher that opens the deployed workspace in a new maximized Edge
-  window when Edge is available, avoiding reuse of a browser split pane.
+- A one-click Windows local launcher that applies project-local D1 migrations,
+  binds vinext to `127.0.0.1:3000`, requires no account, reuses an
+  already-running QuantScope server, and opens a new maximized Edge window
+  when Edge is available.
 
 ## Verification status
 
+- Local launcher contract tests and PowerShell parser validation: passed on
+  2026-07-24.
+- Clean temporary D1 migration, local HTTP readiness, launcher reuse, and a
+  create/list/delete saved-backtest round trip without authentication: passed
+  on 2026-07-24.
+- Full 31-test TypeScript suite, production build, rendered-worker test, and
+  ESLint: passed after the local no-login launcher change on 2026-07-24.
 - Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-24.
 - Live daily series for N225, SOX, and SPY passed on 2026-07-24; the broader
   daily/5-minute N225, SOX, SPY, and 510300 matrix last passed on 2026-07-23.
