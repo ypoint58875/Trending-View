@@ -951,14 +951,16 @@ export function MarketWorkspace() {
             {copy.indicatorSettings.noParameters}
           </span>
         )}
-        <button
-          className="indicator-reset-button"
-          type="button"
-          onClick={resetIndicator}
-        >
-          <RotateCcw size={13} />
-          {copy.indicatorSettings.reset}
-        </button>
+        {activeIndicator.parameters.length > 0 ? (
+          <button
+            className="indicator-reset-button"
+            type="button"
+            onClick={resetIndicator}
+          >
+            <RotateCcw size={13} />
+            {copy.indicatorSettings.reset}
+          </button>
+        ) : null}
       </section>
 
       <div className="workspace-grid">
