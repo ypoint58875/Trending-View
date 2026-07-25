@@ -134,19 +134,26 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u6700\u5927\u6536\u76ca/);
   assert.match(html, /\u6700\u5c0f\u56de\u64a4/);
   assert.match(html, /\u6700\u5927\u590f\u666e/);
-  assert.match(
-    html,
-    /<optgroup label="\u957f\u5468\u671f\u7b56\u7565">/,
-  );
-  assert.match(
-    html,
-    /<optgroup label="\u77ed\u5468\u671f\u7b56\u7565">/,
-  );
+  assert.match(html, /name="long-strategy"/);
+  assert.match(html, /name="short-strategy"/);
+  assert.match(html, /\u957f\u5468\u671f\u7b56\u7565/);
+  assert.match(html, /\u77ed\u5468\u671f\u7b56\u7565/);
+  assert.match(html, />\u4e0d\u4f7f\u7528\u957f\u5468\u671f\u7b56\u7565</);
+  assert.match(html, />\u4e0d\u4f7f\u7528\u77ed\u5468\u671f\u7b56\u7565</);
   assert.match(html, /\u4e00\u952e\u7ec4\u5408\u7b56\u7565/);
   assert.match(html, /\u957f\u5468\u671f\u5bfb\u627e\u4e0a\u884c\u901a\u9053/);
   assert.match(html, /\u77ed\u5468\u671f\u8bc6\u522b\u901a\u9053\u5185\u5c0f\u8d8b\u52bf/);
   assert.match(html, /\u6838\u5fc3\u4ed3\u4f4d/);
+  assert.match(html, /\u6700\u5927\u4ed3\u4f4d/);
+  assert.match(html, /name="core-allocation"/);
+  assert.match(html, /name="maximum-allocation"/);
   assert.match(html, /value="60"/);
+  assert.match(html, /value="100"/);
+  assert.match(html, /\u6301\u4ed3\u6a21\u5f0f/);
+  assert.match(html, />\u5e94\u7528</);
+  assert.match(html, /\u9ec4\u91d1/);
+  assert.match(html, /\u767d\u94f6/);
+  assert.match(html, /\u5927\u5b97\u5546\u54c1/);
   assert.ok(
     html.indexOf("\u4e00\u952e\u7b5b\u9009") <
       html.indexOf("\u4e00\u952e\u7ec4\u5408\u7b56\u7565"),
@@ -196,6 +203,9 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /optimizeStrategyCombinations/);
   assert.match(workspace, /getStrategiesByHorizon\("long"\)/);
   assert.match(workspace, /getStrategiesByHorizon\("short"\)/);
+  assert.match(workspace, /applyCombinationResult/);
+  assert.match(workspace, /buildStrategyPlanAllocationTarget|buildStrategyPlanTarget/);
+  assert.match(workspace, /buildAllocationTradeMarkers/);
 
   assert.match(locale, /insufficientEvidence:\s*"证据不足"/);
   assert.match(locale, /invalidParameters:\s*"当前策略参数无效/);
@@ -204,4 +214,6 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(locale, /noNearbyVariants:\s*"没有可用的邻近参数组合/);
   assert.match(locale, /legacyIntervalPrefix:\s*"此保存结果使用旧版"/);
   assert.match(locale, /legacyIntervalSuffix:\s*"周期；打开后会在日线数据上重新计算所选设置。"/);
+  assert.match(locale, /gold:\s*"黄金"/);
+  assert.match(locale, /silver:\s*"白银"/);
 });

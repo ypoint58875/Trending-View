@@ -2,6 +2,18 @@
 
 ## 2026-07-25
 
+- Added optional long- and short-horizon strategy selectors with independent
+  parameters plus core and maximum allocation inputs. Long-only, short-only,
+  and hierarchical dual plans share one validated allocation model.
+- Optimized combination holding across a fixed six-value core-allocation
+  ladder, labeled who controls holding, and added Apply actions that restore
+  the complete plan, scroll to the main chart, and render both strategy
+  references plus allocation increase/reduction markers.
+- Persisted complete strategy plans in nullable-compatible D1 JSON while
+  deriving full-allocation single plans for legacy rows.
+- Added commodity futures quote-proxy discovery for gold, silver, crude oil,
+  and copper, Yahoo `FUTURE` support, Chinese aliases, and explicit futures
+  modeling limitations.
 - Classified all 32 strategies into explicit, disjoint long- and short-horizon
   groups and exposed those groups in the strategy selector and screening
   results.

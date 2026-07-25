@@ -2,12 +2,14 @@
 
 ## Current status
 
-The daily manual-swing index-and-ETF QuantScope version is implemented and
-buildable.
+The daily manual-swing index, ETF, and commodity-proxy QuantScope version is
+implemented and buildable.
 
 Implemented:
 
-- Index/ETF-only search with individual-equity filtering.
+- Index/ETF/commodity-proxy search with individual-equity filtering. Yahoo
+  `FUTURE` results and deterministic gold, silver, crude-oil, and copper
+  catalog entries normalize to `commodity`.
 - Eastmoney, Yahoo Finance, and Nasdaq market adapters with ordered fallback.
 - A daily-only, one-instrument user interface. Provider adapters, API
   validation, and saved-record types retain interval support internally.
@@ -37,8 +39,9 @@ Implemented:
   refresh, 60-second visible-page refresh, and page focus/visibility. Only
   identical source, interval, and price-adjustment modes merge; otherwise the
   complete existing history remains active.
-- A current-bar long-only strategy guidance card that reports buy, sell,
-  continue holding, or remain flat from the newest available provider bar.
+- A current-bar long-only strategy guidance card that reports the target
+  allocation plus increase, reduce, hold, or remain-flat state from the newest
+  available provider bar.
 - An explicit green-up/red-down legend and a neutral range-end valuation marker
   that is separate from genuine strategy exits.
 - Dedicated sky-blue buy and orange sell markers with light borders and dark
@@ -75,19 +78,22 @@ Implemented:
   currently contain 31,172 valid combinations.
 - Five deterministic screening objectives: balanced score, return/drawdown
   ratio, maximum return, minimum drawdown, and maximum Sharpe.
+- A unified strategy plan with optional long and short selections, separate
+  parameters, core allocation, and maximum allocation. Either selection can be
+  empty. Single-horizon plans use zero/maximum; dual plans use
+  zero/core/maximum.
 - A separate hierarchical combination screen below single-strategy screening.
-  The long rule gates exposure; inside its uptrend, the short rule selects a
-  configurable core allocation (60% by default) or full planned allocation.
-  The two-stage optimizer retains two standalone finalists per strategy,
-  evaluates only those long/short pairs, supports progress/cancellation, and
-  keeps the best 32 pair results.
+  The two-stage optimizer retains two standalone finalists per strategy, then
+  evaluates every retained long/short pair at 0%, 20%, 40%, 60%, 80%, and
+  100% core allocation. It supports progress/cancellation, keeps the best 32
+  results, labels the holding mode, and applies a complete result to the lab.
 - A partial-allocation backtest that executes completed-bar combination targets
   at the next open, applies commission and slippage to allocation deltas, and
   reports rebalances plus common return/drawdown/Sharpe/equity metrics.
 - Per-user D1-backed saved backtests with a dedicated upper-right shortcut bar
-  for restoring index/ETF research settings. Legacy records display their
-  stored interval and disclose daily recalculation without changing the daily
-  workspace.
+  for restoring index/ETF/commodity identity and the complete strategy plan.
+  Legacy rows without plan JSON derive a full-allocation single-horizon plan;
+  legacy intervals still disclose daily recalculation.
 - A lower research area that places the strategy lab and automated screening
   together while keeping the current-backtest save action in the lab.
 - Chinese responsive UI with centralized locale copy.
@@ -98,6 +104,20 @@ Implemented:
 
 ## Verification status
 
+- Strategy-plan and commodity coverage passed 80 TypeScript tests, the
+  production build, two rendered/source worker tests, ESLint, and
+  `git diff --check` on 2026-07-25.
+- A real local browser run loaded 1,000 N225 bars, found and loaded the Yahoo
+  gold futures proxy through the Chinese `黄金` alias, completed 1,562
+  long/short/allocation evaluations, retained 32 combinations, and displayed
+  eight ranked results with holding modes and Apply actions. Applying the
+  first result restored both strategy configurations plus its 80% core/100%
+  maximum allocation, retained the results, scrolled to the chart, and showed
+  both reference-line groups and allocation markers. Desktop and 760-pixel
+  layouts had no document-level horizontal overflow or console errors.
+- A clean local D1 migration and a create/list/delete strategy-plan round trip
+  passed on 2026-07-25. A live Yahoo `SI=F` request returned 20 adjusted daily
+  commodity bars.
 - Hierarchical horizon/combination coverage passed 75 TypeScript tests, the
   production build, two rendered/source worker tests, ESLint, and
   `git diff --check` on 2026-07-25.

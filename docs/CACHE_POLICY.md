@@ -21,7 +21,8 @@ Cloudflare-CDN-Cache-Control: public, max-age=3600, stale-while-revalidate=86400
 These headers permit HTTP/browser/CDN caches to treat a successful history
 response as fresh for one hour and stale-while-revalidate for one day. The
 application does not maintain a separate history file cache or explicitly
-delete cached responses.
+delete cached responses. Commodity quote-proxy history uses the same policy
+and a cache key containing its Yahoo provider symbol and `commodity` type.
 
 ### Latest bars
 

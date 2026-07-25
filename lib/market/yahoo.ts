@@ -170,14 +170,21 @@ export async function searchYahoo(
     .filter(
       (item) =>
         item.symbol &&
-        (item.quoteType === "INDEX" || item.quoteType === "ETF"),
+        (item.quoteType === "INDEX" ||
+          item.quoteType === "ETF" ||
+          item.quoteType === "FUTURE"),
     )
     .map((item) => ({
       secid: item.symbol!,
       code: item.symbol!.replace(/^\^/, ""),
       name: item.longname || item.shortname || item.symbol!,
       exchange: exchangeFromYahoo(item.exchange, item.exchDisp),
-      assetType: item.quoteType === "INDEX" ? ("index" as const) : ("etf" as const),
+      assetType:
+        item.quoteType === "INDEX"
+          ? ("index" as const)
+          : item.quoteType === "FUTURE"
+            ? ("commodity" as const)
+            : ("etf" as const),
       provider: "yahoo" as const,
     }))
     .slice(0, 8);

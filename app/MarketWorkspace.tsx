@@ -26,11 +26,14 @@ import { BacktestChart } from "./components/BacktestChart";
 import {
   PriceChart,
   type ChartIndicatorConfiguration,
+  type ChartStrategyConfiguration,
   type StrategyLineLabels,
 } from "./components/PriceChart";
 import { zhCN as copy } from "./i18n/zh-CN";
 import {
+  runAllocationBacktest,
   runBacktest,
+  type AllocationBacktestResult,
   type BacktestPerformance,
   type BacktestResult,
 } from "@/lib/analysis/backtest";
@@ -60,8 +63,12 @@ import {
 } from "@/lib/analysis/strategies";
 import {
   DEFAULT_CORE_ALLOCATION,
+  buildLiveAllocationGuidance,
+  buildStrategyPlanTarget,
+  classifyHoldingMode,
   optimizeStrategyCombinations,
   type CombinationScreeningProgress,
+  type StrategyAllocationPlan,
   type StrategyCombinationResult,
 } from "@/lib/analysis/strategy-combinations";
 import {
@@ -69,6 +76,7 @@ import {
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
 import { buildLiveStrategyGuidance } from "@/lib/analysis/live-guidance";
+import { buildAllocationTradeMarkers } from "@/lib/analysis/trade-markers";
 import {
   analyzeStrategyStability,
   type StabilityEvidence,
@@ -100,8 +108,13 @@ const priceChartLabels = {
   series: { ...copy.chart.series },
 };
 
-const strategyLineLabels: StrategyLineLabels = {
-  prefix: copy.chart.strategyLines.prefix,
+const longStrategyLineLabels: StrategyLineLabels = {
+  prefix: copy.chart.strategyLines.longPrefix,
+  roles: { ...copy.chart.strategyLines.roles },
+};
+
+const shortStrategyLineLabels: StrategyLineLabels = {
+  prefix: copy.chart.strategyLines.shortPrefix,
   roles: { ...copy.chart.strategyLines.roles },
 };
 
@@ -140,6 +153,14 @@ function formatNumber(value: number, digits = 2) {
 
 function datePart(time: string) {
   return time.slice(0, 10);
+}
+
+function canonicalizeSearchQuery(query: string) {
+  const normalized = query.trim();
+  const alias = Object.entries(copy.searchAliases).find(
+    ([localized]) => localized === normalized,
+  );
+  return alias?.[1] ?? normalized;
 }
 
 function isDecimalParameter(key: string) {
@@ -209,6 +230,58 @@ function formatStabilityEvidenceReason(
   return copy.stability.evidenceReasons.noNearbyVariants;
 }
 
+function StrategyParameterFields({
+  heading,
+  namePrefix,
+  parameters,
+  onChange,
+}: {
+  heading: string;
+  namePrefix: string;
+  parameters: StrategyParameters;
+  onChange: (parameters: StrategyParameters) => void;
+}) {
+  return (
+    <div className="parameter-block">
+      <div className="subheading">
+        <span>{heading}</span>
+        <small>{copy.lab.automatic}</small>
+      </div>
+      <div className="parameter-grid">
+        {Object.entries(parameters).map(([key, value]) => (
+          <label className="field-label" key={key}>
+            <span>
+              {copy.parameters[key as keyof typeof copy.parameters] ?? key}
+            </span>
+            <input
+              name={`${namePrefix}-${key}`}
+              type="number"
+              value={value}
+              min={
+                isIntegerStrategyParameterKey(key)
+                  ? 1
+                  : key === "tick"
+                    ? 0
+                    : undefined
+              }
+              step={parameterStep(key)}
+              onChange={(event) =>
+                onChange({
+                  ...parameters,
+                  [key]: normalizeStrategyParameterInput(
+                    key,
+                    Number(event.target.value),
+                  ),
+                })
+              }
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MarketWorkspace() {
   const [instrument, setInstrument] =
     useState<MarketInstrument>(defaultInstrument);
@@ -224,10 +297,15 @@ export function MarketWorkspace() {
   const [indicatorSettings, setIndicatorSettings] = useState(
     createDefaultIndicatorSettings,
   );
-  const [strategyId, setStrategyId] = useState<StrategyId>("sma-cross");
-  const [parameters, setParameters] = useState<StrategyParameters>(
+  const [longStrategyId, setLongStrategyId] = useState<StrategyId | "">(
+    "sma-cross",
+  );
+  const [longParameters, setLongParameters] = useState<StrategyParameters>(
     getStrategy("sma-cross").defaultParameters,
   );
+  const [shortStrategyId, setShortStrategyId] = useState<StrategyId | "">("");
+  const [shortParameters, setShortParameters] =
+    useState<StrategyParameters>({});
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [initialCash, setInitialCash] = useState(100_000);
@@ -259,6 +337,8 @@ export function MarketWorkspace() {
   const [coreAllocationPercent, setCoreAllocationPercent] = useState(
     DEFAULT_CORE_ALLOCATION * 100,
   );
+  const [maximumAllocationPercent, setMaximumAllocationPercent] =
+    useState(100);
   const [combinationProgress, setCombinationProgress] =
     useState<CombinationScreeningProgress>(emptyCombinationProgress);
   const [savedBacktests, setSavedBacktests] = useState<
@@ -270,6 +350,7 @@ export function MarketWorkspace() {
     "idle" | "saving" | "saved" | "error"
   >("idle");
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const chartSectionRef = useRef<HTMLElement>(null);
   const pendingSavedBacktestRef = useRef<SavedBacktestRecord | null>(null);
   const screeningAbortRef = useRef<AbortController | null>(null);
   const combinationAbortRef = useRef<AbortController | null>(null);
@@ -472,7 +553,7 @@ export function MarketWorkspace() {
       setSearching(true);
       try {
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}`,
+          `/api/search?q=${encodeURIComponent(canonicalizeSearchQuery(query))}`,
           { signal: controller.signal },
         );
         const payload = (await response.json()) as {
@@ -547,33 +628,126 @@ export function MarketWorkspace() {
   const priceChange = latest ? latest.close - comparisonPrice : 0;
   const priceChangePercent =
     comparisonPrice === 0 ? 0 : (priceChange / comparisonPrice) * 100;
+  const strategyPlan = useMemo<StrategyAllocationPlan | null>(() => {
+    if (!longStrategyId && !shortStrategyId) return null;
+    const maximumAllocation = Math.min(
+      Math.max(maximumAllocationPercent / 100, 0),
+      1,
+    );
+    return {
+      long: longStrategyId
+        ? {
+            strategyId: longStrategyId,
+            parameters: longParameters,
+          }
+        : null,
+      short: shortStrategyId
+        ? {
+            strategyId: shortStrategyId,
+            parameters: shortParameters,
+          }
+        : null,
+      coreAllocation: Math.min(
+        Math.max(coreAllocationPercent / 100, 0),
+        maximumAllocation,
+      ),
+      maximumAllocation,
+    };
+  }, [
+    coreAllocationPercent,
+    longParameters,
+    longStrategyId,
+    maximumAllocationPercent,
+    shortParameters,
+    shortStrategyId,
+  ]);
+  const singleSelection =
+    strategyPlan && Boolean(strategyPlan.long) !== Boolean(strategyPlan.short)
+      ? (strategyPlan.long ?? strategyPlan.short)
+      : null;
+  const usesSingleFullAllocation =
+    Boolean(singleSelection) && strategyPlan?.maximumAllocation === 1;
   const liveGuidance = useMemo(() => {
-    if (!series?.bars.length) return null;
+    if (!series?.bars.length || !strategyPlan) return null;
     try {
-      return buildLiveStrategyGuidance(
+      const allocation = buildLiveAllocationGuidance(
         series.bars,
-        strategyId,
-        parameters,
+        strategyPlan,
       );
+      const exact =
+        usesSingleFullAllocation && singleSelection
+          ? buildLiveStrategyGuidance(
+              series.bars,
+              singleSelection.strategyId,
+              singleSelection.parameters,
+            )
+          : null;
+      const exactAllocation = exact
+        ? {
+            action:
+              exact.action === "buy"
+                ? ("increase" as const)
+                : exact.action === "sell"
+                  ? ("reduce" as const)
+                  : exact.action,
+            previousAllocation:
+              exact.action === "buy" || exact.action === "wait" ? 0 : 1,
+            targetAllocation:
+              exact.action === "buy" || exact.action === "hold" ? 1 : 0,
+          }
+        : null;
+      return allocation
+        ? {
+            ...(exactAllocation ?? allocation),
+            barTime: exact?.barTime ?? series.bars.at(-1)?.time ?? "",
+          }
+        : null;
     } catch {
       return null;
     }
-  }, [parameters, series, strategyId]);
+  }, [
+    series,
+    singleSelection,
+    strategyPlan,
+    usesSingleFullAllocation,
+  ]);
   const lastUpdated = series?.fetchedAt
     ? updateTimeFormatter.format(new Date(series.fetchedAt))
     : copy.common.unavailable;
 
-  const backtest = useMemo(() => {
-    if (!series?.bars.length || !startDate || !endDate) return null;
+  const backtest = useMemo<
+    BacktestResult | AllocationBacktestResult | null
+  >(() => {
+    if (
+      !series?.bars.length ||
+      !startDate ||
+      !endDate ||
+      !strategyPlan
+    ) {
+      return null;
+    }
     try {
-      return runBacktest(series.bars, strategyId, parameters, {
+      const settings = {
         initialCash,
         commissionRate: commissionPercent / 100,
         slippageRate: slippagePercent / 100,
         startTime: startDate,
         endTime: endDate,
         interval: DAILY_INTERVAL,
-      });
+      } as const;
+      if (usesSingleFullAllocation && singleSelection) {
+        return runBacktest(
+          series.bars,
+          singleSelection.strategyId,
+          singleSelection.parameters,
+          settings,
+        );
+      }
+      return runAllocationBacktest(
+        series.bars,
+        buildStrategyPlanTarget(series.bars, strategyPlan),
+        settings,
+      );
     } catch {
       return null;
     }
@@ -581,20 +755,29 @@ export function MarketWorkspace() {
     commissionPercent,
     endDate,
     initialCash,
-    parameters,
     series,
+    singleSelection,
     slippagePercent,
     startDate,
-    strategyId,
+    strategyPlan,
+    usesSingleFullAllocation,
   ]);
 
   const stability = useMemo(() => {
-    if (!series?.bars.length || !startDate || !endDate) return null;
+    if (
+      !series?.bars.length ||
+      !startDate ||
+      !endDate ||
+      !singleSelection ||
+      !usesSingleFullAllocation
+    ) {
+      return null;
+    }
     try {
       const analysis = analyzeStrategyStability(
         series.bars,
-        strategyId,
-        parameters,
+        singleSelection.strategyId,
+        singleSelection.parameters,
         {
           initialCash,
           commissionRate: commissionPercent / 100,
@@ -612,11 +795,11 @@ export function MarketWorkspace() {
     commissionPercent,
     endDate,
     initialCash,
-    parameters,
     series,
+    singleSelection,
     slippagePercent,
     startDate,
-    strategyId,
+    usesSingleFullAllocation,
   ]);
   const stabilityNearby = stability?.nearby ?? null;
   const stabilityState = !stability
@@ -626,17 +809,102 @@ export function MarketWorkspace() {
       : stabilityNearby?.stable
         ? "stable"
         : "sensitive";
+  const strategyConfigurations = useMemo<
+    readonly ChartStrategyConfiguration[]
+  >(
+    () =>
+      strategyPlan
+        ? [
+            ...(strategyPlan.long
+              ? [
+                  {
+                    id: strategyPlan.long.strategyId,
+                    parameters: strategyPlan.long.parameters,
+                    lineLabels: longStrategyLineLabels,
+                  },
+                ]
+              : []),
+            ...(strategyPlan.short
+              ? [
+                  {
+                    id: strategyPlan.short.strategyId,
+                    parameters: strategyPlan.short.parameters,
+                    lineLabels: shortStrategyLineLabels,
+                  },
+                ]
+              : []),
+          ]
+        : [],
+    [strategyPlan],
+  );
+  const allocationTradeMarkers =
+    backtest && "rebalances" in backtest
+      ? buildAllocationTradeMarkers(backtest.rebalances)
+      : undefined;
 
-  const selectStrategy = (
+  const applySingleStrategy = (
     nextStrategyId: StrategyId,
     nextParameters?: StrategyParameters,
   ) => {
     const next = getStrategy(nextStrategyId);
-    setStrategyId(nextStrategyId);
-    setParameters({
+    const mergedParameters = {
       ...next.defaultParameters,
       ...nextParameters,
-    });
+    };
+    if (next.horizon === "long") {
+      setLongStrategyId(nextStrategyId);
+      setLongParameters(mergedParameters);
+      setShortStrategyId("");
+      setShortParameters({});
+    } else {
+      setLongStrategyId("");
+      setLongParameters({});
+      setShortStrategyId(nextStrategyId);
+      setShortParameters(mergedParameters);
+    }
+    setCoreAllocationPercent(100);
+    setMaximumAllocationPercent(100);
+    window.requestAnimationFrame(() =>
+      chartSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      }),
+    );
+  };
+
+  const selectLongStrategy = (nextStrategyId: StrategyId | "") => {
+    setLongStrategyId(nextStrategyId);
+    setLongParameters(
+      nextStrategyId
+        ? { ...getStrategy(nextStrategyId).defaultParameters }
+        : {},
+    );
+  };
+
+  const selectShortStrategy = (nextStrategyId: StrategyId | "") => {
+    setShortStrategyId(nextStrategyId);
+    setShortParameters(
+      nextStrategyId
+        ? { ...getStrategy(nextStrategyId).defaultParameters }
+        : {},
+    );
+  };
+
+  const applyCombinationResult = (result: StrategyCombinationResult) => {
+    setLongStrategyId(result.longStrategyId);
+    setLongParameters({ ...result.longParameters });
+    setShortStrategyId(result.shortStrategyId);
+    setShortParameters({ ...result.shortParameters });
+    setCoreAllocationPercent(Math.round(result.coreAllocation * 100));
+    setMaximumAllocationPercent(
+      Math.round(result.maximumAllocation * 100),
+    );
+    window.requestAnimationFrame(() =>
+      chartSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      }),
+    );
   };
 
   const focusIndicator = (nextIndicator: IndicatorId) => {
@@ -686,7 +954,7 @@ export function MarketWorkspace() {
   };
 
   const saveCurrentBacktest = async () => {
-    if (!backtest) return;
+    if (!backtest || !strategyPlan) return;
     setSaveStatus("saving");
     try {
       const response = await fetch("/api/saved-backtests", {
@@ -696,8 +964,7 @@ export function MarketWorkspace() {
           createSaveBacktestInput(
             instrument,
             DAILY_INTERVAL,
-            strategyId,
-            parameters,
+            strategyPlan,
             startDate,
             endDate,
             initialCash,
@@ -756,7 +1023,20 @@ export function MarketWorkspace() {
     } else if (requiresMarketReload) {
       setRefreshVersion((value) => value + 1);
     }
-    selectStrategy(saved.strategyId, saved.parameters);
+    setLongStrategyId(saved.plan.long?.strategyId ?? "");
+    setLongParameters(
+      saved.plan.long ? { ...saved.plan.long.parameters } : {},
+    );
+    setShortStrategyId(saved.plan.short?.strategyId ?? "");
+    setShortParameters(
+      saved.plan.short ? { ...saved.plan.short.parameters } : {},
+    );
+    setCoreAllocationPercent(
+      Math.round(saved.plan.coreAllocation * 100),
+    );
+    setMaximumAllocationPercent(
+      Math.round(saved.plan.maximumAllocation * 100),
+    );
     setStartDate(saved.startDate);
     setEndDate(saved.endDate);
     setInitialCash(saved.initialCash);
@@ -848,7 +1128,6 @@ export function MarketWorkspace() {
       {
         maxPerStrategy: maxParameterSets,
         objective: screeningObjective,
-        coreAllocation: coreAllocationPercent / 100,
         signal: controller.signal,
         onProgress: setCombinationProgress,
       },
@@ -892,6 +1171,14 @@ export function MarketWorkspace() {
     : "";
   const screeningBusy = screening || combinationScreening;
   const bestCombination = combinationResults[0] ?? null;
+  const selectedStrategySummary = [
+    ...(strategyPlan?.long
+      ? [copy.strategies[strategyPlan.long.strategyId].name]
+      : []),
+    ...(strategyPlan?.short
+      ? [copy.strategies[strategyPlan.short.strategyId].name]
+      : []),
+  ].join(" + ");
 
   return (
     <main className="workspace-shell">
@@ -1004,7 +1291,9 @@ export function MarketWorkspace() {
           <span>{copy.liveGuidance.title}</span>
           <strong>
             {liveGuidance
-              ? copy.liveGuidance.actions[liveGuidance.action]
+              ? `${copy.liveGuidance.actions[liveGuidance.action]} ${Math.round(
+                  liveGuidance.targetAllocation * 100,
+                )}%`
               : copy.liveGuidance.calculating}
           </strong>
           <small>
@@ -1158,7 +1447,7 @@ export function MarketWorkspace() {
       </section>
 
       <div className="workspace-grid">
-        <section className="chart-card panel">
+        <section className="chart-card panel" ref={chartSectionRef}>
           <div className="panel-heading chart-heading">
             <div>
               <span className="eyebrow">{copy.chart.title}</span>
@@ -1174,8 +1463,9 @@ export function MarketWorkspace() {
                 </span>
                 <small>
                   {copy.indicatorSettings.activeStrategy}{" "}
-                  {copy.common.separator} {strategyLineLabels.prefix}{" "}
-                  {copy.common.separator} {copy.strategies[strategyId].name}
+                  {copy.common.separator} {copy.chart.strategyLines.prefix}{" "}
+                  {copy.common.separator}{" "}
+                  {selectedStrategySummary || copy.lab.noStrategy}
                 </small>
               </strong>
             </div>
@@ -1246,13 +1536,16 @@ export function MarketWorkspace() {
             {series && (
               <PriceChart
                 bars={series.bars}
-                trades={backtest?.trades ?? []}
+                trades={
+                  backtest && "trades" in backtest
+                    ? backtest.trades
+                    : []
+                }
+                tradeMarkers={allocationTradeMarkers}
                 dataKey={`${instrument.secid}:${DAILY_INTERVAL}`}
                 chartType={chartType}
                 visibleIndicators={visibleIndicators}
-                strategyId={strategyId}
-                strategyParameters={parameters}
-                strategyLineLabels={strategyLineLabels}
+                strategyConfigurations={strategyConfigurations}
                 ariaLabel={copy.chart.aria}
                 labels={priceChartLabels}
               />
@@ -1327,7 +1620,20 @@ export function MarketWorkspace() {
                           {copy.intervals[saved.interval]}
                           {" "}
                           {copy.common.separator}{" "}
-                          {copy.strategies[saved.strategyId].name}
+                          {[
+                            saved.plan.long
+                              ? copy.strategies[
+                                  saved.plan.long.strategyId
+                                ].name
+                              : null,
+                            saved.plan.short
+                              ? copy.strategies[
+                                  saved.plan.short.strategyId
+                                ].name
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" + ")}
                         </small>
                         {saved.interval !== DAILY_INTERVAL && (
                           <span className="saved-shortcut-legacy">
@@ -1361,12 +1667,19 @@ export function MarketWorkspace() {
             <div>
               <span className="eyebrow">{copy.lab.title}</span>
               <div className="strategy-title-line">
-                <strong>{copy.strategies[strategyId].name}</strong>
-                <span
-                  className={`horizon-badge ${getStrategy(strategyId).horizon}`}
-                >
-                  {copy.strategyHorizons[getStrategy(strategyId).horizon]}
-                </span>
+                <strong>
+                  {selectedStrategySummary || copy.lab.noStrategy}
+                </strong>
+                {longStrategyId && (
+                  <span className="horizon-badge long">
+                    {copy.strategyHorizons.long}
+                  </span>
+                )}
+                {shortStrategyId && (
+                  <span className="horizon-badge short">
+                    {copy.strategyHorizons.short}
+                  </span>
+                )}
               </div>
             </div>
             <div className="lab-heading-actions">
@@ -1398,33 +1711,111 @@ export function MarketWorkspace() {
           </div>
           <p className="panel-copy">{copy.lab.subtitle}</p>
 
-          <label className="field-label">
-            <span>{copy.lab.strategy}</span>
-            <select
-              value={strategyId}
-              onChange={(event) =>
-                selectStrategy(event.target.value as StrategyId)
-              }
-            >
-              <optgroup label={copy.strategyHorizons.longGroup}>
+          <div className="strategy-selector-grid">
+            <label className="field-label">
+              <span>{copy.lab.longStrategy}</span>
+              <select
+                name="long-strategy"
+                value={longStrategyId}
+                onChange={(event) =>
+                  selectLongStrategy(
+                    event.target.value as StrategyId | "",
+                  )
+                }
+              >
+                <option value="">{copy.lab.noLongStrategy}</option>
                 {longStrategies.map((strategy) => (
                   <option key={strategy.id} value={strategy.id}>
                     {copy.strategies[strategy.id].name}
                   </option>
                 ))}
-              </optgroup>
-              <optgroup label={copy.strategyHorizons.shortGroup}>
+              </select>
+              <small>
+                {longStrategyId
+                  ? copy.strategies[longStrategyId].description
+                  : copy.lab.noLongDescription}
+              </small>
+            </label>
+            <label className="field-label">
+              <span>{copy.lab.shortStrategy}</span>
+              <select
+                name="short-strategy"
+                value={shortStrategyId}
+                onChange={(event) =>
+                  selectShortStrategy(
+                    event.target.value as StrategyId | "",
+                  )
+                }
+              >
+                <option value="">{copy.lab.noShortStrategy}</option>
                 {shortStrategies.map((strategy) => (
                   <option key={strategy.id} value={strategy.id}>
                     {copy.strategies[strategy.id].name}
                   </option>
                 ))}
-              </optgroup>
-            </select>
-          </label>
-          <p className="strategy-description">
-            {copy.strategies[strategyId].description}
-          </p>
+              </select>
+              <small>
+                {shortStrategyId
+                  ? copy.strategies[shortStrategyId].description
+                  : copy.lab.noShortDescription}
+              </small>
+            </label>
+          </div>
+
+          <div className="allocation-grid">
+            <label className="field-label">
+              <span>{copy.lab.coreAllocation}</span>
+              <input
+                name="core-allocation"
+                type="number"
+                value={coreAllocationPercent}
+                min={0}
+                max={maximumAllocationPercent}
+                step={10}
+                disabled={!longStrategyId || !shortStrategyId}
+                onChange={(event) => {
+                  const nextValue = Number(event.target.value);
+                  setCoreAllocationPercent(
+                    Math.min(
+                      Math.max(
+                        Number.isFinite(nextValue) ? nextValue : 0,
+                        0,
+                      ),
+                      maximumAllocationPercent,
+                    ),
+                  );
+                }}
+              />
+              <small>{copy.lab.coreAllocationHint}</small>
+            </label>
+            <label className="field-label">
+              <span>{copy.lab.maximumAllocation}</span>
+              <input
+                name="maximum-allocation"
+                type="number"
+                value={maximumAllocationPercent}
+                min={0}
+                max={100}
+                step={10}
+                onChange={(event) => {
+                  const nextValue = Math.min(
+                    Math.max(
+                      Number.isFinite(Number(event.target.value))
+                        ? Number(event.target.value)
+                        : 100,
+                      0,
+                    ),
+                    100,
+                  );
+                  setMaximumAllocationPercent(nextValue);
+                  setCoreAllocationPercent((current) =>
+                    Math.min(current, nextValue),
+                  );
+                }}
+              />
+              <small>{copy.lab.maximumAllocationHint}</small>
+            </label>
+          </div>
 
           <div className="date-grid">
             <label className="field-label">
@@ -1497,42 +1888,22 @@ export function MarketWorkspace() {
             </label>
           </div>
 
-          <div className="parameter-block">
-            <div className="subheading">
-              <span>{copy.lab.parameters}</span>
-              <small>{copy.lab.automatic}</small>
-            </div>
-            <div className="parameter-grid">
-              {Object.entries(parameters).map(([key, value]) => (
-                <label className="field-label" key={key}>
-                  <span>
-                    {copy.parameters[key as keyof typeof copy.parameters] ?? key}
-                  </span>
-                  <input
-                    type="number"
-                    value={value}
-                    min={
-                      isIntegerStrategyParameterKey(key)
-                        ? 1
-                        : key === "tick"
-                          ? 0
-                          : undefined
-                    }
-                    step={parameterStep(key)}
-                    onChange={(event) =>
-                      setParameters((current) => ({
-                        ...current,
-                        [key]: normalizeStrategyParameterInput(
-                          key,
-                          Number(event.target.value),
-                        ),
-                      }))
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
+          {longStrategyId && (
+            <StrategyParameterFields
+              heading={copy.lab.longParameters}
+              namePrefix="long"
+              parameters={longParameters}
+              onChange={setLongParameters}
+            />
+          )}
+          {shortStrategyId && (
+            <StrategyParameterFields
+              heading={copy.lab.shortParameters}
+              namePrefix="short"
+              parameters={shortParameters}
+              onChange={setShortParameters}
+            />
+          )}
 
           <div className="backtest-summary-grid">
             {backtest ? (
@@ -1553,12 +1924,30 @@ export function MarketWorkspace() {
                     formatNumber(backtest.sharpe),
                     backtest.sharpe >= 0,
                   ],
+                  ...("winRate" in backtest
+                    ? [
+                        [
+                          copy.metrics.winRate,
+                          formatPercent(backtest.winRate),
+                          backtest.winRate >= 50,
+                        ],
+                      ]
+                    : [
+                        [
+                          copy.metrics.targetAllocation,
+                          formatPercent(
+                            (liveGuidance?.targetAllocation ?? 0) * 100,
+                          ),
+                          (liveGuidance?.targetAllocation ?? 0) > 0,
+                        ],
+                      ]),
                   [
-                    copy.metrics.winRate,
-                    formatPercent(backtest.winRate),
-                    backtest.winRate >= 50,
+                    "rebalances" in backtest
+                      ? copy.metrics.rebalances
+                      : copy.metrics.trades,
+                    String(backtest.tradeCount),
+                    true,
                   ],
-                  [copy.metrics.trades, String(backtest.tradeCount), true],
                   [
                     copy.metrics.benchmarkReturn,
                     formatPercent(backtest.benchmarkReturn, true),
@@ -1614,7 +2003,7 @@ export function MarketWorkspace() {
                 </div>
               )}
 
-              {stabilityNearby ? (
+              {stability && stabilityNearby ? (
                 <>
                   <dl className="stability-stat-grid">
                     <div>
@@ -1694,7 +2083,9 @@ export function MarketWorkspace() {
                 </>
               ) : !stability ? (
                 <div className="stability-unavailable">
-                  {copy.stability.unavailable}
+                  {strategyPlan && !usesSingleFullAllocation
+                    ? copy.stability.planUnavailable
+                    : copy.stability.unavailable}
                 </div>
               ) : null}
             </section>
@@ -1915,8 +2306,12 @@ export function MarketWorkspace() {
                         <button
                           className="apply-button"
                           type="button"
+                          title={copy.screening.applyToChart}
                           onClick={() =>
-                            selectStrategy(result.strategyId, result.parameters)
+                            applySingleStrategy(
+                              result.strategyId,
+                              result.parameters,
+                            )
                           }
                         >
                           {copy.screening.use}
@@ -1945,33 +2340,15 @@ export function MarketWorkspace() {
             </h2>
             <p>{copy.combinationScreening.description}</p>
 
-            <label className="screening-control-field combination-core-field">
-              <span>{copy.combinationScreening.coreAllocation}</span>
-              <input
-                type="number"
-                min={30}
-                max={90}
-                step={10}
-                value={coreAllocationPercent}
-                disabled={screeningBusy}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value);
-                  setCoreAllocationPercent(
-                    Math.min(
-                      Math.max(
-                        Number.isFinite(nextValue)
-                          ? Math.round(nextValue)
-                          : 60,
-                        30,
-                      ),
-                      90,
-                    ),
-                  );
-                  resetScreening();
-                }}
-              />
-              <small>{copy.combinationScreening.coreHint}</small>
-            </label>
+            <div className="combination-allocation-ladder">
+              <span>{copy.combinationScreening.positionOptimization}</span>
+              <strong>0 / 20 / 40 / 60 / 80 / 100%</strong>
+              <small>
+                {copy.combinationScreening.positionOptimizationHint}
+                {" · "}
+                <b>{copy.screening.use}</b>
+              </small>
+            </div>
 
             <button
               type="button"
@@ -2062,17 +2439,19 @@ export function MarketWorkspace() {
                         <th>{copy.screening.rank}</th>
                         <th>{copy.combinationScreening.longStrategy}</th>
                         <th>{copy.combinationScreening.shortStrategy}</th>
+                        <th>{copy.combinationScreening.holdingMode}</th>
                         <th>{copy.screening.return}</th>
                         <th>{copy.screening.drawdown}</th>
                         <th>{copy.screening.sharpe}</th>
                         <th>{copy.combinationScreening.rebalances}</th>
                         <th>{copy.screening.objectiveValue}</th>
+                        <th />
                       </tr>
                     </thead>
                     <tbody>
                       {combinationResults.slice(0, 8).map((result, index) => (
                         <tr
-                          key={`${result.longStrategyId}-${JSON.stringify(result.longParameters)}-${result.shortStrategyId}-${JSON.stringify(result.shortParameters)}`}
+                          key={`${result.longStrategyId}-${JSON.stringify(result.longParameters)}-${result.shortStrategyId}-${JSON.stringify(result.shortParameters)}-${result.coreAllocation}`}
                         >
                           <td>
                             <span className={`rank rank-${index + 1}`}>
@@ -2113,6 +2492,29 @@ export function MarketWorkspace() {
                               </small>
                             </div>
                           </td>
+                          <td>
+                            <div className="holding-mode-cell">
+                              <strong>
+                                {
+                                  copy.combinationScreening.holdingModes[
+                                    classifyHoldingMode(
+                                      result.coreAllocation,
+                                    )
+                                  ]
+                                }
+                              </strong>
+                              <small>
+                                {copy.combinationScreening.coreAllocation}{" "}
+                                {Math.round(result.coreAllocation * 100)}%
+                                {" · "}
+                                {copy.lab.maximumAllocation}{" "}
+                                {Math.round(
+                                  result.maximumAllocation * 100,
+                                )}
+                                %
+                              </small>
+                            </div>
+                          </td>
                           <td
                             className={
                               result.totalReturn >= 0
@@ -2141,6 +2543,19 @@ export function MarketWorkspace() {
                                 )}
                               </b>
                             </span>
+                          </td>
+                          <td>
+                            <button
+                              className="apply-button"
+                              type="button"
+                              title={copy.screening.applyToChart}
+                              onClick={() =>
+                                applyCombinationResult(result)
+                              }
+                            >
+                              {copy.screening.use}
+                              <ChevronRight size={14} />
+                            </button>
                           </td>
                         </tr>
                       ))}

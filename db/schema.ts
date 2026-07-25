@@ -22,6 +22,7 @@ export const savedBacktests = sqliteTable(
     interval: text("interval").notNull(),
     strategyId: text("strategy_id").notNull(),
     parametersJson: text("parameters_json").notNull(),
+    strategyPlanJson: text("strategy_plan_json"),
     startDate: text("start_date").notNull(),
     endDate: text("end_date").notNull(),
     initialCash: real("initial_cash").notNull(),

@@ -1,0 +1,1 @@
+ALTER TABLE `saved_backtests` ADD `strategy_plan_json` text;

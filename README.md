@@ -1,7 +1,8 @@
 # QuantScope
 
-QuantScope is a daily-only workspace for researching one global index or ETF at
-a time and making manual swing decisions. It combines filtered asset search,
+QuantScope is a daily-only workspace for researching one global index, ETF, or
+commodity futures quote proxy at a time and making manual swing decisions. It
+combines filtered asset search,
 dividend/split-adjusted price charts when the selected source supports them,
 technical indicators, strategy backtests, parameter sensitivity diagnostics,
 and bounded parameter screening in one responsive page. It does not place
@@ -9,8 +10,10 @@ trades or run unattended jobs.
 
 ## Included
 
-- Search only global indexes and exchange-traded funds; individual equities are
-  excluded from results.
+- Search global indexes, exchange-traded funds, and commodity futures quote
+  proxies; individual equities are excluded from results. A deterministic
+  catalog includes gold (`GC=F`), silver (`SI=F`), crude oil (`CL=F`), and
+  copper (`HG=F`).
 - One fixed daily interval in the user interface. Provider adapters and API
   types retain interval support for internal compatibility.
 - Candlestick and line chart modes with volume and synchronized zoom.
@@ -46,7 +49,8 @@ trades or run unattended jobs.
   stop fills for predefined breakout prices, including gap-aware pricing.
 - Chart-level buy/sell markers derived from the active backtest's actual fills.
 - Per-user saved backtests with a right-side shortcut bar that restores the
-  instrument, strategy, parameters, date range, and cost settings. The
+  instrument, complete optional long/short strategy plan, both parameter sets,
+  core/maximum allocations, date range, and cost settings. The
   workspace interval remains daily. Legacy non-daily records keep their stored
   interval label and disclose that opening them recalculates on daily bars.
 - A nearby-parameter stability diagnostic that changes one parameter at a time
@@ -61,11 +65,16 @@ trades or run unattended jobs.
   drawdown, and trade-count score.
 - Chunked screening progress and cancellation, retaining only the best
   parameter set for each strategy.
+- A two-selector strategy lab where either the long- or short-horizon rule can
+  be omitted. Long-only and short-only plans switch between zero and maximum
+  allocation. A dual plan uses zero outside the long trend, core allocation
+  when only the long rule is active, and maximum allocation when both rules
+  are active.
 - A separate bounded long/short combination screen. It first retains two
   standalone parameter finalists per strategy, then compares hierarchical
-  pairs: a long-horizon rule gates the uptrend, while a short-horizon rule
-  selects a configurable core allocation (60% by default) or the full planned
-  allocation inside that trend.
+  pairs across a fixed 0%, 20%, 40%, 60%, 80%, and 100% core-allocation
+  ladder. Every ranked result explains its holding mode and can be applied
+  directly to the strategy lab.
 
 ## Run locally
 
@@ -125,6 +134,11 @@ convert one methodology into the other or add constituent-company events and
 fundamentals. This is not separate cash-distribution accounting, reinvestment,
 cash yield, or a synthetic total-return ledger.
 
+Commodity symbols use Yahoo continuous futures quote pages as research proxies.
+QuantScope does not model a contract chain, roll method, multiplier, margin,
+expiry, delivery, or futures-account leverage. Nasdaq fallback is intentionally
+disabled for commodity instruments.
+
 Backtests are research simulations. They do not model every venue rule,
 tracking error, tax, suspension, lot constraint, corporate action, or real
 order-book liquidity. Intrabar stop fills use chart OHLC rather than tick data.
@@ -148,11 +162,13 @@ Regimes use the current close versus a 60-day SMA and the SMA's 20-bar slope,
 retaining earlier bars for causal warm-up. These checks do not replace
 out-of-sample or walk-forward validation.
 
-Combination screening is also an in-sample comparison. The core allocation is
-fixed by the user rather than optimized, and the bounded two-stage search
-reduces computation and parameter mining without eliminating overfitting.
-Combined close-derived allocation changes execute at the following daily open;
-the workflow does not combine intrabar stop fills from two strategies.
+Combination screening is also an in-sample comparison. It evaluates the fixed
+six-value core-allocation ladder rather than fitting a continuous percentage.
+The bounded two-stage search reduces computation and parameter mining without
+eliminating overfitting. Combined or partial-allocation close-derived changes
+execute at the following daily open; the workflow does not combine intrabar
+stop fills from two strategies. A single strategy at 100% maximum allocation
+retains its original hybrid execution contract.
 
 TradingView is a product reference only. This project does not redistribute the
 TradingView Advanced Charts library or copy protected Pine scripts. The

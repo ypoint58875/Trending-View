@@ -1,5 +1,5 @@
 export type MarketInterval = "1m" | "5m" | "15m" | "30m" | "60m" | "1d";
-export type MarketAssetType = "index" | "etf";
+export type MarketAssetType = "index" | "etf" | "commodity";
 export type MarketDataProvider = "eastmoney" | "yahoo" | "nasdaq";
 export type MarketPriceAdjustment = "raw" | "corporate-action-adjusted";
 export type MarketExchange =

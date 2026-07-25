@@ -48,7 +48,10 @@ export async function GET(request: Request) {
     provider === "eastmoney" ||
     provider === "yahoo" ||
     provider === "nasdaq";
-  const validAssetType = assetType === "index" || assetType === "etf";
+  const validAssetType =
+    assetType === "index" ||
+    assetType === "etf" ||
+    assetType === "commodity";
   const validSecid =
     provider === "eastmoney"
       ? /^\d+\.[A-Za-z0-9._-]+$/.test(secid)

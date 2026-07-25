@@ -22,7 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
     : new URL("http://localhost:3000");
   const title = "QuantScope | Market Strategy Lab";
   const description =
-    "A global index and ETF research workspace for charts, indicators, strategy backtests, and automated screening.";
+    "A global index, ETF, and commodity research workspace for charts, indicators, strategy backtests, and automated screening.";
 
   return {
     metadataBase,

@@ -9,8 +9,20 @@ export const zhCN = {
     unavailable: "—",
     separator: "·",
   },
-  searchPlaceholder: "搜索指数、ETF 或代码",
-  searchHint: "仅显示全球指数与交易所交易基金",
+  searchPlaceholder: "搜索指数、ETF、黄金、白银或代码",
+  searchHint: "支持全球指数、ETF，以及黄金、白银、原油和铜",
+  searchAliases: {
+    黄金: "gold",
+    白银: "silver",
+    原油: "crude oil",
+    铜: "copper",
+  },
+  commodityNames: {
+    gold: "黄金",
+    silver: "白银",
+    crudeOil: "原油",
+    copper: "铜",
+  },
   marketDelayed: "多源网页行情 · 自动刷新",
   marketSource: "数据源：东方财富 / Yahoo Finance / Nasdaq 网页行情接口",
   sources: {
@@ -21,6 +33,7 @@ export const zhCN = {
   assetTypes: {
     index: "指数",
     etf: "ETF",
+    commodity: "大宗商品",
   },
   researchOnly: "仅供研究，不构成投资建议",
   refresh: "刷新",
@@ -28,7 +41,7 @@ export const zhCN = {
   retry: "重试",
   errors: {
     UPSTREAM_UNAVAILABLE: "行情源暂时不可用，请稍后重试。",
-    INVALID_SYMBOL: "指数或 ETF 代码格式无效。",
+    INVALID_SYMBOL: "指数、ETF 或大宗商品代码格式无效。",
     UNKNOWN: "加载失败，请检查网络后重试。",
   },
   chart: {
@@ -46,6 +59,8 @@ export const zhCN = {
     directionLegend: "K 线涨跌颜色图例",
     strategyLines: {
       prefix: "策略参考线",
+      longPrefix: "长周期参考线",
+      shortPrefix: "短周期参考线",
       roles: {
         entry: "入场",
         exit: "退出",
@@ -69,7 +84,7 @@ export const zhCN = {
     },
     equity: "策略权益",
     drawdown: "回撤",
-    aria: "指数或 ETF 价格、成交量和技术指标图表",
+    aria: "指数、ETF 或大宗商品价格、成交量和技术指标图表",
     backtestAria: "策略回测权益曲线与回撤图",
     bars: "根 K 线",
     series: {
@@ -134,15 +149,15 @@ export const zhCN = {
     waitingForData: "等待最新行情数据",
     autoRefresh: "每 60 秒自动刷新",
     actions: {
-      buy: "买入",
-      sell: "卖出",
+      increase: "目标仓位",
+      reduce: "目标仓位",
       hold: "继续持仓",
       wait: "空仓等待",
     },
     descriptions: {
-      buy: "当前动态 K 线已转为做多",
-      sell: "当前动态 K 线已转为空仓",
-      hold: "策略仍保持多头仓位",
+      increase: "最新信号要求提高计划仓位",
+      reduce: "最新信号要求降低计划仓位",
+      hold: "策略维持当前计划仓位",
       wait: "策略仍为空仓，等待下一次买点",
     },
     disclosure: "按数据源最新 K 线预判；未收盘时信号可能继续变化。",
@@ -190,6 +205,13 @@ export const zhCN = {
     subtitle:
       "仅做多：上方最新建议使用当前动态 K 线；历史回测仍按次期开盘或预设触价成交。",
     strategy: "策略",
+    longStrategy: "长周期策略",
+    shortStrategy: "短周期策略",
+    noLongStrategy: "不使用长周期策略",
+    noShortStrategy: "不使用短周期策略",
+    noLongDescription: "可留空，只由短周期策略控制持仓。",
+    noShortDescription: "可留空，只由长周期策略控制持仓。",
+    noStrategy: "尚未选择策略",
     period: "回测区间",
     start: "开始日期",
     end: "结束日期",
@@ -197,6 +219,12 @@ export const zhCN = {
     commission: "单边手续费",
     slippage: "单边滑点",
     parameters: "策略参数",
+    longParameters: "长周期策略参数",
+    shortParameters: "短周期策略参数",
+    coreAllocation: "核心仓位 %",
+    maximumAllocation: "最大仓位 %",
+    coreAllocationHint: "长短策略同时使用且短周期转弱时保留的仓位。",
+    maximumAllocationHint: "策略最强信号下允许持有的最高仓位。",
     automatic: "参数变化后自动回测",
     noResult: "当前区间数据不足，无法生成回测。",
   },
@@ -209,7 +237,7 @@ export const zhCN = {
     saved: "已保存",
     saveError: "重试保存",
     loading: "正在加载已保存回测…",
-    empty: "保存当前回测后，可从这里快速切换指数或 ETF。",
+    empty: "保存当前回测后，可从这里快速切换指数、ETF 或大宗商品。",
     loadError: "快捷栏加载失败，请稍后重试。",
     open: "打开已保存回测",
     remove: "删除已保存回测",
@@ -390,6 +418,8 @@ export const zhCN = {
     winRate: "胜率",
     profitFactor: "盈亏比",
     trades: "交易次数",
+    rebalances: "调仓次数",
+    targetAllocation: "当前目标仓位",
   },
   stability: {
     eyebrow: "STABILITY",
@@ -399,6 +429,8 @@ export const zhCN = {
     sensitive: "参数敏感",
     insufficientEvidence: "证据不足",
     unavailable: "当前数据不足，稳定性诊断暂不可用。",
+    planUnavailable:
+      "组合策略或部分仓位计划暂不做邻近参数稳定性判断；请分别检查两个策略，再比较组合在不同市场阶段的表现。",
     evidenceReasons: {
       invalidParameters: "当前策略参数无效，未运行稳定性回测。",
       insufficientObservations: "当前回测区间的日线观察数不足。",
@@ -461,9 +493,10 @@ export const zhCN = {
     trades: "交易",
     objectiveValue: "目标值",
     use: "应用",
+    applyToChart: "应用到走势图",
     suitable: "候选",
     caution: "观察",
-    empty: "点击按钮开始遍历当前指数或 ETF 与回测区间。",
+    empty: "点击按钮开始遍历当前指数、ETF 或大宗商品与回测区间。",
     overfit:
       "筛选结果是样本内比较，不代表未来表现。请使用样本外数据、滚动窗口和更真实的交易约束复核。",
   },
@@ -471,9 +504,11 @@ export const zhCN = {
     eyebrow: "HIERARCHY",
     title: "一键组合策略",
     description:
-      "长周期寻找上行通道，短周期识别通道内小趋势。长周期关闭时空仓；长周期向上时，短周期决定保留核心仓位或恢复完整计划仓位。",
+      "长周期寻找上行通道，短周期识别通道内小趋势，同时优化核心仓位，明确由长周期持仓、短周期控仓，还是采用核心加机动仓。",
     coreAllocation: "核心仓位 %",
-    coreHint: "短周期转弱时保留的计划仓位；不参与自动优化。",
+    positionOptimization: "持仓模式与比例优化",
+    positionOptimizationHint:
+      "自动比较六档核心仓位；最大仓位固定为 100%，应用后仍可在策略实验室调整。",
     action: "开始组合筛选",
     stop: "停止组合筛选",
     runningStrategies: "正在筛选长短周期候选…",
@@ -485,11 +520,18 @@ export const zhCN = {
     bestResults: "个最佳组合",
     longStrategy: "长周期 / 参数",
     shortStrategy: "短周期 / 参数",
+    holdingMode: "持仓模式",
+    holdingModes: {
+      "short-controls": "短周期全控仓",
+      "core-tactical": "核心 + 机动仓",
+      "long-controls": "长周期全程持仓",
+    },
     rebalances: "调仓",
     preview: "第一名组合权益预览",
     noPreview: "完成组合筛选后显示第一名的权益和回撤。",
     overfit:
       "组合结果仍是样本内比较。两阶段筛选限制了组合数量，但不能消除过拟合；请优先检查参数稳定性与不同市场阶段。",
   },
-  footer: "行情可能延迟或缺失。指数回测为价格代理，不代表可直接成交的产品。",
+  footer:
+    "行情可能延迟或缺失。指数与商品期货行情均为研究代理；商品回测未模拟换月、合约乘数、保证金、到期和交割。",
 } as const;

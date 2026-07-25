@@ -1,4 +1,7 @@
-import type { BacktestTrade } from "./backtest";
+import type {
+  AllocationRebalance,
+  BacktestTrade,
+} from "./backtest";
 
 export interface TradeMarker {
   time: string;
@@ -32,6 +35,35 @@ export function buildTradeMarkers(trades: BacktestTrade[]): TradeMarkers {
       markers.rangeExits.push(exit);
     } else {
       markers.sells.push(exit);
+    }
+  });
+
+  return markers;
+}
+
+export function buildAllocationTradeMarkers(
+  rebalances: AllocationRebalance[],
+): TradeMarkers {
+  const markers: TradeMarkers = { buys: [], sells: [], rangeExits: [] };
+
+  rebalances.forEach((rebalance) => {
+    const event =
+      rebalance.reason === "range-end"
+        ? "range-exit"
+        : rebalance.targetAllocation > rebalance.fromAllocation
+          ? "entry"
+          : "exit";
+    const marker: TradeMarker = {
+      time: rebalance.time,
+      price: rebalance.fillPrice,
+      event,
+    };
+    if (event === "range-exit") {
+      markers.rangeExits.push(marker);
+    } else if (event === "entry") {
+      markers.buys.push(marker);
+    } else {
+      markers.sells.push(marker);
     }
   });
 

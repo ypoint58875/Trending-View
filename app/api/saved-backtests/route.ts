@@ -2,7 +2,9 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { savedBacktests } from "@/db/schema";
 import {
+  buildLegacyStrategyPlan,
   parseSaveBacktestInput,
+  parseStrategyAllocationPlan,
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
 import type { StrategyParameters } from "@/lib/analysis/strategies";
@@ -38,7 +40,20 @@ function parseStoredParameters(value: string): StrategyParameters {
   return parameters as StrategyParameters;
 }
 
+function parseStoredPlan(
+  value: string | null,
+  strategyId: SavedBacktestRecord["strategyId"],
+  parameters: StrategyParameters,
+) {
+  if (!value) return buildLegacyStrategyPlan(strategyId, parameters);
+  const plan = parseStrategyAllocationPlan(JSON.parse(value) as unknown);
+  if (!plan) throw new Error("Stored backtest strategy plan is invalid");
+  return plan;
+}
+
 function toRecord(row: SavedBacktestRow): SavedBacktestRecord {
+  const strategyId = row.strategyId as SavedBacktestRecord["strategyId"];
+  const parameters = parseStoredParameters(row.parametersJson);
   return {
     id: row.id,
     instrument: {
@@ -51,8 +66,9 @@ function toRecord(row: SavedBacktestRow): SavedBacktestRecord {
       provider: row.provider as SavedBacktestRecord["instrument"]["provider"],
     },
     interval: row.interval as SavedBacktestRecord["interval"],
-    strategyId: row.strategyId as SavedBacktestRecord["strategyId"],
-    parameters: parseStoredParameters(row.parametersJson),
+    strategyId,
+    parameters,
+    plan: parseStoredPlan(row.strategyPlanJson, strategyId, parameters),
     startDate: row.startDate,
     endDate: row.endDate,
     initialCash: row.initialCash,
@@ -128,6 +144,7 @@ export async function POST(request: Request) {
     interval: input.interval,
     strategyId: input.strategyId,
     parametersJson: JSON.stringify(input.parameters),
+    strategyPlanJson: JSON.stringify(input.plan),
     startDate: input.startDate,
     endDate: input.endDate,
     initialCash: input.initialCash,

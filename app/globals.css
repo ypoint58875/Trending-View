@@ -342,23 +342,23 @@ button {
   color: var(--subtle);
 }
 
-.live-guidance-card.buy,
+.live-guidance-card.increase,
 .live-guidance-card.hold {
   border-color: rgba(34, 197, 94, 0.32);
   background: rgba(34, 197, 94, 0.07);
 }
 
-.live-guidance-card.buy > strong,
+.live-guidance-card.increase > strong,
 .live-guidance-card.hold > strong {
   color: var(--green);
 }
 
-.live-guidance-card.sell {
+.live-guidance-card.reduce {
   border-color: rgba(239, 83, 80, 0.35);
   background: rgba(239, 83, 80, 0.07);
 }
 
-.live-guidance-card.sell > strong {
+.live-guidance-card.reduce > strong {
   color: var(--red);
 }
 
@@ -721,7 +721,7 @@ button {
 }
 
 .strategy-panel {
-  min-height: 710px;
+  min-height: 840px;
 }
 
 .saved-shortcuts-panel {
@@ -990,6 +990,39 @@ button {
   margin-bottom: 14px;
   color: var(--subtle);
   font-size: 9px;
+}
+
+.strategy-selector-grid {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.strategy-selector-grid .field-label {
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(10, 17, 14, 0.62);
+}
+
+.strategy-selector-grid .field-label > small,
+.allocation-grid .field-label > small {
+  min-height: 22px;
+  color: var(--subtle);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.allocation-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+
+.allocation-grid input:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .date-grid,
@@ -1337,6 +1370,29 @@ button {
   margin-top: 16px;
 }
 
+.combination-allocation-ladder {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  padding: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.06);
+}
+
+.combination-allocation-ladder > span,
+.combination-allocation-ladder > small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.combination-allocation-ladder > strong {
+  color: #7dd3fc;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+}
+
 .combination-results {
   min-width: 0;
 }
@@ -1607,6 +1663,24 @@ button {
 
 .combination-table .strategy-cell {
   min-width: 170px;
+}
+
+.holding-mode-cell {
+  display: grid;
+  min-width: 130px;
+  gap: 4px;
+  text-align: left;
+}
+
+.holding-mode-cell strong {
+  color: #7dd3fc;
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 9px;
+}
+
+.holding-mode-cell small {
+  color: var(--subtle);
+  font-size: 7px;
 }
 
 .combination-preview {

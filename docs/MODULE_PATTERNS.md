@@ -11,8 +11,10 @@ Every provider must:
 5. Add source documentation and a reproducible raw sample.
 
 Provider orchestration belongs in `lib/market/index.ts`, not in individual
-adapters. Search results must normalize to the shared index/ETF asset types and
-must not expose individual equities. Fallbacks preserve the last valid series,
+adapters. Search results must normalize to the shared index/ETF/commodity asset
+types and must not expose individual equities. Commodity catalog entries live
+in `lib/market/commodities.ts`, use Yahoo symbols, and never fall back to
+Nasdaq. Fallbacks preserve the last valid series,
 prefer longer daily history when available, and never merge bars from different
 sources into one series. History responses may be HTTP cached, while current
 refresh requests remain uncached and replace only overlapping recent bars from
@@ -104,24 +106,26 @@ and tie-breaking belong in the shared screening module, not the UI. Tests
 enforce registry coverage, uniqueness, the cap, objective ordering,
 best-result sorting, progress completion, and cancellation.
 
-Multi-horizon combinations are hierarchical, never equal-weight votes. The
-long target gates exposure. Inside an active long target, the short target
-selects full planned allocation when active and a user-configured core
-allocation when inactive. Outside the long target, allocation is zero
-regardless of the short target. Core allocation is clamped at the pure-function
-boundary and is not optimized.
+Strategy plans use optional horizon selections, never equal-weight votes. A
+single selected horizon maps flat/long to zero/maximum allocation. With both
+horizons selected, the long target gates exposure, the short target selects
+maximum allocation when active and core allocation when inactive, and an
+inactive long target always maps to zero. Validate zero-to-one bounds and
+require core no greater than maximum at the pure-function boundary.
 
 Combination optimization must reuse shared candidate domains, objectives, and
 tie-breaking. It first retains a small fixed number of standalone finalists per
-strategy, then evaluates only the retained long/short Cartesian product. The
+strategy, then evaluates the retained long/short Cartesian product across the
+fixed 0/20/40/60/80/100-percent core ladder. The
 partial-allocation engine executes the prior completed bar's target at the next
 open, applies costs to the changed allocation, and reports rebalances rather
 than claiming completed round-trip win statistics. Tests cover role
 validation, target alignment, prefix invariance, bounded pairing, progress,
 cancellation, costs, and range-end liquidation.
 
-Trade annotations are derived from completed `BacktestTrade` records by a pure
-mapping helper. Every entry is a buy and every strategy exit is a sell. Chart
+Trade annotations are derived from completed `BacktestTrade` or
+`AllocationRebalance` records by pure mapping helpers. Every entry/increase is
+a buy marker and every strategy exit/reduction is a sell marker. Chart
 components consume the mapped markers but never infer trades from indicator
 lines.
 Range-end valuation exits remain part of backtest metrics but use a separate
@@ -164,7 +168,8 @@ mount/unmount. Option changes update the existing instance. Interactive state
 that must survive an option update is captured explicitly and reapplied; reset
 keys define the business boundary where that state should be discarded.
 
-The browser workspace is daily-only and holds one index or ETF at a time.
+The browser workspace is daily-only and holds one index, ETF, or commodity
+quote proxy at a time.
 Provider/API types may keep intraday support, but adding an interval back to
 the UI is a product-contract change, not an incidental adapter change.
 
@@ -172,8 +177,11 @@ the UI is a product-contract change, not an incidental adapter change.
 
 Saved product records use a shared input/record type, pure boundary validation,
 an authenticated API route, and a D1 table. Every query includes the owner key.
-The instrument identity is limited to the same index/ETF types accepted by the
-market layer. Upserts use the owner, provider, and provider symbol as the
+The instrument identity is limited to the same index/ETF/commodity types
+accepted by the market layer. New rows store nullable-compatible full strategy
+plan JSON alongside legacy primary-strategy columns; legacy rows derive a
+single full-allocation plan when read. Upserts use the owner, provider, and
+provider symbol as the
 de-duplication key. UI components consume API records and do not access D1
 bindings directly. Shortcut labels use the stored interval for provenance. A
 legacy non-daily record remains non-mutating metadata: opening it keeps the

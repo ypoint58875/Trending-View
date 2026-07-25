@@ -1,6 +1,12 @@
-import type { BacktestResult } from "./backtest";
+import type { BacktestPerformance } from "./backtest";
+import { isValidStrategyParameters } from "./screening";
+import type {
+  StrategyAllocationPlan,
+  StrategySelection,
+} from "./strategy-combinations";
 import {
   STRATEGIES,
+  getStrategy,
   type StrategyId,
   type StrategyParameters,
 } from "./strategies";
@@ -25,6 +31,7 @@ export interface SaveBacktestInput {
   interval: MarketInterval;
   strategyId: StrategyId;
   parameters: StrategyParameters;
+  plan: StrategyAllocationPlan;
   startDate: string;
   endDate: string;
   initialCash: number;
@@ -39,7 +46,11 @@ export interface SavedBacktestRecord extends SaveBacktestInput {
   updatedAt: string;
 }
 
-const assetTypes = new Set<MarketAssetType>(["index", "etf"]);
+const assetTypes = new Set<MarketAssetType>([
+  "index",
+  "etf",
+  "commodity",
+]);
 const providers = new Set<MarketDataProvider>([
   "eastmoney",
   "yahoo",
@@ -109,23 +120,113 @@ function readParameters(value: unknown): StrategyParameters | null {
   return parameters;
 }
 
+function readStrategySelection(
+  value: unknown,
+  horizon: "long" | "short",
+): StrategySelection | null | undefined {
+  if (value === null) return null;
+  if (!isRecord(value)) return undefined;
+  const strategyId = value.strategyId as StrategyId;
+  const parameters = readParameters(value.parameters);
+  if (
+    !strategyIds.has(strategyId) ||
+    getStrategy(strategyId).horizon !== horizon ||
+    !parameters ||
+    !isValidStrategyParameters(strategyId, parameters)
+  ) {
+    return undefined;
+  }
+  return { strategyId, parameters };
+}
+
+export function buildLegacyStrategyPlan(
+  strategyId: StrategyId,
+  parameters: StrategyParameters,
+): StrategyAllocationPlan {
+  const selection = { strategyId, parameters: { ...parameters } };
+  return {
+    long: getStrategy(strategyId).horizon === "long" ? selection : null,
+    short: getStrategy(strategyId).horizon === "short" ? selection : null,
+    coreAllocation: 1,
+    maximumAllocation: 1,
+  };
+}
+
+export function parseStrategyAllocationPlan(
+  value: unknown,
+): StrategyAllocationPlan | null {
+  if (!isRecord(value)) return null;
+  const long = readStrategySelection(value.long, "long");
+  const short = readStrategySelection(value.short, "short");
+  const coreAllocation = readFiniteNumber(value.coreAllocation, 0, 1);
+  const maximumAllocation = readFiniteNumber(
+    value.maximumAllocation,
+    0,
+    1,
+  );
+  if (
+    long === undefined ||
+    short === undefined ||
+    (!long && !short) ||
+    coreAllocation === null ||
+    maximumAllocation === null ||
+    coreAllocation > maximumAllocation
+  ) {
+    return null;
+  }
+  return {
+    long: long
+      ? { ...long, parameters: { ...long.parameters } }
+      : null,
+    short: short
+      ? { ...short, parameters: { ...short.parameters } }
+      : null,
+    coreAllocation,
+    maximumAllocation,
+  };
+}
+
+function primarySelection(plan: StrategyAllocationPlan): StrategySelection {
+  const selection = plan.long ?? plan.short;
+  if (!selection) {
+    throw new Error("A saved strategy plan requires one strategy");
+  }
+  return selection;
+}
+
 export function createSaveBacktestInput(
   instrument: MarketInstrument,
   interval: MarketInterval,
-  strategyId: StrategyId,
-  parameters: StrategyParameters,
+  plan: StrategyAllocationPlan,
   startDate: string,
   endDate: string,
   initialCash: number,
   commissionPercent: number,
   slippagePercent: number,
-  result: BacktestResult,
+  result: BacktestPerformance,
 ): SaveBacktestInput {
+  const primary = primarySelection(plan);
   return {
     instrument,
     interval,
-    strategyId,
-    parameters: { ...parameters },
+    strategyId: primary.strategyId,
+    parameters: { ...primary.parameters },
+    plan: {
+      long: plan.long
+        ? {
+            ...plan.long,
+            parameters: { ...plan.long.parameters },
+          }
+        : null,
+      short: plan.short
+        ? {
+            ...plan.short,
+            parameters: { ...plan.short.parameters },
+          }
+        : null,
+      coreAllocation: plan.coreAllocation,
+      maximumAllocation: plan.maximumAllocation,
+    },
     startDate,
     endDate,
     initialCash,
@@ -175,6 +276,7 @@ export function parseSaveBacktestInput(
     !intervals.has(interval) ||
     !strategyIds.has(strategyId) ||
     !parameters ||
+    !isValidStrategyParameters(strategyId, parameters) ||
     !startDate ||
     !endDate ||
     !datePattern.test(startDate) ||
@@ -187,6 +289,11 @@ export function parseSaveBacktestInput(
   ) {
     return null;
   }
+  const plan =
+    value.plan === undefined
+      ? buildLegacyStrategyPlan(strategyId, parameters)
+      : parseStrategyAllocationPlan(value.plan);
+  if (!plan) return null;
 
   const totalReturn = readFiniteNumber(value.metrics.totalReturn);
   const maxDrawdown = readFiniteNumber(value.metrics.maxDrawdown);
@@ -216,6 +323,7 @@ export function parseSaveBacktestInput(
     interval,
     strategyId,
     parameters,
+    plan,
     startDate,
     endDate,
     initialCash,

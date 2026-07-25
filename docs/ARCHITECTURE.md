@@ -15,7 +15,7 @@ Windows one-click local runtime
 Browser UI
   -> /api/search and /api/market
   -> cached history plus uncached latest-bar refresh/merge
-  -> index/ETF search filter
+  -> index/ETF/commodity search filter plus deterministic commodity catalog
   -> Eastmoney, Yahoo Finance, and Nasdaq adapters
   -> ordered data-source fallback
   -> normalized MarketSeries
@@ -56,28 +56,31 @@ updates its current snapshot instead of creating duplicates.
 The upper workspace pairs the price chart with saved shortcuts. The lower
 research grid pairs the strategy lab with automated parameter screening.
 
-`MarketWorkspace` owns separate indicator and strategy state. Indicator
+`MarketWorkspace` owns separate indicator and strategy-plan state. Indicator
 controls read defaults and validation metadata from the indicator registry,
 remember one parameter set per indicator for the browser session, and pass the
 active values to `PriceChart`. Strategy changes update the backtest, live
 guidance, and trade markers without replacing the selected indicator.
-`PriceChart` renders the selected study together with the active strategy's
-actual buy/sell fills. Indicator settings are display state and do not change
-the saved-backtest database schema.
+`PriceChart` renders the selected studies together with both selected
+strategies' qualified reference lines and actual trade/allocation markers.
+Indicator settings are display state and do not change the saved-backtest
+database schema.
 
 Single-strategy screening generates constrained parameter grids from the shared
 strategy registry, applies a per-strategy cap, yields between small batches,
 and retains only the highest-scoring result for each strategy. Combination
 screening uses the same candidates and objectives in two bounded stages: keep
 two standalone finalists per strategy, then compare long-horizon finalists
-against short-horizon finalists. This bounds UI blocking and result memory
-without creating a full parameter Cartesian product.
+against short-horizon finalists at six fixed core allocations. This bounds UI
+blocking and result memory without creating a full parameter Cartesian
+product.
 
 Every strategy registry entry declares a stable `long` or `short` horizon.
 These labels describe intended signal duration on daily bars rather than a
-different market interval. A combined target is hierarchical: the long rule
-gates all exposure; when it is active, the short rule selects the configured
-core allocation or full allocation. The allocation backtest applies the prior
+different market interval. A strategy plan may contain either horizon or both.
+A single-horizon target switches between zero and maximum allocation. A dual
+target is hierarchical: the long rule gates all exposure; when it is active,
+the short rule selects core or maximum allocation. The allocation backtest applies the prior
 completed bar's target at the next open, trades only the allocation delta,
 applies costs to each rebalance, and liquidates at the selected range end.
 
@@ -99,7 +102,8 @@ Only overlapping bar times are replaced, and series from different sources are
 never merged. Provider-side latency remains possible.
 
 Eastmoney is the preferred source for search and bars. Yahoo Finance extends
-global symbol discovery and history. Nasdaq is the daily-history fallback for
-supported indexes and ETFs when Yahoo is unavailable. A shorter valid
+global symbol discovery and history and is the only history provider for
+commodity futures quote proxies. Nasdaq is the daily-history fallback for
+supported indexes and ETFs, never commodities, when Yahoo is unavailable. A shorter valid
 Eastmoney series is preserved as the final fallback instead of turning a
 partial upstream response into an empty chart.

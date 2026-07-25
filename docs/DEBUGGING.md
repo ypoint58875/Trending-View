@@ -112,6 +112,27 @@ trade only to make a test pass.
 5. When target values tie, total return, drawdown, Sharpe, and balanced score
    are applied as deterministic tie-breakers in that order.
 
+## Applied combination is not visible on the chart
+
+1. Confirm the result's Apply button restored both selectors and scrolled to
+   the main chart.
+2. Reference lines exist only for strategies with a continuous price
+   reference; a candle/oscillator rule may legitimately add no line.
+3. Confirm the chart legend includes separate long- and short-horizon prefixes.
+4. For a partial/combined plan, inspect allocation increase/reduction markers
+   rather than expecting round-trip trade markers.
+5. Confirm the selected date range has at least one allocation change.
+
+## Commodity search or history is empty
+
+1. Search the exact Yahoo symbol (`GC=F`, `SI=F`, `CL=F`, or `HG=F`) to use the
+   deterministic catalog.
+2. Confirm `/api/search` returns `assetType: commodity` and `provider: yahoo`.
+3. Confirm `/api/market` accepts `commodity` and Yahoo is reachable.
+4. Do not route commodity symbols to Nasdaq; there is intentionally no fallback.
+5. Remember that these are futures quote proxies, not spot or contract-chain
+   records.
+
 ## Saved shortcut bar cannot load
 
 1. For local use, confirm `.wrangler/state` exists and run

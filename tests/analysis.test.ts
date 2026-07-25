@@ -51,9 +51,13 @@ import {
 } from "../lib/analysis/strategies";
 import {
   COMBINATION_FINALISTS_PER_STRATEGY,
+  CORE_ALLOCATION_CANDIDATES,
   MAX_COMBINATION_RESULTS,
+  buildLiveAllocationGuidance,
   buildHierarchicalAllocationTarget,
+  buildStrategyPlanAllocationTarget,
   buildStrategyCombinationTarget,
+  classifyHoldingMode,
   optimizeStrategyCombinations,
 } from "../lib/analysis/strategy-combinations";
 import {
@@ -74,7 +78,14 @@ import {
   buildStrategyOrders,
   buildStrategyPriceLines,
 } from "../lib/analysis/strategy-visuals";
-import { buildTradeMarkers } from "../lib/analysis/trade-markers";
+import {
+  buildAllocationTradeMarkers,
+  buildTradeMarkers,
+} from "../lib/analysis/trade-markers";
+import {
+  COMMODITY_CATALOG,
+  searchCommodityCatalog,
+} from "../lib/market/commodities";
 import {
   parseKlineRow,
   searchEastmoney,
@@ -249,7 +260,7 @@ test("keeps only indexes and ETFs in Eastmoney search results", async () => {
   );
 });
 
-test("keeps only indexes and ETFs in Yahoo search results", async () => {
+test("keeps only indexes, ETFs, and commodity futures in Yahoo search results", async () => {
   const mockFetch = (async () =>
     new Response(
       JSON.stringify({
@@ -272,6 +283,12 @@ test("keeps only indexes and ETFs in Yahoo search results", async () => {
             quoteType: "EQUITY",
             exchange: "NMS",
           },
+          {
+            symbol: "GC=F",
+            longname: "Gold Futures",
+            quoteType: "FUTURE",
+            exchange: "CMX",
+          },
         ],
       }),
       { status: 200 },
@@ -283,8 +300,34 @@ test("keeps only indexes and ETFs in Yahoo search results", async () => {
     [
       ["SOX", "index"],
       ["SPY", "etf"],
+      ["GC=F", "commodity"],
     ],
   );
+});
+
+test("finds deterministic commodity proxies without remote search", () => {
+  assert.deepEqual(
+    COMMODITY_CATALOG.map(({ code, assetType, provider }) => [
+      code,
+      assetType,
+      provider,
+    ]),
+    [
+      ["GC=F", "commodity", "yahoo"],
+      ["SI=F", "commodity", "yahoo"],
+      ["CL=F", "commodity", "yahoo"],
+      ["HG=F", "commodity", "yahoo"],
+    ],
+  );
+  assert.deepEqual(
+    searchCommodityCatalog("silver").map((instrument) => instrument.code),
+    ["SI=F"],
+  );
+  assert.deepEqual(
+    searchCommodityCatalog("GC=F").map((instrument) => instrument.code),
+    ["GC=F"],
+  );
+  assert.deepEqual(searchCommodityCatalog("bank"), []);
 });
 
 test("adjusts daily Yahoo OHLC and derived changes without rescaling volume", () => {
@@ -832,6 +875,79 @@ test("builds a gated flat, core, and full hierarchical allocation target", () =>
   assert.throws(
     () => buildHierarchicalAllocationTarget([1], [1, 0], 0.6),
     /align/i,
+  );
+});
+
+test("builds optional long, optional short, and dual-horizon allocations", () => {
+  assert.deepEqual(
+    buildStrategyPlanAllocationTarget([0, 1, 1], [1, 0, 1], 0.4, 0.8),
+    [0, 0.4, 0.8],
+  );
+  assert.deepEqual(
+    buildStrategyPlanAllocationTarget([0, 1, 1], null, 0.4, 0.8),
+    [0, 0.8, 0.8],
+  );
+  assert.deepEqual(
+    buildStrategyPlanAllocationTarget(null, [0, 1, 0], 0.4, 0.8),
+    [0, 0.8, 0],
+  );
+  assert.throws(
+    () => buildStrategyPlanAllocationTarget(null, null, 0.4, 0.8),
+    /strategy/i,
+  );
+  assert.throws(
+    () => buildStrategyPlanAllocationTarget([1], [1], 0.9, 0.8),
+    /core/i,
+  );
+});
+
+test("classifies who controls the optimized holding allocation", () => {
+  assert.equal(classifyHoldingMode(0), "short-controls");
+  assert.equal(classifyHoldingMode(0.6), "core-tactical");
+  assert.equal(classifyHoldingMode(1), "long-controls");
+});
+
+test("reports current plan allocation and increase, reduce, hold, or wait", () => {
+  const bars = makeOhlcBars([
+    { open: 10, high: 10.5, low: 9.5, close: 10 },
+    { open: 11, high: 12.5, low: 10.8, close: 12 },
+    { open: 12, high: 13.5, low: 11.8, close: 13 },
+    { open: 12, high: 12.2, low: 10.8, close: 11 },
+    { open: 11, high: 11.2, low: 10.8, close: 11 },
+  ]);
+  const shortOnly = {
+    long: null,
+    short: {
+      strategyId: "tv-bar-up-down" as const,
+      parameters: { minimumBodyPercent: 0 },
+    },
+    coreAllocation: 0.6,
+    maximumAllocation: 0.8,
+  };
+
+  assert.deepEqual(
+    buildLiveAllocationGuidance(bars.slice(0, 2), shortOnly),
+    {
+      action: "increase",
+      previousAllocation: 0,
+      targetAllocation: 0.8,
+    },
+  );
+  assert.equal(
+    buildLiveAllocationGuidance(bars.slice(0, 3), shortOnly)?.action,
+    "hold",
+  );
+  assert.deepEqual(
+    buildLiveAllocationGuidance(bars.slice(0, 4), shortOnly),
+    {
+      action: "reduce",
+      previousAllocation: 0.8,
+      targetAllocation: 0,
+    },
+  );
+  assert.equal(
+    buildLiveAllocationGuidance(bars, shortOnly)?.action,
+    "wait",
   );
 });
 
@@ -1529,6 +1645,46 @@ test("marks a final valuation close separately from a strategy sell", () => {
   assert.equal(markers.rangeExits.length, 1);
 });
 
+test("maps allocation increases, reductions, and valuation exits to markers", () => {
+  const markers = buildAllocationTradeMarkers([
+    {
+      time: "2026-01-02",
+      fromAllocation: 0,
+      targetAllocation: 0.6,
+      fillPrice: 101,
+      reason: "strategy",
+    },
+    {
+      time: "2026-01-03",
+      fromAllocation: 0.6,
+      targetAllocation: 1,
+      fillPrice: 103,
+      reason: "strategy",
+    },
+    {
+      time: "2026-01-04",
+      fromAllocation: 1,
+      targetAllocation: 0.6,
+      fillPrice: 99,
+      reason: "strategy",
+    },
+    {
+      time: "2026-01-05",
+      fromAllocation: 0.6,
+      targetAllocation: 0,
+      fillPrice: 98,
+      reason: "range-end",
+    },
+  ]);
+
+  assert.equal(markers.buys.length, 2);
+  assert.equal(markers.sells.length, 1);
+  assert.equal(markers.rangeExits.length, 1);
+  assert.deepEqual(markers.buys.map((marker) => marker.price), [101, 103]);
+  assert.equal(markers.sells[0].price, 99);
+  assert.equal(markers.rangeExits[0].price, 98);
+});
+
 test("optimizes every strategy and sorts best results by score", async () => {
   const bars = makeBars(
     Array.from({ length: 180 }, (_, index) => {
@@ -1604,7 +1760,6 @@ test("optimizes bounded long and short strategy combinations", async () => {
     },
     {
       maxPerStrategy: 1,
-      coreAllocation: 0.6,
       yieldEvery: 16,
       onProgress: (update) => progress.push(update.completed),
     },
@@ -1615,7 +1770,8 @@ test("optimizes bounded long and short strategy combinations", async () => {
     outcome.totalCandidates,
     STRATEGIES.length +
       LONG_HORIZON_STRATEGY_IDS.length *
-        SHORT_HORIZON_STRATEGY_IDS.length,
+        SHORT_HORIZON_STRATEGY_IDS.length *
+        CORE_ALLOCATION_CANDIDATES.length,
   );
   assert.equal(outcome.evaluatedCount, outcome.totalCandidates);
   assert.equal(outcome.failedCount, 0);
@@ -1630,7 +1786,8 @@ test("optimizes bounded long and short strategy combinations", async () => {
   for (const result of outcome.results) {
     assert.equal(getStrategy(result.longStrategyId).horizon, "long");
     assert.equal(getStrategy(result.shortStrategyId).horizon, "short");
-    assert.equal(result.coreAllocation, 0.6);
+    assert.ok(CORE_ALLOCATION_CANDIDATES.includes(result.coreAllocation));
+    assert.equal(result.maximumAllocation, 1);
     assert.equal(result.tradeCount, result.rebalances.length);
   }
   for (let index = 1; index < outcome.results.length; index += 1) {
@@ -2371,6 +2528,15 @@ test("validates saved backtests and rejects unsupported assets", () => {
     interval: "1d",
     strategyId: "sma-cross",
     parameters: { fast: 10, slow: 30 },
+    plan: {
+      long: {
+        strategyId: "sma-cross",
+        parameters: { fast: 10, slow: 30 },
+      },
+      short: null,
+      coreAllocation: 0.6,
+      maximumAllocation: 1,
+    },
     startDate: "2024-01-01",
     endDate: "2025-01-01",
     initialCash: 100_000,
@@ -2386,6 +2552,31 @@ test("validates saved backtests and rejects unsupported assets", () => {
   };
 
   assert.deepEqual(parseSaveBacktestInput(payload), payload);
+  assert.deepEqual(
+    parseSaveBacktestInput({
+      ...payload,
+      instrument: {
+        secid: "GC=F",
+        code: "GC=F",
+        name: "Gold Futures Proxy",
+        exchange: "OTHER",
+        assetType: "commodity",
+        provider: "yahoo",
+      },
+    })?.instrument.assetType,
+    "commodity",
+  );
+  const legacy = { ...payload } as Record<string, unknown>;
+  delete legacy.plan;
+  assert.deepEqual(parseSaveBacktestInput(legacy)?.plan, {
+    long: {
+      strategyId: "sma-cross",
+      parameters: { fast: 10, slow: 30 },
+    },
+    short: null,
+    coreAllocation: 1,
+    maximumAllocation: 1,
+  });
   assert.equal(
     parseSaveBacktestInput({
       ...payload,
@@ -2397,6 +2588,16 @@ test("validates saved backtests and rejects unsupported assets", () => {
     parseSaveBacktestInput({
       ...payload,
       parameters: { fast: Number.NaN, slow: 30 },
+    }),
+    null,
+  );
+  assert.equal(
+    parseSaveBacktestInput({
+      ...payload,
+      plan: {
+        ...payload.plan,
+        coreAllocation: 1.2,
+      },
     }),
     null,
   );

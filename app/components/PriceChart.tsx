@@ -11,7 +11,10 @@ import type {
 } from "echarts";
 import type { MarketBar } from "@/lib/market/types";
 import type { BacktestTrade } from "@/lib/analysis/backtest";
-import { buildTradeMarkers } from "@/lib/analysis/trade-markers";
+import {
+  buildTradeMarkers,
+  type TradeMarkers,
+} from "@/lib/analysis/trade-markers";
 import {
   buildStrategyPriceLines,
   type StrategyPriceLine,
@@ -64,9 +67,16 @@ export interface StrategyLineLabels {
   roles: Record<StrategyPriceLineRole, string>;
 }
 
+export interface ChartStrategyConfiguration {
+  id: StrategyId;
+  parameters: StrategyParameters;
+  lineLabels: StrategyLineLabels;
+}
+
 interface PriceChartProps {
   bars: MarketBar[];
-  trades: BacktestTrade[];
+  trades?: BacktestTrade[];
+  tradeMarkers?: TradeMarkers;
   dataKey: string;
   chartType: "candlestick" | "line";
   visibleIndicators?: readonly ChartIndicatorConfiguration[];
@@ -75,6 +85,7 @@ interface PriceChartProps {
   strategyId?: StrategyId;
   strategyParameters?: StrategyParameters;
   strategyLineLabels?: StrategyLineLabels;
+  strategyConfigurations?: readonly ChartStrategyConfiguration[];
   ariaLabel: string;
   labels: {
     price: string;
@@ -157,7 +168,13 @@ export function buildTradeMarkerSeries(
   labels: TradeMarkerLabels,
 ): SeriesOption[] {
   const tradeMarkers = buildTradeMarkers(trades);
+  return buildTradeMarkerSeriesFromMarkers(tradeMarkers, labels);
+}
 
+export function buildTradeMarkerSeriesFromMarkers(
+  tradeMarkers: TradeMarkers,
+  labels: TradeMarkerLabels,
+): SeriesOption[] {
   return [
     {
       name: labels.buy,
@@ -769,7 +786,8 @@ export function buildPriceDataZoom(
 
 export function PriceChart({
   bars,
-  trades,
+  trades = [],
+  tradeMarkers,
   dataKey,
   chartType,
   visibleIndicators,
@@ -778,6 +796,7 @@ export function PriceChart({
   strategyId,
   strategyParameters,
   strategyLineLabels,
+  strategyConfigurations,
   ariaLabel,
   labels,
 }: PriceChartProps) {
@@ -837,7 +856,12 @@ export function PriceChart({
       } as SeriesOption);
     }
 
-    series.push(...buildTradeMarkerSeries(trades, labels));
+    series.push(
+      ...buildTradeMarkerSeriesFromMarkers(
+        tradeMarkers ?? buildTradeMarkers(trades),
+        labels,
+      ),
+    );
 
     series.push({
       name: labels.volume,
@@ -874,15 +898,26 @@ export function PriceChart({
       );
     }
 
-    if (strategyId && strategyLineLabels) {
+    const configuredStrategies =
+      strategyConfigurations ??
+      (strategyId && strategyLineLabels
+        ? [
+            {
+              id: strategyId,
+              parameters: strategyParameters ?? {},
+              lineLabels: strategyLineLabels,
+            },
+          ]
+        : []);
+    for (const configuredStrategy of configuredStrategies) {
       series.push(
         ...buildStrategyLineSeries(
           buildStrategyPriceLines(
             bars,
-            strategyId,
-            strategyParameters ?? {},
+            configuredStrategy.id,
+            configuredStrategy.parameters,
           ),
-          strategyLineLabels,
+          configuredStrategy.lineLabels,
         ),
       );
     }
@@ -919,8 +954,10 @@ export function PriceChart({
     chartType,
     labels,
     strategyId,
+    strategyConfigurations,
     strategyLineLabels,
     strategyParameters,
+    tradeMarkers,
     trades,
   ]);
 

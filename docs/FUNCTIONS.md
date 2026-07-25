@@ -3,8 +3,12 @@
 ## Market data
 
 - `searchEastmoney(query)`: searches and retains only index/ETF results.
-- `searchYahoo(query)`: extends global index/ETF symbol discovery.
-- `searchMarketAssets(query)`: merges and de-duplicates provider results.
+- `searchYahoo(query)`: extends global index/ETF discovery and maps Yahoo
+  `FUTURE` results to commodity quote proxies.
+- `searchCommodityCatalog(query)`: searches deterministic Yahoo-backed gold,
+  silver, crude-oil, and copper entries without waiting for remote discovery.
+- `searchMarketAssets(query)`: merges the commodity catalog and provider
+  results, then de-duplicates normalized instruments.
 - `fetchEastmoneySeries(instrument, interval, limit)`: fetches and normalizes
   OHLCV bars with `fqt=1` and marks the result corporate-action adjusted.
 - `fetchYahooSeries(instrument, interval, limit)`: fetches global chart history.
@@ -145,8 +149,18 @@
   only the long rule is active, and 1 when both rules are active.
 - `buildStrategyCombinationTarget(...)`: validates long/short registry roles
   and builds the hierarchical target for one explicit pair.
+- `buildStrategyPlanAllocationTarget(...)`: builds dual-, long-only, or
+  short-only zero/core/maximum allocation targets with strict bounds.
+- `buildStrategyPlanTarget(...)`: validates optional registry roles and builds
+  a complete plan target from market bars.
+- `buildLiveAllocationGuidance(...)`: reports the newest previous/target
+  allocation and increase, reduce, hold, or wait action.
+- `classifyHoldingMode(...)`: labels zero, intermediate, and full core
+  allocations as short-controlled, core-plus-tactical, or long-controlled.
 - `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
   strategy exit to a sell marker while separating range-end valuation exits.
+- `buildAllocationTradeMarkers(rebalances)`: maps allocation increases,
+  reductions, and range-end liquidations to the same chart-marker contract.
 - `buildScreeningCandidates(maxPerStrategy, horizons)`: expands the constrained
   parameter spaces for the requested strategy horizons, includes each default
   parameter set, and deterministically samples any space above the 2,500 hard
@@ -159,9 +173,9 @@
   progress, keeps only the best result for each strategy under the selected
   objective, and sorts those best results by the same objective.
 - `optimizeStrategyCombinations(...)`: screens standalone candidates, retains
-  two finalists per strategy, evaluates every retained long/short pair through
-  the allocation backtest, reports both progress stages, and retains the best
-  32 combinations under the selected objective.
+  two finalists per strategy, evaluates every retained long/short pair at the
+  fixed 0/20/40/60/80/100-percent core ladder, reports both progress stages,
+  and retains the best 32 combinations under the selected objective.
 
 Historical price bars, indicators, strategy lines, live guidance, stability,
 and backtests all receive the same normalized `MarketBar[]` from the active
@@ -169,9 +183,14 @@ and backtests all receive the same normalized `MarketBar[]` from the active
 
 ## Saved backtests
 
-- `createSaveBacktestInput(...)`: creates a compact current-backtest snapshot.
-- `parseSaveBacktestInput(...)`: validates index/ETF identity, strategy,
-  parameters, date range, costs, and metrics at the API boundary.
+- `createSaveBacktestInput(...)`: creates a compact current-backtest snapshot
+  with the complete strategy plan and legacy primary strategy columns.
+- `parseStrategyAllocationPlan(...)`: validates optional long/short roles,
+  exact parameters, and core/maximum allocation bounds.
+- `buildLegacyStrategyPlan(...)`: derives a full-allocation single-horizon plan
+  for rows saved before strategy-plan JSON existed.
+- `parseSaveBacktestInput(...)`: validates index/ETF/commodity identity,
+  strategy plan, date range, costs, and metrics at the API boundary.
 - `GET /api/saved-backtests`: lists up to 20 current-user shortcuts.
 - `POST /api/saved-backtests`: inserts or updates the current user's latest
   snapshot for an instrument.

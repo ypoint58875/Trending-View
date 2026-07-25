@@ -53,6 +53,8 @@ history and does not combine providers.
   all-adjusted parsed series. After limiting bars, previous close becomes the
   immediately preceding normalized bar when available.
 - Keeps intraday output raw and never rescales volume.
+- Accepts `FUTURE` instruments as commodity quote proxies and uses the same
+  daily normalization. Commodity instruments remain Yahoo-only.
 
 ### Nasdaq
 
@@ -73,7 +75,8 @@ synthetic total-return ledger.
 - Eastmoney is preferred for Eastmoney instruments.
 - An Eastmoney daily index series with fewer than 60 bars can trigger an
   attempt to obtain longer Yahoo history.
-- Yahoo instruments fall back to Nasdaq only for daily data.
+- Yahoo index/ETF instruments fall back to Nasdaq only for daily data.
+- Yahoo commodity instruments never fall back to Nasdaq.
 - When Yahoo and Nasdaq fail, a valid shorter Eastmoney result is retained.
 - Bars from different sources or price-adjustment modes are never merged.
 

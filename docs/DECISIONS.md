@@ -175,16 +175,33 @@ The label describes intended signal duration while all current analysis remains
 daily-only. Do not infer the label from tuned parameters or observed holding
 period because either would make the taxonomy asset- and sample-dependent.
 
-Combine horizons as a gate and overlay, not as equal votes. A flat long target
-always produces zero allocation. An active long target produces the
-user-configured core allocation when the short target is flat and full planned
-allocation when the short target is active. Default core allocation is 60%;
-the user may set 30% through 90%, and the optimizer does not tune it.
+Combine horizons as a gate and overlay, not as equal votes. A plan may omit
+either horizon. One selected horizon switches between zero and maximum
+allocation. With both selected, a flat long target produces zero, an active
+long/flat-short target produces core allocation, and both active targets
+produce maximum allocation. Default lab values are 60% core and 100% maximum.
 
 Avoid the full parameter Cartesian product. First retain the best two
 standalone parameter sets for every strategy under the selected shared
-objective, then evaluate the retained long-by-short product. Keep progress and
-cancellation interruptible and retain only the best 32 pair results. Combined
+objective, then evaluate the retained long-by-short product at 0%, 20%, 40%,
+60%, 80%, and 100% core allocation with 100% maximum. Keep progress and
+cancellation interruptible and retain only the best 32 results. Label zero as
+short-controlled, one as long-controlled, and intermediate allocations as
+core-plus-tactical. Applying a result restores the complete plan and projects
+both reference sets and allocation markers to the main chart. Combined
 close-derived targets rebalance at the following open with commission and
-slippage; they do not inherit the component strategies' intrabar stop-fill
-contracts.
+slippage; they do not inherit component intrabar stop-fill contracts. A single
+strategy at full allocation retains the existing hybrid engine.
+
+## D-015: Commodity futures quote proxies
+
+Add `commodity` to normalized asset types while continuing to reject individual
+equities. Accept Yahoo `FUTURE` search results and keep a deterministic catalog
+for gold (`GC=F`), silver (`SI=F`), crude oil (`CL=F`), and copper (`HG=F`).
+Use Yahoo as the only history source for these symbols and do not pass them to
+the Nasdaq fallback.
+
+Treat these as continuous quote-page research proxies, not a futures execution
+ledger. Do not model a contract chain, roll rule, back-adjustment method,
+multiplier, margin, expiry, delivery, or leverage. Disclose that boundary in
+the UI and documentation.

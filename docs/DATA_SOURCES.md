@@ -4,7 +4,7 @@
 
 - Search endpoint: `https://searchapi.eastmoney.com/api/suggest/get`
 - Kline endpoint: `https://push2his.eastmoney.com/api/qt/stock/kline/get`
-- Accessed: 2026-07-23
+- Accessed: 2026-07-25
 - Current parameters: symbol `secid`; `klt` in 1, 5, 15, 30, 60, or 101;
   forward adjustment `fqt=1`; selected OHLCV fields; bounded result limit.
 - Raw sample: `data/raw/eastmoney_n225_daily_sample.json`
@@ -34,8 +34,12 @@ feed.
   `no-store`. The newest returned bar may still reflect Yahoo's own publication
   delay.
 
-Yahoo expands global index/ETF discovery and history. The adapter retries the
-equivalent query2 host, but regional HTTP 403 responses remain possible.
+Yahoo expands global index/ETF discovery and history and accepts `FUTURE`
+search results as commodity quote proxies. A deterministic catalog exposes
+gold (`GC=F`), silver (`SI=F`), crude oil (`CL=F`), and copper (`HG=F`).
+Live read-only checks on 2026-07-25 returned 1,260 five-year daily bars plus
+adjusted-close arrays for all four symbols. The adapter retries the equivalent
+query2 host, but regional HTTP 403 responses remain possible.
 
 For daily output, each parsed OHLC bar is scaled by a finite positive
 `adjclose / raw close`. If a factor is missing, zero, non-finite, or otherwise
@@ -47,6 +51,11 @@ by the first accepted bar factor. When a fetch limit slices normalized bars,
 `previousClose` becomes the immediately preceding normalized close when one is
 available. Raw and mixed fallback keep provider previous close on the raw
 scale.
+
+Commodity symbols use Yahoo only; Nasdaq fallback is skipped. The returned
+continuous quote-page series does not provide a complete contract-chain or
+roll-accounting model. QuantScope does not model roll schedules,
+back-adjustment rules, multipliers, margin, expiry, delivery, or leverage.
 
 ## Nasdaq website historical data
 
@@ -72,8 +81,9 @@ diagnostic, and backtests.
 For ETFs, an adjusted source reduces mechanical distribution/split gaps. For
 indexes, the provider symbol and methodology determine whether the source is a
 price index or a total-return index; the adjustment layer does not convert
-between them. QuantScope does not ingest constituent operating-company events
-or fundamentals. Neither path is separate cash-distribution accounting, a
+between them. Commodity history is a futures quote proxy with the limitations
+above. QuantScope does not ingest constituent operating-company events or
+fundamentals. None of these paths is separate cash-distribution accounting, a
 cash-yield calculation, reinvestment, or multi-asset alignment.
 
 ## Reproducibility

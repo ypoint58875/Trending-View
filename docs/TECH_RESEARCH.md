@@ -121,8 +121,8 @@ Source:
 
 This is the richer ETF accounting approach, but it requires event histories,
 cash-ledger rules, and provider-consistent instrument mapping that the current
-manual index/ETF chart workspace does not have. Operating-company fundamentals
-and events are outside the product's index/ETF-only scope.
+manual index/ETF/commodity chart workspace does not have. Operating-company
+fundamentals and events remain outside the product scope.
 
 #### Option B: one adjusted price series
 
@@ -428,3 +428,126 @@ Decision: use D1 because saved backtests are user data expected to survive
 sessions and devices. Scope every list, upsert, and delete by authenticated
 email. Retain one latest snapshot per owner and instrument so the shortcut bar
 stays compact.
+
+## Position-aware strategy plans and commodity proxies
+
+Research date: 2026-07-25.
+
+### Position optimization
+
+#### Option A: bounded discrete allocation ladder
+
+Treat allocation as another explicit strategy parameter and evaluate a small
+deterministic ladder. Backtesting.py documents fractional order size between
+zero and one as a fraction of available liquidity. Its optimizer supports
+exhaustive grid search, admissibility constraints, and an absolute evaluation
+limit. These semantics match QuantScope's existing bounded browser optimizer
+and next-open allocation engine.
+
+Sources:
+
+- https://kernc.github.io/backtesting.py/doc/backtesting/backtesting.html
+- https://kernc.github.io/backtesting.py/doc/examples/Parameter%20Heatmap%20%26%20Optimization.html
+
+Advantages:
+
+- Each result has an immediately executable manual allocation.
+- The search is deterministic and the extra evaluation count is known.
+- Endpoints have clear meanings: zero core allocation means short-horizon
+  timing controls flat/full exposure, while 100% core allocation means the
+  long-horizon rule controls exposure and the short rule does not reduce it.
+
+Trade-off: a coarse ladder can miss an in-sample optimum between steps.
+
+#### Option B: continuous or model-based allocation search
+
+Optuna supports categorical and stepped floating-point suggestions and could
+search a finer allocation range without exhaustively evaluating every point.
+This is useful for expensive or high-dimensional studies, but it adds sampling
+behavior and false precision to a manual workflow whose user can only rebalance
+approximately.
+
+Source:
+
+- https://optuna.readthedocs.io/en/stable/reference/generated/optuna.trial.Trial.html
+
+Decision: use Option A with core-allocation candidates
+`0%, 20%, 40%, 60%, 80%, 100%`. Keep maximum planned allocation fixed at 100%
+inside one-click combination screening. The strategy lab separately allows the
+user to reduce maximum allocation. Do not optimize maximum allocation because,
+without an explicit cash return or risk budget, scaling positive exposure
+mostly scales the same return path and does not answer the long-versus-short
+control question.
+
+### Commodity market representation
+
+#### Option A: exchange-traded commodity trusts and funds
+
+GLD states that its shares seek to reflect gold bullion less expenses and
+trade on NYSE Arca. SLV states that it seeks to track silver bullion and offers
+exchange-traded exposure without directly purchasing physical silver. These
+products already fit QuantScope's ETF path, adjustment rules, and manual
+trade-price interpretation.
+
+Sources:
+
+- https://www.ssga.com/us/en/individual/etfs/spdr-gold-shares-gld
+- https://www.ishares.com/us/products/239855/ishares-silver-trust-fund
+
+Advantages:
+
+- Directly tradable through an ordinary securities account.
+- Existing adjusted-price and ETF search behavior remains applicable.
+
+Trade-offs:
+
+- Trust expenses, tracking differences, market hours, and premiums or
+  discounts mean the chart is not the commodity itself.
+
+#### Option B: commodity futures quote proxies
+
+CME identifies GC as its benchmark gold futures contract and describes
+standardized exchange-traded futures. On 2026-07-25, the existing Yahoo website
+search returned `GC=F`, `SI=F`, `CL=F`, and `HG=F` as `FUTURE` quotes; its chart
+endpoint returned 1,260 daily observations for each requested five-year
+window. This reuses the current Yahoo adapter without adding credentials or a
+fourth upstream.
+
+Sources:
+
+- https://www.cmegroup.com/markets/metals/precious/gold.contractSpecs.html
+- https://query1.finance.yahoo.com/v1/finance/search
+- https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF
+
+Advantages:
+
+- A direct commodity-linked price proxy rather than a fund wrapper.
+- Gold, silver, crude oil, and copper can share the normalized daily OHLCV
+  pipeline.
+
+Trade-offs:
+
+- The public Yahoo website endpoint has no supported data SLA.
+- QuantScope does not receive a documented continuous-contract methodology.
+- The current cash-allocation backtest does not model contract multipliers,
+  margin, expiry, delivery, or roll yield and must not be presented as a real
+  futures-account simulation.
+
+Decision: support both paths. Preserve GLD, SLV, and other accepted
+exchange-traded products as ETFs. Add `commodity` as an asset type for Yahoo
+`FUTURE` results plus a deterministic catalog for `GC=F`, `SI=F`, `CL=F`, and
+`HG=F`. Label these records as commodity futures quote proxies and keep their
+series-level adjustment metadata authoritative. Do not add spot-price claims,
+contract accounting, leverage, or futures margin.
+
+### Commodity discovery
+
+Relying only on remote Yahoo search is small but can return similarly named
+equities before the desired futures symbol. A local catalog alone is stable
+but would hide other valid Yahoo commodity futures.
+
+Decision: merge both. Search the deterministic commodity catalog first, accept
+remote Yahoo `FUTURE` results as `commodity`, de-duplicate through the existing
+instrument key, and keep the current equity rejection. Chinese aliases remain
+localized UI copy and are canonicalized to English search terms before calling
+the search API.

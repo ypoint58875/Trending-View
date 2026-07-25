@@ -1,5 +1,10 @@
 # Hierarchical Strategy Screening Design
 
+> Superseded in part by
+> `2026-07-25-strategy-plan-and-commodities-design.md`. The current combination
+> optimizer evaluates a bounded core-allocation ladder and every result exposes
+> its holding mode plus an Apply action.
+
 ## Goal
 
 Classify every registered QuantScope strategy by its intended holding horizon
@@ -29,10 +34,11 @@ The combined target is hierarchical rather than a vote:
 | Long | Long | 100% |
 
 The allocation percentage is relative to the user's planned strategy capital.
-It is configurable in the combination panel but is not optimized. A target
-calculated after a completed daily bar executes at the next bar open. The
-combined workflow does not use intrabar order fills because its input is the
-completed-bar state of two different strategy contracts.
+This original design made it configurable but did not optimize it; the
+superseding design evaluates a fixed ladder. A target calculated after a
+completed daily bar executes at the next bar open. The combined workflow does
+not use intrabar order fills because its input is the completed-bar state of
+two different strategy contracts.
 
 ## Research Summary
 

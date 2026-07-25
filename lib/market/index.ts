@@ -6,6 +6,7 @@ import type {
   MarketSeries,
 } from "./types";
 import { fetchYahooSeries, searchYahoo } from "./yahoo";
+import { searchCommodityCatalog } from "./commodities";
 
 function instrumentKey(instrument: MarketInstrument) {
   return `${instrument.assetType}:${instrument.code
@@ -24,6 +25,7 @@ export async function searchMarketAssets(
   const candidates = responses.flatMap((response) =>
     response.status === "fulfilled" ? response.value : [],
   );
+  candidates.unshift(...searchCommodityCatalog(query));
   const unique = new Map<string, MarketInstrument>();
   candidates.forEach((instrument) => {
     const key = instrumentKey(instrument);
@@ -84,7 +86,7 @@ export async function fetchMarketSeries(
         requestCache,
       );
     } catch (error) {
-      if (interval === "1d") {
+      if (interval === "1d" && instrument.assetType !== "commodity") {
         return fetchNasdaqDailySeries(
           instrument,
           limit,
