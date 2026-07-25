@@ -1,5 +1,9 @@
 # Strategy Plan and Commodity Support Design
 
+> The allocation model is superseded by
+> `2026-07-25-two-layer-positioning-design.md`. Commodity support and saved
+> JSON compatibility remain current.
+
 ## Goal
 
 Turn hierarchical screening results into directly applicable strategy-lab

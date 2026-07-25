@@ -45,12 +45,13 @@ trades or run unattended jobs.
   The strategy selector and screening results expose the intended signal
   horizon; both groups still operate on the same daily bars.
 - Date-range backtests with initial cash, commission, and slippage settings.
-- Long-only execution with next-bar-open fills for close signals and intrabar
-  stop fills for predefined breakout prices, including gap-aware pricing.
+- Long-only manual-history execution in which every displayed buy, sell, add,
+  or reduce signal trades at the following daily open.
 - Chart-level buy/sell markers derived from the active backtest's actual fills.
 - Per-user saved backtests with a right-side shortcut bar that restores the
   instrument, complete optional long/short strategy plan, both parameter sets,
-  core/maximum allocations, date range, and cost settings. The
+  long-layer A and short-layer B allocations, date range, and cost settings.
+  The shortcut bar contains the Save current strategy action. The
   workspace interval remains daily. Legacy non-daily records keep their stored
   interval label and disclose that opening them recalculates on daily bars.
 - A nearby-parameter stability diagnostic that changes one parameter at a time
@@ -66,15 +67,15 @@ trades or run unattended jobs.
 - Chunked screening progress and cancellation, retaining only the best
   parameter set for each strategy.
 - A two-selector strategy lab where either the long- or short-horizon rule can
-  be omitted. Long-only and short-only plans switch between zero and maximum
-  allocation. A dual plan uses zero outside the long trend, core allocation
-  when only the long rule is active, and maximum allocation when both rules
-  are active.
+  be omitted. A long-only plan switches between zero and A; a short-only plan
+  switches between zero and B. A dual plan uses zero outside the long trend,
+  A when only the long rule is active, and A+B when both rules are active.
 - A separate bounded long/short combination screen. It first retains two
   standalone parameter finalists per strategy, then compares hierarchical
-  pairs across a fixed 0%, 20%, 40%, 60%, 80%, and 100% core-allocation
-  ladder. Every ranked result explains its holding mode and can be applied
-  directly to the strategy lab.
+  pairs across ten positive A/B choices in 20% steps, with A+B no greater than
+  100%. The combination screen has its own optimization objective and
+  per-strategy parameter cap. Every ranked result displays A and B and can be
+  applied directly to the strategy lab and trend chart.
 
 ## Run locally
 
@@ -141,15 +142,17 @@ disabled for commodity instruments.
 
 Backtests are research simulations. They do not model every venue rule,
 tracking error, tax, suspension, lot constraint, corporate action, or real
-order-book liquidity. Intrabar stop fills use chart OHLC rather than tick data.
+order-book liquidity. Historical signals use following-open prices rather than
+claiming an exact closing auction or intrabar fill.
 Index backtests are price proxies and do not represent a directly tradable
 instrument. Volume-based studies are unavailable or uninformative when an
 index source does not publish volume.
 
 The current strategy guidance intentionally evaluates the newest provider
 daily bar, which may still be unfinished. It can therefore change again before
-the bar closes. The historical backtest keeps its separate no-look-ahead
-execution rules.
+the bar closes. Its label points to the current day's tail session before
+15:00 Asia/Shanghai and the next trading-day open at or after 15:00. The
+historical backtest always keeps its separate following-open execution rules.
 
 The stability label is descriptive, not predictive. Invalid parameters do not
 run a stability backtest. Evidence requires at least 120 daily observations
@@ -162,20 +165,28 @@ Regimes use the current close versus a 60-day SMA and the SMA's 20-bar slope,
 retaining earlier bars for causal warm-up. These checks do not replace
 out-of-sample or walk-forward validation.
 
-Combination screening is also an in-sample comparison. It evaluates the fixed
-six-value core-allocation ladder rather than fitting a continuous percentage.
+Combination screening is also an in-sample comparison. It evaluates ten fixed
+two-layer A/B choices rather than fitting continuous percentages. A long buy
+adds A, a short buy adds B, a short sell removes B, and a long sell clears the
+position. Every holding choice is replayed through the allocation backtest, so
+exposure, commission, slippage, return, drawdown, and Sharpe affect its rank.
 The bounded two-stage search reduces computation and parameter mining without
-eliminating overfitting. Combined or partial-allocation close-derived changes
-execute at the following daily open; the workflow does not combine intrabar
-stop fills from two strategies. A single strategy at 100% maximum allocation
-retains its original hybrid execution contract.
+eliminating overfitting. All historical changes execute at the following daily
+open. A single strategy at 100% allocation uses the same manual-history
+execution policy.
+
+The live guidance label uses an `Asia/Shanghai` 15:00 cutoff. Before 15:00 it
+shows that the current dynamic signal may be acted on near the same-day close;
+at or after 15:00 it points to the next trading-day open. This clock label does
+not change historical backtest execution.
 
 TradingView is a product reference only. This project does not redistribute the
 TradingView Advanced Charts library or copy protected Pine scripts. The
 built-in strategy implementations are transparent, independently written
 long-only equivalents. Negative or short signals from an original template
-close an existing long position instead of opening a short position. Five
-price-triggered templates use completed-bar stop orders with gap-aware fills.
-Strategies whose originals depend on pyramiding, multi-order brackets, Bar
-Magnifier data, or TradingView's private Technical Ratings engine are not
-claimed to be execution-identical.
+close an existing long position instead of opening a short position. Internal
+price-order references remain available for line calculations and engine
+tests, but the current manual-history workspace converts every strategy to a
+following-open target execution policy. Strategies whose originals depend on
+pyramiding, multi-order brackets, Bar Magnifier data, or TradingView's private
+Technical Ratings engine are not claimed to be execution-identical.

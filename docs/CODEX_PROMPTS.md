@@ -19,5 +19,6 @@ Use these context-restoration prompts in later tasks.
 
 > Read FUNCTIONS.md and DECISIONS.md. Preserve the hybrid execution contract:
 > close-derived targets fill at the next open, while predefined price orders
-> may fill inside the following bar. Update metrics, tests, UI disclosure, and
-> FEATURE_MAP.md together.
+> may fill inside the following bar. The current manual-history UI explicitly
+> selects the target-only next-open policy for every strategy. Update metrics,
+> tests, UI disclosure, and FEATURE_MAP.md together.

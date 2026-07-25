@@ -2,6 +2,22 @@
 
 ## 2026-07-25
 
+- Moved Save current strategy into the shortcut panel and removed the
+  duplicate lower-lab action.
+- Renamed one-click screening to one-click single strategy and gave
+  combination screening an independent optimization objective and
+  per-strategy parameter cap.
+- Replaced core/maximum/tactical holding terminology with explicit long layer
+  A and short layer B. A long buy establishes A, a short buy adds B, a short
+  sell removes B, and a long sell clears the position.
+- Changed combination holding search to ten positive 20%-step A/B choices and
+  replayed every choice through the next-open allocation backtest before
+  ranking.
+- Added backward-compatible conversion from saved core/maximum JSON to A/B and
+  a live `Asia/Shanghai` 15:00 execution label without changing historical
+  following-open fills.
+- Selected following-open target execution for every user-facing historical
+  strategy, including rules that retain internal price-order references.
 - Added optional long- and short-horizon strategy selectors with independent
   parameters plus core and maximum allocation inputs. Long-only, short-only,
   and hierarchical dual plans share one validated allocation model.

@@ -33,7 +33,7 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /<title>QuantScope \| Market Strategy Lab<\/title>/i);
   assert.match(html, /QuantScope/);
   assert.match(html, /\u91cf\u5316\u7b56\u7565\u7814\u7a76\u53f0/);
-  assert.match(html, /\u4e00\u952e\u7b5b\u9009/);
+  assert.match(html, /\u4e00\u952e\u5355\u4e00\u7b56\u7565/);
   assert.match(html, /\u7b56\u7565\u5b9e\u9a8c\u5ba4/);
   assert.match(html, /\u6307\u6807\u8bbe\u7f6e/);
   assert.match(html, /\u6062\u590d\u9ed8\u8ba4/);
@@ -122,7 +122,7 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u7ea2\u8272\uff1a\u4e0b\u8dcc/);
   assert.match(html, /\u6bcf 60 \u79d2\u81ea\u52a8\u5237\u65b0/);
   assert.match(html, /\u56de\u6d4b\u5feb\u6377\u680f/);
-  assert.match(html, />\u4fdd\u5b58</);
+  assert.match(html, />\u4fdd\u5b58\u5f53\u524d\u7b56\u7565</);
   assert.match(html, /\u65e5\u7ecf 225/);
   assert.match(
     html,
@@ -141,21 +141,23 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, />\u4e0d\u4f7f\u7528\u957f\u5468\u671f\u7b56\u7565</);
   assert.match(html, />\u4e0d\u4f7f\u7528\u77ed\u5468\u671f\u7b56\u7565</);
   assert.match(html, /\u4e00\u952e\u7ec4\u5408\u7b56\u7565/);
-  assert.match(html, /\u957f\u5468\u671f\u5bfb\u627e\u4e0a\u884c\u901a\u9053/);
-  assert.match(html, /\u77ed\u5468\u671f\u8bc6\u522b\u901a\u9053\u5185\u5c0f\u8d8b\u52bf/);
-  assert.match(html, /\u6838\u5fc3\u4ed3\u4f4d/);
-  assert.match(html, /\u6700\u5927\u4ed3\u4f4d/);
-  assert.match(html, /name="core-allocation"/);
-  assert.match(html, /name="maximum-allocation"/);
+  assert.match(html, /\u957f\u5468\u671f\u4e70\u70b9\u5efa\u7acb A%/);
+  assert.match(html, /\u77ed\u5468\u671f\u4e70\u70b9\u589e\u52a0 B%/);
+  assert.match(html, /\u957f\u5468\u671f\u4ed3\u4f4d A/);
+  assert.match(html, /\u77ed\u5468\u671f\u52a0\u4ed3 B/);
+  assert.match(html, /name="long-allocation"/);
+  assert.match(html, /name="short-allocation"/);
   assert.match(html, /value="60"/);
-  assert.match(html, /value="100"/);
-  assert.match(html, /\u6301\u4ed3\u6a21\u5f0f/);
+  assert.match(html, /value="40"/);
+  assert.match(html, /name="combination-screening-objective"/);
+  assert.match(html, /name="combination-max-parameter-sets"/);
+  assert.doesNotMatch(html, /\u673a\u52a8\u4ed3/);
   assert.match(html, />\u5e94\u7528</);
   assert.match(html, /\u9ec4\u91d1/);
   assert.match(html, /\u767d\u94f6/);
   assert.match(html, /\u5927\u5b97\u5546\u54c1/);
   assert.ok(
-    html.indexOf("\u4e00\u952e\u7b5b\u9009") <
+    html.indexOf("\u4e00\u952e\u5355\u4e00\u7b56\u7565") <
       html.indexOf("\u4e00\u952e\u7ec4\u5408\u7b56\u7565"),
   );
   assert.ok(
@@ -206,6 +208,10 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /applyCombinationResult/);
   assert.match(workspace, /buildStrategyPlanAllocationTarget|buildStrategyPlanTarget/);
   assert.match(workspace, /buildAllocationTradeMarkers/);
+  assert.match(workspace, /combinationScreeningObjective/);
+  assert.match(workspace, /combinationMaxParameterSets/);
+  assert.match(workspace, /className="saved-shortcuts-save"/);
+  assert.match(workspace, /HISTORICAL_EXECUTION_POLICY/);
 
   assert.match(locale, /insufficientEvidence:\s*"证据不足"/);
   assert.match(locale, /invalidParameters:\s*"当前策略参数无效/);

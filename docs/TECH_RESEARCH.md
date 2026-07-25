@@ -433,6 +433,10 @@ stays compact.
 
 Research date: 2026-07-25.
 
+The allocation representation in this section records the first implemented
+core/maximum model. The later **Explicit two-layer position sizing** decision
+supersedes that allocation shape while retaining the commodity conclusions.
+
 ### Position optimization
 
 #### Option A: bounded discrete allocation ladder
@@ -551,3 +555,66 @@ remote Yahoo `FUTURE` results as `commodity`, de-duplicate through the existing
 instrument key, and keep the current equity rejection. Chinese aliases remain
 localized UI copy and are canonicalized to English search terms before calling
 the search API.
+
+## Explicit two-layer position sizing
+
+Design review date: 2026-07-25.
+
+The requested holding rule has four transitions: the long-horizon buy signal
+establishes allocation A, the short-horizon buy signal adds allocation B, the
+short-horizon sell signal removes B, and the long-horizon sell signal clears
+the complete position. Two representations were compared.
+
+### Option A: store two target levels
+
+The existing plan stores a core target and a maximum target. Allocation B is
+implicit as `maximum - core`. This is mathematically sufficient, but it makes
+the second buy look like an abstract maximum rather than an independently
+chosen layer and encourages legacy sleeve terminology.
+
+### Option B: store two explicit sleeves
+
+Store `longAllocation` as A and `shortAllocation` as B. The combined target is
+zero outside the long gate, A when only the long signal is active, and A+B
+when both signals are active. This produces the same deterministic target
+series while making every user action and saved value directly auditable.
+
+Decision: use Option B. Validate both values in `[0, 1]` and require their sum
+not to exceed one. For combination screening, evaluate positive 20% steps for
+both A and B and retain only pairs whose sum is at most 100%. This yields ten
+bounded two-layer choices and avoids false percentage precision in a manual
+rebalancing workflow. The strategy lab still permits zero for either layer so
+one selected horizon can be tested independently.
+
+Position sizing must be evaluated inside every combination backtest rather
+than applied after ranking. Allocation changes alter exposure, commission,
+slippage, equity, drawdown, and Sharpe, so the selected optimization objective
+cannot be calculated correctly without replaying the A/B target series through
+the allocation engine.
+
+Two historical execution choices were compared:
+
+1. prior completed-bar signal at the next open, which is conservative and
+   avoids using the completed close as both signal and fill;
+2. current dynamic daily signal at the same-day close, which approximates a
+   manual tail-session rebalance but can differ from the final official signal.
+
+Decision: all historical close-derived buy, sell, add, and reduce signals
+execute at the following bar's open. This is the stable no-look-ahead contract
+for the strategy lab, single screening, combination screening, and stability
+diagnostics. The manual historical product also evaluates strategies with
+predefined price references through their close-derived target and the
+following open. The engine retains its tested intrabar price-order capability
+for reference compatibility, but that policy is not selected by the current
+workspace.
+
+Only the live action label is time-sensitive. Using `Asia/Shanghai`
+explicitly, times before 15:00 show that the current dynamic signal may still
+be acted on near the same-day close; 15:00 or later show next-trading-day open
+execution. The label does not attempt to infer weekends or exchange holidays,
+and it does not change historical metrics.
+
+Saved JSON uses the explicit A/B fields. Existing plan JSON remains readable
+by converting `coreAllocation` to A and
+`maximumAllocation - coreAllocation` to B. No D1 table migration is required
+because the plan is already stored in a nullable JSON column.

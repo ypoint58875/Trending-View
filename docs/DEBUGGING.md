@@ -116,12 +116,23 @@ trade only to make a test pass.
 
 1. Confirm the result's Apply button restored both selectors and scrolled to
    the main chart.
-2. Reference lines exist only for strategies with a continuous price
+2. Confirm the result's A and B values match the two strategy-lab allocation
+   inputs and their sum is no greater than 100%.
+3. Reference lines exist only for strategies with a continuous price
    reference; a candle/oscillator rule may legitimately add no line.
-3. Confirm the chart legend includes separate long- and short-horizon prefixes.
-4. For a partial/combined plan, inspect allocation increase/reduction markers
+4. Confirm the chart legend includes separate long- and short-horizon prefixes.
+5. For a partial/combined plan, inspect allocation increase/reduction markers
    rather than expecting round-trip trade markers.
-5. Confirm the selected date range has at least one allocation change.
+6. Confirm the selected date range has at least one allocation change.
+
+## Live execution label looks wrong
+
+1. The cutoff uses `Asia/Shanghai`, not the browser's configured timezone.
+2. Before 15:00 the live card points to the current day's tail session; at or
+   after 15:00 it points to the next trading day's open.
+3. The label does not infer weekends or market holidays.
+4. Historical buy, sell, add, and reduce markers always use the following
+   trading bar, regardless of the live clock label.
 
 ## Commodity search or history is empty
 
@@ -144,6 +155,8 @@ trade only to make a test pass.
 5. Inspect `/api/saved-backtests` for `AUTH_REQUIRED`,
    `INVALID_PAYLOAD`, or `PERSISTENCE_UNAVAILABLE`.
 6. Do not fall back to browser storage for failed durable writes.
+7. Existing core/maximum plan JSON should be converted to A/B when read; a
+   failure here indicates invalid stored JSON rather than a missing migration.
 
 ## Commands
 

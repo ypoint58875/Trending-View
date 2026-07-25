@@ -69,20 +69,21 @@ database schema.
 Single-strategy screening generates constrained parameter grids from the shared
 strategy registry, applies a per-strategy cap, yields between small batches,
 and retains only the highest-scoring result for each strategy. Combination
-screening uses the same candidates and objectives in two bounded stages: keep
-two standalone finalists per strategy, then compare long-horizon finalists
-against short-horizon finalists at six fixed core allocations. This bounds UI
-blocking and result memory without creating a full parameter Cartesian
-product.
+screening has an independent objective and per-strategy cap while reusing the
+same candidate and comparison contracts in two bounded stages: keep two
+standalone finalists per strategy, then compare long-horizon finalists against
+short-horizon finalists at ten fixed A/B choices. This bounds UI blocking and
+result memory without creating a full parameter Cartesian product.
 
 Every strategy registry entry declares a stable `long` or `short` horizon.
 These labels describe intended signal duration on daily bars rather than a
 different market interval. A strategy plan may contain either horizon or both.
-A single-horizon target switches between zero and maximum allocation. A dual
-target is hierarchical: the long rule gates all exposure; when it is active,
-the short rule selects core or maximum allocation. The allocation backtest applies the prior
-completed bar's target at the next open, trades only the allocation delta,
-applies costs to each rebalance, and liquidates at the selected range end.
+A long-only target switches between zero and A; a short-only target switches
+between zero and B. A dual target is hierarchical: the long rule gates all
+exposure, establishes A when active, and the short rule adds or removes B.
+The allocation backtest applies the prior completed bar's target at the next
+open, trades only the allocation delta, applies costs to each rebalance, and
+liquidates at the selected range end.
 
 The strategy registry supports two execution contracts. Target-state
 strategies produce long/flat decisions after a completed bar and execute at the
@@ -90,6 +91,12 @@ next open. Price-order strategies produce stop levels using only data known
 before the active bar. The backtest engine fills touched stops inside that bar,
 uses the open for crossed gaps, and applies the same cost and trade-record
 pipeline to both contracts.
+
+The current manual-history workspace explicitly selects the target-only
+next-open policy for every strategy, including registry entries that also
+expose price orders. This keeps all displayed historical buy/sell markers and
+both screening workflows on one execution rule. The intrabar contract remains
+available only as a tested engine/reference capability.
 
 Live guidance reuses the same strategy registry but remains separate from the
 historical execution engine. Target-state strategies compare the newest dynamic
@@ -100,6 +107,11 @@ next-open execution. Full history can be cached for one hour; a separate
 uncached request retrieves up to five latest bars on open and every refresh.
 Only overlapping bar times are replaced, and series from different sources are
 never merged. Provider-side latency remains possible.
+
+The live guidance presentation also classifies the current manual execution
+window with an explicit `Asia/Shanghai` 15:00 cutoff. This changes only the
+actionable clock label: historical target-state backtests and both screeners
+always retain following-open execution.
 
 Eastmoney is the preferred source for search and bars. Yahoo Finance extends
 global symbol discovery and history and is the only history provider for

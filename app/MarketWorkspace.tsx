@@ -62,10 +62,10 @@ import {
   type StrategyParameters,
 } from "@/lib/analysis/strategies";
 import {
-  DEFAULT_CORE_ALLOCATION,
+  DEFAULT_LONG_ALLOCATION,
+  DEFAULT_SHORT_ALLOCATION,
   buildLiveAllocationGuidance,
   buildStrategyPlanTarget,
-  classifyHoldingMode,
   optimizeStrategyCombinations,
   type CombinationScreeningProgress,
   type StrategyAllocationPlan,
@@ -76,6 +76,10 @@ import {
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
 import { buildLiveStrategyGuidance } from "@/lib/analysis/live-guidance";
+import {
+  classifyManualExecutionWindow,
+  type ManualExecutionWindow,
+} from "@/lib/analysis/execution-timing";
 import { buildAllocationTradeMarkers } from "@/lib/analysis/trade-markers";
 import {
   analyzeStrategyStability,
@@ -124,6 +128,7 @@ const backtestChartLabels = {
 };
 
 const DAILY_INTERVAL: MarketInterval = "1d";
+const HISTORICAL_EXECUTION_POLICY = "next-open" as const;
 
 const compactFormatter = new Intl.NumberFormat("zh-CN", {
   notation: "compact",
@@ -331,14 +336,21 @@ export function MarketWorkspace() {
     strategyId: null,
   });
   const [combinationScreening, setCombinationScreening] = useState(false);
+  const [
+    combinationScreeningObjective,
+    setCombinationScreeningObjective,
+  ] = useState<ScreeningObjective>("balanced");
+  const [combinationMaxParameterSets, setCombinationMaxParameterSets] =
+    useState(DEFAULT_PARAMETER_SETS_PER_STRATEGY);
   const [combinationResults, setCombinationResults] = useState<
     StrategyCombinationResult[]
   >([]);
-  const [coreAllocationPercent, setCoreAllocationPercent] = useState(
-    DEFAULT_CORE_ALLOCATION * 100,
+  const [longAllocationPercent, setLongAllocationPercent] = useState(
+    DEFAULT_LONG_ALLOCATION * 100,
   );
-  const [maximumAllocationPercent, setMaximumAllocationPercent] =
-    useState(100);
+  const [shortAllocationPercent, setShortAllocationPercent] = useState(
+    DEFAULT_SHORT_ALLOCATION * 100,
+  );
   const [combinationProgress, setCombinationProgress] =
     useState<CombinationScreeningProgress>(emptyCombinationProgress);
   const [savedBacktests, setSavedBacktests] = useState<
@@ -349,6 +361,8 @@ export function MarketWorkspace() {
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+  const [manualExecutionWindow, setManualExecutionWindow] =
+    useState<ManualExecutionWindow>("next-open");
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const chartSectionRef = useRef<HTMLElement>(null);
   const pendingSavedBacktestRef = useRef<SavedBacktestRecord | null>(null);
@@ -524,14 +538,19 @@ export function MarketWorkspace() {
   }, [fetchMarket, refreshVersion]);
 
   useEffect(() => {
+    const refreshExecutionWindow = () => {
+      setManualExecutionWindow(classifyManualExecutionWindow());
+    };
     const refreshVisibleMarket = () => {
       if (document.visibilityState === "visible") {
+        refreshExecutionWindow();
         setRefreshVersion((value) => value + 1);
       }
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") refreshVisibleMarket();
     };
+    const initialExecutionTimer = window.setTimeout(refreshExecutionWindow, 0);
     const refreshTimer = window.setInterval(
       refreshVisibleMarket,
       LIVE_REFRESH_INTERVAL_MS,
@@ -539,6 +558,7 @@ export function MarketWorkspace() {
     window.addEventListener("focus", refreshVisibleMarket);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
+      window.clearTimeout(initialExecutionTimer);
       window.clearInterval(refreshTimer);
       window.removeEventListener("focus", refreshVisibleMarket);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -630,9 +650,14 @@ export function MarketWorkspace() {
     comparisonPrice === 0 ? 0 : (priceChange / comparisonPrice) * 100;
   const strategyPlan = useMemo<StrategyAllocationPlan | null>(() => {
     if (!longStrategyId && !shortStrategyId) return null;
-    const maximumAllocation = Math.min(
-      Math.max(maximumAllocationPercent / 100, 0),
-      1,
+    const longAllocation = longStrategyId
+      ? Math.min(Math.max(longAllocationPercent / 100, 0), 1)
+      : 0;
+    const shortAllocation = Math.min(
+      shortStrategyId
+        ? Math.max(shortAllocationPercent / 100, 0)
+        : 0,
+      1 - longAllocation,
     );
     return {
       long: longStrategyId
@@ -647,18 +672,15 @@ export function MarketWorkspace() {
             parameters: shortParameters,
           }
         : null,
-      coreAllocation: Math.min(
-        Math.max(coreAllocationPercent / 100, 0),
-        maximumAllocation,
-      ),
-      maximumAllocation,
+      longAllocation,
+      shortAllocation,
     };
   }, [
-    coreAllocationPercent,
     longParameters,
+    longAllocationPercent,
     longStrategyId,
-    maximumAllocationPercent,
     shortParameters,
+    shortAllocationPercent,
     shortStrategyId,
   ]);
   const singleSelection =
@@ -666,7 +688,10 @@ export function MarketWorkspace() {
       ? (strategyPlan.long ?? strategyPlan.short)
       : null;
   const usesSingleFullAllocation =
-    Boolean(singleSelection) && strategyPlan?.maximumAllocation === 1;
+    Boolean(singleSelection) &&
+    (strategyPlan?.long
+      ? strategyPlan.longAllocation === 1
+      : strategyPlan?.shortAllocation === 1);
   const liveGuidance = useMemo(() => {
     if (!series?.bars.length || !strategyPlan) return null;
     try {
@@ -734,6 +759,7 @@ export function MarketWorkspace() {
         startTime: startDate,
         endTime: endDate,
         interval: DAILY_INTERVAL,
+        executionPolicy: HISTORICAL_EXECUTION_POLICY,
       } as const;
       if (usesSingleFullAllocation && singleSelection) {
         return runBacktest(
@@ -785,6 +811,7 @@ export function MarketWorkspace() {
           startTime: startDate,
           endTime: endDate,
           interval: DAILY_INTERVAL,
+          executionPolicy: HISTORICAL_EXECUTION_POLICY,
         },
       );
       return analysis;
@@ -862,8 +889,8 @@ export function MarketWorkspace() {
       setShortStrategyId(nextStrategyId);
       setShortParameters(mergedParameters);
     }
-    setCoreAllocationPercent(100);
-    setMaximumAllocationPercent(100);
+    setLongAllocationPercent(next.horizon === "long" ? 100 : 0);
+    setShortAllocationPercent(next.horizon === "short" ? 100 : 0);
     window.requestAnimationFrame(() =>
       chartSectionRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -879,6 +906,11 @@ export function MarketWorkspace() {
         ? { ...getStrategy(nextStrategyId).defaultParameters }
         : {},
     );
+    if (nextStrategyId) {
+      setLongAllocationPercent((current) =>
+        Math.min(current, 100 - shortAllocationPercent),
+      );
+    }
   };
 
   const selectShortStrategy = (nextStrategyId: StrategyId | "") => {
@@ -888,6 +920,11 @@ export function MarketWorkspace() {
         ? { ...getStrategy(nextStrategyId).defaultParameters }
         : {},
     );
+    if (nextStrategyId) {
+      setShortAllocationPercent((current) =>
+        Math.min(current, 100 - longAllocationPercent),
+      );
+    }
   };
 
   const applyCombinationResult = (result: StrategyCombinationResult) => {
@@ -895,10 +932,8 @@ export function MarketWorkspace() {
     setLongParameters({ ...result.longParameters });
     setShortStrategyId(result.shortStrategyId);
     setShortParameters({ ...result.shortParameters });
-    setCoreAllocationPercent(Math.round(result.coreAllocation * 100));
-    setMaximumAllocationPercent(
-      Math.round(result.maximumAllocation * 100),
-    );
+    setLongAllocationPercent(Math.round(result.longAllocation * 100));
+    setShortAllocationPercent(Math.round(result.shortAllocation * 100));
     window.requestAnimationFrame(() =>
       chartSectionRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -992,22 +1027,30 @@ export function MarketWorkspace() {
     }
   };
 
-  const resetScreening = () => {
+  const resetSingleScreening = () => {
     screeningAbortRef.current?.abort();
     screeningAbortRef.current = null;
-    combinationAbortRef.current?.abort();
-    combinationAbortRef.current = null;
     setScreening(false);
-    setCombinationScreening(false);
     setScreenResults([]);
-    setCombinationResults([]);
     setScreenProgress({
       completed: 0,
       total: 0,
       failed: 0,
       strategyId: null,
     });
+  };
+
+  const resetCombinationScreening = () => {
+    combinationAbortRef.current?.abort();
+    combinationAbortRef.current = null;
+    setCombinationScreening(false);
+    setCombinationResults([]);
     setCombinationProgress(emptyCombinationProgress());
+  };
+
+  const resetScreening = () => {
+    resetSingleScreening();
+    resetCombinationScreening();
   };
 
   const openSavedBacktest = (saved: SavedBacktestRecord) => {
@@ -1031,11 +1074,11 @@ export function MarketWorkspace() {
     setShortParameters(
       saved.plan.short ? { ...saved.plan.short.parameters } : {},
     );
-    setCoreAllocationPercent(
-      Math.round(saved.plan.coreAllocation * 100),
+    setLongAllocationPercent(
+      Math.round(saved.plan.longAllocation * 100),
     );
-    setMaximumAllocationPercent(
-      Math.round(saved.plan.maximumAllocation * 100),
+    setShortAllocationPercent(
+      Math.round(saved.plan.shortAllocation * 100),
     );
     setStartDate(saved.startDate);
     setEndDate(saved.endDate);
@@ -1081,6 +1124,7 @@ export function MarketWorkspace() {
         startTime: startDate,
         endTime: endDate,
         interval: DAILY_INTERVAL,
+        executionPolicy: HISTORICAL_EXECUTION_POLICY,
       },
       {
         maxPerStrategy: maxParameterSets,
@@ -1124,10 +1168,11 @@ export function MarketWorkspace() {
         startTime: startDate,
         endTime: endDate,
         interval: DAILY_INTERVAL,
+        executionPolicy: HISTORICAL_EXECUTION_POLICY,
       },
       {
-        maxPerStrategy: maxParameterSets,
-        objective: screeningObjective,
+        maxPerStrategy: combinationMaxParameterSets,
+        objective: combinationScreeningObjective,
         signal: controller.signal,
         onProgress: setCombinationProgress,
       },
@@ -1302,7 +1347,9 @@ export function MarketWorkspace() {
               : copy.liveGuidance.waitingForData}
           </small>
           <em>
-            {copy.liveGuidance.disclosure} {copy.common.separator}{" "}
+            {copy.liveGuidance.execution[manualExecutionWindow]}{" "}
+            {copy.common.separator} {copy.liveGuidance.disclosure}{" "}
+            {copy.common.separator}{" "}
             {copy.liveGuidance.autoRefresh}
           </em>
         </div>
@@ -1559,7 +1606,32 @@ export function MarketWorkspace() {
               <span className="eyebrow">{copy.savedBacktests.eyebrow}</span>
               <strong>{copy.savedBacktests.title}</strong>
             </div>
-            <Bookmark size={19} />
+            <div className="saved-shortcuts-save">
+              <button
+                className={`save-backtest-button ${saveStatus}`}
+                type="button"
+                disabled={!backtest || saveStatus === "saving"}
+                onClick={() => void saveCurrentBacktest()}
+                aria-label={copy.savedBacktests.save}
+                title={copy.savedBacktests.save}
+              >
+                {saveStatus === "saving" ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : (
+                  <Save size={14} />
+                )}
+                <span>
+                  {saveStatus === "saving"
+                    ? copy.savedBacktests.saving
+                    : saveStatus === "saved"
+                      ? copy.savedBacktests.saved
+                      : saveStatus === "error"
+                        ? copy.savedBacktests.saveError
+                        : copy.savedBacktests.save}
+                </span>
+              </button>
+              <Bookmark size={19} />
+            </div>
           </div>
 
           <section
@@ -1634,6 +1706,15 @@ export function MarketWorkspace() {
                           ]
                             .filter(Boolean)
                             .join(" + ")}
+                          {" "}
+                          {copy.common.separator}{" "}
+                          {saved.plan.long
+                            ? `A ${Math.round(saved.plan.longAllocation * 100)}%`
+                            : ""}
+                          {saved.plan.long && saved.plan.short ? " + " : ""}
+                          {saved.plan.short
+                            ? `B ${Math.round(saved.plan.shortAllocation * 100)}%`
+                            : ""}
                         </small>
                         {saved.interval !== DAILY_INTERVAL && (
                           <span className="saved-shortcut-legacy">
@@ -1682,32 +1763,7 @@ export function MarketWorkspace() {
                 )}
               </div>
             </div>
-            <div className="lab-heading-actions">
-              <button
-                className={`save-backtest-button ${saveStatus}`}
-                type="button"
-                disabled={!backtest || saveStatus === "saving"}
-                onClick={() => void saveCurrentBacktest()}
-                aria-label={copy.savedBacktests.save}
-                title={copy.savedBacktests.save}
-              >
-                {saveStatus === "saving" ? (
-                  <LoaderCircle className="spin" size={14} />
-                ) : (
-                  <Save size={14} />
-                )}
-                <span>
-                  {saveStatus === "saving"
-                    ? copy.savedBacktests.saving
-                    : saveStatus === "saved"
-                      ? copy.savedBacktests.saved
-                      : saveStatus === "error"
-                        ? copy.savedBacktests.saveError
-                        : copy.savedBacktests.save}
-                </span>
-              </button>
-              <FlaskConical size={19} />
-            </div>
+            <FlaskConical size={19} />
           </div>
           <p className="panel-copy">{copy.lab.subtitle}</p>
 
@@ -1764,56 +1820,58 @@ export function MarketWorkspace() {
 
           <div className="allocation-grid">
             <label className="field-label">
-              <span>{copy.lab.coreAllocation}</span>
+              <span>{copy.lab.longAllocation}</span>
               <input
-                name="core-allocation"
+                name="long-allocation"
                 type="number"
-                value={coreAllocationPercent}
+                value={longAllocationPercent}
                 min={0}
-                max={maximumAllocationPercent}
+                max={
+                  shortStrategyId ? 100 - shortAllocationPercent : 100
+                }
                 step={10}
-                disabled={!longStrategyId || !shortStrategyId}
+                disabled={!longStrategyId}
                 onChange={(event) => {
                   const nextValue = Number(event.target.value);
-                  setCoreAllocationPercent(
+                  setLongAllocationPercent(
                     Math.min(
                       Math.max(
                         Number.isFinite(nextValue) ? nextValue : 0,
                         0,
                       ),
-                      maximumAllocationPercent,
+                      shortStrategyId
+                        ? 100 - shortAllocationPercent
+                        : 100,
                     ),
                   );
                 }}
               />
-              <small>{copy.lab.coreAllocationHint}</small>
+              <small>{copy.lab.longAllocationHint}</small>
             </label>
             <label className="field-label">
-              <span>{copy.lab.maximumAllocation}</span>
+              <span>{copy.lab.shortAllocation}</span>
               <input
-                name="maximum-allocation"
+                name="short-allocation"
                 type="number"
-                value={maximumAllocationPercent}
+                value={shortAllocationPercent}
                 min={0}
-                max={100}
+                max={longStrategyId ? 100 - longAllocationPercent : 100}
                 step={10}
+                disabled={!shortStrategyId}
                 onChange={(event) => {
-                  const nextValue = Math.min(
-                    Math.max(
-                      Number.isFinite(Number(event.target.value))
-                        ? Number(event.target.value)
-                        : 100,
-                      0,
+                  const nextValue = Number(event.target.value);
+                  setShortAllocationPercent(
+                    Math.min(
+                      Math.max(
+                        Number.isFinite(nextValue) ? nextValue : 0,
+                        0,
+                      ),
+                      longStrategyId ? 100 - longAllocationPercent : 100,
                     ),
-                    100,
-                  );
-                  setMaximumAllocationPercent(nextValue);
-                  setCoreAllocationPercent((current) =>
-                    Math.min(current, nextValue),
                   );
                 }}
               />
-              <small>{copy.lab.maximumAllocationHint}</small>
+              <small>{copy.lab.shortAllocationHint}</small>
             </label>
           </div>
 
@@ -2112,13 +2170,14 @@ export function MarketWorkspace() {
             <label className="screening-control-field">
               <span>{copy.screening.objective}</span>
               <select
+                name="single-screening-objective"
                 value={screeningObjective}
                 disabled={screeningBusy}
                 onChange={(event) => {
                   setScreeningObjective(
                     event.target.value as ScreeningObjective,
                   );
-                  resetScreening();
+                  resetSingleScreening();
                 }}
               >
                 {SCREENING_OBJECTIVES.map((value) => (
@@ -2134,6 +2193,7 @@ export function MarketWorkspace() {
             <label className="screening-control-field">
               <span>{copy.screening.maxPerStrategy}</span>
               <input
+                name="single-max-parameter-sets"
                 type="number"
                 min={1}
                 max={MAX_PARAMETER_SETS_PER_STRATEGY}
@@ -2153,7 +2213,7 @@ export function MarketWorkspace() {
                       MAX_PARAMETER_SETS_PER_STRATEGY,
                     ),
                   );
-                  resetScreening();
+                  resetSingleScreening();
                 }}
               />
               <small>
@@ -2340,9 +2400,70 @@ export function MarketWorkspace() {
             </h2>
             <p>{copy.combinationScreening.description}</p>
 
+            <div className="screening-config">
+              <label className="screening-control-field">
+                <span>{copy.screening.objective}</span>
+                <select
+                  name="combination-screening-objective"
+                  value={combinationScreeningObjective}
+                  disabled={screeningBusy}
+                  onChange={(event) => {
+                    setCombinationScreeningObjective(
+                      event.target.value as ScreeningObjective,
+                    );
+                    resetCombinationScreening();
+                  }}
+                >
+                  {SCREENING_OBJECTIVES.map((value) => (
+                    <option value={value} key={value}>
+                      {copy.screening.objectives[value]}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  {
+                    copy.screening.objectiveDescriptions[
+                      combinationScreeningObjective
+                    ]
+                  }
+                </small>
+              </label>
+              <label className="screening-control-field">
+                <span>{copy.screening.maxPerStrategy}</span>
+                <input
+                  name="combination-max-parameter-sets"
+                  type="number"
+                  min={1}
+                  max={MAX_PARAMETER_SETS_PER_STRATEGY}
+                  step={50}
+                  value={combinationMaxParameterSets}
+                  disabled={screeningBusy}
+                  onChange={(event) => {
+                    const nextValue = Number(event.target.value);
+                    setCombinationMaxParameterSets(
+                      Math.min(
+                        Math.max(
+                          Number.isFinite(nextValue)
+                            ? Math.floor(nextValue)
+                            : 1,
+                          1,
+                        ),
+                        MAX_PARAMETER_SETS_PER_STRATEGY,
+                      ),
+                    );
+                    resetCombinationScreening();
+                  }}
+                />
+                <small>
+                  {copy.screening.limitHint}{" "}
+                  {MAX_PARAMETER_SETS_PER_STRATEGY}
+                </small>
+              </label>
+            </div>
+
             <div className="combination-allocation-ladder">
               <span>{copy.combinationScreening.positionOptimization}</span>
-              <strong>0 / 20 / 40 / 60 / 80 / 100%</strong>
+              <strong>A、B：20% 步长，A + B ≤ 100%</strong>
               <small>
                 {copy.combinationScreening.positionOptimizationHint}
                 {" · "}
@@ -2439,7 +2560,7 @@ export function MarketWorkspace() {
                         <th>{copy.screening.rank}</th>
                         <th>{copy.combinationScreening.longStrategy}</th>
                         <th>{copy.combinationScreening.shortStrategy}</th>
-                        <th>{copy.combinationScreening.holdingMode}</th>
+                        <th>{copy.combinationScreening.allocationPlan}</th>
                         <th>{copy.screening.return}</th>
                         <th>{copy.screening.drawdown}</th>
                         <th>{copy.screening.sharpe}</th>
@@ -2451,7 +2572,7 @@ export function MarketWorkspace() {
                     <tbody>
                       {combinationResults.slice(0, 8).map((result, index) => (
                         <tr
-                          key={`${result.longStrategyId}-${JSON.stringify(result.longParameters)}-${result.shortStrategyId}-${JSON.stringify(result.shortParameters)}-${result.coreAllocation}`}
+                          key={`${result.longStrategyId}-${JSON.stringify(result.longParameters)}-${result.shortStrategyId}-${JSON.stringify(result.shortParameters)}-${result.longAllocation}-${result.shortAllocation}`}
                         >
                           <td>
                             <span className={`rank rank-${index + 1}`}>
@@ -2493,25 +2614,19 @@ export function MarketWorkspace() {
                             </div>
                           </td>
                           <td>
-                            <div className="holding-mode-cell">
+                            <div className="allocation-plan-cell">
                               <strong>
-                                {
-                                  copy.combinationScreening.holdingModes[
-                                    classifyHoldingMode(
-                                      result.coreAllocation,
-                                    )
-                                  ]
-                                }
+                                A {Math.round(result.longAllocation * 100)}%
+                                {" + "}
+                                B {Math.round(result.shortAllocation * 100)}%
                               </strong>
                               <small>
-                                {copy.combinationScreening.coreAllocation}{" "}
-                                {Math.round(result.coreAllocation * 100)}%
-                                {" · "}
-                                {copy.lab.maximumAllocation}{" "}
+                                {copy.combinationScreening.maximumHolding}{" "}
                                 {Math.round(
-                                  result.maximumAllocation * 100,
-                                )}
-                                %
+                                  (result.longAllocation +
+                                    result.shortAllocation) *
+                                    100,
+                                )}%
                               </small>
                             </div>
                           </td>
@@ -2539,7 +2654,7 @@ export function MarketWorkspace() {
                               <b>
                                 {formatObjectiveValue(
                                   result,
-                                  screeningObjective,
+                                  combinationScreeningObjective,
                                 )}
                               </b>
                             </span>
@@ -2571,7 +2686,9 @@ export function MarketWorkspace() {
                       {" + "}
                       {copy.strategies[bestCombination.shortStrategyId].name}
                       {" · "}
-                      {Math.round(bestCombination.coreAllocation * 100)}%
+                      A {Math.round(bestCombination.longAllocation * 100)}%
+                      {" + "}
+                      B {Math.round(bestCombination.shortAllocation * 100)}%
                     </span>
                     <BacktestChart
                       result={bestCombination}

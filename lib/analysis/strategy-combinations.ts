@@ -19,9 +19,9 @@ import {
   type StrategyParameters,
 } from "./strategies";
 
-export const DEFAULT_CORE_ALLOCATION = 0.6;
-export const CORE_ALLOCATION_CANDIDATES = [
-  0,
+export const DEFAULT_LONG_ALLOCATION = 0.6;
+export const DEFAULT_SHORT_ALLOCATION = 0.4;
+export const POSITION_LAYER_CANDIDATES = [
   0.2,
   0.4,
   0.6,
@@ -31,6 +31,21 @@ export const CORE_ALLOCATION_CANDIDATES = [
 export const COMBINATION_FINALISTS_PER_STRATEGY = 2;
 export const MAX_COMBINATION_RESULTS = 32;
 
+export interface TwoLayerAllocation {
+  longAllocation: number;
+  shortAllocation: number;
+}
+
+export const TWO_LAYER_ALLOCATION_CANDIDATES: readonly TwoLayerAllocation[] =
+  POSITION_LAYER_CANDIDATES.flatMap((longAllocation) =>
+    POSITION_LAYER_CANDIDATES.filter(
+      (shortAllocation) => longAllocation + shortAllocation <= 1 + 1e-10,
+    ).map((shortAllocation) => ({
+      longAllocation,
+      shortAllocation,
+    })),
+  );
+
 export interface StrategySelection {
   strategyId: StrategyId;
   parameters: StrategyParameters;
@@ -39,8 +54,8 @@ export interface StrategySelection {
 export interface StrategyAllocationPlan {
   long: StrategySelection | null;
   short: StrategySelection | null;
-  coreAllocation: number;
-  maximumAllocation: number;
+  longAllocation: number;
+  shortAllocation: number;
 }
 
 export interface StrategyCombination {
@@ -48,8 +63,8 @@ export interface StrategyCombination {
   longParameters: StrategyParameters;
   shortStrategyId: StrategyId;
   shortParameters: StrategyParameters;
-  coreAllocation: number;
-  maximumAllocation?: number;
+  longAllocation: number;
+  shortAllocation: number;
 }
 
 export interface StrategyCombinationResult extends AllocationBacktestResult {
@@ -57,8 +72,8 @@ export interface StrategyCombinationResult extends AllocationBacktestResult {
   longParameters: StrategyParameters;
   shortStrategyId: StrategyId;
   shortParameters: StrategyParameters;
-  coreAllocation: number;
-  maximumAllocation: number;
+  longAllocation: number;
+  shortAllocation: number;
 }
 
 export type CombinationScreeningStage = "strategies" | "combinations";
@@ -83,9 +98,7 @@ export interface CombinationOptimizationResult {
 interface OptimizeStrategyCombinationsOptions {
   maxPerStrategy?: number;
   objective?: ScreeningObjective;
-  /** @deprecated Prefer coreAllocationCandidates for deterministic searches. */
-  coreAllocation?: number;
-  coreAllocationCandidates?: readonly number[];
+  allocationCandidates?: readonly TwoLayerAllocation[];
   signal?: AbortSignal;
   yieldEvery?: number;
   onProgress?: (progress: CombinationScreeningProgress) => void;
@@ -96,26 +109,26 @@ interface StrategyFinalist {
   target: number[];
 }
 
-function normalizeCoreAllocation(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_CORE_ALLOCATION;
+function normalizeAllocation(value: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
   return Math.min(Math.max(value, 0), 1);
 }
 
 function assertAllocationPlanBounds(
-  coreAllocation: number,
-  maximumAllocation: number,
+  longAllocation: number,
+  shortAllocation: number,
 ) {
   if (
-    !Number.isFinite(coreAllocation) ||
-    !Number.isFinite(maximumAllocation) ||
-    coreAllocation < 0 ||
-    maximumAllocation < 0 ||
-    coreAllocation > 1 ||
-    maximumAllocation > 1 ||
-    coreAllocation > maximumAllocation
+    !Number.isFinite(longAllocation) ||
+    !Number.isFinite(shortAllocation) ||
+    longAllocation < 0 ||
+    shortAllocation < 0 ||
+    longAllocation > 1 ||
+    shortAllocation > 1 ||
+    longAllocation + shortAllocation > 1 + 1e-10
   ) {
     throw new Error(
-      "Core allocation must be between zero and the maximum allocation",
+      "Long and short allocations must be between zero and one and their sum cannot exceed one",
     );
   }
 }
@@ -139,40 +152,25 @@ function assertAlignedTargets(
 export function buildStrategyPlanAllocationTarget(
   longTarget: readonly number[] | null,
   shortTarget: readonly number[] | null,
-  coreAllocation: number,
-  maximumAllocation: number,
+  longAllocation: number,
+  shortAllocation: number,
 ): number[] {
   assertAlignedTargets(longTarget, shortTarget);
-  assertAllocationPlanBounds(coreAllocation, maximumAllocation);
+  assertAllocationPlanBounds(longAllocation, shortAllocation);
 
   if (longTarget && shortTarget) {
     return longTarget.map((longState, index) => {
       if (!(longState > 0)) return 0;
-      return shortTarget[index] > 0
-        ? maximumAllocation
-        : coreAllocation;
+      return longAllocation +
+        (shortTarget[index] > 0 ? shortAllocation : 0);
     });
   }
 
   const target = longTarget ?? shortTarget ?? [];
-  return target.map((state) => (state > 0 ? maximumAllocation : 0));
-}
-
-export function buildHierarchicalAllocationTarget(
-  longTarget: readonly number[],
-  shortTarget: readonly number[],
-  coreAllocation = DEFAULT_CORE_ALLOCATION,
-): number[] {
-  if (longTarget.length !== shortTarget.length) {
-    throw new Error("Long and short targets must align");
-  }
-  const normalizedCore = normalizeCoreAllocation(coreAllocation);
-  return buildStrategyPlanAllocationTarget(
-    longTarget,
-    shortTarget,
-    normalizedCore,
-    1,
-  );
+  const selectedAllocation = longTarget
+    ? longAllocation
+    : shortAllocation;
+  return target.map((state) => (state > 0 ? selectedAllocation : 0));
 }
 
 function buildSelectionTarget(
@@ -197,8 +195,8 @@ export function buildStrategyPlanTarget(
   return buildStrategyPlanAllocationTarget(
     buildSelectionTarget(bars, plan.long, "long"),
     buildSelectionTarget(bars, plan.short, "short"),
-    plan.coreAllocation,
-    plan.maximumAllocation,
+    plan.longAllocation,
+    plan.shortAllocation,
   );
 }
 
@@ -227,18 +225,6 @@ export function buildLiveAllocationGuidance(
   return { action, previousAllocation, targetAllocation };
 }
 
-export type HoldingMode =
-  | "short-controls"
-  | "core-tactical"
-  | "long-controls";
-
-export function classifyHoldingMode(coreAllocation: number): HoldingMode {
-  const normalized = normalizeCoreAllocation(coreAllocation);
-  if (normalized <= 0) return "short-controls";
-  if (normalized >= 1) return "long-controls";
-  return "core-tactical";
-}
-
 export function buildStrategyCombinationTarget(
   bars: MarketBar[],
   combination: StrategyCombination,
@@ -252,9 +238,13 @@ export function buildStrategyCombinationTarget(
       strategyId: combination.shortStrategyId,
       parameters: combination.shortParameters,
     },
-    coreAllocation: normalizeCoreAllocation(combination.coreAllocation),
-    maximumAllocation: normalizeCoreAllocation(
-      combination.maximumAllocation ?? 1,
+    longAllocation: normalizeAllocation(
+      combination.longAllocation,
+      DEFAULT_LONG_ALLOCATION,
+    ),
+    shortAllocation: normalizeAllocation(
+      combination.shortAllocation,
+      DEFAULT_SHORT_ALLOCATION,
     ),
   });
 }
@@ -316,16 +306,8 @@ export async function optimizeStrategyCombinations(
 ): Promise<CombinationOptimizationResult> {
   const candidates = buildScreeningCandidates(options.maxPerStrategy);
   const objective = options.objective ?? "balanced";
-  const coreAllocationCandidates = Array.from(
-    new Set(
-      (
-        options.coreAllocationCandidates ??
-        (options.coreAllocation === undefined
-          ? CORE_ALLOCATION_CANDIDATES
-          : [options.coreAllocation])
-      ).map(normalizeCoreAllocation),
-    ),
-  ).sort((left, right) => left - right);
+  const allocationCandidates =
+    options.allocationCandidates ?? TWO_LAYER_ALLOCATION_CANDIDATES;
   const yieldEvery = Math.max(Math.floor(options.yieldEvery ?? 24), 1);
   const finalistsByStrategy = new Map<StrategyId, BacktestResult[]>();
   const results: StrategyCombinationResult[] = [];
@@ -390,7 +372,7 @@ export async function optimizeStrategyCombinations(
     const pairCount =
       longFinalists.length *
       shortFinalists.length *
-      coreAllocationCandidates.length;
+      allocationCandidates.length;
     totalCandidates = candidates.length + pairCount;
 
     options.onProgress?.({
@@ -404,7 +386,7 @@ export async function optimizeStrategyCombinations(
 
     pairLoop: for (const longFinalist of longFinalists) {
       for (const shortFinalist of shortFinalists) {
-        for (const coreAllocation of coreAllocationCandidates) {
+        for (const allocation of allocationCandidates) {
           if (options.signal?.aborted) break pairLoop;
           try {
             const performance = runAllocationBacktest(
@@ -412,8 +394,8 @@ export async function optimizeStrategyCombinations(
               buildStrategyPlanAllocationTarget(
                 longFinalist.target,
                 shortFinalist.target,
-                coreAllocation,
-                1,
+                allocation.longAllocation,
+                allocation.shortAllocation,
               ),
               settings,
             );
@@ -425,8 +407,8 @@ export async function optimizeStrategyCombinations(
                 longParameters: longFinalist.result.parameters,
                 shortStrategyId: shortFinalist.result.strategyId,
                 shortParameters: shortFinalist.result.parameters,
-                coreAllocation,
-                maximumAllocation: 1,
+                longAllocation: allocation.longAllocation,
+                shortAllocation: allocation.shortAllocation,
               },
               objective,
             );

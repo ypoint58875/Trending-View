@@ -51,13 +51,11 @@ import {
 } from "../lib/analysis/strategies";
 import {
   COMBINATION_FINALISTS_PER_STRATEGY,
-  CORE_ALLOCATION_CANDIDATES,
   MAX_COMBINATION_RESULTS,
+  TWO_LAYER_ALLOCATION_CANDIDATES,
   buildLiveAllocationGuidance,
-  buildHierarchicalAllocationTarget,
   buildStrategyPlanAllocationTarget,
   buildStrategyCombinationTarget,
-  classifyHoldingMode,
   optimizeStrategyCombinations,
 } from "../lib/analysis/strategy-combinations";
 import {
@@ -65,6 +63,7 @@ import {
   TRADINGVIEW_BUILT_IN_STRATEGY_IDS,
 } from "../lib/analysis/built-in-strategies";
 import { buildLiveStrategyGuidance } from "../lib/analysis/live-guidance";
+import { classifyManualExecutionWindow } from "../lib/analysis/execution-timing";
 import {
   MINIMUM_STABILITY_OBSERVATIONS,
   MINIMUM_STABILITY_TRADES,
@@ -857,54 +856,66 @@ test("classifies every registered strategy into one explicit holding horizon", (
   }
 });
 
-test("builds a gated flat, core, and full hierarchical allocation target", () => {
-  const combined = buildHierarchicalAllocationTarget(
+test("builds gated zero, A, and A plus B allocation targets", () => {
+  const combined = buildStrategyPlanAllocationTarget(
     [0, 1, 1, 1, 0],
     [1, 0, 1, 0, 1],
     0.6,
+    0.4,
   );
   assert.deepEqual(combined, [0, 0.6, 1, 0.6, 0]);
-  assert.deepEqual(
-    buildHierarchicalAllocationTarget([1, 1], [0, 1], -1),
-    [0, 1],
-  );
-  assert.deepEqual(
-    buildHierarchicalAllocationTarget([1, 1], [0, 1], 2),
-    [1, 1],
+  assert.throws(
+    () =>
+      buildStrategyPlanAllocationTarget([1], [1, 0], 0.6, 0.4),
+    /align/i,
   );
   assert.throws(
-    () => buildHierarchicalAllocationTarget([1], [1, 0], 0.6),
-    /align/i,
+    () => buildStrategyPlanAllocationTarget([1], [1], -0.1, 0.4),
+    /between zero and one/i,
   );
 });
 
 test("builds optional long, optional short, and dual-horizon allocations", () => {
   assert.deepEqual(
-    buildStrategyPlanAllocationTarget([0, 1, 1], [1, 0, 1], 0.4, 0.8),
-    [0, 0.4, 0.8],
+    buildStrategyPlanAllocationTarget([0, 1, 1], [1, 0, 1], 0.4, 0.3),
+    [0, 0.4, 0.7],
   );
   assert.deepEqual(
-    buildStrategyPlanAllocationTarget([0, 1, 1], null, 0.4, 0.8),
-    [0, 0.8, 0.8],
+    buildStrategyPlanAllocationTarget([0, 1, 1], null, 0.4, 0.3),
+    [0, 0.4, 0.4],
   );
   assert.deepEqual(
-    buildStrategyPlanAllocationTarget(null, [0, 1, 0], 0.4, 0.8),
-    [0, 0.8, 0],
+    buildStrategyPlanAllocationTarget(null, [0, 1, 0], 0.4, 0.3),
+    [0, 0.3, 0],
   );
   assert.throws(
-    () => buildStrategyPlanAllocationTarget(null, null, 0.4, 0.8),
+    () => buildStrategyPlanAllocationTarget(null, null, 0.4, 0.3),
     /strategy/i,
   );
   assert.throws(
-    () => buildStrategyPlanAllocationTarget([1], [1], 0.9, 0.8),
-    /core/i,
+    () => buildStrategyPlanAllocationTarget([1], [1], 0.9, 0.2),
+    /sum/i,
   );
 });
 
-test("classifies who controls the optimized holding allocation", () => {
-  assert.equal(classifyHoldingMode(0), "short-controls");
-  assert.equal(classifyHoldingMode(0.6), "core-tactical");
-  assert.equal(classifyHoldingMode(1), "long-controls");
+test("builds ten positive bounded two-layer allocation candidates", () => {
+  assert.equal(TWO_LAYER_ALLOCATION_CANDIDATES.length, 10);
+  assert.deepEqual(TWO_LAYER_ALLOCATION_CANDIDATES[0], {
+    longAllocation: 0.2,
+    shortAllocation: 0.2,
+  });
+  assert.deepEqual(TWO_LAYER_ALLOCATION_CANDIDATES.at(-1), {
+    longAllocation: 0.8,
+    shortAllocation: 0.2,
+  });
+  assert.ok(
+    TWO_LAYER_ALLOCATION_CANDIDATES.every(
+      ({ longAllocation, shortAllocation }) =>
+        longAllocation > 0 &&
+        shortAllocation > 0 &&
+        longAllocation + shortAllocation <= 1,
+    ),
+  );
 });
 
 test("reports current plan allocation and increase, reduce, hold, or wait", () => {
@@ -921,8 +932,8 @@ test("reports current plan allocation and increase, reduce, hold, or wait", () =
       strategyId: "tv-bar-up-down" as const,
       parameters: { minimumBodyPercent: 0 },
     },
-    coreAllocation: 0.6,
-    maximumAllocation: 0.8,
+    longAllocation: 0.6,
+    shortAllocation: 0.3,
   };
 
   assert.deepEqual(
@@ -930,7 +941,7 @@ test("reports current plan allocation and increase, reduce, hold, or wait", () =
     {
       action: "increase",
       previousAllocation: 0,
-      targetAllocation: 0.8,
+      targetAllocation: 0.3,
     },
   );
   assert.equal(
@@ -941,7 +952,7 @@ test("reports current plan allocation and increase, reduce, hold, or wait", () =
     buildLiveAllocationGuidance(bars.slice(0, 4), shortOnly),
     {
       action: "reduce",
-      previousAllocation: 0.8,
+      previousAllocation: 0.3,
       targetAllocation: 0,
     },
   );
@@ -962,7 +973,8 @@ test("keeps hierarchical strategy targets invariant across input prefixes", () =
     longParameters: { entryPeriod: 40, exitPeriod: 20 },
     shortStrategyId: "tv-channel-breakout" as const,
     shortParameters: { length: 10, tick: 0.1 },
-    coreAllocation: 0.6,
+    longAllocation: 0.6,
+    shortAllocation: 0.4,
   };
   const fullTarget = buildStrategyCombinationTarget(bars, combination);
 
@@ -1012,6 +1024,21 @@ test("rebalances hierarchical allocations at the next open and applies costs", (
   assert.ok(result.finalEquity > 10_000);
   assert.ok(result.finalEquity < 12_000);
   assert.ok(result.maxDrawdown <= 0);
+});
+
+test("switches live manual execution at 15:00 Asia/Shanghai", () => {
+  assert.equal(
+    classifyManualExecutionWindow(new Date("2026-07-25T06:59:00Z")),
+    "same-day-close",
+  );
+  assert.equal(
+    classifyManualExecutionWindow(new Date("2026-07-25T07:00:00Z")),
+    "next-open",
+  );
+  assert.equal(
+    classifyManualExecutionWindow(new Date("2026-07-25T12:00:00Z")),
+    "next-open",
+  );
 });
 
 test("Channel BreakOut sells to flat on a lower-channel break", () => {
@@ -1074,6 +1101,28 @@ test("fills Channel BreakOut stops on the touched bar using the configured tick"
   assert.equal(result.trades[0].entryPrice, 11.1);
   assert.equal(result.trades[0].exitTime, bars[3].time);
   assert.equal(result.trades[0].exitPrice, 9.4);
+});
+
+test("executes price-reference strategies at following opens in manual history", () => {
+  const bars = makeBars([10, 10, 10, 10, 10, 12, 11, 9, 9]);
+  const result = runBacktest(
+    bars,
+    "tv-channel-breakout",
+    { length: 3, tick: 0.1 },
+    {
+      initialCash: 10_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+      executionPolicy: "next-open",
+    },
+  );
+
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.trades[0].entryTime, bars[6].time);
+  assert.equal(result.trades[0].entryPrice, bars[6].open);
+  assert.equal(result.trades[0].exitTime, bars[8].time);
+  assert.equal(result.trades[0].exitPrice, bars[8].open);
 });
 
 test("fills intrabar stop gaps at the bar open", () => {
@@ -1771,7 +1820,7 @@ test("optimizes bounded long and short strategy combinations", async () => {
     STRATEGIES.length +
       LONG_HORIZON_STRATEGY_IDS.length *
         SHORT_HORIZON_STRATEGY_IDS.length *
-        CORE_ALLOCATION_CANDIDATES.length,
+        TWO_LAYER_ALLOCATION_CANDIDATES.length,
   );
   assert.equal(outcome.evaluatedCount, outcome.totalCandidates);
   assert.equal(outcome.failedCount, 0);
@@ -1786,8 +1835,14 @@ test("optimizes bounded long and short strategy combinations", async () => {
   for (const result of outcome.results) {
     assert.equal(getStrategy(result.longStrategyId).horizon, "long");
     assert.equal(getStrategy(result.shortStrategyId).horizon, "short");
-    assert.ok(CORE_ALLOCATION_CANDIDATES.includes(result.coreAllocation));
-    assert.equal(result.maximumAllocation, 1);
+    assert.ok(
+      TWO_LAYER_ALLOCATION_CANDIDATES.some(
+        (candidate) =>
+          candidate.longAllocation === result.longAllocation &&
+          candidate.shortAllocation === result.shortAllocation,
+      ),
+    );
+    assert.ok(result.longAllocation + result.shortAllocation <= 1);
     assert.equal(result.tradeCount, result.rebalances.length);
   }
   for (let index = 1; index < outcome.results.length; index += 1) {
@@ -1816,7 +1871,6 @@ test("cancels combination optimization between chunks", async () => {
     },
     {
       maxPerStrategy: 2,
-      coreAllocation: 0.6,
       signal: controller.signal,
       yieldEvery: 1,
       onProgress: ({ completed }) => {
@@ -2534,8 +2588,8 @@ test("validates saved backtests and rejects unsupported assets", () => {
         parameters: { fast: 10, slow: 30 },
       },
       short: null,
-      coreAllocation: 0.6,
-      maximumAllocation: 1,
+      longAllocation: 0.6,
+      shortAllocation: 0.4,
     },
     startDate: "2024-01-01",
     endDate: "2025-01-01",
@@ -2574,9 +2628,21 @@ test("validates saved backtests and rejects unsupported assets", () => {
       parameters: { fast: 10, slow: 30 },
     },
     short: null,
-    coreAllocation: 1,
-    maximumAllocation: 1,
+    longAllocation: 1,
+    shortAllocation: 0,
   });
+  assert.deepEqual(
+    parseSaveBacktestInput({
+      ...payload,
+      plan: {
+        long: payload.plan.long,
+        short: null,
+        coreAllocation: 0.6,
+        maximumAllocation: 1,
+      },
+    })?.plan,
+    payload.plan,
+  );
   assert.equal(
     parseSaveBacktestInput({
       ...payload,
@@ -2596,7 +2662,7 @@ test("validates saved backtests and rejects unsupported assets", () => {
       ...payload,
       plan: {
         ...payload.plan,
-        coreAllocation: 1.2,
+        longAllocation: 1.2,
       },
     }),
     null,

@@ -87,6 +87,14 @@ list so a catalog test can prove that no documented entry is missing. Every
 price-order catalog exports a second ordered ID list so tests can prove that no
 price-triggered implementation silently falls back to target execution.
 
+The current manual-history UI must pass the shared `next-open` execution policy
+to direct backtests, stability analysis, single screening, and combination
+screening. This makes every displayed historical buy, sell, add, and reduce
+marker use the following bar's open even when the registry entry also exposes
+an intrabar price-order reference. Keep the hybrid engine contract covered for
+reference compatibility, but do not let one UI path silently omit the manual
+policy.
+
 Every registered strategy must have one constrained parameter-space entry in
 `screening.ts`. Domains must be finite, economically meaningful, and expressed
 with stable numeric precision. Cross-field rules such as fast-period less than
@@ -107,16 +115,19 @@ enforce registry coverage, uniqueness, the cap, objective ordering,
 best-result sorting, progress completion, and cancellation.
 
 Strategy plans use optional horizon selections, never equal-weight votes. A
-single selected horizon maps flat/long to zero/maximum allocation. With both
-horizons selected, the long target gates exposure, the short target selects
-maximum allocation when active and core allocation when inactive, and an
-inactive long target always maps to zero. Validate zero-to-one bounds and
-require core no greater than maximum at the pure-function boundary.
+long-only plan maps flat/long to zero/A; a short-only plan maps flat/long to
+zero/B. With both horizons selected, the long target gates exposure and
+establishes A, while the short target adds or removes B. An inactive long
+target always maps to zero. Validate each allocation in `[0, 1]` and require
+A+B no greater than one at the pure-function boundary.
 
 Combination optimization must reuse shared candidate domains, objectives, and
-tie-breaking. It first retains a small fixed number of standalone finalists per
-strategy, then evaluates the retained long/short Cartesian product across the
-fixed 0/20/40/60/80/100-percent core ladder. The
+tie-breaking while owning an independent selected objective and parameter cap
+in the UI. It first retains a small fixed number of standalone finalists per
+strategy, then evaluates the retained long/short Cartesian product across ten
+positive 20%-step A/B choices whose sum is at most one. Every A/B choice must
+run through the allocation engine before ranking because exposure and
+rebalance costs change the objective. The
 partial-allocation engine executes the prior completed bar's target at the next
 open, applies costs to the changed allocation, and reports rebalances rather
 than claiming completed round-trip win statistics. Tests cover role
@@ -137,6 +148,12 @@ one. Price-order strategies replay their existing entry/exit stop plan through
 the newest OHLC range. Guidance never alters historical backtest execution and
 must expose both action (`buy`, `sell`, `hold`, or `wait`) and resulting
 long-only position.
+
+Live manual execution timing is presentation guidance, not a historical fill
+mode. Classify it with an explicit `Asia/Shanghai` 15:00 cutoff: before the
+cutoff points to the same-day tail session, while the cutoff and later point to
+the next trading-day open. Do not let wall-clock time change historical
+following-open backtests or attempt to infer holidays without a calendar.
 
 Strategy price visuals are also a separate pure projection. The visual helper
 must return aligned finite-or-null series, reuse the exact `buildOrders` plan
@@ -180,8 +197,10 @@ an authenticated API route, and a D1 table. Every query includes the owner key.
 The instrument identity is limited to the same index/ETF/commodity types
 accepted by the market layer. New rows store nullable-compatible full strategy
 plan JSON alongside legacy primary-strategy columns; legacy rows derive a
-single full-allocation plan when read. Upserts use the owner, provider, and
-provider symbol as the
+single full-allocation plan when read. Current JSON stores explicit long A and
+short B allocations. Older core/maximum JSON converts to `A = core` and
+`B = maximum - core` at the validation boundary. Upserts use the owner,
+provider, and provider symbol as the
 de-duplication key. UI components consume API records and do not access D1
 bindings directly. Shortcut labels use the stored interval for provenance. A
 legacy non-daily record remains non-mutating metadata: opening it keeps the

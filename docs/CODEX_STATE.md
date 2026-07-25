@@ -55,10 +55,11 @@ Implemented:
   breakout, channel, and persistent-momentum rules plus 17 short-horizon
   reversal, candle, pivot, oscillator, and volatility rules. The daily
   strategy selector and results expose these groups.
-- Date-range backtesting with hybrid execution: close-derived targets fill at
-  the next open, while Channel BreakOut, Momentum, Pivot Reversal, Price
-  Channel, and Volty Expan Close use completed-bar stop orders that can fill
-  inside the following bar with gap-aware prices.
+- Date-range manual-history backtesting in which every displayed buy, sell,
+  add, or reduce action fills at the following open. The engine retains tested
+  internal stop-order support for Channel BreakOut, Momentum, Pivot Reversal,
+  Price Channel, and Volty Expan Close, but the workspace selects the common
+  next-open policy.
 - Long-only positions, costs, metrics, equity, drawdown, and chart-level
   buy/sell markers derived from actual fills.
 - Nearby-parameter sensitivity diagnostics that perturb one parameter at a
@@ -79,23 +80,30 @@ Implemented:
 - Five deterministic screening objectives: balanced score, return/drawdown
   ratio, maximum return, minimum drawdown, and maximum Sharpe.
 - A unified strategy plan with optional long and short selections, separate
-  parameters, core allocation, and maximum allocation. Either selection can be
-  empty. Single-horizon plans use zero/maximum; dual plans use
-  zero/core/maximum.
-- A separate hierarchical combination screen below single-strategy screening.
-  The two-stage optimizer retains two standalone finalists per strategy, then
-  evaluates every retained long/short pair at 0%, 20%, 40%, 60%, 80%, and
-  100% core allocation. It supports progress/cancellation, keeps the best 32
-  results, labels the holding mode, and applies a complete result to the lab.
+  parameters, long-layer A, and short-layer B. Either selection can be empty.
+  A dual plan uses zero/A/A+B; a long-only plan uses zero/A and a short-only
+  plan uses zero/B.
+- A separate hierarchical combination screen below the renamed one-click
+  single-strategy screen. The two-stage optimizer retains two standalone
+  finalists per strategy, then evaluates every retained long/short pair across
+  ten positive 20%-step A/B choices whose sum is at most 100%. It owns an
+  independent objective and parameter cap, supports progress/cancellation,
+  keeps the best 32 results, displays A/B, and applies a complete result to the
+  lab and trend chart.
 - A partial-allocation backtest that executes completed-bar combination targets
   at the next open, applies commission and slippage to allocation deltas, and
   reports rebalances plus common return/drawdown/Sharpe/equity metrics.
+- A live-only Shanghai-time execution label: before 15:00 it points to the
+  current day's tail session and at/after 15:00 it points to the next trading
+  day's open. Historical buy, sell, add, and reduce signals always retain
+  following-open execution.
 - Per-user D1-backed saved backtests with a dedicated upper-right shortcut bar
-  for restoring index/ETF/commodity identity and the complete strategy plan.
-  Legacy rows without plan JSON derive a full-allocation single-horizon plan;
-  legacy intervals still disclose daily recalculation.
+  that contains the Save current strategy action and restores
+  index/ETF/commodity identity plus the complete A/B strategy plan. Prior
+  core/maximum JSON converts to A and B when read; legacy rows without plan
+  JSON derive a full-allocation single-horizon plan.
 - A lower research area that places the strategy lab and automated screening
-  together while keeping the current-backtest save action in the lab.
+  together without duplicating the shortcut save action in the lab.
 - Chinese responsive UI with centralized locale copy.
 - A one-click Windows local launcher that applies project-local D1 migrations,
   binds vinext to `127.0.0.1:3000`, requires no account, reuses an
@@ -104,17 +112,17 @@ Implemented:
 
 ## Verification status
 
-- Strategy-plan and commodity coverage passed 80 TypeScript tests, the
-  production build, two rendered/source worker tests, ESLint, and
-  `git diff --check` on 2026-07-25.
-- A real local browser run loaded 1,000 N225 bars, found and loaded the Yahoo
-  gold futures proxy through the Chinese `黄金` alias, completed 1,562
-  long/short/allocation evaluations, retained 32 combinations, and displayed
-  eight ranked results with holding modes and Apply actions. Applying the
-  first result restored both strategy configurations plus its 80% core/100%
-  maximum allocation, retained the results, scrolled to the chart, and showed
-  both reference-line groups and allocation markers. Desktop and 760-pixel
-  layouts had no document-level horizontal overflow or console errors.
+- Two-layer position sizing and common following-open historical execution
+  passed 82 TypeScript tests, the production build, two rendered/source worker
+  tests, ESLint, and `git diff --check` on 2026-07-25.
+- A real local browser run loaded 1,000 N225 bars, completed 2,582 standalone,
+  pair, and A/B allocation evaluations with one parameter set per strategy,
+  retained 32 combinations, and displayed eight ranked results with Apply
+  actions. Applying the first result restored both strategy configurations
+  plus A 20% and B 80%; saving it created a shortcut with the same complete
+  plan, and deleting it restored the clean local test state. The 760-pixel
+  layout had no document-level horizontal overflow and the console had no
+  errors.
 - A clean local D1 migration and a create/list/delete strategy-plan round trip
   passed on 2026-07-25. A live Yahoo `SI=F` request returned 20 adjusted daily
   commodity bars.

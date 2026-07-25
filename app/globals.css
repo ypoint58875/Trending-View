@@ -728,8 +728,19 @@ button {
   min-height: 710px;
 }
 
-.saved-shortcuts-panel > .panel-heading > svg {
+.saved-shortcuts-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.saved-shortcuts-save > svg {
+  flex: 0 0 auto;
   color: var(--green);
+}
+
+.saved-shortcuts-save .save-backtest-button {
+  max-width: 142px;
 }
 
 .strategy-panel > :not(.panel-heading) {
@@ -1665,20 +1676,20 @@ button {
   min-width: 170px;
 }
 
-.holding-mode-cell {
+.allocation-plan-cell {
   display: grid;
   min-width: 130px;
   gap: 4px;
   text-align: left;
 }
 
-.holding-mode-cell strong {
+.allocation-plan-cell strong {
   color: #7dd3fc;
   font-family: var(--font-geist-sans), sans-serif;
   font-size: 9px;
 }
 
-.holding-mode-cell small {
+.allocation-plan-cell small {
   color: var(--subtle);
   font-size: 7px;
 }

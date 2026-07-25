@@ -21,6 +21,11 @@ fills at its stop price; a gap crossing the stop fills at the bar open. This
 preserves no-look-ahead behavior while avoiding a one-bar delay for price-based
 orders. Commission and slippage apply on both entry and exit.
 
+The engine retains both contracts, but the current manual-history workspace
+selects target-only next-open execution for every strategy. This makes all
+displayed historical buy, sell, add, and reduce actions use the following
+daily open.
+
 ## D-004: Bounded client-side parameter optimization
 
 Generate constrained parameter grids for every registered strategy and allow
@@ -79,6 +84,10 @@ queries but map unauthenticated loopback requests to
 `127.0.0.1`; non-loopback hosted requests still require injected
 authentication.
 
+Place the Save current strategy action inside the shortcut panel where the
+record appears. Do not duplicate the same save action in the lower strategy
+lab.
+
 ## D-009: Dynamic-bar strategy guidance
 
 Return full history with one-hour HTTP freshness and one-day
@@ -92,10 +101,14 @@ full compatible refresh succeeds.
 Evaluate the provider's newest bar immediately, even when it is still forming,
 and label the result as a preview that can change before close.
 
-Keep this guidance separate from historical backtest execution. Historical
-close-derived signals continue to fill at the next open, while predefined stop
-orders continue to fill when touched. Reuse the same strategy registry for both
-paths. Distinguish a range-end valuation close from a genuine sell marker.
+Keep this guidance separate from historical backtest execution. The current
+workspace runs every historical strategy through following-open targets,
+including entries that also expose predefined stop references. Reuse the same
+strategy registry for both paths. Distinguish a range-end valuation close from
+a genuine sell marker.
+Classify the live manual execution label using `Asia/Shanghai`: before 15:00
+point to the current day's tail session, and at or after 15:00 point to the
+next trading day's open. This clock label never changes historical execution.
 
 ## D-010: Daily-only manual product boundary
 
@@ -168,30 +181,36 @@ without a continuous price reference. Technical Ratings exposes the same
 EMA-20 and SMA-50 used by its price votes. These visuals do not infer or
 execute trades.
 
-## D-014: Explicit horizons and hierarchical strategy combinations
+## D-014: Explicit horizons and two-layer strategy combinations
 
 Classify every strategy explicitly as `long` or `short` in the shared registry.
 The label describes intended signal duration while all current analysis remains
 daily-only. Do not infer the label from tuned parameters or observed holding
 period because either would make the taxonomy asset- and sample-dependent.
 
-Combine horizons as a gate and overlay, not as equal votes. A plan may omit
-either horizon. One selected horizon switches between zero and maximum
-allocation. With both selected, a flat long target produces zero, an active
-long/flat-short target produces core allocation, and both active targets
-produce maximum allocation. Default lab values are 60% core and 100% maximum.
+Combine horizons as a gate and a second allocation layer, not as equal votes.
+A plan may omit either horizon. A long-only plan switches between zero and A;
+a short-only plan switches between zero and B. With both selected, a flat long
+target produces zero, an active long/flat-short target produces A, and both
+active targets produce A+B. A short sell removes B and a long sell clears the
+complete position. Default lab values are A=60% and B=40%; each allocation is
+bounded to `[0, 1]` and their sum may not exceed one.
 
 Avoid the full parameter Cartesian product. First retain the best two
-standalone parameter sets for every strategy under the selected shared
-objective, then evaluate the retained long-by-short product at 0%, 20%, 40%,
-60%, 80%, and 100% core allocation with 100% maximum. Keep progress and
-cancellation interruptible and retain only the best 32 results. Label zero as
-short-controlled, one as long-controlled, and intermediate allocations as
-core-plus-tactical. Applying a result restores the complete plan and projects
-both reference sets and allocation markers to the main chart. Combined
-close-derived targets rebalance at the following open with commission and
-slippage; they do not inherit component intrabar stop-fill contracts. A single
-strategy at full allocation retains the existing hybrid engine.
+standalone parameter sets for every strategy under the combination screen's
+selected objective and parameter cap, then evaluate the retained
+long-by-short product across ten positive 20%-step A/B choices whose sum is at
+most 100%. Run a complete allocation backtest for each choice so costs,
+exposure, return, drawdown, and Sharpe participate in ranking. Keep progress
+and cancellation interruptible and retain only the best 32 results. Applying a
+result restores both strategies, both parameter sets, A, and B, then projects
+both reference sets and allocation markers to the main chart. All historical
+targets rebalance at the following open. A single strategy at full allocation
+uses the same manual-history policy.
+
+Persist current plans with explicit `longAllocation` and `shortAllocation`.
+Read prior core/maximum plan JSON as `A = core` and
+`B = maximum - core`; the existing JSON column requires no table migration.
 
 ## D-015: Commodity futures quote proxies
 

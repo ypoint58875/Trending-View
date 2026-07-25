@@ -15,6 +15,7 @@ export interface BacktestSettings {
   startTime?: string;
   endTime?: string;
   interval: MarketInterval;
+  executionPolicy?: "hybrid" | "next-open";
 }
 
 export interface EquityPoint {
@@ -289,7 +290,10 @@ export function runBacktest(
 ): BacktestResult {
   const strategy = getStrategy(strategyId);
   const fullTarget = strategy.buildTarget(allBars, parameters);
-  const fullOrders = strategy.buildOrders?.(allBars, parameters);
+  const fullOrders =
+    settings.executionPolicy === "next-open"
+      ? undefined
+      : strategy.buildOrders?.(allBars, parameters);
   if (fullOrders && fullOrders.length !== allBars.length) {
     throw new Error("Strategy order plan must align with market bars");
   }

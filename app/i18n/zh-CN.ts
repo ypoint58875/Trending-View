@@ -160,6 +160,10 @@ export const zhCN = {
       hold: "策略维持当前计划仓位",
       wait: "策略仍为空仓，等待下一次买点",
     },
+    execution: {
+      "same-day-close": "15:00 前查看：可在今日尾盘调仓",
+      "next-open": "15:00 后查看：下一交易日开盘调仓",
+    },
     disclosure: "按数据源最新 K 线预判；未收盘时信号可能继续变化。",
   },
   indicatorsTitle: "指标",
@@ -203,7 +207,7 @@ export const zhCN = {
   lab: {
     title: "策略实验室",
     subtitle:
-      "仅做多：上方最新建议使用当前动态 K 线；历史回测仍按次期开盘或预设触价成交。",
+      "仅做多：上方最新建议使用当前动态 K 线；历史全部买卖与加减仓均按下一交易日开盘成交。",
     strategy: "策略",
     longStrategy: "长周期策略",
     shortStrategy: "短周期策略",
@@ -221,10 +225,10 @@ export const zhCN = {
     parameters: "策略参数",
     longParameters: "长周期策略参数",
     shortParameters: "短周期策略参数",
-    coreAllocation: "核心仓位 %",
-    maximumAllocation: "最大仓位 %",
-    coreAllocationHint: "长短策略同时使用且短周期转弱时保留的仓位。",
-    maximumAllocationHint: "策略最强信号下允许持有的最高仓位。",
+    longAllocation: "长周期仓位 A %",
+    shortAllocation: "短周期加仓 B %",
+    longAllocationHint: "长周期买点建立 A%；长周期卖点全部清仓。",
+    shortAllocationHint: "短周期买点增加 B%；短周期卖点减掉 B%。",
     automatic: "参数变化后自动回测",
     noResult: "当前区间数据不足，无法生成回测。",
   },
@@ -232,7 +236,7 @@ export const zhCN = {
     eyebrow: "SHORTCUTS",
     title: "回测快捷栏",
     savedCount: "已保存回测",
-    save: "保存",
+    save: "保存当前策略",
     saving: "保存中…",
     saved: "已保存",
     saveError: "重试保存",
@@ -307,7 +311,7 @@ export const zhCN = {
     },
     "tv-channel-breakout": {
       name: "内置 · Channel BreakOut",
-      description: "以前期通道加减 Tick 挂单，当根触价买入或卖出",
+      description: "突破或跌破前期通道后，下一交易日开盘买入或卖出",
     },
     "tv-consecutive-up-down": {
       name: "内置 · Consecutive Up/Down",
@@ -331,7 +335,7 @@ export const zhCN = {
     },
     "tv-momentum": {
       name: "内置 · Momentum",
-      description: "动量增强后挂突破止损单，下一根触价买入或卖出",
+      description: "动量突破确认后，下一交易日开盘买入或卖出",
     },
     "tv-outside-bar": {
       name: "内置 · OutSide Bar",
@@ -347,11 +351,11 @@ export const zhCN = {
     },
     "tv-pivot-reversal": {
       name: "内置 · Pivot Reversal",
-      description: "在确认枢轴外加减 Tick 挂单，突破时买入或卖出",
+      description: "突破已确认枢轴后，下一交易日开盘买入或卖出",
     },
     "tv-price-channel": {
       name: "内置 · Price Channel",
-      description: "在前期价格通道上下沿挂单，当根触及时成交",
+      description: "突破前期价格通道后，下一交易日开盘调仓",
     },
     "tv-rsi": {
       name: "内置 · RSI",
@@ -371,7 +375,7 @@ export const zhCN = {
     },
     "tv-volty-expan-close": {
       name: "内置 · Volty Expan Close",
-      description: "以前收盘价和 ATR 构造挂单通道，当根触价成交",
+      description: "突破前收盘价与 ATR 通道后，下一交易日开盘调仓",
     },
   },
   parameters: {
@@ -457,7 +461,7 @@ export const zhCN = {
   },
   screening: {
     eyebrow: "AUTO LAB",
-    title: "一键筛选",
+    title: "一键单一策略",
     description:
       "遍历全部 32 类策略的参数网格，按所选优化目标为每种策略保留一组最优参数。",
     objective: "优化目标",
@@ -477,7 +481,7 @@ export const zhCN = {
     },
     maxPerStrategy: "每种策略最大参数组合",
     limitHint: "硬上限",
-    action: "开始自动筛选",
+    action: "开始单一策略筛选",
     stop: "停止筛选",
     stopped: "已停止，可查看当前结果",
     running: "正在优化参数…",
@@ -504,11 +508,10 @@ export const zhCN = {
     eyebrow: "HIERARCHY",
     title: "一键组合策略",
     description:
-      "长周期寻找上行通道，短周期识别通道内小趋势，同时优化核心仓位，明确由长周期持仓、短周期控仓，还是采用核心加机动仓。",
-    coreAllocation: "核心仓位 %",
-    positionOptimization: "持仓模式与比例优化",
+      "长周期买点建立 A%，短周期买点增加 B%；短周期卖点减掉 B%，长周期卖点全部清仓。",
+    positionOptimization: "A / B 两层仓位优化",
     positionOptimizationHint:
-      "自动比较六档核心仓位；最大仓位固定为 100%，应用后仍可在策略实验室调整。",
+      "A、B 分别按 20% 步长组合并执行完整持仓回测，手续费和滑点计入排名。",
     action: "开始组合筛选",
     stop: "停止组合筛选",
     runningStrategies: "正在筛选长短周期候选…",
@@ -520,12 +523,8 @@ export const zhCN = {
     bestResults: "个最佳组合",
     longStrategy: "长周期 / 参数",
     shortStrategy: "短周期 / 参数",
-    holdingMode: "持仓模式",
-    holdingModes: {
-      "short-controls": "短周期全控仓",
-      "core-tactical": "核心 + 机动仓",
-      "long-controls": "长周期全程持仓",
-    },
+    allocationPlan: "两层仓位",
+    maximumHolding: "最高持仓",
     rebalances: "调仓",
     preview: "第一名组合权益预览",
     noPreview: "完成组合筛选后显示第一名的权益和回撤。",

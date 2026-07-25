@@ -140,23 +140,24 @@
   predefined stop orders when the active bar touches them. A stop crossed by a
   gap fills at the bar open. The function applies costs to long entries and
   exits and calculates equity, drawdown, return, Sharpe, win rate, profit
-  factor, trade count, benchmark return, and a screening score.
+  factor, trade count, benchmark return, and a screening score. The current
+  workspace passes `executionPolicy: "next-open"` so every user-facing
+  historical strategy uses the target path.
 - `runAllocationBacktest(...)`: executes an aligned `[0, 1]` allocation target
   from the prior completed bar at the next open, trades only the required
   delta, applies costs, and reports common performance plus rebalance records.
-- `buildHierarchicalAllocationTarget(longTarget, shortTarget, coreAllocation)`:
-  returns 0 when the long rule is flat, the configured core allocation when
-  only the long rule is active, and 1 when both rules are active.
 - `buildStrategyCombinationTarget(...)`: validates long/short registry roles
-  and builds the hierarchical target for one explicit pair.
+  and builds the zero/A/A+B target for one explicit pair.
 - `buildStrategyPlanAllocationTarget(...)`: builds dual-, long-only, or
-  short-only zero/core/maximum allocation targets with strict bounds.
+  short-only targets from explicit long-layer A and short-layer B allocations,
+  requiring each in `[0, 1]` and A+B no greater than one.
 - `buildStrategyPlanTarget(...)`: validates optional registry roles and builds
   a complete plan target from market bars.
 - `buildLiveAllocationGuidance(...)`: reports the newest previous/target
   allocation and increase, reduce, hold, or wait action.
-- `classifyHoldingMode(...)`: labels zero, intermediate, and full core
-  allocations as short-controlled, core-plus-tactical, or long-controlled.
+- `classifyManualExecutionWindow(now)`: uses `Asia/Shanghai` and a 15:00
+  cutoff to label live actions for same-day tail or next-trading-day open
+  execution without changing historical backtests.
 - `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
   strategy exit to a sell marker while separating range-end valuation exits.
 - `buildAllocationTradeMarkers(rebalances)`: maps allocation increases,
@@ -173,9 +174,10 @@
   progress, keeps only the best result for each strategy under the selected
   objective, and sorts those best results by the same objective.
 - `optimizeStrategyCombinations(...)`: screens standalone candidates, retains
-  two finalists per strategy, evaluates every retained long/short pair at the
-  fixed 0/20/40/60/80/100-percent core ladder, reports both progress stages,
-  and retains the best 32 combinations under the selected objective.
+  two finalists per strategy, evaluates every retained long/short pair at ten
+  fixed positive A/B choices in 20% steps with A+B no greater than 100%,
+  reports both progress stages, and retains the best 32 combinations under its
+  selected objective. Every choice runs the complete allocation backtest.
 
 Historical price bars, indicators, strategy lines, live guidance, stability,
 and backtests all receive the same normalized `MarketBar[]` from the active
@@ -186,7 +188,7 @@ and backtests all receive the same normalized `MarketBar[]` from the active
 - `createSaveBacktestInput(...)`: creates a compact current-backtest snapshot
   with the complete strategy plan and legacy primary strategy columns.
 - `parseStrategyAllocationPlan(...)`: validates optional long/short roles,
-  exact parameters, and core/maximum allocation bounds.
+  exact parameters, explicit A/B bounds, and legacy core/maximum conversion.
 - `buildLegacyStrategyPlan(...)`: derives a full-allocation single-horizon plan
   for rows saved before strategy-plan JSON existed.
 - `parseSaveBacktestInput(...)`: validates index/ETF/commodity identity,

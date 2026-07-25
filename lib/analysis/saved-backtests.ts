@@ -147,8 +147,10 @@ export function buildLegacyStrategyPlan(
   return {
     long: getStrategy(strategyId).horizon === "long" ? selection : null,
     short: getStrategy(strategyId).horizon === "short" ? selection : null,
-    coreAllocation: 1,
-    maximumAllocation: 1,
+    longAllocation:
+      getStrategy(strategyId).horizon === "long" ? 1 : 0,
+    shortAllocation:
+      getStrategy(strategyId).horizon === "short" ? 1 : 0,
   };
 }
 
@@ -158,19 +160,27 @@ export function parseStrategyAllocationPlan(
   if (!isRecord(value)) return null;
   const long = readStrategySelection(value.long, "long");
   const short = readStrategySelection(value.short, "short");
-  const coreAllocation = readFiniteNumber(value.coreAllocation, 0, 1);
-  const maximumAllocation = readFiniteNumber(
-    value.maximumAllocation,
-    0,
-    1,
-  );
+  let longAllocation = readFiniteNumber(value.longAllocation, 0, 1);
+  let shortAllocation = readFiniteNumber(value.shortAllocation, 0, 1);
+  if (longAllocation === null && shortAllocation === null) {
+    const legacyCore = readFiniteNumber(value.coreAllocation, 0, 1);
+    const legacyMaximum = readFiniteNumber(value.maximumAllocation, 0, 1);
+    if (
+      legacyCore !== null &&
+      legacyMaximum !== null &&
+      legacyCore <= legacyMaximum
+    ) {
+      longAllocation = legacyCore;
+      shortAllocation = legacyMaximum - legacyCore;
+    }
+  }
   if (
     long === undefined ||
     short === undefined ||
     (!long && !short) ||
-    coreAllocation === null ||
-    maximumAllocation === null ||
-    coreAllocation > maximumAllocation
+    longAllocation === null ||
+    shortAllocation === null ||
+    longAllocation + shortAllocation > 1 + 1e-10
   ) {
     return null;
   }
@@ -181,8 +191,8 @@ export function parseStrategyAllocationPlan(
     short: short
       ? { ...short, parameters: { ...short.parameters } }
       : null,
-    coreAllocation,
-    maximumAllocation,
+    longAllocation,
+    shortAllocation,
   };
 }
 
@@ -224,8 +234,8 @@ export function createSaveBacktestInput(
             parameters: { ...plan.short.parameters },
           }
         : null,
-      coreAllocation: plan.coreAllocation,
-      maximumAllocation: plan.maximumAllocation,
+      longAllocation: plan.longAllocation,
+      shortAllocation: plan.shortAllocation,
     },
     startDate,
     endDate,
