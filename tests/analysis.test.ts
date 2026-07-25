@@ -40,6 +40,7 @@ import {
   normalizeStrategyParameterInput,
   optimizeStrategies,
   screeningObjectiveValue,
+  selectScreeningBars,
 } from "../lib/analysis/screening";
 import { parseSaveBacktestInput } from "../lib/analysis/saved-backtests";
 import {
@@ -51,10 +52,12 @@ import {
 } from "../lib/analysis/strategies";
 import {
   COMBINATION_FINALISTS_PER_STRATEGY,
+  MAX_COMBINATION_PAIR_FINALISTS,
   MAX_COMBINATION_RESULTS,
   TWO_LAYER_ALLOCATION_CANDIDATES,
   buildLiveAllocationGuidance,
   buildStrategyPlanAllocationTarget,
+  buildStrategyPlanTimelineFromTargets,
   buildStrategyCombinationTarget,
   optimizeStrategyCombinations,
 } from "../lib/analysis/strategy-combinations";
@@ -1035,24 +1038,86 @@ test("builds optional long, optional short, and dual-horizon allocations", () =>
   );
 });
 
-test("builds ten positive bounded two-layer allocation candidates", () => {
-  assert.equal(TWO_LAYER_ALLOCATION_CANDIDATES.length, 10);
-  assert.deepEqual(TWO_LAYER_ALLOCATION_CANDIDATES[0], {
-    longAllocation: 0.2,
-    shortAllocation: 0.2,
-  });
-  assert.deepEqual(TWO_LAYER_ALLOCATION_CANDIDATES.at(-1), {
-    longAllocation: 0.8,
-    shortAllocation: 0.2,
-  });
+test("builds only two-layer candidates with 0, 40, 60, or 100 percent holdings", () => {
+  assert.deepEqual(TWO_LAYER_ALLOCATION_CANDIDATES, [
+    { longAllocation: 0, shortAllocation: 0.4 },
+    { longAllocation: 0, shortAllocation: 0.6 },
+    { longAllocation: 0.4, shortAllocation: 0.6 },
+    { longAllocation: 0.6, shortAllocation: 0.4 },
+  ]);
   assert.ok(
     TWO_LAYER_ALLOCATION_CANDIDATES.every(
       ({ longAllocation, shortAllocation }) =>
-        longAllocation > 0 &&
+        longAllocation >= 0 &&
         shortAllocation > 0 &&
-        longAllocation + shortAllocation <= 1,
+        [0, 0.4, 0.6, 1].includes(longAllocation) &&
+        [0.4, 0.6].includes(shortAllocation) &&
+        [0, 0.4, 0.6, 1].includes(longAllocation + shortAllocation),
     ),
   );
+});
+
+test("pairs short entries with exits and attributes a gated final clear to both horizons", () => {
+  const timeline = buildStrategyPlanTimelineFromTargets(
+    [0, 1, 1, 0, 0],
+    [0, 0, 1, 1, 0],
+    0.6,
+    0.4,
+  );
+
+  assert.deepEqual(timeline.target, [0, 0.6, 1, 0, 0]);
+  assert.deepEqual(timeline.signalEvents, [
+    [],
+    ["long-entry"],
+    ["short-entry"],
+    ["long-exit", "short-exit"],
+    [],
+  ]);
+  const shortEntries = timeline.signalEvents.flat().filter(
+    (event) => event === "short-entry",
+  ).length;
+  const shortExits = timeline.signalEvents.flat().filter(
+    (event) => event === "short-exit",
+  ).length;
+  assert.equal(shortEntries, shortExits);
+});
+
+test("executes attributed long and short signals at the following open", () => {
+  const bars = makeOhlcBars([
+    { open: 10, high: 10, low: 10, close: 10 },
+    { open: 11, high: 11, low: 11, close: 11 },
+    { open: 12, high: 12, low: 12, close: 12 },
+    { open: 13, high: 13, low: 13, close: 13 },
+    { open: 14, high: 14, low: 14, close: 14 },
+  ]);
+  const timeline = buildStrategyPlanTimelineFromTargets(
+    [0, 1, 1, 0, 0],
+    [0, 0, 1, 1, 0],
+    0.6,
+    0.4,
+  );
+  const result = runAllocationBacktest(
+    bars,
+    timeline.target,
+    {
+      initialCash: 10_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+    timeline.signalEvents,
+  );
+
+  assert.deepEqual(
+    result.rebalances.map((rebalance) => rebalance.signals),
+    [
+      ["long-entry"],
+      ["short-entry"],
+      ["long-exit", "short-exit"],
+    ],
+  );
+  assert.equal(result.rebalances.at(-1)?.targetAllocation, 0);
+  assert.equal(result.rebalances.at(-1)?.reason, "strategy");
 });
 
 test("reports current plan allocation and increase, reduce, hold, or wait", () => {
@@ -1839,6 +1904,7 @@ test("maps allocation increases, reductions, and valuation exits to markers", ()
       targetAllocation: 0.6,
       fillPrice: 101,
       reason: "strategy",
+      signals: ["long-entry"],
     },
     {
       time: "2026-01-03",
@@ -1846,6 +1912,7 @@ test("maps allocation increases, reductions, and valuation exits to markers", ()
       targetAllocation: 1,
       fillPrice: 103,
       reason: "strategy",
+      signals: ["short-entry"],
     },
     {
       time: "2026-01-04",
@@ -1853,6 +1920,7 @@ test("maps allocation increases, reductions, and valuation exits to markers", ()
       targetAllocation: 0.6,
       fillPrice: 99,
       reason: "strategy",
+      signals: ["short-exit"],
     },
     {
       time: "2026-01-05",
@@ -1867,7 +1935,12 @@ test("maps allocation increases, reductions, and valuation exits to markers", ()
   assert.equal(markers.sells.length, 1);
   assert.equal(markers.rangeExits.length, 1);
   assert.deepEqual(markers.buys.map((marker) => marker.price), [101, 103]);
+  assert.deepEqual(markers.buys.map((marker) => marker.signals), [
+    ["long-entry"],
+    ["short-entry"],
+  ]);
   assert.equal(markers.sells[0].price, 99);
+  assert.deepEqual(markers.sells[0].signals, ["short-exit"]);
   assert.equal(markers.rangeExits[0].price, 98);
 });
 
@@ -1929,13 +2002,30 @@ test("builds horizon-filtered screening candidates", () => {
   );
 });
 
+test("limits screening to the selected range plus 500 causal warmup bars", () => {
+  const bars = makeBars(
+    Array.from({ length: 1_200 }, (_, index) => 100 + index * 0.01),
+  );
+  const selected = selectScreeningBars(bars, {
+    startTime: bars[900].time,
+    endTime: bars[999].time,
+  });
+
+  assert.equal(selected.length, 600);
+  assert.equal(selected[0].time, bars[400].time);
+  assert.equal(selected.at(-1)?.time, bars[999].time);
+});
+
 test("optimizes bounded long and short strategy combinations", async () => {
   const bars = makeBars(
     Array.from({ length: 180 }, (_, index) => {
       return 30 + index * 0.05 + Math.sin(index / 5) * 2.4;
     }),
   );
-  const progress: number[] = [];
+  const progress: Array<{
+    completed: number;
+    stage: "strategies" | "pairs" | "allocations";
+  }> = [];
   const outcome = await optimizeStrategyCombinations(
     bars,
     {
@@ -1947,11 +2037,22 @@ test("optimizes bounded long and short strategy combinations", async () => {
     {
       maxPerStrategy: 1,
       yieldEvery: 16,
-      onProgress: (update) => progress.push(update.completed),
+      onProgress: (update) =>
+        progress.push({
+          completed: update.completed,
+          stage: update.stage,
+        }),
     },
   );
 
   assert.equal(COMBINATION_FINALISTS_PER_STRATEGY, 2);
+  assert.ok(
+    MAX_COMBINATION_PAIR_FINALISTS >=
+      LONG_HORIZON_STRATEGY_IDS.length *
+        COMBINATION_FINALISTS_PER_STRATEGY *
+        SHORT_HORIZON_STRATEGY_IDS.length *
+        COMBINATION_FINALISTS_PER_STRATEGY,
+  );
   assert.equal(
     outcome.totalCandidates,
     STRATEGIES.length +
@@ -1966,8 +2067,12 @@ test("optimizes bounded long and short strategy combinations", async () => {
     outcome.results.length,
     MAX_COMBINATION_RESULTS,
   );
-  assert.equal(progress.at(0), 0);
-  assert.equal(progress.at(-1), outcome.totalCandidates);
+  assert.equal(progress.at(0)?.completed, 0);
+  assert.equal(progress.at(-1)?.completed, outcome.totalCandidates);
+  assert.deepEqual(
+    new Set(progress.map((update) => update.stage)),
+    new Set(["strategies", "pairs", "allocations"]),
+  );
 
   for (const result of outcome.results) {
     assert.equal(getStrategy(result.longStrategyId).horizon, "long");
@@ -1991,6 +2096,49 @@ test("optimizes bounded long and short strategy combinations", async () => {
       ) <= 0,
     );
   }
+});
+
+test("bounds allocation optimization to the retained strategy-pair shortlist", async () => {
+  const bars = makeBars(
+    Array.from({ length: 80 }, (_, index) => {
+      return 25 + index * 0.03 + Math.sin(index / 4);
+    }),
+  );
+  const maxPairFinalists = 5;
+  const outcome = await optimizeStrategyCombinations(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+    {
+      maxPerStrategy: 2,
+      maxPairFinalists,
+      yieldEvery: 10_000,
+    },
+  );
+  const strategyCandidates = STRATEGIES.length * 2;
+  const pairCandidates =
+    LONG_HORIZON_STRATEGY_IDS.length *
+    COMBINATION_FINALISTS_PER_STRATEGY *
+    SHORT_HORIZON_STRATEGY_IDS.length *
+    COMBINATION_FINALISTS_PER_STRATEGY;
+  const remainingAllocationCandidates =
+    TWO_LAYER_ALLOCATION_CANDIDATES.length - 1;
+
+  assert.equal(
+    outcome.totalCandidates,
+    strategyCandidates +
+      pairCandidates +
+      maxPairFinalists * remainingAllocationCandidates,
+  );
+  assert.equal(outcome.evaluatedCount, outcome.totalCandidates);
+  assert.equal(
+    outcome.results.length,
+    maxPairFinalists * TWO_LAYER_ALLOCATION_CANDIDATES.length,
+  );
 });
 
 test("cancels combination optimization between chunks", async () => {

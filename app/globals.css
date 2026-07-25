@@ -1406,29 +1406,6 @@ button {
   margin-top: 16px;
 }
 
-.combination-allocation-ladder {
-  display: grid;
-  gap: 5px;
-  margin-top: 16px;
-  padding: 10px;
-  border: 1px solid rgba(56, 189, 248, 0.22);
-  border-radius: 7px;
-  background: rgba(56, 189, 248, 0.06);
-}
-
-.combination-allocation-ladder > span,
-.combination-allocation-ladder > small {
-  color: var(--muted);
-  font-size: 8px;
-  line-height: 1.45;
-}
-
-.combination-allocation-ladder > strong {
-  color: #7dd3fc;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 10px;
-}
-
 .combination-results {
   min-width: 0;
 }

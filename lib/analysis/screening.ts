@@ -16,6 +16,7 @@ import {
 export const MAX_PARAMETER_SETS_PER_STRATEGY = 2_500;
 export const DEFAULT_PARAMETER_SETS_PER_STRATEGY =
   MAX_PARAMETER_SETS_PER_STRATEGY;
+export const SCREENING_WARMUP_BARS = 500;
 
 const INTEGER_STRATEGY_PARAMETER_KEYS = new Set([
   "fast",
@@ -510,6 +511,41 @@ function yieldToMainThread(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+export function selectScreeningBars(
+  bars: MarketBar[],
+  settings: Pick<BacktestSettings, "startTime" | "endTime">,
+  warmupBars = SCREENING_WARMUP_BARS,
+): MarketBar[] {
+  if (bars.length === 0) return bars;
+
+  const startBoundary = settings.startTime
+    ? Date.parse(`${settings.startTime}T00:00:00+08:00`)
+    : Number.NEGATIVE_INFINITY;
+  const endBoundary = settings.endTime
+    ? Date.parse(`${settings.endTime}T23:59:59+08:00`)
+    : Number.POSITIVE_INFINITY;
+  const firstRangeIndex = Number.isFinite(startBoundary)
+    ? bars.findIndex((bar) => bar.timestamp >= startBoundary)
+    : 0;
+  const startIndex =
+    firstRangeIndex < 0
+      ? Math.max(0, bars.length - Math.max(Math.floor(warmupBars), 0))
+      : Math.max(
+          0,
+          firstRangeIndex - Math.max(Math.floor(warmupBars), 0),
+        );
+  const firstAfterRangeIndex = Number.isFinite(endBoundary)
+    ? bars.findIndex(
+        (bar, index) => index >= startIndex && bar.timestamp > endBoundary,
+      )
+    : -1;
+
+  return bars.slice(
+    startIndex,
+    firstAfterRangeIndex < 0 ? bars.length : firstAfterRangeIndex,
+  );
+}
+
 export async function optimizeStrategies(
   bars: MarketBar[],
   settings: Omit<BacktestSettings, "interval"> & {
@@ -518,6 +554,7 @@ export async function optimizeStrategies(
   options: OptimizeStrategiesOptions = {},
 ): Promise<ScreeningOptimizationResult> {
   const candidates = buildScreeningCandidates(options.maxPerStrategy);
+  const analysisBars = selectScreeningBars(bars, settings);
   const objective = options.objective ?? "balanced";
   const yieldEvery = Math.max(Math.floor(options.yieldEvery ?? 24), 1);
   const bestByStrategy = new Map<StrategyId, BacktestResult>();
@@ -535,7 +572,7 @@ export async function optimizeStrategies(
     if (options.signal?.aborted) break;
     try {
       const result = runBacktest(
-        bars,
+        analysisBars,
         candidate.strategyId,
         candidate.parameters,
         settings,

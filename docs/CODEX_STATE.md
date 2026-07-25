@@ -80,7 +80,9 @@ Implemented:
 - Bounded parameter-grid optimization across all 32 strategies, with a
   configurable hard cap of 2,500 combinations per strategy, chunked progress,
   cancellation, and best-per-strategy result retention. The default grids
-  currently contain 31,172 valid combinations.
+  currently contain 31,172 valid combinations. Screening uses at most 500
+  pre-range bars for causal warm-up instead of recalculating every candidate
+  from the beginning of the expanded chart history.
 - Five deterministic screening objectives: balanced score, return/drawdown
   ratio, maximum return, minimum drawdown, and maximum Sharpe.
 - A unified strategy plan with optional long and short selections, separate
@@ -88,15 +90,19 @@ Implemented:
   A dual plan uses zero/A/A+B; a long-only plan uses zero/A and a short-only
   plan uses zero/B.
 - A separate hierarchical combination screen below the renamed one-click
-  single-strategy screen. The two-stage optimizer retains two standalone
-  finalists per strategy, then evaluates every retained long/short pair across
-  ten positive 20%-step A/B choices whose sum is at most 100%. It owns an
-  independent objective and parameter cap, supports progress/cancellation,
+  single-strategy screen. The three-stage optimizer retains two standalone
+  finalists per strategy, ranks every retained long/short pair at A=60% and
+  B=40%, keeps up to 1,024 pair finalists, then evaluates four valid A/B choices
+  that produce only 0%, 40%, 60%, or 100% holdings. The current maximum is
+  1,020 pairs, so every retained pair reaches the allocation stage. It owns an independent
+  objective and parameter cap, supports three-stage progress/cancellation,
   keeps the best 32 results, displays A/B, and applies a complete result to the
   lab and trend chart.
 - A partial-allocation backtest that executes completed-bar combination targets
   at the next open, applies commission and slippage to allocation deltas, and
   reports rebalances plus common return/drawdown/Sharpe/equity metrics.
+  Strategy-driven rebalances retain long/short entry/exit attribution; a long
+  exit closes and labels any still-active short layer at the same fill.
 - A live-only Shanghai-time execution label: before 15:00 it points to the
   current day's tail session and at/after 15:00 it points to the next trading
   day's open. Historical buy, sell, add, and reduce signals always retain
@@ -117,6 +123,19 @@ Implemented:
 
 ## Verification status
 
+- Three-stage combination screening, four holding-state candidates, bounded
+  warm-up, and attributed long/short exits passed 91 TypeScript tests, the
+  production build, two rendered/source tests, scoped ESLint, and
+  `git diff --check` on 2026-07-25. On the same 6,505-bar N225 payload and
+  trailing-500-bar test range, a one-parameter-per-strategy comparison fell
+  from about 13.8 seconds for the prior 10-allocation full-history pass to
+  about 1.1 seconds for 1,052 three-stage evaluations. The full-repository
+  ESLint command remains polluted by generated `dist` files under retained
+  `.worktrees`; current `app`, `lib`, and `tests` sources pass. A real local
+  browser confirmed the removed allocation-explanation card, completed all
+  1,052 evaluations, rendered eight ranked rows, applied the first
+  A=40%/B=60% result to the chart, displayed attributed long/short marker
+  labels, and logged no errors.
 - Extended daily history passed 86 TypeScript tests, the production build, two
   rendered/source tests, ESLint, and `git diff --check` on 2026-07-25. A real
   local N225 page loaded 6,505 valid adjusted Yahoo bars, displayed the

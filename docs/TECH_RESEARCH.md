@@ -580,17 +580,32 @@ when both signals are active. This produces the same deterministic target
 series while making every user action and saved value directly auditable.
 
 Decision: use Option B. Validate both values in `[0, 1]` and require their sum
-not to exceed one. For combination screening, evaluate positive 20% steps for
-both A and B and retain only pairs whose sum is at most 100%. This yields ten
-bounded two-layer choices and avoids false percentage precision in a manual
-rebalancing workflow. The strategy lab still permits zero for either layer so
-one selected horizon can be tested independently.
+not to exceed one. The revised manual-position constraint allows A at 0%, 40%,
+60%, or 100% and B at 40% or 60%, while actual dual-plan holdings must remain
+0%, 40%, 60%, or 100%. The valid dual choices are therefore `(0%,40%)`,
+`(0%,60%)`, `(40%,60%)`, and `(60%,40%)`. A=100% remains available to a
+long-only plan; pairing it with a positive B would exceed the no-leverage bound.
 
 Position sizing must be evaluated inside every combination backtest rather
 than applied after ranking. Allocation changes alter exposure, commission,
 slippage, equity, drawdown, and Sharpe, so the selected optimization objective
 cannot be calculated correctly without replaying the A/B target series through
 the allocation engine.
+
+Two bounded search shapes were compared after chart history expanded. An
+exhaustive retained-pair-by-allocation pass preserves the best result inside
+the retained parameter set but repeats the allocation replay for every pair.
+A three-stage pass first ranks pairs at the default 60%/40% reference and can
+bound how many proceed to the remaining allocations. A tight shortlist is
+faster but can miss a pair that performs poorly at the reference allocation and
+strongly at another allocation. Decision: retain two parameter finalists per
+strategy and cap pair finalists at 1,024. The current 15-long by 17-short
+catalog yields at most `30 * 34 = 1,020` retained pairs, so the cap preserves
+every pair and every allowed allocation while leaving a future safety bound.
+The result is exhaustive within retained parameters, not a global optimum over
+the full parameter Cartesian product.
+Use up to 500 bars before the selected range as causal warm-up so unrelated
+pre-range chart history does not dominate runtime or initialization state.
 
 Two historical execution choices were compared:
 

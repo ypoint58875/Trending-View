@@ -102,12 +102,17 @@ trade only to make a test pass.
 ## Parameter screening is slow
 
 1. Confirm the selected date range is not larger than needed.
-2. Reduce the per-strategy parameter cap from 2,500 for a faster exploratory
+2. Confirm `selectScreeningBars(...)` retained no more than 500 bars before the
+   selected start. Fetching chart history from 2000 must not by itself make a
+   recent screening run scan the entire series.
+3. Reduce the per-strategy parameter cap from 2,500 for a faster exploratory
    pass.
-3. Use the stop action to retain the best results found so far.
-4. Confirm progress continues to advance. The optimizer intentionally yields
+4. For combination screening, confirm progress advances through parameter,
+   pair, and allocation stages and the pair shortlist remains bounded.
+5. Use the stop action when a run is no longer useful.
+6. Confirm progress continues to advance. The optimizer intentionally yields
    after small batches so chart and stop controls remain responsive.
-5. If a production workload regularly needs larger grids or concurrent users,
+7. If a production workload regularly needs larger grids or concurrent users,
    move execution to a Web Worker or durable server queue rather than removing
    the cap.
 
@@ -136,7 +141,9 @@ trade only to make a test pass.
    reference; a candle/oscillator rule may legitimately add no line.
 5. Confirm the chart legend includes separate long- and short-horizon prefixes.
 6. For a partial/combined plan, inspect allocation increase/reduction markers
-   rather than expecting round-trip trade markers.
+   rather than expecting generic round-trip trade markers. These fills should
+   be labeled as long buy/sell or short buy/sell; a gated final clear may show
+   both sell labels.
 7. Confirm the selected date range has at least one allocation change.
 
 ## Live execution label looks wrong

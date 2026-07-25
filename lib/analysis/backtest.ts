@@ -59,11 +59,18 @@ export interface AllocationRebalance {
   targetAllocation: number;
   fillPrice: number;
   reason: "strategy" | "range-end";
+  signals?: AllocationSignalEvent[];
 }
 
 export interface AllocationBacktestResult extends BacktestPerformance {
   rebalances: AllocationRebalance[];
 }
+
+export type AllocationSignalEvent =
+  | "long-entry"
+  | "long-exit"
+  | "short-entry"
+  | "short-exit";
 
 const periodsPerYear: Record<MarketInterval, number> = {
   "1m": 60_480,
@@ -168,15 +175,20 @@ export function runAllocationBacktest(
   allBars: MarketBar[],
   fullTarget: number[],
   settings: BacktestSettings,
+  fullSignalEvents?: readonly (readonly AllocationSignalEvent[])[],
 ): AllocationBacktestResult {
   if (fullTarget.length !== allBars.length) {
     throw new Error("Allocation target must align with market bars");
+  }
+  if (fullSignalEvents && fullSignalEvents.length !== allBars.length) {
+    throw new Error("Allocation signal events must align with market bars");
   }
 
   const indexedBars = allBars
     .map((bar, index) => ({
       bar,
       target: clampAllocation(fullTarget[index] ?? 0),
+      signals: fullSignalEvents?.[index] ?? [],
     }))
     .filter(({ bar }) =>
       filterRange([bar], settings.startTime, settings.endTime).length,
@@ -196,6 +208,7 @@ export function runAllocationBacktest(
   const rebalanceAtOpen = (
     bar: MarketBar,
     targetAllocation: number,
+    signals: readonly AllocationSignalEvent[],
   ) => {
     const equityAtOpen = cash + units * bar.open;
     if (equityAtOpen <= 0 || bar.open <= 0) return;
@@ -219,6 +232,7 @@ export function runAllocationBacktest(
         targetAllocation,
         fillPrice,
         reason: "strategy",
+        signals: [...signals],
       });
     } else if (unitDelta < -tolerance) {
       const fillPrice = bar.open * (1 - slippageRate);
@@ -232,6 +246,7 @@ export function runAllocationBacktest(
         targetAllocation,
         fillPrice,
         reason: "strategy",
+        signals: [...signals],
       });
     }
   };
@@ -239,7 +254,11 @@ export function runAllocationBacktest(
   for (let index = 0; index < indexedBars.length; index += 1) {
     const { bar } = indexedBars[index];
     if (index > 0) {
-      rebalanceAtOpen(bar, indexedBars[index - 1].target);
+      rebalanceAtOpen(
+        bar,
+        indexedBars[index - 1].target,
+        indexedBars[index - 1].signals,
+      );
     }
 
     const currentEquity = cash + units * bar.close;
@@ -266,6 +285,7 @@ export function runAllocationBacktest(
       targetAllocation: 0,
       fillPrice,
       reason: "range-end",
+      signals: [],
     });
     equity[equity.length - 1].equity = cash;
   }

@@ -155,6 +155,7 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /value="40"/);
   assert.match(html, /name="combination-screening-objective"/);
   assert.match(html, /name="combination-max-parameter-sets"/);
+  assert.doesNotMatch(html, /combination-allocation-ladder/);
   assert.doesNotMatch(html, /\u673a\u52a8\u4ed3/);
   assert.match(html, />\u5e94\u7528</);
   assert.match(html, /\u9ec4\u91d1/);
@@ -214,8 +215,9 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /getStrategiesByHorizon\("long"\)/);
   assert.match(workspace, /getStrategiesByHorizon\("short"\)/);
   assert.match(workspace, /applyCombinationResult/);
-  assert.match(workspace, /buildStrategyPlanAllocationTarget|buildStrategyPlanTarget/);
+  assert.match(workspace, /buildStrategyPlanTimeline/);
   assert.match(workspace, /buildAllocationTradeMarkers/);
+  assert.doesNotMatch(workspace, /combination-allocation-ladder/);
   assert.match(workspace, /combinationScreeningObjective/);
   assert.match(workspace, /combinationMaxParameterSets/);
   assert.match(workspace, /applyCurrentStrategyToChart/);

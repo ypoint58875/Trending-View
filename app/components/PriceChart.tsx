@@ -13,6 +13,7 @@ import type { MarketBar } from "@/lib/market/types";
 import type { BacktestTrade } from "@/lib/analysis/backtest";
 import {
   buildTradeMarkers,
+  type TradeMarker,
   type TradeMarkers,
 } from "@/lib/analysis/trade-markers";
 import {
@@ -161,6 +162,26 @@ interface TradeMarkerLabels {
   buy: string;
   sell: string;
   rangeExit: string;
+  longBuy: string;
+  longSell: string;
+  shortBuy: string;
+  shortSell: string;
+}
+
+function allocationMarkerLabel(
+  marker: TradeMarker,
+  labels: TradeMarkerLabels,
+  fallback: string,
+): string {
+  const signalLabels = {
+    "long-entry": labels.longBuy,
+    "long-exit": labels.longSell,
+    "short-entry": labels.shortBuy,
+    "short-exit": labels.shortSell,
+  } as const;
+  return marker.signals?.length
+    ? marker.signals.map((signal) => signalLabels[signal]).join(" + ")
+    : fallback;
 }
 
 export function buildTradeMarkerSeries(
@@ -179,9 +200,14 @@ export function buildTradeMarkerSeriesFromMarkers(
     {
       name: labels.buy,
       type: "scatter",
-      data: tradeMarkers.buys.map((marker) => ({
-        value: [marker.time, marker.price],
-      })),
+      data: tradeMarkers.buys.map((marker) => {
+        const label = allocationMarkerLabel(marker, labels, labels.buy);
+        return {
+          name: label,
+          value: [marker.time, marker.price],
+          label: { formatter: label },
+        };
+      }),
       symbol: "triangle",
       symbolSize: 14,
       symbolOffset: [0, 8],
@@ -207,9 +233,14 @@ export function buildTradeMarkerSeriesFromMarkers(
     {
       name: labels.sell,
       type: "scatter",
-      data: tradeMarkers.sells.map((marker) => ({
-        value: [marker.time, marker.price],
-      })),
+      data: tradeMarkers.sells.map((marker) => {
+        const label = allocationMarkerLabel(marker, labels, labels.sell);
+        return {
+          name: label,
+          value: [marker.time, marker.price],
+          label: { formatter: label },
+        };
+      }),
       symbol: "triangle",
       symbolRotate: 180,
       symbolSize: 14,

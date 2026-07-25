@@ -155,13 +155,19 @@
 - `runAllocationBacktest(...)`: executes an aligned `[0, 1]` allocation target
   from the prior completed bar at the next open, trades only the required
   delta, applies costs, and reports common performance plus rebalance records.
+  An optional aligned signal-event stream attributes fills to long/short
+  entries and exits.
 - `buildStrategyCombinationTarget(...)`: validates long/short registry roles
   and builds the zero/A/A+B target for one explicit pair.
 - `buildStrategyPlanAllocationTarget(...)`: builds dual-, long-only, or
   short-only targets from explicit long-layer A and short-layer B allocations,
   requiring each in `[0, 1]` and A+B no greater than one.
-- `buildStrategyPlanTarget(...)`: validates optional registry roles and builds
-  a complete plan target from market bars.
+- `buildStrategyPlanTimeline(...)`: validates optional registry roles and
+  builds both the complete allocation target and aligned long-entry, long-exit,
+  short-entry, and short-exit events. Closing the long gate emits both exit
+  events when the short layer remains active.
+- `buildStrategyPlanTarget(...)`: returns the target portion of the same
+  timeline contract.
 - `buildLiveAllocationGuidance(...)`: reports the newest previous/target
   allocation and increase, reduce, hold, or wait action.
 - `MarketWorkspace.applyCurrentStrategyToChart()`: keeps persistence separate
@@ -173,7 +179,8 @@
 - `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
   strategy exit to a sell marker while separating range-end valuation exits.
 - `buildAllocationTradeMarkers(rebalances)`: maps allocation increases,
-  reductions, and range-end liquidations to the same chart-marker contract.
+  reductions, and range-end liquidations to the same chart-marker contract
+  while retaining long/short event attribution for chart labels.
 - `buildScreeningCandidates(maxPerStrategy, horizons)`: expands the constrained
   parameter spaces for the requested strategy horizons, includes each default
   parameter set, and deterministically samples any space above the 2,500 hard
@@ -182,14 +189,18 @@
   return/drawdown, total-return, minimum-drawdown, or Sharpe utility.
 - `compareScreeningResults(left, right, objective)`: orders candidates under
   the selected objective and deterministic metric tie-breakers.
+- `selectScreeningBars(bars, settings)`: limits optimization calculations to
+  the selected range plus up to 500 earlier daily bars for causal warm-up.
 - `optimizeStrategies(...)`: runs candidates in interruptible chunks, reports
   progress, keeps only the best result for each strategy under the selected
   objective, and sorts those best results by the same objective.
-- `optimizeStrategyCombinations(...)`: screens standalone candidates, retains
-  two finalists per strategy, evaluates every retained long/short pair at ten
-  fixed positive A/B choices in 20% steps with A+B no greater than 100%,
-  reports both progress stages, and retains the best 32 combinations under its
-  selected objective. Every choice runs the complete allocation backtest.
+- `optimizeStrategyCombinations(...)`: screens standalone candidates and
+  retains two finalists per strategy, ranks their long/short pairs at reference
+  A=60% and B=40%, keeps up to 1,024 pair finalists, then backtests four valid
+  A/B choices for the finalists. It reports parameter, pair, and allocation
+  stages and retains the best 32 combinations under the selected objective.
+  The current registry creates at most 1,020 retained pairs, so every pair is
+  evaluated at every allowed allocation.
 
 Historical price bars, indicators, strategy lines, live guidance, stability,
 and backtests all receive the same normalized `MarketBar[]` from the active

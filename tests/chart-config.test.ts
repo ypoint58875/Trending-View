@@ -8,6 +8,7 @@ import {
   buildPriceDataZoom,
   buildStrategyLineSeries,
   buildTradeMarkerSeries,
+  buildTradeMarkerSeriesFromMarkers,
 } from "../app/components/PriceChart";
 import type { MarketBar } from "../lib/market/types";
 import type {
@@ -40,6 +41,12 @@ type MarkerSeries = {
     color?: string;
     backgroundColor?: string;
   };
+  data?: Array<{
+    name?: string;
+    label?: {
+      formatter?: string;
+    };
+  }>;
 };
 
 type IndicatorSeries = {
@@ -282,6 +289,10 @@ test("uses dedicated high-contrast colors for trade markers", () => {
   const [buy, sell, rangeExit] = buildTradeMarkerSeries([], {
     buy: "Buy",
     sell: "Sell",
+    longBuy: "Long buy",
+    longSell: "Long sell",
+    shortBuy: "Short buy",
+    shortSell: "Short sell",
     rangeExit: "Range exit",
   }) as unknown as MarkerSeries[];
 
@@ -302,6 +313,47 @@ test("uses dedicated high-contrast colors for trade markers", () => {
   assert.equal(sell.label?.backgroundColor, "rgba(7, 15, 22, 0.82)");
 
   assert.equal(rangeExit.itemStyle?.color, "#94a3b8");
+});
+
+test("labels allocation markers by long and short strategy actions", () => {
+  const [buy, sell] = buildTradeMarkerSeriesFromMarkers(
+    {
+      buys: [
+        {
+          time: "2026-01-02",
+          price: 100,
+          event: "entry",
+          signals: ["short-entry"],
+        },
+      ],
+      sells: [
+        {
+          time: "2026-01-03",
+          price: 99,
+          event: "exit",
+          signals: ["long-exit", "short-exit"],
+        },
+      ],
+      rangeExits: [],
+    },
+    {
+      buy: "Buy",
+      sell: "Sell",
+      longBuy: "Long buy",
+      longSell: "Long sell",
+      shortBuy: "Short buy",
+      shortSell: "Short sell",
+      rangeExit: "Range exit",
+    },
+  ) as unknown as MarkerSeries[];
+
+  assert.equal(buy.data?.[0].name, "Short buy");
+  assert.equal(buy.data?.[0].label?.formatter, "Short buy");
+  assert.equal(sell.data?.[0].name, "Long sell + Short sell");
+  assert.equal(
+    sell.data?.[0].label?.formatter,
+    "Long sell + Short sell",
+  );
 });
 
 test("makes the selected price-chart zoom window directly draggable", () => {

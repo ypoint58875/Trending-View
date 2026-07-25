@@ -16,9 +16,15 @@
 - Replaced core/maximum/tactical holding terminology with explicit long layer
   A and short layer B. A long buy establishes A, a short buy adds B, a short
   sell removes B, and a long sell clears the position.
-- Changed combination holding search to ten positive 20%-step A/B choices and
-  replayed every choice through the next-open allocation backtest before
-  ranking.
+- Changed combination screening to parameter, pair, and allocation stages,
+  with two finalists per strategy, a 1,024-pair bound that covers all 1,020
+  current retained pairs, and four A/B choices
+  that produce only 0%, 40%, 60%, or 100% holdings.
+- Limited screening calculations to the selected range plus 500 causal warm-up
+  bars so the expanded chart history does not slow every candidate.
+- Added long/short entry and exit attribution to allocation rebalances and
+  chart markers; a long-gate clear records a simultaneous short exit when that
+  layer is active.
 - Added backward-compatible conversion from saved core/maximum JSON to A/B and
   a live `Asia/Shanghai` 15:00 execution label without changing historical
   following-open fills.
@@ -44,8 +50,8 @@
   allocation inside the long uptrend.
 - Added a partial-allocation next-open backtest with per-rebalance commission,
   slippage, range-end liquidation, and shared screening metrics.
-- Added bounded two-stage combination screening: two standalone finalists per
-  strategy, retained long/short pairing, shared objectives, progress,
+- Added the initial bounded combination-screening foundation: standalone
+  finalists, retained long/short pairing, shared objectives, progress,
   cancellation, ranked results, and an equity/drawdown preview.
 - Added coverage for horizon completeness, hierarchy truth tables, prefix
   invariance, allocation execution and costs, bounded role-safe optimization,

@@ -198,15 +198,25 @@ bounded to `[0, 1]` and their sum may not exceed one.
 
 Avoid the full parameter Cartesian product. First retain the best two
 standalone parameter sets for every strategy under the combination screen's
-selected objective and parameter cap, then evaluate the retained
-long-by-short product across ten positive 20%-step A/B choices whose sum is at
-most 100%. Run a complete allocation backtest for each choice so costs,
-exposure, return, drawdown, and Sharpe participate in ranking. Keep progress
-and cancellation interruptible and retain only the best 32 results. Applying a
-result restores both strategies, both parameter sets, A, and B, then projects
-both reference sets and allocation markers to the main chart. All historical
-targets rebalance at the following open. A single strategy at full allocation
-uses the same manual-history policy.
+selected objective and parameter cap. Rank their long-by-short product once at
+reference A=60% and B=40%, retain up to 1,024 pairs, then run complete allocation
+backtests for `(0%,40%)`, `(0%,60%)`, `(40%,60%)`, and `(60%,40%)` on those
+finalists. These choices keep actual target holdings at 0%, 40%, 60%, or 100%;
+A=100% remains meaningful for a long-only plan and is not paired with a
+positive B. Keep all three stages interruptible and retain only the best 32
+results. The current two-finalist catalog produces 1,020 pairs, below the cap,
+so every retained pair reaches the allocation stage. The search is exhaustive
+inside those retained parameters, not across the full cross-strategy parameter
+Cartesian product.
+
+Screening uses the selected range plus up to 500 preceding bars for causal
+warm-up so extending chart acquisition to 2000 does not change runtime in
+proportion to unrelated older history. Applying a result restores both
+strategies, both parameter sets, A, and B, then projects both reference sets
+and allocation markers to the main chart. Allocation rebalances retain
+long/short event attribution; a long exit also emits a short exit if that layer
+was active. All historical targets rebalance at the following open. A single
+strategy at full allocation uses the same manual-history policy.
 
 Persist current plans with explicit `longAllocation` and `shortAllocation`.
 Read prior core/maximum plan JSON as `A = core` and

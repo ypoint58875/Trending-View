@@ -1,5 +1,6 @@
 import type {
   AllocationRebalance,
+  AllocationSignalEvent,
   BacktestTrade,
 } from "./backtest";
 
@@ -7,6 +8,7 @@ export interface TradeMarker {
   time: string;
   price: number;
   event: "entry" | "exit" | "range-exit";
+  signals?: AllocationSignalEvent[];
 }
 
 export interface TradeMarkers {
@@ -57,6 +59,7 @@ export function buildAllocationTradeMarkers(
       time: rebalance.time,
       price: rebalance.fillPrice,
       event,
+      signals: rebalance.signals,
     };
     if (event === "range-exit") {
       markers.rangeExits.push(marker);

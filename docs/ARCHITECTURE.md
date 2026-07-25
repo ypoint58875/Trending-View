@@ -68,12 +68,16 @@ database schema.
 
 Single-strategy screening generates constrained parameter grids from the shared
 strategy registry, applies a per-strategy cap, yields between small batches,
-and retains only the highest-scoring result for each strategy. Combination
-screening has an independent objective and per-strategy cap while reusing the
-same candidate and comparison contracts in two bounded stages: keep two
-standalone finalists per strategy, then compare long-horizon finalists against
-short-horizon finalists at ten fixed A/B choices. This bounds UI blocking and
-result memory without creating a full parameter Cartesian product.
+and retains only the highest-scoring result for each strategy. Both screening
+paths trim calculation input to the selected range plus up to 500 earlier bars
+for causal warm-up. Combination screening has an independent objective and
+per-strategy cap while reusing the same candidate and comparison contracts in
+three bounded stages: keep two standalone finalists per strategy, rank the
+long/short Cartesian product at reference A=60% and B=40%, retain up to 1,024
+pairs, then optimize four valid A/B choices for those finalists. The current
+two-finalist catalog produces at most 1,020 pairs, so none are pruned. This bounds UI
+blocking and result memory without forcing every allocation candidate through
+every strategy pair.
 
 Every strategy registry entry declares a stable `long` or `short` horizon.
 These labels describe intended signal duration on daily bars rather than a
@@ -83,7 +87,9 @@ between zero and B. A dual target is hierarchical: the long rule gates all
 exposure, establishes A when active, and the short rule adds or removes B.
 The allocation backtest applies the prior completed bar's target at the next
 open, trades only the allocation delta, applies costs to each rebalance, and
-liquidates at the selected range end.
+liquidates at the selected range end. Strategy-driven rebalances carry explicit
+long/short entry/exit attribution. A long-gate exit also closes an active short
+layer, so the final strategy sell can contain both exit events.
 
 The strategy registry supports two execution contracts. Target-state
 strategies produce long/flat decisions after a completed bar and execute at the

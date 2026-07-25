@@ -67,19 +67,24 @@ trades or run unattended jobs.
   up to 2,500 combinations per strategy and ranked by a return, Sharpe,
   drawdown, and trade-count score.
 - Chunked screening progress and cancellation, retaining only the best
-  parameter set for each strategy.
+  parameter set for each strategy. Screening calculations use the selected
+  range plus up to 500 earlier daily bars for causal indicator warm-up, so
+  expanding chart history does not force every candidate to scan from 2000.
 - A two-selector strategy lab where either the long- or short-horizon rule can
   be omitted. A long-only plan switches between zero and A; a short-only plan
   switches between zero and B. A dual plan uses zero outside the long trend,
   A when only the long rule is active, and A+B when both rules are active. Its
   Apply action projects the current plan to the trend chart and moves the view
   to that chart; durable saving remains a separate shortcut-bar action.
-- A separate bounded long/short combination screen. It first retains two
-  standalone parameter finalists per strategy, then compares hierarchical
-  pairs across ten positive A/B choices in 20% steps, with A+B no greater than
-  100%. The combination screen has its own optimization objective and
-  per-strategy parameter cap. Every ranked result displays A and B and can be
-  applied directly to the strategy lab and trend chart.
+- A separate bounded three-stage long/short combination screen. It retains two
+  standalone parameter finalists per strategy, ranks long/short pairs at the
+  reference 60%/40% allocation, keeps up to 1,024 pair finalists, and then
+  optimizes their valid A/B choices. The current catalog produces at most 1,020
+  retained pairs, so no pair is discarded. Dual-strategy screening uses `(0%,40%)`,
+  `(0%,60%)`, `(40%,60%)`, and `(60%,40%)`, so actual target holdings remain
+  0%, 40%, 60%, or 100%. A=100% remains available to a long-only plan. The
+  screen has its own objective and per-strategy cap; every ranked result
+  displays A and B and can be applied directly to the lab and trend chart.
 
 ## Run locally
 
@@ -169,14 +174,18 @@ Regimes use the current close versus a 60-day SMA and the SMA's 20-bar slope,
 retaining earlier bars for causal warm-up. These checks do not replace
 out-of-sample or walk-forward validation.
 
-Combination screening is also an in-sample comparison. It evaluates ten fixed
-two-layer A/B choices rather than fitting continuous percentages. A long buy
-adds A, a short buy adds B, a short sell removes B, and a long sell clears the
-position. Every holding choice is replayed through the allocation backtest, so
-exposure, commission, slippage, return, drawdown, and Sharpe affect its rank.
-The bounded two-stage search reduces computation and parameter mining without
-eliminating overfitting. All historical changes execute at the following daily
-open. A single strategy at 100% allocation uses the same manual-history
+Combination screening is also an in-sample comparison. A long buy adds A, a
+short buy adds B, a short sell removes B, and a long sell clears every active
+layer. Rebalance records preserve long-entry, long-exit, short-entry, and
+short-exit attribution; when the long gate closes while the short layer is
+active, the final strategy sell contains both exit events. Every finalist
+holding choice is replayed through the allocation backtest, so exposure,
+commission, slippage, return, drawdown, and Sharpe affect its rank. The bounded
+three-stage search reduces computation and parameter mining without eliminating
+overfitting. It is exhaustive across the retained two parameter finalists per
+strategy and four holding choices, but not across the full cross-strategy
+parameter Cartesian product. All historical changes execute at the following
+daily open. A single strategy at 100% allocation uses the same manual-history
 execution policy.
 
 The live guidance label uses an `Asia/Shanghai` 15:00 cutoff. Before 15:00 it

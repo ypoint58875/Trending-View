@@ -65,7 +65,7 @@ import {
   DEFAULT_LONG_ALLOCATION,
   DEFAULT_SHORT_ALLOCATION,
   buildLiveAllocationGuidance,
-  buildStrategyPlanTarget,
+  buildStrategyPlanTimeline,
   optimizeStrategyCombinations,
   type CombinationScreeningProgress,
   type StrategyAllocationPlan,
@@ -109,6 +109,10 @@ const priceChartLabels = {
   volume: copy.chart.volume,
   buy: copy.chart.buy,
   sell: copy.chart.sell,
+  longBuy: copy.chart.longBuy,
+  longSell: copy.chart.longSell,
+  shortBuy: copy.chart.shortBuy,
+  shortSell: copy.chart.shortSell,
   rangeExit: copy.chart.rangeExit,
   series: { ...copy.chart.series },
 };
@@ -770,10 +774,12 @@ export function MarketWorkspace() {
           settings,
         );
       }
+      const timeline = buildStrategyPlanTimeline(series.bars, strategyPlan);
       return runAllocationBacktest(
         series.bars,
-        buildStrategyPlanTarget(series.bars, strategyPlan),
+        timeline.target,
         settings,
+        timeline.signalEvents,
       );
     } catch {
       return null;
@@ -2479,16 +2485,6 @@ export function MarketWorkspace() {
               </label>
             </div>
 
-            <div className="combination-allocation-ladder">
-              <span>{copy.combinationScreening.positionOptimization}</span>
-              <strong>A、B：20% 步长，A + B ≤ 100%</strong>
-              <small>
-                {copy.combinationScreening.positionOptimizationHint}
-                {" · "}
-                <b>{copy.screening.use}</b>
-              </small>
-            </div>
-
             <button
               type="button"
               className={`primary-action ${combinationScreening ? "stop" : ""}`}
@@ -2516,7 +2512,9 @@ export function MarketWorkspace() {
                     {combinationScreening
                       ? combinationProgress.stage === "strategies"
                         ? copy.combinationScreening.runningStrategies
-                        : copy.combinationScreening.runningCombinations
+                        : combinationProgress.stage === "pairs"
+                          ? copy.combinationScreening.runningPairs
+                          : copy.combinationScreening.runningAllocations
                       : combinationProgress.completed <
                           combinationProgress.total
                         ? copy.combinationScreening.stopped

@@ -119,7 +119,9 @@ grid. Screening executes in interruptible chunks and retains only the best
 result per strategy under one explicit scalar objective. Objective comparison
 and tie-breaking belong in the shared screening module, not the UI. Tests
 enforce registry coverage, uniqueness, the cap, objective ordering,
-best-result sorting, progress completion, and cancellation.
+best-result sorting, progress completion, and cancellation. Optimization input
+must be trimmed to the selected range plus a documented causal warm-up prefix;
+do not make runtime depend on unrelated chart history before that prefix.
 
 Strategy plans use optional horizon selections, never equal-weight votes. A
 long-only plan maps flat/long to zero/A; a short-only plan maps flat/long to
@@ -131,21 +133,26 @@ A+B no greater than one at the pure-function boundary.
 Combination optimization must reuse shared candidate domains, objectives, and
 tie-breaking while owning an independent selected objective and parameter cap
 in the UI. It first retains a small fixed number of standalone finalists per
-strategy, then evaluates the retained long/short Cartesian product across ten
-positive 20%-step A/B choices whose sum is at most one. Every A/B choice must
-run through the allocation engine before ranking because exposure and
-rebalance costs change the objective. The
-partial-allocation engine executes the prior completed bar's target at the next
-open, applies costs to the changed allocation, and reports rebalances rather
-than claiming completed round-trip win statistics. Tests cover role
-validation, target alignment, prefix invariance, bounded pairing, progress,
+strategy, ranks the retained long/short Cartesian product once at the default
+A/B reference, retains every pair up to a safety bound that covers the current
+catalog, and then replays every allowed A/B choice for those finalists through
+the allocation engine. Do not tighten that bound below the current retained
+pair count without documenting the resulting approximation risk. Allowed dual
+choices must produce only the declared 0%, 40%, 60%, or 100% holding states.
+The partial-allocation engine executes the prior completed bar's target at the
+next open, applies costs to the changed allocation, and reports rebalances
+rather than claiming completed round-trip win statistics. Tests cover role
+validation, target alignment, prefix invariance, bounded three-stage progress,
 cancellation, costs, and range-end liquidation.
 
 Trade annotations are derived from completed `BacktestTrade` or
 `AllocationRebalance` records by pure mapping helpers. Every entry/increase is
 a buy marker and every strategy exit/reduction is a sell marker. Chart
 components consume the mapped markers but never infer trades from indicator
-lines.
+lines. Combination timelines attach explicit long/short entry and exit events
+to actual rebalances. When the long gate closes an active short layer, retain
+both exit events on the single final fill so each short entry has an auditable
+close.
 Range-end valuation exits remain part of backtest metrics but use a separate
 neutral marker so they cannot be mistaken for strategy-generated sells.
 

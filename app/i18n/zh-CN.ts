@@ -53,6 +53,10 @@ export const zhCN = {
     volume: "成交量",
     buy: "买入",
     sell: "卖出",
+    longBuy: "长买",
+    longSell: "长卖",
+    shortBuy: "短买",
+    shortSell: "短卖",
     rangeExit: "区间平仓",
     rise: "绿色：上涨",
     fall: "红色：下跌",
@@ -510,18 +514,16 @@ export const zhCN = {
     eyebrow: "HIERARCHY",
     title: "一键组合策略",
     description:
-      "长周期买点建立 A%，短周期买点增加 B%；短周期卖点减掉 B%，长周期卖点全部清仓。",
-    positionOptimization: "A / B 两层仓位优化",
-    positionOptimizationHint:
-      "A、B 分别按 20% 步长组合并执行完整持仓回测，手续费和滑点计入排名。",
+      "长周期买点建立 A%，短周期买点增加 B%；短周期卖点减掉 B%，长周期清仓可同时标记长卖和短卖。",
     action: "开始组合筛选",
     stop: "停止组合筛选",
-    runningStrategies: "正在筛选长短周期候选…",
-    runningCombinations: "正在组合长短周期策略…",
+    runningStrategies: "第 1 步：筛选长短策略参数…",
+    runningPairs: "第 2 步：筛选长短策略组合…",
+    runningAllocations: "第 3 步：优化组合仓位…",
     stopped: "组合筛选已停止",
     completed: "组合筛选完成",
     empty:
-      "先分别保留每种长短周期策略的少量候选，再比较长周期与短周期的分层组合。",
+      "先筛选各策略参数，再筛选长短策略组合，最后优化入围组合的仓位。",
     bestResults: "个最佳组合",
     longStrategy: "长周期 / 参数",
     shortStrategy: "短周期 / 参数",
@@ -531,7 +533,7 @@ export const zhCN = {
     preview: "第一名组合权益预览",
     noPreview: "完成组合筛选后显示第一名的权益和回撤。",
     overfit:
-      "组合结果仍是样本内比较。两阶段筛选限制了组合数量，但不能消除过拟合；请优先检查参数稳定性与不同市场阶段。",
+      "组合结果仍是样本内比较。三阶段筛选限制了组合数量，但不能消除过拟合；请优先检查参数稳定性与不同市场阶段。",
   },
   footer:
     "行情可能延迟或缺失。指数与商品期货行情均为研究代理；商品回测未模拟换月、合约乘数、保证金、到期和交割。",
