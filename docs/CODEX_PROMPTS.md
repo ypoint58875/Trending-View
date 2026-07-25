@@ -15,6 +15,14 @@ Use these context-restoration prompts in later tasks.
 > MarketSeries, add retry and validation behavior, document endpoint and access
 > terms, add a raw sample, and do not expose credentials to the client.
 
+## Change market history
+
+> Read DATA_SOURCES.md, DATA_PIPELINE.md, CACHE_POLICY.md, DECISIONS.md, and
+> lib/market/history.ts. Keep daily start dates and caps shared across
+> providers, preserve the separate five-bar latest refresh, never merge
+> providers or price-adjustment modes, and verify the actual earliest returned
+> bar in a real local request.
+
 ## Change backtesting
 
 > Read FUNCTIONS.md and DECISIONS.md. Preserve the hybrid execution contract:

@@ -23,6 +23,8 @@ response as fresh for one hour and stale-while-revalidate for one day. The
 application does not maintain a separate history file cache or explicitly
 delete cached responses. Commodity quote-proxy history uses the same policy
 and a cache key containing its Yahoo provider symbol and `commodity` type.
+The current daily history response begins at 2000-01-01 when the provider has
+coverage and is capped at 10,000 normalized bars.
 
 ### Latest bars
 
@@ -51,7 +53,7 @@ does not cache market history or analysis output.
 The browser keeps the current normalized history in React/ref memory. A latest
 window with the same source, interval, and `priceAdjustment` replaces matching
 `time` keys, appends new keys, sorts by timestamp, and retains the configured
-newest-bar limit (1,000 in the current workspace). Reapplying the same
+newest-bar limit (10,000 in the current workspace). Reapplying the same
 compatible latest response is idempotent.
 
 The UI does not merge bars from different sources or price-adjustment modes.

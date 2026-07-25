@@ -39,6 +39,10 @@ Implemented:
   refresh, 60-second visible-page refresh, and page focus/visibility. Only
   identical source, interval, and price-adjustment modes merge; otherwise the
   complete existing history remains active.
+- Shared daily history beginning at 2000-01-01 with a 10,000-bar safety cap.
+  Eastmoney, Yahoo, and Nasdaq translate the boundary to provider-specific
+  date parameters; later-listed instruments begin at their first available
+  bar. Internal intraday requests retain their smaller caps.
 - A current-bar long-only strategy guidance card that reports the target
   allocation plus increase, reduce, hold, or remain-flat state from the newest
   available provider bar.
@@ -113,6 +117,11 @@ Implemented:
 
 ## Verification status
 
+- Extended daily history passed 86 TypeScript tests, the production build, two
+  rendered/source tests, ESLint, and `git diff --check` on 2026-07-25. A real
+  local N225 page loaded 6,505 valid adjusted Yahoo bars, displayed the
+  6,505-bar chart metadata, and exposed 2000-01-04 through 2026-07-24 as the
+  available date bounds with no console errors.
 - Strategy-lab Apply/save separation passed the full 82-test TypeScript suite,
   production build, two rendered/source tests, ESLint, and
   `git diff --check` on 2026-07-25. A real local browser click moved the view

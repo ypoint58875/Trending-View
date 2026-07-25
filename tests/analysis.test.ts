@@ -86,10 +86,21 @@ import {
   searchCommodityCatalog,
 } from "../lib/market/commodities";
 import {
+  fetchEastmoneySeries,
   parseKlineRow,
   searchEastmoney,
 } from "../lib/market/eastmoney";
-import { parseNasdaqRows } from "../lib/market/nasdaq";
+import {
+  fetchNasdaqDailySeries,
+  parseNasdaqRows,
+} from "../lib/market/nasdaq";
+import {
+  DAILY_HISTORY_LIMIT,
+  DAILY_HISTORY_START_DATE,
+  DAILY_HISTORY_START_TIMESTAMP_SECONDS,
+  clampMarketSeriesLimit,
+  requestsExtendedDailyHistory,
+} from "../lib/market/history";
 import type { MarketPriceAdjustment } from "../lib/market";
 import type {
   MarketBar,
@@ -598,6 +609,81 @@ test("uses the preceding normalized Yahoo bar after applying the fetch limit", a
   assert.equal(series.previousClose, 51);
 });
 
+test("bounds extended daily history without expanding intraday requests", () => {
+  assert.equal(DAILY_HISTORY_START_DATE, "2000-01-01");
+  assert.equal(DAILY_HISTORY_LIMIT, 10_000);
+  assert.equal(clampMarketSeriesLimit(50_000, "1d"), 10_000);
+  assert.equal(clampMarketSeriesLimit(50_000, "5m"), 1_500);
+  assert.equal(requestsExtendedDailyHistory("1d", 10_000), true);
+  assert.equal(requestsExtendedDailyHistory("1d", 1_500), false);
+  assert.equal(requestsExtendedDailyHistory("5m", 10_000), false);
+});
+
+test("requests Yahoo daily history from 2000 for the extended workspace", async () => {
+  let requestedUrl = "";
+  const mockFetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify(yahooCorporateActionFixture), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  const series = await fetchYahooSeries(
+    yahooInstrument,
+    "1d",
+    DAILY_HISTORY_LIMIT,
+    mockFetch,
+  );
+  const url = new URL(requestedUrl);
+
+  assert.equal(
+    url.searchParams.get("period1"),
+    String(DAILY_HISTORY_START_TIMESTAMP_SECONDS),
+  );
+  assert.ok(Number(url.searchParams.get("period2")) > 0);
+  assert.equal(url.searchParams.has("range"), false);
+  assert.equal(series.bars.length, 2);
+});
+
+test("requests Eastmoney daily history from the shared 2000 boundary", async () => {
+  let requestedUrl = "";
+  const payload = {
+    data: {
+      code: "000001",
+      market: 1,
+      name: "SSE Composite",
+      preKPrice: 99,
+      klines: [
+        "2000-01-04,100,101,102,99,1000,100000,3,1,1,0.5",
+        "2000-01-05,101,102,103,100,1100,110000,3,1,1,0.5",
+      ],
+    },
+  };
+  const mockFetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify(payload), { status: 200 });
+  }) as typeof fetch;
+
+  const series = await fetchEastmoneySeries(
+    {
+      secid: "1.000001",
+      code: "000001",
+      name: "SSE Composite",
+      exchange: "SSE",
+      assetType: "index",
+      provider: "eastmoney",
+    },
+    "1d",
+    DAILY_HISTORY_LIMIT,
+    mockFetch,
+  );
+  const url = new URL(requestedUrl);
+
+  assert.equal(url.searchParams.get("beg"), "20000101");
+  assert.equal(url.searchParams.get("lmt"), String(DAILY_HISTORY_LIMIT));
+  assert.equal(series.bars[0].time, "2000-01-04");
+});
+
 test("re-exports the market price-adjustment type from the market barrel", () => {
   const adjustment: MarketPriceAdjustment = "corporate-action-adjusted";
   assert.equal(adjustment, "corporate-action-adjusted");
@@ -627,6 +713,57 @@ test("parses Nasdaq history into chronological index bars", () => {
   assert.equal(bars[0].time, "2026-07-21");
   assert.equal(bars[1].close, 12_410.66);
   assert.equal(bars[1].volume, 0);
+});
+
+test("requests Nasdaq daily fallback history from 2000", async () => {
+  let requestedUrl = "";
+  const payload = {
+    data: {
+      tradesTable: {
+        rows: [
+          {
+            date: "01/05/2000",
+            close: "102",
+            volume: "1100",
+            open: "101",
+            high: "103",
+            low: "100",
+          },
+          {
+            date: "01/04/2000",
+            close: "101",
+            volume: "1000",
+            open: "100",
+            high: "102",
+            low: "99",
+          },
+        ],
+      },
+    },
+    status: { rCode: 200 },
+  };
+  const mockFetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response(JSON.stringify(payload), { status: 200 });
+  }) as typeof fetch;
+
+  const series = await fetchNasdaqDailySeries(
+    {
+      secid: "^SOX",
+      code: "SOX",
+      name: "SOX",
+      exchange: "PHLX",
+      assetType: "index",
+      provider: "nasdaq",
+    },
+    DAILY_HISTORY_LIMIT,
+    mockFetch,
+  );
+  const url = new URL(requestedUrl);
+
+  assert.equal(url.searchParams.get("fromdate"), DAILY_HISTORY_START_DATE);
+  assert.equal(url.searchParams.get("limit"), String(DAILY_HISTORY_LIMIT));
+  assert.equal(series.bars[0].time, "2000-01-04");
 });
 
 test("merges overlapping latest bars idempotently only for one adjustment mode", () => {

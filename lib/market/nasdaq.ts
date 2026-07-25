@@ -3,6 +3,11 @@ import type {
   MarketInstrument,
   MarketSeries,
 } from "./types";
+import {
+  DAILY_HISTORY_START_DATE,
+  clampMarketSeriesLimit,
+  requestsExtendedDailyHistory,
+} from "./history";
 
 const HISTORICAL_ENDPOINT = "https://api.nasdaq.com/api/quote";
 const DEFAULT_HEADERS = {
@@ -95,10 +100,18 @@ export async function fetchNasdaqDailySeries(
   fetchImpl: typeof fetch = fetch,
   requestCache: RequestCache = "default",
 ): Promise<MarketSeries> {
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 2), 1500);
+  const limit = clampMarketSeriesLimit(requestedLimit, "1d");
   const end = new Date();
-  const start = new Date(end);
-  start.setUTCFullYear(start.getUTCFullYear() - 5);
+  const extendedHistory = requestsExtendedDailyHistory(
+    "1d",
+    requestedLimit,
+  );
+  const start = extendedHistory
+    ? new Date(`${DAILY_HISTORY_START_DATE}T00:00:00Z`)
+    : new Date(end);
+  if (!extendedHistory) {
+    start.setUTCFullYear(start.getUTCFullYear() - 5);
+  }
   const code = instrument.code.replace(/^\^/, "").replace(/\..*$/, "");
   const url = new URL(
     `${HISTORICAL_ENDPOINT}/${encodeURIComponent(code)}/historical`,

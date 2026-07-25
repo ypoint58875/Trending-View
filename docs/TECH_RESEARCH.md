@@ -618,3 +618,42 @@ Saved JSON uses the explicit A/B fields. Existing plan JSON remains readable
 by converting `coreAllocation` to A and
 `maximumAllocation - coreAllocation` to B. No D1 table migration is required
 because the plan is already stored in a nullable JSON column.
+
+## Daily history beginning in 2000
+
+Research date: 2026-07-25.
+
+The workspace previously requested 1,000 bars, while each provider adapter
+retained no more than 1,500 bars and Yahoo daily requests used `range=5y`.
+Two expansion approaches were compared.
+
+### Option A: request a larger count only
+
+This is simple for Eastmoney and Nasdaq, but Yahoo's five-year range still
+prevents older bars from reaching the adapter. A count also does not express
+the product requirement and drifts as calendar time advances.
+
+### Option B: request an explicit start date with a safety cap
+
+Use one shared 2000-01-01 boundary, translate it to provider-specific date
+parameters, and retain a 10,000-bar output cap. This expresses the desired
+coverage, keeps payload growth bounded, and leaves the existing five-bar
+latest refresh unchanged.
+
+Decision: use Option B. Eastmoney receives `beg=20000101`, Yahoo receives
+`period1=946684800` plus a current `period2`, and Nasdaq receives
+`fromdate=2000-01-01`. Internal intraday requests retain their smaller
+provider-supported ranges and 1,500-bar cap.
+
+A live read-only Yahoo N225 request returned 6,627 daily timestamps from
+2000-01-04 through 2026-07-24. The Eastmoney endpoint closed the connection in
+the current environment during the same read-only check, so deterministic URL
+contract tests cover its date and limit parameters while normal runtime
+fallback continues to Yahoo. Instruments launched after 2000 begin at their
+first provider-available bar.
+
+Sources checked:
+
+- `https://query1.finance.yahoo.com/v8/finance/chart/%5EN225`
+- `https://push2his.eastmoney.com/api/qt/stock/kline/get`
+- `https://api.nasdaq.com/api/quote/{symbol}/historical`

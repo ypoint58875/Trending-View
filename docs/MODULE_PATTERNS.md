@@ -21,6 +21,13 @@ refresh requests remain uncached and replace only overlapping recent bars from
 the same provider, interval, and price-adjustment mode. A mismatch retains the
 complete compatible history until a full compatible refresh succeeds.
 
+Daily history boundaries and caps belong in `lib/market/history.ts`, not as
+provider-local magic numbers. The current workspace requests 2000-01-01
+through the present with a 10,000-bar cap. Adapters translate this contract to
+their own date parameters while retaining smaller interval-specific intraday
+limits. Latest overlays remain bounded, uncached, and independent from the
+full-history boundary.
+
 Every `MarketSeries` must set authoritative `priceAdjustment` metadata.
 Eastmoney's `fqt=1` output is `corporate-action-adjusted`. Yahoo daily OHLC is
 scaled per bar only when `adjclose / raw close` is finite and positive; any

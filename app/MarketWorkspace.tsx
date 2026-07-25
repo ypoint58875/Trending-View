@@ -91,6 +91,7 @@ import type {
   MarketInterval,
   MarketSeries,
 } from "@/lib/market/types";
+import { DAILY_HISTORY_LIMIT } from "@/lib/market/history";
 import { mergeLatestMarketSeries } from "@/lib/market/series";
 
 const defaultInstrument: MarketInstrument = {
@@ -389,7 +390,7 @@ export function MarketWorkspace() {
       setLoading(true);
       setErrorCode("");
       const seriesKey = `${instrument.provider}:${instrument.secid}:${DAILY_INTERVAL}`;
-      const seriesLimit = 1000;
+      const seriesLimit = DAILY_HISTORY_LIMIT;
       const loadSeries = async (
         requestInstrument: MarketInstrument,
         mode: "history" | "latest",

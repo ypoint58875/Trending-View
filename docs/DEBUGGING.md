@@ -39,6 +39,17 @@ the API boundary.
 2. Confirm every bar has finite OHLC values and a valid timestamp.
 3. Check the browser console for ECharts initialization errors.
 
+## Daily chart does not reach 2000
+
+1. Confirm the instrument existed in 2000; later-listed ETFs begin at their
+   first provider-available bar.
+2. Confirm the history request uses `limit=10000` and `mode=history`.
+3. Check the provider URL for Eastmoney `beg=20000101`, Yahoo
+   `period1=946684800`, or Nasdaq `fromdate=2000-01-01`.
+4. If Eastmoney starts later, confirm the longer-history Yahoo attempt runs and
+   that the longer valid series wins without merging providers.
+5. Do not treat the five-bar `mode=latest` overlay as the history response.
+
 ## Latest strategy guidance does not update
 
 1. Confirm the page is visible; background tabs intentionally do not poll.

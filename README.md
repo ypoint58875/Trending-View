@@ -16,6 +16,8 @@ trades or run unattended jobs.
   copper (`HG=F`).
 - One fixed daily interval in the user interface. Provider adapters and API
   types retain interval support for internal compatibility.
+- Daily history requests start at 2000-01-01 with a 10,000-bar safety cap.
+  Instruments launched later begin at their first provider-available bar.
 - Candlestick and line chart modes with volume and synchronized zoom.
 - Cached history plus an uncached latest-bar overlay on open, every
   60 seconds while visible, and on focus/visibility, with current-bar strategy

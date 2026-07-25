@@ -224,3 +224,17 @@ Treat these as continuous quote-page research proxies, not a futures execution
 ledger. Do not model a contract chain, roll rule, back-adjustment method,
 multiplier, margin, expiry, delivery, or leverage. Disclose that boundary in
 the UI and documentation.
+
+## D-016: Date-bounded daily history
+
+Request daily history from 2000-01-01 rather than approximating the desired
+window with a small bar count or a five-year provider range. Keep one shared
+10,000-bar daily safety cap, translate the date boundary to Eastmoney `beg`,
+Yahoo `period1`/`period2`, and Nasdaq `fromdate`/`todate`, and retain the
+existing smaller intraday caps. Latest refreshes remain separate five-bar
+uncached requests.
+
+If the preferred Eastmoney result starts after January 2000, attempt Yahoo and
+use whichever valid series is longer. Preserve the existing source and
+price-adjustment merge boundary: never splice providers together. Instruments
+listed after 2000 naturally start at their first provider-available bar.

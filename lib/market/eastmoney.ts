@@ -4,6 +4,11 @@ import type {
   MarketInterval,
   MarketSeries,
 } from "./types";
+import {
+  DAILY_HISTORY_START_COMPACT,
+  clampMarketSeriesLimit,
+  requestsExtendedDailyHistory,
+} from "./history";
 
 const SEARCH_ENDPOINT = "https://searchapi.eastmoney.com/api/suggest/get";
 const KLINE_ENDPOINT =
@@ -193,12 +198,15 @@ export async function fetchEastmoneySeries(
   fetchImpl: typeof fetch = fetch,
   requestCache: RequestCache = "default",
 ): Promise<MarketSeries> {
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 2), 1500);
+  const limit = clampMarketSeriesLimit(requestedLimit, interval);
   const url = new URL(KLINE_ENDPOINT);
   url.searchParams.set("secid", instrument.secid);
   url.searchParams.set("klt", intervalToKlineType[interval]);
   url.searchParams.set("fqt", "1");
   url.searchParams.set("lmt", String(limit));
+  if (requestsExtendedDailyHistory(interval, requestedLimit)) {
+    url.searchParams.set("beg", DAILY_HISTORY_START_COMPACT);
+  }
   url.searchParams.set("end", "20500101");
   url.searchParams.set("fields1", "f1,f2,f3,f4,f5,f6");
   url.searchParams.set(

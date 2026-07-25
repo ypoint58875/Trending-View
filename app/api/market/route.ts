@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { fetchMarketSeries } from "@/lib/market";
+import {
+  DAILY_HISTORY_LIMIT,
+  clampMarketSeriesLimit,
+} from "@/lib/market/history";
 import type {
   MarketAssetType,
   MarketDataProvider,
@@ -34,15 +38,21 @@ export async function GET(request: Request) {
   const interval = allowedIntervals.has(requestedInterval)
     ? requestedInterval
     : "1d";
-  const limit = Number(url.searchParams.get("limit") || 1000);
   const mode =
     url.searchParams.get("mode") === "latest" ? "latest" : "history";
+  const limit = Number(
+    url.searchParams.get("limit") ||
+      (mode === "latest" ? 5 : DAILY_HISTORY_LIMIT),
+  );
+  const finiteLimit = Number.isFinite(limit)
+    ? limit
+    : mode === "latest"
+      ? 5
+      : DAILY_HISTORY_LIMIT;
   const effectiveLimit =
     mode === "latest"
-      ? Math.min(Math.max(Math.trunc(limit), 2), 10)
-      : Number.isFinite(limit)
-        ? limit
-        : 1000;
+      ? Math.min(Math.max(Math.trunc(finiteLimit), 2), 10)
+      : clampMarketSeriesLimit(finiteLimit, interval);
 
   const validProvider =
     provider === "eastmoney" ||

@@ -5,6 +5,11 @@ import type {
   MarketInterval,
   MarketSeries,
 } from "./types";
+import {
+  DAILY_HISTORY_START_TIMESTAMP_SECONDS,
+  clampMarketSeriesLimit,
+  requestsExtendedDailyHistory,
+} from "./history";
 
 const SEARCH_ENDPOINT = "https://query1.finance.yahoo.com/v1/finance/search";
 const CHART_ENDPOINT = "https://query1.finance.yahoo.com/v8/finance/chart";
@@ -336,7 +341,18 @@ export async function fetchYahooSeries(
   const settings = intervalSettings[interval];
   const url = new URL(`${CHART_ENDPOINT}/${encodeURIComponent(symbol)}`);
   url.searchParams.set("interval", settings.interval);
-  url.searchParams.set("range", settings.range);
+  if (requestsExtendedDailyHistory(interval, requestedLimit)) {
+    url.searchParams.set(
+      "period1",
+      String(DAILY_HISTORY_START_TIMESTAMP_SECONDS),
+    );
+    url.searchParams.set(
+      "period2",
+      String(Math.floor(Date.now() / 1000) + 2 * 24 * 60 * 60),
+    );
+  } else {
+    url.searchParams.set("range", settings.range);
+  }
   url.searchParams.set("includePrePost", "false");
   url.searchParams.set("events", "div,splits");
 
@@ -346,7 +362,7 @@ export async function fetchYahooSeries(
     requestCache,
   );
   const series = parseYahooChart(payload, instrument, interval);
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 2), 1500);
+  const limit = clampMarketSeriesLimit(requestedLimit, interval);
   const sliceStart = Math.max(series.bars.length - limit, 0);
   return {
     ...series,

@@ -2,6 +2,9 @@
 
 ## 2026-07-25
 
+- Expanded daily chart acquisition to 2000-01-01 with a shared 10,000-bar cap,
+  provider-specific Eastmoney/Yahoo/Nasdaq date parameters, longer-series
+  fallback selection, and unchanged five-bar latest refreshes.
 - Replaced the strategy-lab persistence affordance with an explicit Apply
   action that moves the current plan to the trend-chart view; durable saving
   remains a separate shortcut-bar action.

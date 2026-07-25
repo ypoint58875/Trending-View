@@ -14,7 +14,7 @@ Windows one-click local runtime
 
 Browser UI
   -> /api/search and /api/market
-  -> cached history plus uncached latest-bar refresh/merge
+  -> cached daily history from 2000 plus uncached latest-bar refresh/merge
   -> index/ETF/commodity search filter plus deterministic commodity catalog
   -> Eastmoney, Yahoo Finance, and Nasdaq adapters
   -> ordered data-source fallback
@@ -107,6 +107,12 @@ next-open execution. Full history can be cached for one hour; a separate
 uncached request retrieves up to five latest bars on open and every refresh.
 Only overlapping bar times are replaced, and series from different sources are
 never merged. Provider-side latency remains possible.
+
+The daily workspace asks for provider history from 2000-01-01 and retains at
+most 10,000 normalized bars in page memory. `lib/market/history.ts` owns this
+shared boundary and the separate retained intraday safety cap. Eastmoney,
+Yahoo, and Nasdaq translate the boundary into their provider-specific date
+parameters. A later-listed instrument begins at its first available bar.
 
 The live guidance presentation also classifies the current manual execution
 window with an explicit `Asia/Shanghai` 15:00 cutoff. This changes only the

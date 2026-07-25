@@ -8,8 +8,8 @@ durable raw-response archive, server-side checkpoint, or disk cleanup process.
 
 1. The browser selects one index or ETF. The current UI fixes the interval at
    `1d`, although provider adapters and `/api/market` retain interval support.
-2. On a new instrument, the browser requests up to 1,000 history bars with
-   `mode=history`.
+2. On a new instrument, the browser requests daily history from 2000-01-01
+   with a 10,000-bar safety cap and `mode=history`.
 3. `fetchMarketSeries` uses provider adapters and ordered fallback, returning
    one normalized `MarketSeries`.
 4. The browser requests a separate five-bar `mode=latest` window with
@@ -17,7 +17,7 @@ durable raw-response archive, server-side checkpoint, or disk cleanup process.
    windows to between 2 and 10 bars; the current UI explicitly requests five.
 5. When history and latest share the same source, interval, and
    `priceAdjustment`, the client replaces bars with matching `time` values,
-   appends new times, sorts by timestamp, and keeps the newest 1,000 bars.
+   appends new times, sorts by timestamp, and keeps the newest 10,000 bars.
    Adjusted and raw series are never mixed. A mismatch retains the complete
    compatible history until a full compatible refresh succeeds. Repeating the
    same compatible latest window is idempotent.
@@ -36,13 +36,17 @@ history and does not combine providers.
 
 ### Eastmoney
 
-- Requests the configured interval with `fqt=1`.
+- Requests the configured interval with `fqt=1`; extended daily history adds
+  `beg=20000101` and permits up to 10,000 rows.
 - Marks the resulting series `corporate-action-adjusted`.
 - Preserves provider volume without rescaling.
 
 ### Yahoo Finance
 
 - Retains interval support inside the adapter.
+- Uses explicit daily `period1`/`period2` boundaries starting at 2000-01-01
+  for extended history; retained internal intraday requests keep their
+  provider-supported ranges.
 - For daily bars only, computes a per-bar factor as
   `adjclose / raw close` when both inputs produce a finite positive factor.
 - Multiplies that bar's open, high, low, and close by the factor.
@@ -58,7 +62,8 @@ history and does not combine providers.
 
 ### Nasdaq
 
-- Supplies supported daily history only and is marked `raw`.
+- Supplies supported daily history from 2000-01-01 when extended history is
+  requested and is marked `raw`.
 - Acts as a fallback, not an intraday provider.
 - Preserves published volume without rescaling.
 
@@ -73,8 +78,8 @@ synthetic total-return ledger.
 ## Current fallback behavior
 
 - Eastmoney is preferred for Eastmoney instruments.
-- An Eastmoney daily index series with fewer than 60 bars can trigger an
-  attempt to obtain longer Yahoo history.
+- An Eastmoney daily index/ETF series beginning after January 2000 can trigger
+  an attempt to obtain longer Yahoo history. The longer valid series wins.
 - Yahoo index/ETF instruments fall back to Nasdaq only for daily data.
 - Yahoo commodity instruments never fall back to Nasdaq.
 - When Yahoo and Nasdaq fail, a valid shorter Eastmoney result is retained.

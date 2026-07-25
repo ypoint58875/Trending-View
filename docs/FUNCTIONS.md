@@ -9,18 +9,27 @@
   silver, crude-oil, and copper entries without waiting for remote discovery.
 - `searchMarketAssets(query)`: merges the commodity catalog and provider
   results, then de-duplicates normalized instruments.
+- `clampMarketSeriesLimit(requestedLimit, interval)`: applies the shared
+  10,000-bar daily cap while retaining the smaller internal intraday cap.
+- `requestsExtendedDailyHistory(interval, requestedLimit)`: identifies daily
+  requests that must use the shared 2000-01-01 provider boundary.
 - `fetchEastmoneySeries(instrument, interval, limit)`: fetches and normalizes
-  OHLCV bars with `fqt=1` and marks the result corporate-action adjusted.
+  OHLCV bars with `fqt=1`, adds `beg=20000101` for extended daily history, and
+  marks the result corporate-action adjusted.
 - `fetchYahooSeries(instrument, interval, limit)`: fetches global chart history.
-  Daily bars scale OHLC per bar by a finite positive
+  Extended daily requests use explicit `period1`/`period2` dates beginning at
+  2000-01-01. Daily bars scale OHLC per bar by a finite positive
   `adjclose / raw close`; invalid or missing factors leave their bars raw and
   make the entire series metadata raw. An all-adjusted series scales provider
   previous close by its first accepted factor; slicing sets previous close to
   the immediately preceding normalized bar. Intraday output is raw.
 - `fetchNasdaqDailySeries(instrument, limit)`: fetches supported daily index/ETF
-  history and marks it raw.
-- `fetchMarketSeries(...)`: applies the ordered provider fallback.
-- `/api/market?mode=history`: returns cacheable normalized history.
+  history from the shared start date when extended history is requested and
+  marks it raw.
+- `fetchMarketSeries(...)`: applies the ordered provider fallback and keeps the
+  longer valid Eastmoney/Yahoo daily result when extended coverage is needed.
+- `/api/market?mode=history`: returns cacheable normalized daily history from
+  2000-01-01, capped at 10,000 bars.
 - `/api/market?mode=latest`: returns an uncached window of up to ten recent
   bars for current-bar replacement. The current UI requests five.
 - `mergeLatestMarketSeries(...)`: idempotently retains history and replaces

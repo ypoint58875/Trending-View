@@ -6,7 +6,8 @@
 - Kline endpoint: `https://push2his.eastmoney.com/api/qt/stock/kline/get`
 - Accessed: 2026-07-25
 - Current parameters: symbol `secid`; `klt` in 1, 5, 15, 30, 60, or 101;
-  forward adjustment `fqt=1`; selected OHLCV fields; bounded result limit.
+  forward adjustment `fqt=1`; selected OHLCV fields; daily `beg=20000101`;
+  and a bounded daily result limit of 10,000.
 - Raw sample: `data/raw/eastmoney_n225_daily_sample.json`
 - Registry: `data/source_registry.jsonl`
 - Runtime freshness: full history is cacheable for one hour. A separate
@@ -26,9 +27,10 @@ feed.
 - Search endpoint: `https://query1.finance.yahoo.com/v1/finance/search`
 - Chart endpoint: `https://query1.finance.yahoo.com/v8/finance/chart/{symbol}`
 - Backup host: `query2.finance.yahoo.com`
-- Accessed: 2026-07-23
-- Current parameters: interval-specific range, no pre/post-market bars,
-  split/dividend events, and bounded local output.
+- Accessed: 2026-07-25
+- Current parameters: daily `period1=946684800` (2000-01-01 UTC) and dynamic
+  `period2`; interval-specific ranges for retained internal intraday support;
+  no pre/post-market bars; split/dividend events; and bounded local output.
 - Raw sample: `data/raw/yahoo_sox_daily_sample.json`
 - Runtime freshness: full history is cacheable; recent-bar overlays use
   `no-store`. The newest returned bar may still reflect Yahoo's own publication
@@ -40,6 +42,8 @@ gold (`GC=F`), silver (`SI=F`), crude oil (`CL=F`), and copper (`HG=F`).
 Live read-only checks on 2026-07-25 returned 1,260 five-year daily bars plus
 adjusted-close arrays for all four symbols. The adapter retries the equivalent
 query2 host, but regional HTTP 403 responses remain possible.
+An extended N225 chart request on 2026-07-25 returned 6,627 daily rows from
+2000-01-04 through 2026-07-24. The workspace retains at most 10,000 daily bars.
 
 For daily output, each parsed OHLC bar is scaled by a finite positive
 `adjclose / raw close`. If a factor is missing, zero, non-finite, or otherwise
@@ -60,9 +64,9 @@ back-adjustment rules, multipliers, margin, expiry, delivery, or leverage.
 ## Nasdaq website historical data
 
 - Endpoint: `https://api.nasdaq.com/api/quote/{symbol}/historical`
-- Accessed: 2026-07-23
-- Current parameters: `assetclass` index or ETF, five-year date range, and a
-  bounded row limit.
+- Accessed: 2026-07-25
+- Current parameters: `assetclass` index or ETF, `fromdate=2000-01-01` for
+  extended daily history, current `todate`, and a 10,000-row daily limit.
 - Raw sample: `data/raw/nasdaq_sox_daily_sample.json`
 - Runtime freshness: recent-bar overlays use `no-store`; Nasdaq remains a
   daily-history fallback rather than an intraday feed.

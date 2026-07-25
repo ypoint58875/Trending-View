@@ -7,6 +7,10 @@ import type {
 } from "./types";
 import { fetchYahooSeries, searchYahoo } from "./yahoo";
 import { searchCommodityCatalog } from "./commodities";
+import {
+  DAILY_HISTORY_COVERAGE_CUTOFF_DATE,
+  requestsExtendedDailyHistory,
+} from "./history";
 
 function instrumentKey(instrument: MarketInstrument) {
   return `${instrument.assetType}:${instrument.code
@@ -34,15 +38,18 @@ export async function searchMarketAssets(
   return Array.from(unique.values()).slice(0, 12);
 }
 
-function shouldUseYahooHistory(
+function shouldTryLongerYahooHistory(
   instrument: MarketInstrument,
   interval: MarketInterval,
   series: MarketSeries,
+  requestedLimit: number,
 ) {
+  const firstDate = series.bars[0]?.time;
   return (
-    instrument.assetType === "index" &&
+    instrument.assetType !== "commodity" &&
     interval === "1d" &&
-    series.bars.length < 60
+    requestsExtendedDailyHistory(interval, requestedLimit) &&
+    Boolean(firstDate && firstDate > DAILY_HISTORY_COVERAGE_CUTOFF_DATE)
   );
 }
 
@@ -109,7 +116,12 @@ export async function fetchMarketSeries(
     );
     if (
       options.preferLongHistory === false ||
-      !shouldUseYahooHistory(instrument, interval, eastmoneySeries)
+      !shouldTryLongerYahooHistory(
+        instrument,
+        interval,
+        eastmoneySeries,
+        limit,
+      )
     ) {
       return eastmoneySeries;
     }
@@ -118,13 +130,20 @@ export async function fetchMarketSeries(
   }
 
   try {
-    return await fetchYahooSeries(
+    const yahooSeries = await fetchYahooSeries(
       instrument,
       interval,
       limit,
       fetch,
       requestCache,
     );
+    if (
+      eastmoneySeries &&
+      eastmoneySeries.bars.length >= yahooSeries.bars.length
+    ) {
+      return eastmoneySeries;
+    }
+    return yahooSeries;
   } catch (error) {
     if (interval === "1d") {
       try {
@@ -153,3 +172,7 @@ export type {
   MarketPriceAdjustment,
   MarketSeries,
 } from "./types";
+export {
+  DAILY_HISTORY_LIMIT,
+  DAILY_HISTORY_START_DATE,
+} from "./history";

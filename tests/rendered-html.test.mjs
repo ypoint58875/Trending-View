@@ -193,6 +193,10 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     new URL("../app/i18n/zh-CN.ts", import.meta.url),
     "utf8",
   );
+  const marketRoute = await readFile(
+    new URL("../app/api/market/route.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(
     workspace,
@@ -218,6 +222,9 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /className="lab-heading-actions"/);
   assert.match(workspace, /className="saved-shortcuts-save"/);
   assert.match(workspace, /HISTORICAL_EXECUTION_POLICY/);
+  assert.match(workspace, /seriesLimit = DAILY_HISTORY_LIMIT/);
+  assert.match(marketRoute, /clampMarketSeriesLimit/);
+  assert.match(marketRoute, /DAILY_HISTORY_LIMIT/);
 
   assert.match(locale, /insufficientEvidence:\s*"证据不足"/);
   assert.match(locale, /invalidParameters:\s*"当前策略参数无效/);
