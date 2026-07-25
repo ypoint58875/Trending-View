@@ -145,6 +145,10 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u77ed\u5468\u671f\u4e70\u70b9\u589e\u52a0 B%/);
   assert.match(html, /\u957f\u5468\u671f\u4ed3\u4f4d A/);
   assert.match(html, /\u77ed\u5468\u671f\u52a0\u4ed3 B/);
+  assert.match(
+    html,
+    /aria-label="\u5e94\u7528\u5f53\u524d\u7b56\u7565\u5230\u8d70\u52bf\u56fe"/,
+  );
   assert.match(html, /name="long-allocation"/);
   assert.match(html, /name="short-allocation"/);
   assert.match(html, /value="60"/);
@@ -210,6 +214,8 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /buildAllocationTradeMarkers/);
   assert.match(workspace, /combinationScreeningObjective/);
   assert.match(workspace, /combinationMaxParameterSets/);
+  assert.match(workspace, /applyCurrentStrategyToChart/);
+  assert.match(workspace, /className="lab-heading-actions"/);
   assert.match(workspace, /className="saved-shortcuts-save"/);
   assert.match(workspace, /HISTORICAL_EXECUTION_POLICY/);
 

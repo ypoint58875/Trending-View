@@ -2,6 +2,9 @@
 
 ## 2026-07-25
 
+- Replaced the strategy-lab persistence affordance with an explicit Apply
+  action that moves the current plan to the trend-chart view; durable saving
+  remains a separate shortcut-bar action.
 - Moved Save current strategy into the shortcut panel and removed the
   duplicate lower-lab action.
 - Renamed one-click screening to one-click single strategy and gave

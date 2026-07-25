@@ -112,18 +112,21 @@ trade only to make a test pass.
 5. When target values tie, total return, drawdown, Sharpe, and balanced score
    are applied as deterministic tie-breakers in that order.
 
-## Applied combination is not visible on the chart
+## Applied strategy is not visible on the chart
 
-1. Confirm the result's Apply button restored both selectors and scrolled to
-   the main chart.
-2. Confirm the result's A and B values match the two strategy-lab allocation
+1. For a strategy configured directly in the lab, use the lab's Apply button
+   and confirm the page scrolls to the main chart. This action must not create
+   a saved shortcut.
+2. For a screening result, confirm its Apply button restored the selectors and
+   scrolled to the main chart.
+3. Confirm the result's A and B values match the two strategy-lab allocation
    inputs and their sum is no greater than 100%.
-3. Reference lines exist only for strategies with a continuous price
+4. Reference lines exist only for strategies with a continuous price
    reference; a candle/oscillator rule may legitimately add no line.
-4. Confirm the chart legend includes separate long- and short-horizon prefixes.
-5. For a partial/combined plan, inspect allocation increase/reduction markers
+5. Confirm the chart legend includes separate long- and short-horizon prefixes.
+6. For a partial/combined plan, inspect allocation increase/reduction markers
    rather than expecting round-trip trade markers.
-6. Confirm the selected date range has at least one allocation change.
+7. Confirm the selected date range has at least one allocation change.
 
 ## Live execution label looks wrong
 

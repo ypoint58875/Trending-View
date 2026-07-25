@@ -155,6 +155,9 @@
   a complete plan target from market bars.
 - `buildLiveAllocationGuidance(...)`: reports the newest previous/target
   allocation and increase, reduce, hold, or wait action.
+- `MarketWorkspace.applyCurrentStrategyToChart()`: keeps persistence separate
+  and moves the viewport to the trend chart for the current long/short/A/B
+  strategy plan.
 - `classifyManualExecutionWindow(now)`: uses `Asia/Shanghai` and a 15:00
   cutoff to label live actions for same-day tail or next-trading-day open
   execution without changing historical backtests.

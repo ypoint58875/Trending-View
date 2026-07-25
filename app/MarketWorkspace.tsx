@@ -869,6 +869,20 @@ export function MarketWorkspace() {
       ? buildAllocationTradeMarkers(backtest.rebalances)
       : undefined;
 
+  const scrollToStrategyChart = () => {
+    window.requestAnimationFrame(() =>
+      chartSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      }),
+    );
+  };
+
+  const applyCurrentStrategyToChart = () => {
+    if (!strategyPlan) return;
+    scrollToStrategyChart();
+  };
+
   const applySingleStrategy = (
     nextStrategyId: StrategyId,
     nextParameters?: StrategyParameters,
@@ -891,12 +905,7 @@ export function MarketWorkspace() {
     }
     setLongAllocationPercent(next.horizon === "long" ? 100 : 0);
     setShortAllocationPercent(next.horizon === "short" ? 100 : 0);
-    window.requestAnimationFrame(() =>
-      chartSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      }),
-    );
+    scrollToStrategyChart();
   };
 
   const selectLongStrategy = (nextStrategyId: StrategyId | "") => {
@@ -934,12 +943,7 @@ export function MarketWorkspace() {
     setShortParameters({ ...result.shortParameters });
     setLongAllocationPercent(Math.round(result.longAllocation * 100));
     setShortAllocationPercent(Math.round(result.shortAllocation * 100));
-    window.requestAnimationFrame(() =>
-      chartSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      }),
-    );
+    scrollToStrategyChart();
   };
 
   const focusIndicator = (nextIndicator: IndicatorId) => {
@@ -1763,7 +1767,20 @@ export function MarketWorkspace() {
                 )}
               </div>
             </div>
-            <FlaskConical size={19} />
+            <div className="lab-heading-actions">
+              <button
+                className="apply-current-strategy-button"
+                type="button"
+                disabled={!strategyPlan}
+                onClick={applyCurrentStrategyToChart}
+                aria-label={copy.lab.applyToChart}
+                title={copy.lab.applyToChart}
+              >
+                <LineChart size={14} />
+                <span>{copy.lab.apply}</span>
+              </button>
+              <FlaskConical size={19} />
+            </div>
           </div>
           <p className="panel-copy">{copy.lab.subtitle}</p>
 

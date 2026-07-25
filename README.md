@@ -69,7 +69,9 @@ trades or run unattended jobs.
 - A two-selector strategy lab where either the long- or short-horizon rule can
   be omitted. A long-only plan switches between zero and A; a short-only plan
   switches between zero and B. A dual plan uses zero outside the long trend,
-  A when only the long rule is active, and A+B when both rules are active.
+  A when only the long rule is active, and A+B when both rules are active. Its
+  Apply action projects the current plan to the trend chart and moves the view
+  to that chart; durable saving remains a separate shortcut-bar action.
 - A separate bounded long/short combination screen. It first retains two
   standalone parameter finalists per strategy, then compares hierarchical
   pairs across ten positive A/B choices in 20% steps, with A+B no greater than

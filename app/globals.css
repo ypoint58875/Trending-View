@@ -786,6 +786,31 @@ button {
   gap: 10px;
 }
 
+.apply-current-strategy-button {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(34, 211, 238, 0.34);
+  border-radius: 6px;
+  background: rgba(34, 211, 238, 0.1);
+  color: var(--cyan);
+  cursor: pointer;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.apply-current-strategy-button:hover:not(:disabled) {
+  border-color: rgba(34, 211, 238, 0.62);
+  background: rgba(34, 211, 238, 0.17);
+}
+
+.apply-current-strategy-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .save-backtest-button {
   display: inline-flex;
   height: 30px;

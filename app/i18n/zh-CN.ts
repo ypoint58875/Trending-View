@@ -230,6 +230,8 @@ export const zhCN = {
     longAllocationHint: "长周期买点建立 A%；长周期卖点全部清仓。",
     shortAllocationHint: "短周期买点增加 B%；短周期卖点减掉 B%。",
     automatic: "参数变化后自动回测",
+    apply: "应用",
+    applyToChart: "应用当前策略到走势图",
     noResult: "当前区间数据不足，无法生成回测。",
   },
   savedBacktests: {

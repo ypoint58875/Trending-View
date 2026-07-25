@@ -103,7 +103,8 @@ Implemented:
   core/maximum JSON converts to A and B when read; legacy rows without plan
   JSON derive a full-allocation single-horizon plan.
 - A lower research area that places the strategy lab and automated screening
-  together without duplicating the shortcut save action in the lab.
+  together. The lab has an explicit Apply-to-chart action, while durable
+  saving remains only in the shortcut panel.
 - Chinese responsive UI with centralized locale copy.
 - A one-click Windows local launcher that applies project-local D1 migrations,
   binds vinext to `127.0.0.1:3000`, requires no account, reuses an
@@ -112,6 +113,13 @@ Implemented:
 
 ## Verification status
 
+- Strategy-lab Apply/save separation passed the full 82-test TypeScript suite,
+  production build, two rendered/source tests, ESLint, and
+  `git diff --check` on 2026-07-25. A real local browser click moved the view
+  from the lab to the trend chart while the shortcut count remained zero; the
+  Apply and Save actions resolved to the strategy and shortcut panels
+  respectively. The 375-pixel layout had no document-level horizontal
+  overflow and the console had no errors.
 - Two-layer position sizing and common following-open historical execution
   passed 82 TypeScript tests, the production build, two rendered/source worker
   tests, ESLint, and `git diff --check` on 2026-07-25.
