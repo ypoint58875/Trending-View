@@ -575,22 +575,31 @@ chosen layer and encourages legacy sleeve terminology.
 ### Option B: store two explicit sleeves
 
 Store `longAllocation` as A and `shortAllocation` as B. The combined target is
-zero outside the long gate, A when only the long signal is active, and A+B
-when both signals are active. This produces the same deterministic target
-series while making every user action and saved value directly auditable.
+zero outside the long gate. A fresh long entry establishes A; a later fresh
+short entry adds B; the corresponding short exit removes B; and the long exit
+clears both layers. A short signal that was already active at the long entry is
+not inherited, so the first position is never promoted directly from zero to
+A+B. This event-driven representation makes every user action and saved value
+directly auditable.
 
 Decision: use Option B. Validate both values in `[0, 1]` and require their sum
 not to exceed one. The revised manual-position constraint allows A at 0%, 40%,
-60%, or 100% and B at 40% or 60%, while actual dual-plan holdings must remain
+or 60% and B at 40% or 60%, while actual dual-plan holdings must remain
 0%, 40%, 60%, or 100%. The valid dual choices are therefore `(0%,40%)`,
-`(0%,60%)`, `(40%,60%)`, and `(60%,40%)`. A=100% remains available to a
-long-only plan; pairing it with a positive B would exceed the no-leverage bound.
+`(0%,60%)`, `(40%,60%)`, and `(60%,40%)`. A first entry never uses 100%;
+full exposure is reachable only when a valid short-entry transition adds B.
 
 Position sizing must be evaluated inside every combination backtest rather
 than applied after ranking. Allocation changes alter exposure, commission,
 slippage, equity, drawdown, and Sharpe, so the selected optimization objective
 cannot be calculated correctly without replaying the A/B target series through
 the allocation engine.
+
+The manual allocation engine acts only when the planned state changes. It does
+not trade each day to correct weight drift caused by price movement. Daily
+recentring creates transactions without a new strategy signal, breaks the
+short-buy/short-sell pairing shown to the user, increases costs, and does not
+match the intended low-frequency manual workflow.
 
 Two bounded search shapes were compared after chart history expanded. An
 exhaustive retained-pair-by-allocation pass preserves the best result inside

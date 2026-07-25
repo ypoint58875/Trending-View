@@ -92,8 +92,10 @@ interface PriceChartProps {
     price: string;
     close: string;
     volume: string;
-    buy: string;
-    sell: string;
+    openPosition: string;
+    closePosition: string;
+    shortBuy: string;
+    shortSell: string;
     rangeExit: string;
     series: Record<string, string>;
   };
@@ -159,11 +161,9 @@ const compactFormatter = new Intl.NumberFormat("zh-CN", {
 });
 
 interface TradeMarkerLabels {
-  buy: string;
-  sell: string;
+  openPosition: string;
+  closePosition: string;
   rangeExit: string;
-  longBuy: string;
-  longSell: string;
   shortBuy: string;
   shortSell: string;
 }
@@ -173,15 +173,13 @@ function allocationMarkerLabel(
   labels: TradeMarkerLabels,
   fallback: string,
 ): string {
-  const signalLabels = {
-    "long-entry": labels.longBuy,
-    "long-exit": labels.longSell,
-    "short-entry": labels.shortBuy,
-    "short-exit": labels.shortSell,
+  const actionLabels = {
+    open: labels.openPosition,
+    "short-buy": labels.shortBuy,
+    "short-sell": labels.shortSell,
+    close: labels.closePosition,
   } as const;
-  return marker.signals?.length
-    ? marker.signals.map((signal) => signalLabels[signal]).join(" + ")
-    : fallback;
+  return marker.action ? actionLabels[marker.action] : fallback;
 }
 
 export function buildTradeMarkerSeries(
@@ -198,10 +196,14 @@ export function buildTradeMarkerSeriesFromMarkers(
 ): SeriesOption[] {
   return [
     {
-      name: labels.buy,
+      name: labels.openPosition,
       type: "scatter",
       data: tradeMarkers.buys.map((marker) => {
-        const label = allocationMarkerLabel(marker, labels, labels.buy);
+        const label = allocationMarkerLabel(
+          marker,
+          labels,
+          labels.openPosition,
+        );
         return {
           name: label,
           value: [marker.time, marker.price],
@@ -218,7 +220,7 @@ export function buildTradeMarkerSeriesFromMarkers(
       },
       label: {
         show: true,
-        formatter: labels.buy,
+        formatter: labels.openPosition,
         position: "bottom",
         distance: 3,
         color: colors.tradeBuyText,
@@ -231,10 +233,14 @@ export function buildTradeMarkerSeriesFromMarkers(
       z: 20,
     },
     {
-      name: labels.sell,
+      name: labels.closePosition,
       type: "scatter",
       data: tradeMarkers.sells.map((marker) => {
-        const label = allocationMarkerLabel(marker, labels, labels.sell);
+        const label = allocationMarkerLabel(
+          marker,
+          labels,
+          labels.closePosition,
+        );
         return {
           name: label,
           value: [marker.time, marker.price],
@@ -252,7 +258,7 @@ export function buildTradeMarkerSeriesFromMarkers(
       },
       label: {
         show: true,
-        formatter: labels.sell,
+        formatter: labels.closePosition,
         position: "top",
         distance: 3,
         color: colors.tradeSellText,

@@ -83,13 +83,15 @@ Every strategy registry entry declares a stable `long` or `short` horizon.
 These labels describe intended signal duration on daily bars rather than a
 different market interval. A strategy plan may contain either horizon or both.
 A long-only target switches between zero and A; a short-only target switches
-between zero and B. A dual target is hierarchical: the long rule gates all
-exposure, establishes A when active, and the short rule adds or removes B.
-The allocation backtest applies the prior completed bar's target at the next
-open, trades only the allocation delta, applies costs to each rebalance, and
-liquidates at the selected range end. Strategy-driven rebalances carry explicit
-long/short entry/exit attribution. A long-gate exit also closes an active short
-layer, so the final strategy sell can contain both exit events.
+between zero and B. A dual target is an event-driven hierarchy: a new long
+entry establishes A and deliberately ignores a short signal that was already
+active. Only a later fresh short entry adds B; its paired exit removes B. The
+allocation backtest applies each changed prior-bar planned state at the next
+open, does not recenter an unchanged state after price drift, applies costs to
+each actual transition, and liquidates at the selected range end.
+Strategy-driven rebalances carry explicit long/short entry/exit attribution. A
+long-gate exit also closes an active short layer, so one final fill carries both
+exit events and renders as one close action.
 
 The strategy registry supports two execution contracts. Target-state
 strategies produce long/flat decisions after a completed bar and execute at the

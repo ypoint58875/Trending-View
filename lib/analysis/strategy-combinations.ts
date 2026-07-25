@@ -29,7 +29,7 @@ export const ALLOWED_POSITION_LEVELS = [
   0.6,
   1,
 ] as const;
-export const LONG_LAYER_ALLOCATION_CANDIDATES = ALLOWED_POSITION_LEVELS;
+export const LONG_LAYER_ALLOCATION_CANDIDATES = [0, 0.4, 0.6] as const;
 export const SHORT_LAYER_ALLOCATION_CANDIDATES = [0.4, 0.6] as const;
 export const COMBINATION_FINALISTS_PER_STRATEGY = 2;
 export const MAX_COMBINATION_PAIR_FINALISTS = 1_024;
@@ -175,22 +175,126 @@ export function buildStrategyPlanAllocationTarget(
   longAllocation: number,
   shortAllocation: number,
 ): number[] {
+  return buildStrategyPlanTimelineFromTargets(
+    longTarget,
+    shortTarget,
+    longAllocation,
+    shortAllocation,
+  ).target;
+}
+
+function buildSingleStrategyTimeline(
+  sourceTarget: readonly number[],
+  allocation: number,
+  entryEvent: AllocationSignalEvent,
+  exitEvent: AllocationSignalEvent,
+): StrategyPlanTimeline {
+  let wasActive = false;
+  const target: number[] = [];
+  const signalEvents: AllocationSignalEvent[][] = [];
+
+  sourceTarget.forEach((state) => {
+    const active = state > 0;
+    const events: AllocationSignalEvent[] = [];
+    if (!wasActive && active) events.push(entryEvent);
+    if (wasActive && !active) events.push(exitEvent);
+    target.push(active ? allocation : 0);
+    signalEvents.push(events);
+    wasActive = active;
+  });
+
+  return { target, signalEvents };
+}
+
+function buildDualStrategyTimeline(
+  longTarget: readonly number[],
+  shortTarget: readonly number[],
+  longAllocation: number,
+  shortAllocation: number,
+): StrategyPlanTimeline {
+  let longWasActive = false;
+  let shortSignalWasActive = false;
+  let shortLayerActive = false;
+  const target: number[] = [];
+  const signalEvents: AllocationSignalEvent[][] = [];
+
+  longTarget.forEach((longState, index) => {
+    const longActive = longState > 0;
+    const shortSignalActive = shortTarget[index] > 0;
+    const events: AllocationSignalEvent[] = [];
+
+    if (!longActive) {
+      if (longWasActive) {
+        events.push("long-exit");
+        if (shortLayerActive) events.push("short-exit");
+      }
+      shortLayerActive = false;
+      target.push(0);
+    } else if (!longWasActive) {
+      events.push("long-entry");
+      shortLayerActive = false;
+      target.push(longAllocation);
+    } else {
+      if (shortLayerActive && !shortSignalActive) {
+        shortLayerActive = false;
+        events.push("short-exit");
+      } else if (
+        !shortLayerActive &&
+        !shortSignalWasActive &&
+        shortSignalActive
+      ) {
+        shortLayerActive = true;
+        events.push("short-entry");
+      }
+      target.push(
+        longAllocation + (shortLayerActive ? shortAllocation : 0),
+      );
+    }
+
+    signalEvents.push(events);
+    longWasActive = longActive;
+    shortSignalWasActive = shortSignalActive;
+  });
+
+  return { target, signalEvents };
+}
+
+export interface StrategyPlanTimeline {
+  target: number[];
+  signalEvents: AllocationSignalEvent[][];
+}
+
+export function buildStrategyPlanTimelineFromTargets(
+  longTarget: readonly number[] | null,
+  shortTarget: readonly number[] | null,
+  longAllocation: number,
+  shortAllocation: number,
+): StrategyPlanTimeline {
   assertAlignedTargets(longTarget, shortTarget);
   assertAllocationPlanBounds(longAllocation, shortAllocation);
 
   if (longTarget && shortTarget) {
-    return longTarget.map((longState, index) => {
-      if (!(longState > 0)) return 0;
-      return longAllocation +
-        (shortTarget[index] > 0 ? shortAllocation : 0);
-    });
+    return buildDualStrategyTimeline(
+      longTarget,
+      shortTarget,
+      longAllocation,
+      shortAllocation,
+    );
   }
 
-  const target = longTarget ?? shortTarget ?? [];
-  const selectedAllocation = longTarget
-    ? longAllocation
-    : shortAllocation;
-  return target.map((state) => (state > 0 ? selectedAllocation : 0));
+  return longTarget
+    ? buildSingleStrategyTimeline(
+        longTarget,
+        longAllocation,
+        "long-entry",
+        "long-exit",
+      )
+    : buildSingleStrategyTimeline(
+        shortTarget ?? [],
+        shortAllocation,
+        "short-entry",
+        "short-exit",
+      );
 }
 
 function buildSelectionTarget(
@@ -213,45 +317,6 @@ export function buildStrategyPlanTarget(
   plan: StrategyAllocationPlan,
 ): number[] {
   return buildStrategyPlanTimeline(bars, plan).target;
-}
-
-export interface StrategyPlanTimeline {
-  target: number[];
-  signalEvents: AllocationSignalEvent[][];
-}
-
-export function buildStrategyPlanTimelineFromTargets(
-  longTarget: readonly number[] | null,
-  shortTarget: readonly number[] | null,
-  longAllocation: number,
-  shortAllocation: number,
-): StrategyPlanTimeline {
-  const target = buildStrategyPlanAllocationTarget(
-    longTarget,
-    shortTarget,
-    longAllocation,
-    shortAllocation,
-  );
-  const signalEvents = target.map((_, index) => {
-    const previousLongActive =
-      index > 0 && Boolean(longTarget?.[index - 1] > 0);
-    const longActive = Boolean(longTarget?.[index] > 0);
-    const previousShortActive =
-      index > 0 &&
-      Boolean(shortTarget?.[index - 1] > 0) &&
-      (!longTarget || previousLongActive);
-    const shortActive =
-      Boolean(shortTarget?.[index] > 0) && (!longTarget || longActive);
-    const events: AllocationSignalEvent[] = [];
-
-    if (!previousLongActive && longActive) events.push("long-entry");
-    if (previousLongActive && !longActive) events.push("long-exit");
-    if (!previousShortActive && shortActive) events.push("short-entry");
-    if (previousShortActive && !shortActive) events.push("short-exit");
-    return events;
-  });
-
-  return { target, signalEvents };
 }
 
 export function buildStrategyPlanTimeline(

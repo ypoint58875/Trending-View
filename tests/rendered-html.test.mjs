@@ -222,6 +222,9 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /combinationMaxParameterSets/);
   assert.match(workspace, /applyCurrentStrategyToChart/);
   assert.match(workspace, /className="lab-heading-actions"/);
+  assert.match(workspace, /className="strategy-selector-card"/);
+  assert.match(workspace, /<select\s+name="long-allocation"/);
+  assert.match(workspace, /<select\s+name="short-allocation"/);
   assert.match(workspace, /className="saved-shortcuts-save"/);
   assert.match(workspace, /HISTORICAL_EXECUTION_POLICY/);
   assert.match(workspace, /seriesLimit = DAILY_HISTORY_LIMIT/);
@@ -237,4 +240,6 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(locale, /legacyIntervalSuffix:\s*"周期；打开后会在日线数据上重新计算所选设置。"/);
   assert.match(locale, /gold:\s*"黄金"/);
   assert.match(locale, /silver:\s*"白银"/);
+  assert.match(locale, /open:\s*"建仓（长买）"/);
+  assert.match(locale, /closePosition:\s*"清仓"/);
 });

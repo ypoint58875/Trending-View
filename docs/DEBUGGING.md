@@ -136,15 +136,19 @@ trade only to make a test pass.
 2. For a screening result, confirm its Apply button restored the selectors and
    scrolled to the main chart.
 3. Confirm the result's A and B values match the two strategy-lab allocation
-   inputs and their sum is no greater than 100%.
+   selectors. Dual plans must be one of 0/40, 0/60, 40/60, or 60/40; the two
+   strategy parameter sections should sit directly below their own selectors.
 4. Reference lines exist only for strategies with a continuous price
    reference; a candle/oscillator rule may legitimately add no line.
 5. Confirm the chart legend includes separate long- and short-horizon prefixes.
-6. For a partial/combined plan, inspect allocation increase/reduction markers
-   rather than expecting generic round-trip trade markers. These fills should
-   be labeled as long buy/sell or short buy/sell; a gated final clear may show
-   both sell labels.
+6. For a partial/combined plan, inspect allocation transition markers rather
+   than expecting generic round-trip trade markers. The only strategy labels
+   are open (long buy), short buy, short sell, and close. A gated final clear is
+   one close marker even though its rebalance record retains both exit events.
 7. Confirm the selected date range has at least one allocation change.
+8. If markers appear on nearly every bar while the target state is unchanged,
+   inspect `plannedAllocation`; ordinary price drift must not trigger a
+   maintenance rebalance.
 
 ## Live execution label looks wrong
 

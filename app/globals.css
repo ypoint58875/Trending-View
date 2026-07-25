@@ -1034,19 +1034,23 @@ button {
   margin-bottom: 12px;
 }
 
-.strategy-selector-grid .field-label {
+.strategy-selector-card {
   padding: 9px;
   border: 1px solid var(--line);
   border-radius: 7px;
   background: rgba(10, 17, 14, 0.62);
 }
 
-.strategy-selector-grid .field-label > small,
+.strategy-selector-card > .field-label > small,
 .allocation-grid .field-label > small {
   min-height: 22px;
   color: var(--subtle);
   font-size: 8px;
   line-height: 1.45;
+}
+
+.strategy-selector-card .parameter-block {
+  margin-top: 10px;
 }
 
 .allocation-grid {
@@ -1056,7 +1060,7 @@ button {
   margin-bottom: 12px;
 }
 
-.allocation-grid input:disabled {
+.allocation-grid select:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }

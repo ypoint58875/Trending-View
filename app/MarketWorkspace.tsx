@@ -64,6 +64,9 @@ import {
 import {
   DEFAULT_LONG_ALLOCATION,
   DEFAULT_SHORT_ALLOCATION,
+  LONG_LAYER_ALLOCATION_CANDIDATES,
+  SHORT_LAYER_ALLOCATION_CANDIDATES,
+  TWO_LAYER_ALLOCATION_CANDIDATES,
   buildLiveAllocationGuidance,
   buildStrategyPlanTimeline,
   optimizeStrategyCombinations,
@@ -107,10 +110,8 @@ const priceChartLabels = {
   price: copy.chart.price,
   close: copy.chart.close,
   volume: copy.chart.volume,
-  buy: copy.chart.buy,
-  sell: copy.chart.sell,
-  longBuy: copy.chart.longBuy,
-  longSell: copy.chart.longSell,
+  openPosition: copy.chart.open,
+  closePosition: copy.chart.closePosition,
   shortBuy: copy.chart.shortBuy,
   shortSell: copy.chart.shortSell,
   rangeExit: copy.chart.rangeExit,
@@ -134,6 +135,42 @@ const backtestChartLabels = {
 
 const DAILY_INTERVAL: MarketInterval = "1d";
 const HISTORICAL_EXECUTION_POLICY = "next-open" as const;
+const LONG_ALLOCATION_OPTIONS = LONG_LAYER_ALLOCATION_CANDIDATES.map(
+  (allocation) => allocation * 100,
+);
+const SHORT_ALLOCATION_OPTIONS = SHORT_LAYER_ALLOCATION_CANDIDATES.map(
+  (allocation) => allocation * 100,
+);
+const DUAL_ALLOCATION_OPTIONS = TWO_LAYER_ALLOCATION_CANDIDATES.map(
+  ({ longAllocation, shortAllocation }) => ({
+    long: longAllocation * 100,
+    short: shortAllocation * 100,
+  }),
+);
+
+function nearestAllocation(
+  options: readonly number[],
+  value: number,
+): number {
+  return options.reduce((nearest, option) =>
+    Math.abs(option - value) < Math.abs(nearest - value) ? option : nearest,
+  );
+}
+
+function nearestDualAllocation(
+  longAllocation: number,
+  shortAllocation: number,
+) {
+  return DUAL_ALLOCATION_OPTIONS.reduce((nearest, option) => {
+    const nearestDistance =
+      Math.abs(nearest.long - longAllocation) +
+      Math.abs(nearest.short - shortAllocation);
+    const optionDistance =
+      Math.abs(option.long - longAllocation) +
+      Math.abs(option.short - shortAllocation);
+    return optionDistance < nearestDistance ? option : nearest;
+  });
+}
 
 const compactFormatter = new Intl.NumberFormat("zh-CN", {
   notation: "compact",
@@ -910,8 +947,12 @@ export function MarketWorkspace() {
       setShortStrategyId(nextStrategyId);
       setShortParameters(mergedParameters);
     }
-    setLongAllocationPercent(next.horizon === "long" ? 100 : 0);
-    setShortAllocationPercent(next.horizon === "short" ? 100 : 0);
+    setLongAllocationPercent(
+      next.horizon === "long" ? DEFAULT_LONG_ALLOCATION * 100 : 0,
+    );
+    setShortAllocationPercent(
+      next.horizon === "short" ? DEFAULT_SHORT_ALLOCATION * 100 : 0,
+    );
     scrollToStrategyChart();
   };
 
@@ -922,9 +963,18 @@ export function MarketWorkspace() {
         ? { ...getStrategy(nextStrategyId).defaultParameters }
         : {},
     );
-    if (nextStrategyId) {
+    if (!nextStrategyId) {
+      setLongAllocationPercent(0);
+    } else if (shortStrategyId) {
+      const nextAllocation = nearestDualAllocation(
+        longAllocationPercent,
+        shortAllocationPercent,
+      );
+      setLongAllocationPercent(nextAllocation.long);
+      setShortAllocationPercent(nextAllocation.short);
+    } else {
       setLongAllocationPercent((current) =>
-        Math.min(current, 100 - shortAllocationPercent),
+        nearestAllocation(LONG_ALLOCATION_OPTIONS, current),
       );
     }
   };
@@ -936,11 +986,59 @@ export function MarketWorkspace() {
         ? { ...getStrategy(nextStrategyId).defaultParameters }
         : {},
     );
-    if (nextStrategyId) {
+    if (!nextStrategyId) {
+      setShortAllocationPercent(0);
+    } else if (longStrategyId) {
+      const nextAllocation = nearestDualAllocation(
+        longAllocationPercent,
+        shortAllocationPercent || DEFAULT_SHORT_ALLOCATION * 100,
+      );
+      setLongAllocationPercent(nextAllocation.long);
+      setShortAllocationPercent(nextAllocation.short);
+    } else {
       setShortAllocationPercent((current) =>
-        Math.min(current, 100 - longAllocationPercent),
+        nearestAllocation(
+          SHORT_ALLOCATION_OPTIONS,
+          current || DEFAULT_SHORT_ALLOCATION * 100,
+        ),
       );
     }
+  };
+
+  const selectLongAllocation = (nextLongAllocation: number) => {
+    if (!shortStrategyId) {
+      setLongAllocationPercent(nextLongAllocation);
+      return;
+    }
+    const compatible = DUAL_ALLOCATION_OPTIONS.filter(
+      (option) => option.long === nextLongAllocation,
+    );
+    const nextAllocation = compatible.reduce((nearest, option) =>
+      Math.abs(option.short - shortAllocationPercent) <
+      Math.abs(nearest.short - shortAllocationPercent)
+        ? option
+        : nearest,
+    );
+    setLongAllocationPercent(nextAllocation.long);
+    setShortAllocationPercent(nextAllocation.short);
+  };
+
+  const selectShortAllocation = (nextShortAllocation: number) => {
+    if (!longStrategyId) {
+      setShortAllocationPercent(nextShortAllocation);
+      return;
+    }
+    const compatible = DUAL_ALLOCATION_OPTIONS.filter(
+      (option) => option.short === nextShortAllocation,
+    );
+    const nextAllocation = compatible.reduce((nearest, option) =>
+      Math.abs(option.long - longAllocationPercent) <
+      Math.abs(nearest.long - longAllocationPercent)
+        ? option
+        : nearest,
+    );
+    setLongAllocationPercent(nextAllocation.long);
+    setShortAllocationPercent(nextAllocation.short);
   };
 
   const applyCombinationResult = (result: StrategyCombinationResult) => {
@@ -1085,12 +1183,29 @@ export function MarketWorkspace() {
     setShortParameters(
       saved.plan.short ? { ...saved.plan.short.parameters } : {},
     );
-    setLongAllocationPercent(
-      Math.round(saved.plan.longAllocation * 100),
-    );
-    setShortAllocationPercent(
-      Math.round(saved.plan.shortAllocation * 100),
-    );
+    const savedLongAllocation = Math.round(saved.plan.longAllocation * 100);
+    const savedShortAllocation = Math.round(saved.plan.shortAllocation * 100);
+    if (saved.plan.long && saved.plan.short) {
+      const nextAllocation = nearestDualAllocation(
+        savedLongAllocation,
+        savedShortAllocation,
+      );
+      setLongAllocationPercent(nextAllocation.long);
+      setShortAllocationPercent(nextAllocation.short);
+    } else if (saved.plan.long) {
+      setLongAllocationPercent(
+        nearestAllocation(LONG_ALLOCATION_OPTIONS, savedLongAllocation),
+      );
+      setShortAllocationPercent(0);
+    } else {
+      setLongAllocationPercent(0);
+      setShortAllocationPercent(
+        nearestAllocation(
+          SHORT_ALLOCATION_OPTIONS,
+          savedShortAllocation || DEFAULT_SHORT_ALLOCATION * 100,
+        ),
+      );
+    }
     setStartDate(saved.startDate);
     setEndDate(saved.endDate);
     setInitialCash(saved.initialCash);
@@ -1792,109 +1907,112 @@ export function MarketWorkspace() {
           <p className="panel-copy">{copy.lab.subtitle}</p>
 
           <div className="strategy-selector-grid">
-            <label className="field-label">
-              <span>{copy.lab.longStrategy}</span>
-              <select
-                name="long-strategy"
-                value={longStrategyId}
-                onChange={(event) =>
-                  selectLongStrategy(
-                    event.target.value as StrategyId | "",
-                  )
-                }
-              >
-                <option value="">{copy.lab.noLongStrategy}</option>
-                {longStrategies.map((strategy) => (
-                  <option key={strategy.id} value={strategy.id}>
-                    {copy.strategies[strategy.id].name}
-                  </option>
-                ))}
-              </select>
-              <small>
-                {longStrategyId
-                  ? copy.strategies[longStrategyId].description
-                  : copy.lab.noLongDescription}
-              </small>
-            </label>
-            <label className="field-label">
-              <span>{copy.lab.shortStrategy}</span>
-              <select
-                name="short-strategy"
-                value={shortStrategyId}
-                onChange={(event) =>
-                  selectShortStrategy(
-                    event.target.value as StrategyId | "",
-                  )
-                }
-              >
-                <option value="">{copy.lab.noShortStrategy}</option>
-                {shortStrategies.map((strategy) => (
-                  <option key={strategy.id} value={strategy.id}>
-                    {copy.strategies[strategy.id].name}
-                  </option>
-                ))}
-              </select>
-              <small>
-                {shortStrategyId
-                  ? copy.strategies[shortStrategyId].description
-                  : copy.lab.noShortDescription}
-              </small>
-            </label>
+            <div className="strategy-selector-card">
+              <label className="field-label">
+                <span>{copy.lab.longStrategy}</span>
+                <select
+                  name="long-strategy"
+                  value={longStrategyId}
+                  onChange={(event) =>
+                    selectLongStrategy(
+                      event.target.value as StrategyId | "",
+                    )
+                  }
+                >
+                  <option value="">{copy.lab.noLongStrategy}</option>
+                  {longStrategies.map((strategy) => (
+                    <option key={strategy.id} value={strategy.id}>
+                      {copy.strategies[strategy.id].name}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  {longStrategyId
+                    ? copy.strategies[longStrategyId].description
+                    : copy.lab.noLongDescription}
+                </small>
+              </label>
+              {longStrategyId && (
+                <StrategyParameterFields
+                  heading={copy.lab.longParameters}
+                  namePrefix="long"
+                  parameters={longParameters}
+                  onChange={setLongParameters}
+                />
+              )}
+            </div>
+            <div className="strategy-selector-card">
+              <label className="field-label">
+                <span>{copy.lab.shortStrategy}</span>
+                <select
+                  name="short-strategy"
+                  value={shortStrategyId}
+                  onChange={(event) =>
+                    selectShortStrategy(
+                      event.target.value as StrategyId | "",
+                    )
+                  }
+                >
+                  <option value="">{copy.lab.noShortStrategy}</option>
+                  {shortStrategies.map((strategy) => (
+                    <option key={strategy.id} value={strategy.id}>
+                      {copy.strategies[strategy.id].name}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  {shortStrategyId
+                    ? copy.strategies[shortStrategyId].description
+                    : copy.lab.noShortDescription}
+                </small>
+              </label>
+              {shortStrategyId && (
+                <StrategyParameterFields
+                  heading={copy.lab.shortParameters}
+                  namePrefix="short"
+                  parameters={shortParameters}
+                  onChange={setShortParameters}
+                />
+              )}
+            </div>
           </div>
 
           <div className="allocation-grid">
             <label className="field-label">
               <span>{copy.lab.longAllocation}</span>
-              <input
+              <select
                 name="long-allocation"
-                type="number"
                 value={longAllocationPercent}
-                min={0}
-                max={
-                  shortStrategyId ? 100 - shortAllocationPercent : 100
-                }
-                step={10}
                 disabled={!longStrategyId}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value);
-                  setLongAllocationPercent(
-                    Math.min(
-                      Math.max(
-                        Number.isFinite(nextValue) ? nextValue : 0,
-                        0,
-                      ),
-                      shortStrategyId
-                        ? 100 - shortAllocationPercent
-                        : 100,
-                    ),
-                  );
-                }}
-              />
+                onChange={(event) =>
+                  selectLongAllocation(Number(event.target.value))
+                }
+              >
+                {LONG_ALLOCATION_OPTIONS.map((allocation) => (
+                  <option key={allocation} value={allocation}>
+                    {allocation}%
+                  </option>
+                ))}
+              </select>
               <small>{copy.lab.longAllocationHint}</small>
             </label>
             <label className="field-label">
               <span>{copy.lab.shortAllocation}</span>
-              <input
+              <select
                 name="short-allocation"
-                type="number"
                 value={shortAllocationPercent}
-                min={0}
-                max={longStrategyId ? 100 - longAllocationPercent : 100}
-                step={10}
                 disabled={!shortStrategyId}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value);
-                  setShortAllocationPercent(
-                    Math.min(
-                      Math.max(
-                        Number.isFinite(nextValue) ? nextValue : 0,
-                        0,
-                      ),
-                      longStrategyId ? 100 - longAllocationPercent : 100,
-                    ),
-                  );
-                }}
-              />
+                onChange={(event) =>
+                  selectShortAllocation(Number(event.target.value))
+                }
+              >
+                {!shortStrategyId && <option value={0}>0%</option>}
+                {SHORT_ALLOCATION_OPTIONS.map((allocation) => (
+                  <option key={allocation} value={allocation}>
+                    {allocation}%
+                  </option>
+                ))}
+              </select>
               <small>{copy.lab.shortAllocationHint}</small>
             </label>
           </div>
@@ -1969,23 +2087,6 @@ export function MarketWorkspace() {
               />
             </label>
           </div>
-
-          {longStrategyId && (
-            <StrategyParameterFields
-              heading={copy.lab.longParameters}
-              namePrefix="long"
-              parameters={longParameters}
-              onChange={setLongParameters}
-            />
-          )}
-          {shortStrategyId && (
-            <StrategyParameterFields
-              heading={copy.lab.shortParameters}
-              namePrefix="short"
-              parameters={shortParameters}
-              onChange={setShortParameters}
-            />
-          )}
 
           <div className="backtest-summary-grid">
             {backtest ? (

@@ -153,10 +153,11 @@
   workspace passes `executionPolicy: "next-open"` so every user-facing
   historical strategy uses the target path.
 - `runAllocationBacktest(...)`: executes an aligned `[0, 1]` allocation target
-  from the prior completed bar at the next open, trades only the required
-  delta, applies costs, and reports common performance plus rebalance records.
-  An optional aligned signal-event stream attributes fills to long/short
-  entries and exits.
+  from the prior completed bar at the next open. It trades only when the planned
+  state changes, so ordinary price drift does not create daily recentering
+  fills. It applies costs and reports common performance plus rebalance records.
+  An optional aligned signal-event stream attributes fills to long/short entries
+  and exits.
 - `buildStrategyCombinationTarget(...)`: validates long/short registry roles
   and builds the zero/A/A+B target for one explicit pair.
 - `buildStrategyPlanAllocationTarget(...)`: builds dual-, long-only, or
@@ -164,8 +165,10 @@
   requiring each in `[0, 1]` and A+B no greater than one.
 - `buildStrategyPlanTimeline(...)`: validates optional registry roles and
   builds both the complete allocation target and aligned long-entry, long-exit,
-  short-entry, and short-exit events. Closing the long gate emits both exit
-  events when the short layer remains active.
+  short-entry, and short-exit events. A dual-plan long entry starts at A and
+  does not inherit an already-active short signal. Each later short entry must
+  be followed by a short exit or the long-gate close; closing the long gate
+  emits both exit events when the short layer remains active.
 - `buildStrategyPlanTarget(...)`: returns the target portion of the same
   timeline contract.
 - `buildLiveAllocationGuidance(...)`: reports the newest previous/target
@@ -176,11 +179,13 @@
 - `classifyManualExecutionWindow(now)`: uses `Asia/Shanghai` and a 15:00
   cutoff to label live actions for same-day tail or next-trading-day open
   execution without changing historical backtests.
-- `buildTradeMarkers(trades)`: maps every long entry to a buy marker and every
-  strategy exit to a sell marker while separating range-end valuation exits.
+- `buildTradeMarkers(trades)`: maps every long entry to an open marker and every
+  strategy exit to a close marker while separating range-end valuation exits.
 - `buildAllocationTradeMarkers(rebalances)`: maps allocation increases,
-  reductions, and range-end liquidations to the same chart-marker contract
-  while retaining long/short event attribution for chart labels.
+  reductions, and range-end liquidations to the same chart-marker contract.
+  Strategy fills receive one semantic action: open, short buy, short sell, or
+  close. A simultaneous long/short exit is one close marker while retaining
+  both source events for audit.
 - `buildScreeningCandidates(maxPerStrategy, horizons)`: expands the constrained
   parameter spaces for the requested strategy horizons, includes each default
   parameter set, and deterministically samples any space above the 2,500 hard

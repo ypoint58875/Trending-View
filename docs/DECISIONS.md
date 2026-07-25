@@ -191,10 +191,11 @@ period because either would make the taxonomy asset- and sample-dependent.
 Combine horizons as a gate and a second allocation layer, not as equal votes.
 A plan may omit either horizon. A long-only plan switches between zero and A;
 a short-only plan switches between zero and B. With both selected, a flat long
-target produces zero, an active long/flat-short target produces A, and both
-active targets produce A+B. A short sell removes B and a long sell clears the
-complete position. Default lab values are A=60% and B=40%; each allocation is
-bounded to `[0, 1]` and their sum may not exceed one.
+target produces zero. A new long entry establishes A without inheriting a short
+signal that was already active. Only a later fresh short entry adds B; its
+paired exit removes B, and a long exit clears the complete position. Default
+lab values are A=60% and B=40%; each allocation is bounded to `[0, 1]` and
+their sum may not exceed one.
 
 Avoid the full parameter Cartesian product. First retain the best two
 standalone parameter sets for every strategy under the combination screen's
@@ -202,21 +203,22 @@ selected objective and parameter cap. Rank their long-by-short product once at
 reference A=60% and B=40%, retain up to 1,024 pairs, then run complete allocation
 backtests for `(0%,40%)`, `(0%,60%)`, `(40%,60%)`, and `(60%,40%)` on those
 finalists. These choices keep actual target holdings at 0%, 40%, 60%, or 100%;
-A=100% remains meaningful for a long-only plan and is not paired with a
-positive B. Keep all three stages interruptible and retain only the best 32
-results. The current two-finalist catalog produces 1,020 pairs, below the cap,
-so every retained pair reaches the allocation stage. The search is exhaustive
-inside those retained parameters, not across the full cross-strategy parameter
-Cartesian product.
+A is limited to 0%, 40%, or 60%, and 100% is reached only through A+B. Keep all
+three stages interruptible and retain only the best 32 results. The current
+two-finalist catalog produces 1,020 pairs, below the cap, so every retained pair
+reaches the allocation stage. The search is exhaustive inside those retained
+parameters, not across the full cross-strategy parameter Cartesian product.
 
 Screening uses the selected range plus up to 500 preceding bars for causal
 warm-up so extending chart acquisition to 2000 does not change runtime in
 proportion to unrelated older history. Applying a result restores both
 strategies, both parameter sets, A, and B, then projects both reference sets
-and allocation markers to the main chart. Allocation rebalances retain
-long/short event attribution; a long exit also emits a short exit if that layer
-was active. All historical targets rebalance at the following open. A single
-strategy at full allocation uses the same manual-history policy.
+and allocation markers to the main chart. Allocation rebalances occur only on
+planned-state transitions, never merely to correct market-driven weight drift.
+They retain long/short event attribution; a long exit also emits a short exit
+if that layer was active, while the chart shows one close marker. All historical
+targets rebalance at the following open. A single-horizon plan uses the same
+manual-history policy at its selected discrete layer size.
 
 Persist current plans with explicit `longAllocation` and `shortAllocation`.
 Read prior core/maximum plan JSON as `A = core` and

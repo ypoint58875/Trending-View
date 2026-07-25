@@ -125,10 +125,12 @@ do not make runtime depend on unrelated chart history before that prefix.
 
 Strategy plans use optional horizon selections, never equal-weight votes. A
 long-only plan maps flat/long to zero/A; a short-only plan maps flat/long to
-zero/B. With both horizons selected, the long target gates exposure and
-establishes A, while the short target adds or removes B. An inactive long
-target always maps to zero. Validate each allocation in `[0, 1]` and require
-A+B no greater than one at the pure-function boundary.
+zero/B. With both horizons selected, use an event-driven state machine: a
+long-entry transition establishes A, an already-active short signal is not
+inherited, a later short-entry transition adds B, a short exit removes B, and
+a long exit clears every active layer. An inactive long target always maps to
+zero. Validate each allocation in `[0, 1]` and require A+B no greater than one
+at the pure-function boundary.
 
 Combination optimization must reuse shared candidate domains, objectives, and
 tie-breaking while owning an independent selected objective and parameter cap
@@ -140,19 +142,23 @@ the allocation engine. Do not tighten that bound below the current retained
 pair count without documenting the resulting approximation risk. Allowed dual
 choices must produce only the declared 0%, 40%, 60%, or 100% holding states.
 The partial-allocation engine executes the prior completed bar's target at the
-next open, applies costs to the changed allocation, and reports rebalances
-rather than claiming completed round-trip win statistics. Tests cover role
-validation, target alignment, prefix invariance, bounded three-stage progress,
-cancellation, costs, and range-end liquidation.
+next open, acts only on a changed planned state, applies costs to the transition,
+and reports rebalances rather than claiming completed round-trip win statistics.
+It must not generate maintenance trades merely because market movement drifts
+the actual weight away from the planned percentage. Tests cover role validation,
+target alignment, prefix invariance, bounded three-stage progress, cancellation,
+costs, unchanged-state behavior, and range-end liquidation.
 
 Trade annotations are derived from completed `BacktestTrade` or
 `AllocationRebalance` records by pure mapping helpers. Every entry/increase is
-a buy marker and every strategy exit/reduction is a sell marker. Chart
-components consume the mapped markers but never infer trades from indicator
-lines. Combination timelines attach explicit long/short entry and exit events
-to actual rebalances. When the long gate closes an active short layer, retain
-both exit events on the single final fill so each short entry has an auditable
-close.
+an entry-side marker and every strategy exit/reduction is an exit-side marker.
+The mapping helper assigns exactly one visible action from `open`, `short-buy`,
+`short-sell`, or `close`; chart components never join multiple event labels or
+infer trades from indicator lines. Combination timelines attach explicit
+long/short entry and exit events to actual rebalances. When the long gate closes
+an active short layer, retain both exit events on the single final fill but show
+one close action so each short entry has an auditable close without duplicate
+chart text.
 Range-end valuation exits remain part of backtest metrics but use a separate
 neutral marker so they cannot be mistaken for strategy-generated sells.
 

@@ -204,6 +204,7 @@ export function runAllocationBacktest(
   const slippageRate = Math.max(settings.slippageRate, 0);
   const equity: EquityPoint[] = [];
   const rebalances: AllocationRebalance[] = [];
+  let plannedAllocation = 0;
 
   const rebalanceAtOpen = (
     bar: MarketBar,
@@ -254,11 +255,15 @@ export function runAllocationBacktest(
   for (let index = 0; index < indexedBars.length; index += 1) {
     const { bar } = indexedBars[index];
     if (index > 0) {
-      rebalanceAtOpen(
-        bar,
-        indexedBars[index - 1].target,
-        indexedBars[index - 1].signals,
-      );
+      const nextAllocation = indexedBars[index - 1].target;
+      if (Math.abs(nextAllocation - plannedAllocation) > 1e-10) {
+        rebalanceAtOpen(
+          bar,
+          nextAllocation,
+          indexedBars[index - 1].signals,
+        );
+        plannedAllocation = nextAllocation;
+      }
     }
 
     const currentEquity = cash + units * bar.close;

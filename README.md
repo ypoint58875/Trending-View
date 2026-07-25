@@ -49,7 +49,8 @@ trades or run unattended jobs.
 - Date-range backtests with initial cash, commission, and slippage settings.
 - Long-only manual-history execution in which every displayed buy, sell, add,
   or reduce signal trades at the following daily open.
-- Chart-level buy/sell markers derived from the active backtest's actual fills.
+- Chart-level fill markers derived from the active backtest and limited to four
+  strategy actions: open (long buy), short buy, short sell, and close.
 - Per-user saved backtests with a right-side shortcut bar that restores the
   instrument, complete optional long/short strategy plan, both parameter sets,
   long-layer A and short-layer B allocations, date range, and cost settings.
@@ -72,19 +73,22 @@ trades or run unattended jobs.
   expanding chart history does not force every candidate to scan from 2000.
 - A two-selector strategy lab where either the long- or short-horizon rule can
   be omitted. A long-only plan switches between zero and A; a short-only plan
-  switches between zero and B. A dual plan uses zero outside the long trend,
-  A when only the long rule is active, and A+B when both rules are active. Its
-  Apply action projects the current plan to the trend chart and moves the view
-  to that chart; durable saving remains a separate shortcut-bar action.
+  switches between zero and B. In a dual plan, a fresh long entry establishes
+  A without inheriting an already-active short signal. A subsequent fresh short
+  entry adds B, its paired short exit removes B, and a long exit clears both
+  layers. Each selector exposes its own parameter settings directly below it.
+  Its Apply action projects the current plan to the trend chart and moves the
+  view to that chart; durable saving remains a separate shortcut-bar action.
 - A separate bounded three-stage long/short combination screen. It retains two
   standalone parameter finalists per strategy, ranks long/short pairs at the
   reference 60%/40% allocation, keeps up to 1,024 pair finalists, and then
   optimizes their valid A/B choices. The current catalog produces at most 1,020
   retained pairs, so no pair is discarded. Dual-strategy screening uses `(0%,40%)`,
   `(0%,60%)`, `(40%,60%)`, and `(60%,40%)`, so actual target holdings remain
-  0%, 40%, 60%, or 100%. A=100% remains available to a long-only plan. The
-  screen has its own objective and per-strategy cap; every ranked result
-  displays A and B and can be applied directly to the lab and trend chart.
+  0%, 40%, 60%, or 100%. A is limited to 0%, 40%, or 60%; 100% is reached only
+  by a valid A+B transition. The screen has its own objective and per-strategy
+  cap; every ranked result displays A and B and can be applied directly to the
+  lab and trend chart.
 
 ## Run locally
 
@@ -178,15 +182,19 @@ Combination screening is also an in-sample comparison. A long buy adds A, a
 short buy adds B, a short sell removes B, and a long sell clears every active
 layer. Rebalance records preserve long-entry, long-exit, short-entry, and
 short-exit attribution; when the long gate closes while the short layer is
-active, the final strategy sell contains both exit events. Every finalist
-holding choice is replayed through the allocation backtest, so exposure,
-commission, slippage, return, drawdown, and Sharpe affect its rank. The bounded
-three-stage search reduces computation and parameter mining without eliminating
-overfitting. It is exhaustive across the retained two parameter finalists per
-strategy and four holding choices, but not across the full cross-strategy
-parameter Cartesian product. All historical changes execute at the following
-daily open. A single strategy at 100% allocation uses the same manual-history
-execution policy.
+active, the final strategy sell contains both exit events but renders as one
+close. A short signal that was already active before the long entry is observed,
+not inherited; B requires a later short-signal off/on cycle. The allocation
+engine trades only when the planned state changes and does not recenter a
+constant target after ordinary price drift. Every finalist holding choice is
+replayed through the allocation backtest, so exposure, commission, slippage,
+return, drawdown, and Sharpe affect its rank. The bounded three-stage search
+reduces computation and parameter mining without eliminating overfitting. It is
+exhaustive across the retained two parameter finalists per strategy and four
+holding choices, but not across the full cross-strategy parameter Cartesian
+product. All historical changes execute at the following daily open. A
+single-horizon plan uses the same following-open policy at its selected 0%,
+40%, or 60% layer size.
 
 The live guidance label uses an `Asia/Shanghai` 15:00 cutoff. Before 15:00 it
 shows that the current dynamic signal may be acted on near the same-day close;

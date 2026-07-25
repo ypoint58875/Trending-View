@@ -8,6 +8,7 @@ export interface TradeMarker {
   time: string;
   price: number;
   event: "entry" | "exit" | "range-exit";
+  action?: "open" | "short-buy" | "short-sell" | "close";
   signals?: AllocationSignalEvent[];
 }
 
@@ -25,11 +26,13 @@ export function buildTradeMarkers(trades: BacktestTrade[]): TradeMarkers {
       time: trade.entryTime,
       price: trade.entryPrice,
       event: "entry",
+      action: "open",
     };
     const exit: TradeMarker = {
       time: trade.exitTime,
       price: trade.exitPrice,
       event: trade.exitReason === "range-end" ? "range-exit" : "exit",
+      action: trade.exitReason === "range-end" ? undefined : "close",
     };
 
     markers.buys.push(entry);
@@ -59,6 +62,18 @@ export function buildAllocationTradeMarkers(
       time: rebalance.time,
       price: rebalance.fillPrice,
       event,
+      action:
+        event === "range-exit"
+          ? undefined
+          : rebalance.signals?.includes("long-exit") ||
+              (event === "exit" && rebalance.targetAllocation === 0)
+            ? "close"
+            : rebalance.signals?.includes("short-exit") || event === "exit"
+              ? "short-sell"
+              : rebalance.signals?.includes("long-entry") ||
+                  rebalance.fromAllocation === 0
+                ? "open"
+                : "short-buy",
       signals: rebalance.signals,
     };
     if (event === "range-exit") {

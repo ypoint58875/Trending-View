@@ -2,6 +2,14 @@
 
 ## 2026-07-25
 
+- Moved each strategy's parameter controls directly below its long/short
+  selector and replaced free-form allocation inputs with discrete plan choices.
+- Made dual plans event-driven: long entry starts only A, an already-active
+  short signal is not inherited, later short entries and exits are paired, and
+  a long exit clears both layers.
+- Stopped unchanged allocation states from generating daily drift-recentering
+  trades and reduced chart labels to open (long buy), short buy, short sell,
+  and close; simultaneous long/short exits render as one close.
 - Expanded daily chart acquisition to 2000-01-01 with a shared 10,000-bar cap,
   provider-specific Eastmoney/Yahoo/Nasdaq date parameters, longer-series
   fallback selection, and unchanged five-bar latest refreshes.

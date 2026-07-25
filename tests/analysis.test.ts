@@ -52,8 +52,10 @@ import {
 } from "../lib/analysis/strategies";
 import {
   COMBINATION_FINALISTS_PER_STRATEGY,
+  LONG_LAYER_ALLOCATION_CANDIDATES,
   MAX_COMBINATION_PAIR_FINALISTS,
   MAX_COMBINATION_RESULTS,
+  SHORT_LAYER_ALLOCATION_CANDIDATES,
   TWO_LAYER_ALLOCATION_CANDIDATES,
   buildLiveAllocationGuidance,
   buildStrategyPlanAllocationTarget,
@@ -1039,6 +1041,8 @@ test("builds optional long, optional short, and dual-horizon allocations", () =>
 });
 
 test("builds only two-layer candidates with 0, 40, 60, or 100 percent holdings", () => {
+  assert.deepEqual(LONG_LAYER_ALLOCATION_CANDIDATES, [0, 0.4, 0.6]);
+  assert.deepEqual(SHORT_LAYER_ALLOCATION_CANDIDATES, [0.4, 0.6]);
   assert.deepEqual(TWO_LAYER_ALLOCATION_CANDIDATES, [
     { longAllocation: 0, shortAllocation: 0.4 },
     { longAllocation: 0, shortAllocation: 0.6 },
@@ -1080,6 +1084,24 @@ test("pairs short entries with exits and attributes a gated final clear to both 
     (event) => event === "short-exit",
   ).length;
   assert.equal(shortEntries, shortExits);
+});
+
+test("does not inherit an already-active short signal at the first long entry", () => {
+  const timeline = buildStrategyPlanTimelineFromTargets(
+    [0, 1, 1, 1, 0],
+    [1, 1, 0, 1, 1],
+    0.4,
+    0.6,
+  );
+
+  assert.deepEqual(timeline.target, [0, 0.4, 0.4, 1, 0]);
+  assert.deepEqual(timeline.signalEvents, [
+    [],
+    ["long-entry"],
+    [],
+    ["short-entry"],
+    ["long-exit", "short-exit"],
+  ]);
 });
 
 test("executes attributed long and short signals at the following open", () => {
@@ -1226,6 +1248,47 @@ test("rebalances hierarchical allocations at the next open and applies costs", (
   assert.ok(result.finalEquity > 10_000);
   assert.ok(result.finalEquity < 12_000);
   assert.ok(result.maxDrawdown <= 0);
+});
+
+test("does not trade again while a planned allocation state is unchanged", () => {
+  const bars = makeOhlcBars([
+    { open: 10, high: 10, low: 10, close: 10 },
+    { open: 11, high: 11, low: 11, close: 11 },
+    { open: 12, high: 12, low: 12, close: 12 },
+    { open: 13, high: 13, low: 13, close: 13 },
+    { open: 14, high: 14, low: 14, close: 14 },
+    { open: 15, high: 15, low: 15, close: 15 },
+  ]);
+  const result = runAllocationBacktest(
+    bars,
+    [0, 0.6, 0.6, 0.6, 0, 0],
+    {
+      initialCash: 10_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+  );
+
+  assert.deepEqual(
+    result.rebalances.map(({ time, targetAllocation, reason }) => ({
+      time,
+      targetAllocation,
+      reason,
+    })),
+    [
+      {
+        time: bars[2].time,
+        targetAllocation: 0.6,
+        reason: "strategy",
+      },
+      {
+        time: bars[5].time,
+        targetAllocation: 0,
+        reason: "strategy",
+      },
+    ],
+  );
 });
 
 test("switches live manual execution at 15:00 Asia/Shanghai", () => {
@@ -1939,9 +2002,30 @@ test("maps allocation increases, reductions, and valuation exits to markers", ()
     ["long-entry"],
     ["short-entry"],
   ]);
+  assert.deepEqual(markers.buys.map((marker) => marker.action), [
+    "open",
+    "short-buy",
+  ]);
   assert.equal(markers.sells[0].price, 99);
   assert.deepEqual(markers.sells[0].signals, ["short-exit"]);
+  assert.equal(markers.sells[0].action, "short-sell");
   assert.equal(markers.rangeExits[0].price, 98);
+});
+
+test("classifies a simultaneous long and short exit as one close marker", () => {
+  const markers = buildAllocationTradeMarkers([
+    {
+      time: "2026-01-05",
+      fromAllocation: 1,
+      targetAllocation: 0,
+      fillPrice: 98,
+      reason: "strategy",
+      signals: ["long-exit", "short-exit"],
+    },
+  ]);
+
+  assert.equal(markers.sells.length, 1);
+  assert.equal(markers.sells[0].action, "close");
 });
 
 test("optimizes every strategy and sorts best results by score", async () => {

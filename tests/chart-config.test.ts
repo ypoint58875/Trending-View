@@ -287,10 +287,8 @@ test("passes explicit axes to every MACD series", () => {
 
 test("uses dedicated high-contrast colors for trade markers", () => {
   const [buy, sell, rangeExit] = buildTradeMarkerSeries([], {
-    buy: "Buy",
-    sell: "Sell",
-    longBuy: "Long buy",
-    longSell: "Long sell",
+    openPosition: "Open",
+    closePosition: "Close",
     shortBuy: "Short buy",
     shortSell: "Short sell",
     rangeExit: "Range exit",
@@ -323,6 +321,7 @@ test("labels allocation markers by long and short strategy actions", () => {
           time: "2026-01-02",
           price: 100,
           event: "entry",
+          action: "short-buy",
           signals: ["short-entry"],
         },
       ],
@@ -331,16 +330,15 @@ test("labels allocation markers by long and short strategy actions", () => {
           time: "2026-01-03",
           price: 99,
           event: "exit",
+          action: "close",
           signals: ["long-exit", "short-exit"],
         },
       ],
       rangeExits: [],
     },
     {
-      buy: "Buy",
-      sell: "Sell",
-      longBuy: "Long buy",
-      longSell: "Long sell",
+      openPosition: "Open",
+      closePosition: "Close",
       shortBuy: "Short buy",
       shortSell: "Short sell",
       rangeExit: "Range exit",
@@ -349,11 +347,8 @@ test("labels allocation markers by long and short strategy actions", () => {
 
   assert.equal(buy.data?.[0].name, "Short buy");
   assert.equal(buy.data?.[0].label?.formatter, "Short buy");
-  assert.equal(sell.data?.[0].name, "Long sell + Short sell");
-  assert.equal(
-    sell.data?.[0].label?.formatter,
-    "Long sell + Short sell",
-  );
+  assert.equal(sell.data?.[0].name, "Close");
+  assert.equal(sell.data?.[0].label?.formatter, "Close");
 });
 
 test("makes the selected price-chart zoom window directly draggable", () => {

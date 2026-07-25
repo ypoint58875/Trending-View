@@ -87,8 +87,11 @@ Implemented:
   ratio, maximum return, minimum drawdown, and maximum Sharpe.
 - A unified strategy plan with optional long and short selections, separate
   parameters, long-layer A, and short-layer B. Either selection can be empty.
-  A dual plan uses zero/A/A+B; a long-only plan uses zero/A and a short-only
-  plan uses zero/B.
+  Each parameter section is nested directly below its own selector. A dual plan
+  enters at A, ignores a short signal that was already active at that entry,
+  adds B only on a later fresh short entry, removes B on the paired short exit,
+  and clears both layers on the long exit. A long-only plan uses zero/A and a
+  short-only plan uses zero/B.
 - A separate hierarchical combination screen below the renamed one-click
   single-strategy screen. The three-stage optimizer retains two standalone
   finalists per strategy, ranks every retained long/short pair at A=60% and
@@ -99,10 +102,13 @@ Implemented:
   keeps the best 32 results, displays A/B, and applies a complete result to the
   lab and trend chart.
 - A partial-allocation backtest that executes completed-bar combination targets
-  at the next open, applies commission and slippage to allocation deltas, and
-  reports rebalances plus common return/drawdown/Sharpe/equity metrics.
-  Strategy-driven rebalances retain long/short entry/exit attribution; a long
-  exit closes and labels any still-active short layer at the same fill.
+  at the next open, acts only when the planned allocation state changes, applies
+  commission and slippage to allocation transitions, and reports rebalances plus
+  common return/drawdown/Sharpe/equity metrics. Ordinary price drift does not
+  create maintenance trades. Strategy-driven rebalances retain long/short
+  entry/exit attribution; the chart maps each fill to exactly one of open,
+  short buy, short sell, or close. A long exit closes any still-active short
+  layer at the same fill and renders as one close.
 - A live-only Shanghai-time execution label: before 15:00 it points to the
   current day's tail session and at/after 15:00 it points to the next trading
   day's open. Historical buy, sell, add, and reduce signals always retain
@@ -111,7 +117,8 @@ Implemented:
   that contains the Save current strategy action and restores
   index/ETF/commodity identity plus the complete A/B strategy plan. Prior
   core/maximum JSON converts to A and B when read; legacy rows without plan
-  JSON derive a full-allocation single-horizon plan.
+  JSON derive a full-allocation single-horizon plan at the data boundary, then
+  the current workspace maps it to the nearest allowed manual layer.
 - A lower research area that places the strategy lab and automated screening
   together. The lab has an explicit Apply-to-chart action, while durable
   saving remains only in the shortcut panel.
@@ -123,19 +130,17 @@ Implemented:
 
 ## Verification status
 
-- Three-stage combination screening, four holding-state candidates, bounded
-  warm-up, and attributed long/short exits passed 91 TypeScript tests, the
-  production build, two rendered/source tests, scoped ESLint, and
-  `git diff --check` on 2026-07-25. On the same 6,505-bar N225 payload and
-  trailing-500-bar test range, a one-parameter-per-strategy comparison fell
-  from about 13.8 seconds for the prior 10-allocation full-history pass to
-  about 1.1 seconds for 1,052 three-stage evaluations. The full-repository
-  ESLint command remains polluted by generated `dist` files under retained
-  `.worktrees`; current `app`, `lib`, and `tests` sources pass. A real local
-  browser confirmed the removed allocation-explanation card, completed all
-  1,052 evaluations, rendered eight ranked rows, applied the first
-  A=40%/B=60% result to the chart, displayed attributed long/short marker
-  labels, and logged no errors.
+- Event-driven two-layer entries/exits, four holding-state candidates,
+  unchanged-state no-trade behavior, four-action chart markers, discrete lab
+  controls, and selector-owned parameter sections passed 94 TypeScript tests,
+  the production build, two rendered/source tests, and scoped `app/lib/tests`
+  ESLint on 2026-07-25. A real local browser loaded 6,505 adjusted N225 bars,
+  confirmed two strategy cards each owned its parameter block, exposed dual A
+  options 0/40/60 and B options 40/60, automatically changed 40/40 to 60/40,
+  completed the 1,052-evaluation combination screen with eight visible results,
+  applied an A=40%/B=60% plan, showed sparse open/short-buy/short-sell/close
+  markers instead of daily drift trades, had no document-level horizontal
+  overflow, and logged no runtime errors.
 - Extended daily history passed 86 TypeScript tests, the production build, two
   rendered/source tests, ESLint, and `git diff --check` on 2026-07-25. A real
   local N225 page loaded 6,505 valid adjusted Yahoo bars, displayed the
