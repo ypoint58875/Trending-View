@@ -1,12 +1,18 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { savedBacktests } from "@/db/schema";
 import {
+  MAX_SAVED_BACKTEST_SCROLL_RECORDS,
   buildLegacyStrategyPlan,
   parseSaveBacktestInput,
+  parseSavedBacktestOrderInput,
   parseStrategyAllocationPlan,
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
+import {
+  parseIndicatorConfigurations,
+  type IndicatorConfiguration,
+} from "@/lib/analysis/indicator-registry";
 import type { StrategyParameters } from "@/lib/analysis/strategies";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +57,15 @@ function parseStoredPlan(
   return plan;
 }
 
+function parseStoredIndicators(value: string | null): IndicatorConfiguration[] {
+  if (!value) return [];
+  const indicators = parseIndicatorConfigurations(JSON.parse(value) as unknown);
+  if (!indicators) {
+    throw new Error("Stored backtest indicator configurations are invalid");
+  }
+  return indicators;
+}
+
 function toRecord(row: SavedBacktestRow): SavedBacktestRecord {
   const strategyId = row.strategyId as SavedBacktestRecord["strategyId"];
   const parameters = parseStoredParameters(row.parametersJson);
@@ -69,6 +84,7 @@ function toRecord(row: SavedBacktestRow): SavedBacktestRecord {
     strategyId,
     parameters,
     plan: parseStoredPlan(row.strategyPlanJson, strategyId, parameters),
+    indicators: parseStoredIndicators(row.indicatorConfigurationsJson),
     startDate: row.startDate,
     endDate: row.endDate,
     initialCash: row.initialCash,
@@ -108,9 +124,15 @@ export async function GET(request: Request) {
       .select()
       .from(savedBacktests)
       .where(eq(savedBacktests.ownerEmail, ownerEmail))
-      .orderBy(desc(savedBacktests.updatedAt), desc(savedBacktests.id))
-      .limit(20);
-    return Response.json({ savedBacktests: rows.map(toRecord) });
+      .orderBy(
+        desc(savedBacktests.displayOrder),
+        desc(savedBacktests.updatedAt),
+        desc(savedBacktests.id),
+      )
+      .limit(MAX_SAVED_BACKTEST_SCROLL_RECORDS);
+    return Response.json({
+      savedBacktests: rows.map(toRecord),
+    });
   } catch (error) {
     return persistenceError(error);
   }
@@ -145,6 +167,7 @@ export async function POST(request: Request) {
     strategyId: input.strategyId,
     parametersJson: JSON.stringify(input.parameters),
     strategyPlanJson: JSON.stringify(input.plan),
+    indicatorConfigurationsJson: JSON.stringify(input.indicators),
     startDate: input.startDate,
     endDate: input.endDate,
     initialCash: input.initialCash,
@@ -159,22 +182,72 @@ export async function POST(request: Request) {
 
   try {
     const db = await getSavedBacktestDb();
+    const [orderRow] = await db
+      .select({ value: max(savedBacktests.displayOrder) })
+      .from(savedBacktests)
+      .where(eq(savedBacktests.ownerEmail, ownerEmail));
     const [row] = await db
       .insert(savedBacktests)
-      .values(values)
-      .onConflictDoUpdate({
-        target: [
-          savedBacktests.ownerEmail,
-          savedBacktests.provider,
-          savedBacktests.secid,
-        ],
-        set: {
-          ...values,
-          updatedAt: sql`CURRENT_TIMESTAMP`,
-        },
+      .values({
+        ...values,
+        displayOrder: Number(orderRow?.value ?? 0) + 1,
       })
       .returning();
     return Response.json({ savedBacktest: toRecord(row) }, { status: 201 });
+  } catch (error) {
+    return persistenceError(error);
+  }
+}
+
+export async function PATCH(request: Request) {
+  const ownerEmail = await resolveOwnerEmail(request);
+  if (!ownerEmail) {
+    return Response.json({ error: "AUTH_REQUIRED" }, { status: 401 });
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return Response.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
+  }
+  const input = parseSavedBacktestOrderInput(payload);
+  if (!input) {
+    return Response.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
+  }
+
+  try {
+    const db = await getSavedBacktestDb();
+    const ownedRows = await db
+      .select({ id: savedBacktests.id })
+      .from(savedBacktests)
+      .where(
+        and(
+          eq(savedBacktests.ownerEmail, ownerEmail),
+          inArray(savedBacktests.id, input.orderedIds),
+        ),
+      );
+    if (ownedRows.length !== input.orderedIds.length) {
+      return Response.json({ error: "NOT_FOUND" }, { status: 404 });
+    }
+
+    const orderCases = input.orderedIds.map((id, index) =>
+      sql`WHEN ${id} THEN ${input.orderedIds.length - index}`,
+    );
+    const displayOrder = sql<number>`CASE ${savedBacktests.id} ${sql.join(
+      orderCases,
+      sql.raw(" "),
+    )} ELSE ${savedBacktests.displayOrder} END`;
+    await db
+      .update(savedBacktests)
+      .set({ displayOrder })
+      .where(
+        and(
+          eq(savedBacktests.ownerEmail, ownerEmail),
+          inArray(savedBacktests.id, input.orderedIds),
+        ),
+      );
+    return Response.json({ reordered: true });
   } catch (error) {
     return persistenceError(error);
   }

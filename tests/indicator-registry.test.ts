@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   INDICATORS,
+  createDefaultIndicatorWorkspacePreferences,
   createDefaultIndicatorSettings,
+  createIndicatorConfigurations,
   getDefaultIndicatorParameters,
   getIndicator,
+  indicatorConfigurationsEqual,
+  parseIndicatorConfigurations,
+  parseIndicatorWorkspacePreferences,
 } from "../lib/analysis/indicator-registry";
 
 const expectedIds = [
@@ -66,4 +71,55 @@ test("creates independent defaults for every indicator", () => {
   const second = createDefaultIndicatorSettings();
   first.sma.fast = 5;
   assert.equal(second.sma.fast, 10);
+});
+
+test("keeps indicators hidden by default and validates persisted preferences", () => {
+  const defaults = createDefaultIndicatorWorkspacePreferences();
+  assert.equal(defaults.focusedIndicator, "sma");
+  assert.deepEqual(defaults.visibleIndicatorIds, []);
+
+  defaults.settings.sma = { fast: 5, slow: 20 };
+  const restored = parseIndicatorWorkspacePreferences({
+    focusedIndicator: "sma",
+    visibleIndicatorIds: ["sma", "rsi"],
+    settings: defaults.settings,
+  });
+  assert.deepEqual(restored?.visibleIndicatorIds, ["sma", "rsi"]);
+  assert.deepEqual(restored?.settings.sma, { fast: 5, slow: 20 });
+  assert.equal(
+    parseIndicatorWorkspacePreferences({
+      focusedIndicator: "sma",
+      visibleIndicatorIds: ["sma", "sma"],
+      settings: defaults.settings,
+    }),
+    null,
+  );
+});
+
+test("creates and compares validated visible indicator snapshots", () => {
+  const settings = createDefaultIndicatorSettings();
+  settings.sma = { fast: 5, slow: 20 };
+  const configurations = createIndicatorConfigurations(
+    ["sma", "macd"],
+    settings,
+  );
+
+  assert.deepEqual(parseIndicatorConfigurations(configurations), configurations);
+  assert.equal(
+    indicatorConfigurationsEqual(configurations, [
+      { id: "sma", parameters: { slow: 20, fast: 5 } },
+      { id: "macd", parameters: { fast: 12, slow: 26, signal: 9 } },
+    ]),
+    true,
+  );
+  assert.equal(
+    indicatorConfigurationsEqual(configurations, [...configurations].reverse()),
+    false,
+  );
+  assert.equal(
+    parseIndicatorConfigurations([
+      { id: "sma", parameters: { fast: 0, slow: 20 } },
+    ]),
+    null,
+  );
 });

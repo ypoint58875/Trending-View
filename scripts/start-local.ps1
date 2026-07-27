@@ -122,6 +122,18 @@ if (-not (Test-DependenciesReady)) {
   }
 }
 
+if (Test-QuantScopeReady) {
+  Write-Host "QuantScope is already running at $localUrl."
+  Open-QuantScope
+  exit 0
+}
+
+if (Test-LocalPortInUse) {
+  Stop-WithError (
+    "Port 3000 is already used by another application. Stop that application and try again."
+  )
+}
+
 Write-Host "Applying local database migrations..."
 $previousCi = $env:CI
 try {

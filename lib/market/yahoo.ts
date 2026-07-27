@@ -10,6 +10,7 @@ import {
   clampMarketSeriesLimit,
   requestsExtendedDailyHistory,
 } from "./history";
+import { resolveLatestDailyBarStatus } from "./session";
 
 const SEARCH_ENDPOINT = "https://query1.finance.yahoo.com/v1/finance/search";
 const CHART_ENDPOINT = "https://query1.finance.yahoo.com/v8/finance/chart";
@@ -88,6 +89,11 @@ interface YahooChartResult {
     previousClose?: number;
     exchangeTimezoneName?: string;
     exchangeName?: string;
+    currentTradingPeriod?: {
+      regular?: {
+        end?: number;
+      };
+    };
   };
   timestamp?: number[];
   indicators?: {
@@ -134,24 +140,40 @@ async function fetchJson<T>(
     new URL(url.toString().replace("//query1.", "//query2.")),
   ];
   let lastStatus = 0;
+  let lastError: unknown = null;
 
   for (const endpoint of endpoints) {
-    const response = await fetchImpl(endpoint, {
-      headers: DEFAULT_HEADERS,
-      signal: AbortSignal.timeout(12_000),
-      ...(requestCache === "no-store" ? { cache: requestCache } : {}),
-    });
-    if (response.ok) return (await response.json()) as T;
-    lastStatus = response.status;
+    try {
+      const response = await fetchImpl(endpoint, {
+        headers: DEFAULT_HEADERS,
+        signal: AbortSignal.timeout(12_000),
+        ...(requestCache === "no-store" ? { cache: requestCache } : {}),
+      });
+      if (response.ok) return (await response.json()) as T;
+      lastStatus = response.status;
+    } catch (error) {
+      lastError = error;
+    }
   }
 
+  if (lastStatus === 0 && lastError instanceof Error) {
+    throw new Error(`Yahoo request failed: ${lastError.message}`);
+  }
   throw new Error(`Yahoo request failed with status ${lastStatus}`);
 }
 
 export function yahooSymbolForInstrument(instrument: MarketInstrument): string {
-  if (instrument.provider === "yahoo") return instrument.secid;
+  const legacyEastmoneyIdentity =
+    /^(?:0|1|100|105|107|251)\./.test(instrument.secid);
+  if (instrument.provider === "yahoo" && !legacyEastmoneyIdentity) {
+    return instrument.secid;
+  }
   if (instrument.assetType === "index") {
-    return yahooIndexAliases[instrument.code.toUpperCase()] ?? `^${instrument.code}`;
+    const alias = yahooIndexAliases[instrument.code.toUpperCase()];
+    if (alias) return alias;
+    if (instrument.exchange === "SSE") return `${instrument.code}.SS`;
+    if (instrument.exchange === "SZSE") return `${instrument.code}.SZ`;
+    return `^${instrument.code}`;
   }
   if (instrument.exchange === "SSE") return `${instrument.code}.SS`;
   if (instrument.exchange === "SZSE") return `${instrument.code}.SZ`;
@@ -223,6 +245,7 @@ export function parseYahooChart(
   payload: YahooChartResponse,
   instrument: MarketInstrument,
   interval: MarketInterval,
+  fetchedAt = new Date(),
 ): MarketSeries {
   const result = payload.chart?.result?.[0];
   const quote = result?.indicators?.quote?.[0];
@@ -235,9 +258,15 @@ export function parseYahooChart(
   }
 
   const timeZone = result.meta?.exchangeTimezoneName || "UTC";
-  const bars: MarketBar[] = [];
-  let allParsedDailyPricesAdjusted = interval === "1d";
-  let firstAcceptedAdjustmentFactor: number | null = null;
+  const acceptedRows: Array<{
+    timestamp: number;
+    open: number;
+    close: number;
+    high: number;
+    low: number;
+    volume: number;
+    adjustmentFactor: number;
+  }> = [];
   timestamps.forEach((timestamp, index) => {
     const open = quote.open?.[index];
     const close = quote.close?.[index];
@@ -263,41 +292,62 @@ export function parseYahooChart(
         : Number.NaN;
     const useAdjustedDailyPrice =
       Number.isFinite(adjustmentFactor) && adjustmentFactor > 0;
-    const priceFactor = useAdjustedDailyPrice ? adjustmentFactor : 1;
-    allParsedDailyPricesAdjusted &&= useAdjustedDailyPrice;
-    if (
-      firstAcceptedAdjustmentFactor === null &&
-      useAdjustedDailyPrice
-    ) {
-      firstAcceptedAdjustmentFactor = adjustmentFactor;
-    }
-
-    const adjustedOpen = open * priceFactor;
-    const adjustedBarClose = close * priceFactor;
-    const adjustedHigh = high * priceFactor;
-    const adjustedLow = low * priceFactor;
-    const previousClose = bars.at(-1)?.close ?? adjustedOpen;
-    const change = adjustedBarClose - previousClose;
-    bars.push({
-      time: formatTimestamp(timestamp, interval, timeZone),
-      timestamp: timestamp * 1000,
-      open: adjustedOpen,
-      close: adjustedBarClose,
-      high: adjustedHigh,
-      low: adjustedLow,
+    acceptedRows.push({
+      timestamp,
+      open,
+      close,
+      high,
+      low,
       volume: Number(quote.volume?.[index]) || 0,
+      adjustmentFactor: useAdjustedDailyPrice
+        ? adjustmentFactor
+        : Number.NaN,
+    });
+  });
+
+  if (acceptedRows.length === 0) {
+    throw new Error("Yahoo chart data could not be parsed");
+  }
+
+  const allParsedDailyPricesAdjusted =
+    interval === "1d" &&
+    acceptedRows.every(
+      ({ adjustmentFactor }) =>
+        Number.isFinite(adjustmentFactor) && adjustmentFactor > 0,
+    );
+  const firstAcceptedAdjustmentFactor = allParsedDailyPricesAdjusted
+    ? acceptedRows[0].adjustmentFactor
+    : null;
+  const bars: MarketBar[] = [];
+  acceptedRows.forEach((row) => {
+    const priceFactor = allParsedDailyPricesAdjusted
+      ? row.adjustmentFactor
+      : 1;
+    const normalizedOpen = row.open * priceFactor;
+    const normalizedClose = row.close * priceFactor;
+    const normalizedHigh = row.high * priceFactor;
+    const normalizedLow = row.low * priceFactor;
+    const previousClose = bars.at(-1)?.close ?? normalizedOpen;
+    const change = normalizedClose - previousClose;
+    bars.push({
+      time: formatTimestamp(row.timestamp, interval, timeZone),
+      timestamp: row.timestamp * 1000,
+      open: normalizedOpen,
+      close: normalizedClose,
+      high: normalizedHigh,
+      low: normalizedLow,
+      volume: row.volume,
       amount: 0,
       amplitude:
         previousClose === 0
           ? 0
-          : ((adjustedHigh - adjustedLow) / previousClose) * 100,
+          : ((normalizedHigh - normalizedLow) / previousClose) * 100,
       changePercent: previousClose === 0 ? 0 : (change / previousClose) * 100,
       change,
       turnoverRate: 0,
     });
   });
 
-  if (bars.length === 0) throw new Error("Yahoo chart data could not be parsed");
   const providerPreviousClose = Number(
     result.meta?.chartPreviousClose ?? result.meta?.previousClose,
   );
@@ -307,12 +357,14 @@ export function parseYahooChart(
     Number.isFinite(providerPreviousClose)
       ? providerPreviousClose * firstAcceptedAdjustmentFactor
       : providerPreviousClose;
+  const exchange = exchangeFromYahoo(result.meta?.exchangeName, "");
   return {
     instrument: {
       ...instrument,
+      secid: result.meta?.symbol || yahooSymbolForInstrument(instrument),
       code: result.meta?.symbol?.replace(/^\^/, "") || instrument.code,
       name: result.meta?.longName || result.meta?.shortName || instrument.name,
-      exchange: exchangeFromYahoo(result.meta?.exchangeName, ""),
+      exchange,
       provider: "yahoo",
     },
     interval,
@@ -325,8 +377,17 @@ export function parseYahooChart(
         : 0) ||
       bars[0].open,
     bars,
+    latestBarStatus:
+      interval === "1d"
+        ? resolveLatestDailyBarStatus(
+            bars.at(-1)!.time,
+            exchange,
+            fetchedAt,
+            result.meta?.currentTradingPeriod?.regular?.end,
+          )
+        : "unknown",
     source: "yahoo",
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: fetchedAt.toISOString(),
   };
 }
 

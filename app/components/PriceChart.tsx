@@ -51,6 +51,7 @@ import {
 import {
   getDefaultIndicatorParameters,
   getIndicator,
+  type IndicatorConfiguration,
   type IndicatorId,
   type IndicatorParameters,
 } from "@/lib/analysis/indicator-registry";
@@ -58,10 +59,7 @@ import { EChart } from "./EChart";
 
 export type { IndicatorId } from "@/lib/analysis/indicator-registry";
 
-export interface ChartIndicatorConfiguration {
-  id: IndicatorId;
-  parameters: IndicatorParameters;
-}
+export type ChartIndicatorConfiguration = IndicatorConfiguration;
 
 export interface StrategyLineLabels {
   prefix: string;
@@ -193,7 +191,9 @@ export function buildTradeMarkerSeries(
 export function buildTradeMarkerSeriesFromMarkers(
   tradeMarkers: TradeMarkers,
   labels: TradeMarkerLabels,
+  bars: readonly MarketBar[] = [],
 ): SeriesOption[] {
+  const barByTime = new Map(bars.map((bar) => [bar.time, bar]));
   return [
     {
       name: labels.openPosition,
@@ -204,15 +204,20 @@ export function buildTradeMarkerSeriesFromMarkers(
           labels,
           labels.openPosition,
         );
+        const bar = barByTime.get(marker.time);
         return {
           name: label,
-          value: [marker.time, marker.price],
+          value: [marker.time, bar?.low ?? marker.price],
+          tradePrice: marker.price,
           label: { formatter: label },
         };
       }),
       symbol: "triangle",
       symbolSize: 14,
-      symbolOffset: [0, 8],
+      symbolOffset: [0, 16],
+      silent: true,
+      clip: false,
+      tooltip: { show: false },
       itemStyle: {
         color: colors.tradeBuy,
         borderColor: colors.tradeBuyText,
@@ -241,16 +246,21 @@ export function buildTradeMarkerSeriesFromMarkers(
           labels,
           labels.closePosition,
         );
+        const bar = barByTime.get(marker.time);
         return {
           name: label,
-          value: [marker.time, marker.price],
+          value: [marker.time, bar?.high ?? marker.price],
+          tradePrice: marker.price,
           label: { formatter: label },
         };
       }),
       symbol: "triangle",
       symbolRotate: 180,
       symbolSize: 14,
-      symbolOffset: [0, -8],
+      symbolOffset: [0, -16],
+      silent: true,
+      clip: false,
+      tooltip: { show: false },
       itemStyle: {
         color: colors.tradeSell,
         borderColor: colors.tradeSellText,
@@ -273,12 +283,19 @@ export function buildTradeMarkerSeriesFromMarkers(
     {
       name: labels.rangeExit,
       type: "scatter",
-      data: tradeMarkers.rangeExits.map((marker) => ({
-        value: [marker.time, marker.price],
-      })),
+      data: tradeMarkers.rangeExits.map((marker) => {
+        const bar = barByTime.get(marker.time);
+        return {
+          value: [marker.time, bar?.high ?? marker.price],
+          tradePrice: marker.price,
+        };
+      }),
       symbol: "diamond",
       symbolSize: 10,
-      symbolOffset: [0, -7],
+      symbolOffset: [0, -14],
+      silent: true,
+      clip: false,
+      tooltip: { show: false },
       itemStyle: {
         color: colors.rangeExit,
         borderColor: "#e2e8f0",
@@ -661,6 +678,7 @@ export function buildStrategyLineSeries(
       },
       itemStyle: { color },
       emphasis: { disabled: true },
+      silent: true,
       z: 8,
     };
   });
@@ -786,6 +804,9 @@ export function buildPriceDataZoom(
       start,
       end: 100,
       zoomLock: false,
+      zoomOnMouseWheel: true,
+      moveOnMouseMove: true,
+      moveOnMouseWheel: false,
     },
     {
       id: "price-zoom-slider",
@@ -897,6 +918,7 @@ export function PriceChart({
       ...buildTradeMarkerSeriesFromMarkers(
         tradeMarkers ?? buildTradeMarkers(trades),
         labels,
+        bars,
       ),
     );
 

@@ -27,6 +27,7 @@ export function mergeLatestMarketSeries(
     instrument: latest.instrument,
     previousClose: latest.previousClose || history.previousClose,
     bars,
+    latestBarStatus: latest.latestBarStatus,
     source: latest.source,
     fetchedAt: latest.fetchedAt,
   };

@@ -22,6 +22,32 @@ These are public website endpoints, not a documented licensed API. They may
 change or rate-limit requests. Do not treat them as an authoritative execution
 feed.
 
+## EODHD licensed daily market data
+
+- Product documentation:
+  `https://eodhd.com/financial-apis/quick-start-with-our-financial-data-apis`
+- Search endpoint: `https://eodhd.com/api/search/{query}`
+- Daily endpoint: `https://eodhd.com/api/eod/{symbol}`
+- Accessed: 2026-07-27
+- Current parameters: server-only `api_token`; `fmt=json`; `period=d`;
+  ascending order; `from=2000-01-01` for extended history or a bounded recent
+  window for latest refresh; current `to`.
+- Raw sample: `data/raw/eodhd_aapl_daily_sample.json`
+- Registry: `data/source_registry.jsonl`
+
+EODHD is an optional licensed index/ETF fallback and search source. Runtime use
+is disabled unless `EODHD_API_TOKEN` is present on the server. Search accepts
+only `INDEX` and `ETF` metadata; individual equities and commodities are
+discarded. The adapter uses a 12-second timeout and retries one transient
+network, HTTP 429, or 5xx failure after a short delay.
+
+For daily output, every accepted row must have a finite positive
+`adjusted_close / close` factor before OHLC is scaled. If any row lacks a valid
+factor, all rows remain raw and the series is marked `raw`; volume is never
+rescaled. The committed sample uses EODHD's documented demo token and an AAPL
+row solely as a reproducible parser fixture. It does not make individual
+equities selectable in the product and contains no private credential.
+
 ## Yahoo Finance website market data
 
 - Search endpoint: `https://query1.finance.yahoo.com/v1/finance/search`
@@ -41,15 +67,19 @@ search results as commodity quote proxies. A deterministic catalog exposes
 gold (`GC=F`), silver (`SI=F`), crude oil (`CL=F`), and copper (`HG=F`).
 Live read-only checks on 2026-07-25 returned 1,260 five-year daily bars plus
 adjusted-close arrays for all four symbols. The adapter retries the equivalent
-query2 host, but regional HTTP 403 responses remain possible.
+query2 host after either a non-success response or a primary-host network/parse
+exception, but regional HTTP 403 responses remain possible. A successful Yahoo
+fallback series records Yahoo's resolved symbol rather than retaining the
+requesting provider's identifier; legacy Eastmoney-shaped identifiers saved
+under Yahoo are translated before requesting.
 An extended N225 chart request on 2026-07-25 returned 6,627 daily rows from
 2000-01-04 through 2026-07-24. The workspace retains at most 10,000 daily bars.
 
-For daily output, each parsed OHLC bar is scaled by a finite positive
-`adjclose / raw close`. If a factor is missing, zero, non-finite, or otherwise
-invalid, that bar retains raw OHLC and the whole series is marked `raw`;
-`corporate-action-adjusted` is used only when every parsed daily bar has a
-valid factor. Yahoo intraday support remains raw internally. Yahoo volume is
+For daily output, every accepted bar must have a finite positive
+`adjclose / raw close` before any OHLC row is scaled. If one factor is missing,
+zero, non-finite, or otherwise invalid, every accepted bar retains raw OHLC and
+the whole series is marked `raw`; `corporate-action-adjusted` is used only when
+every accepted daily bar has a valid factor. Yahoo intraday support remains raw internally. Yahoo volume is
 never rescaled. For an all-adjusted series, provider previous close is scaled
 by the first accepted bar factor. When a fetch limit slices normalized bars,
 `previousClose` becomes the immediately preceding normalized close when one is
@@ -81,6 +111,11 @@ indexes. Volume, when present, is not rescaled.
 series supplies one normalized `MarketBar[]` to the historical chart,
 indicators, strategy reference lines, newest-bar guidance, stability
 diagnostic, and backtests.
+
+`MarketSeries.latestBarStatus` records complete, in-progress, or unknown for
+the newest daily bar. Yahoo regular-session end metadata takes precedence when
+available; other adapters use documented exchange closes and remain
+conservative for unknown or special sessions.
 
 For ETFs, an adjusted source reduces mechanical distribution/split gaps. For
 indexes, the provider symbol and methodology determine whether the source is a

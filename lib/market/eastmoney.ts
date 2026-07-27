@@ -9,6 +9,7 @@ import {
   clampMarketSeriesLimit,
   requestsExtendedDailyHistory,
 } from "./history";
+import { resolveLatestDailyBarStatus } from "./session";
 
 const SEARCH_ENDPOINT = "https://searchapi.eastmoney.com/api/suggest/get";
 const KLINE_ENDPOINT =
@@ -233,18 +234,28 @@ export async function fetchEastmoneySeries(
     throw new Error("Eastmoney kline data could not be parsed");
   }
 
+  const fetchedAt = new Date();
+  const exchange = exchangeFromMarket(data.market);
   return {
     instrument: {
       ...instrument,
       code: data.code || instrument.code,
       name: data.name || instrument.name,
-      exchange: exchangeFromMarket(data.market),
+      exchange,
     },
     interval,
     priceAdjustment: "corporate-action-adjusted",
     previousClose: Number(data.preKPrice) || bars[0].open,
     bars,
+    latestBarStatus:
+      interval === "1d"
+        ? resolveLatestDailyBarStatus(
+            bars.at(-1)!.time,
+            exchange,
+            fetchedAt,
+          )
+        : "unknown",
     source: "eastmoney",
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: fetchedAt.toISOString(),
   };
 }

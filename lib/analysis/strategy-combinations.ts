@@ -1,60 +1,77 @@
-import type { MarketBar, MarketInterval } from "@/lib/market/types";
+import type {
+  MarketBar,
+  MarketInterval,
+  MarketLatestBarStatus,
+} from "@/lib/market/types";
 import {
   runAllocationBacktest,
-  runBacktest,
+  runBacktestFromTarget,
+  type AllocationIntrabarExecution,
   type AllocationSignalEvent,
   type AllocationBacktestResult,
   type BacktestResult,
   type BacktestSettings,
 } from "./backtest";
 import {
+  DEFAULT_SCREENING_YIELD_EVERY,
   buildScreeningCandidates,
   compareScreeningResults,
-  selectScreeningBars,
+  yieldForScreening,
+  type ScreeningCandidate,
   type ScreeningObjective,
 } from "./screening";
 import {
-  LONG_HORIZON_STRATEGY_IDS,
-  SHORT_HORIZON_STRATEGY_IDS,
+  STRATEGIES,
+  areStrategiesEquivalent,
   getStrategy,
   type StrategyId,
   type StrategyParameters,
 } from "./strategies";
+import {
+  buildStrategyOrderTimeline,
+  type StrategyOrderFill,
+} from "./strategy-execution";
+import type { StrategyOrderSeries } from "./strategy-orders";
+import {
+  applyMovingAverageSlopeEntryFilter,
+  buildMovingAverageEntryAllowedSeries,
+  cloneMovingAverageSlopeFilter,
+  movingAverageSlopeFiltersEqual,
+  resolveMovingAverageEntryAllowedSeries,
+  supportsScreeningMovingAverageSlopeFilter,
+  type MovingAverageSlopeFilter,
+} from "./entry-filter";
 
-export const DEFAULT_LONG_ALLOCATION = 0.6;
-export const DEFAULT_SHORT_ALLOCATION = 0.4;
+export const DEFAULT_STRATEGY_A_ALLOCATION = 0.6;
+export const DEFAULT_STRATEGY_B_ALLOCATION = 0.4;
 export const ALLOWED_POSITION_LEVELS = [
   0,
   0.4,
   0.6,
   1,
 ] as const;
-export const LONG_LAYER_ALLOCATION_CANDIDATES = [0, 0.4, 0.6] as const;
-export const SHORT_LAYER_ALLOCATION_CANDIDATES = [0.4, 0.6] as const;
-export const COMBINATION_FINALISTS_PER_STRATEGY = 2;
-export const MAX_COMBINATION_PAIR_FINALISTS = 1_024;
+export const STRATEGY_LAYER_ALLOCATION_CANDIDATES = [0.4, 0.6] as const;
+export const COMBINATION_FINALISTS_PER_STRATEGY = 1;
+export const SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 30;
+export const MAX_COMBINATION_PAIR_FINALISTS = 4_096;
 export const MAX_COMBINATION_RESULTS = 32;
 
-export interface TwoLayerAllocation {
-  longAllocation: number;
-  shortAllocation: number;
+export interface TwoStrategyAllocation {
+  strategyAAllocation: number;
+  strategyBAllocation: number;
 }
 
-export const TWO_LAYER_ALLOCATION_CANDIDATES: readonly TwoLayerAllocation[] =
-  LONG_LAYER_ALLOCATION_CANDIDATES.flatMap((longAllocation) =>
-    SHORT_LAYER_ALLOCATION_CANDIDATES.filter((shortAllocation) => {
-      const combinedAllocation = longAllocation + shortAllocation;
-      return (
-        combinedAllocation <= 1 + 1e-10 &&
-        ALLOWED_POSITION_LEVELS.some(
-          (level) => Math.abs(combinedAllocation - level) < 1e-10,
-        )
-      );
-    }).map((shortAllocation) => ({
-      longAllocation,
-      shortAllocation,
-    })),
-  );
+export const TWO_STRATEGY_ALLOCATION_CANDIDATES: readonly TwoStrategyAllocation[] =
+  [
+    {
+      strategyAAllocation: DEFAULT_STRATEGY_A_ALLOCATION,
+      strategyBAllocation: DEFAULT_STRATEGY_B_ALLOCATION,
+    },
+    {
+      strategyAAllocation: DEFAULT_STRATEGY_B_ALLOCATION,
+      strategyBAllocation: DEFAULT_STRATEGY_A_ALLOCATION,
+    },
+  ];
 
 export interface StrategySelection {
   strategyId: StrategyId;
@@ -62,45 +79,55 @@ export interface StrategySelection {
 }
 
 export interface StrategyAllocationPlan {
-  long: StrategySelection | null;
-  short: StrategySelection | null;
-  longAllocation: number;
-  shortAllocation: number;
+  strategyA: StrategySelection | null;
+  strategyB: StrategySelection | null;
+  strategyAAllocation: number;
+  strategyBAllocation: number;
+  entryFilter?: MovingAverageSlopeFilter | null;
 }
 
 export interface StrategyCombination {
-  longStrategyId: StrategyId;
-  longParameters: StrategyParameters;
-  shortStrategyId: StrategyId;
-  shortParameters: StrategyParameters;
-  longAllocation: number;
-  shortAllocation: number;
+  strategyAId: StrategyId;
+  strategyAParameters: StrategyParameters;
+  strategyBId: StrategyId;
+  strategyBParameters: StrategyParameters;
+  strategyAAllocation: number;
+  strategyBAllocation: number;
+  entryFilter?: MovingAverageSlopeFilter | null;
 }
 
 export interface StrategyCombinationResult extends AllocationBacktestResult {
-  longStrategyId: StrategyId;
-  longParameters: StrategyParameters;
-  shortStrategyId: StrategyId;
-  shortParameters: StrategyParameters;
-  longAllocation: number;
-  shortAllocation: number;
+  strategyAId: StrategyId;
+  strategyAParameters: StrategyParameters;
+  strategyBId: StrategyId;
+  strategyBParameters: StrategyParameters;
+  strategyAAllocation: number;
+  strategyBAllocation: number;
+  relativeLongStrategy: StrategySlot;
+  entryFilter?: MovingAverageSlopeFilter | null;
 }
+
+export type StrategySlot = "strategyA" | "strategyB";
 
 export type CombinationScreeningStage =
   | "strategies"
+  | "entryFilters"
   | "pairs"
   | "allocations";
 
 export interface CombinationScreeningProgress {
   completed: number;
   total: number;
+  stageCompleted: number;
+  stageTotal: number;
   failed: number;
   stage: CombinationScreeningStage;
-  longStrategyId: StrategyId | null;
-  shortStrategyId: StrategyId | null;
+  strategyAId: StrategyId | null;
+  strategyBId: StrategyId | null;
 }
 
 export interface CombinationOptimizationResult {
+  singleResults: BacktestResult[];
   results: StrategyCombinationResult[];
   evaluatedCount: number;
   totalCandidates: number;
@@ -108,10 +135,11 @@ export interface CombinationOptimizationResult {
   cancelled: boolean;
 }
 
-interface OptimizeStrategyCombinationsOptions {
-  maxPerStrategy?: number;
+export interface OptimizeStrategyCombinationsOptions {
+  candidates?: readonly ScreeningCandidate[];
   objective?: ScreeningObjective;
-  allocationCandidates?: readonly TwoLayerAllocation[];
+  entryFilters?: readonly MovingAverageSlopeFilter[];
+  allocationCandidates?: readonly TwoStrategyAllocation[];
   maxPairFinalists?: number;
   signal?: AbortSignal;
   yieldEvery?: number;
@@ -121,13 +149,22 @@ interface OptimizeStrategyCombinationsOptions {
 interface StrategyFinalist {
   result: BacktestResult;
   target: number[];
+  orderFills: StrategyOrderFill[][];
 }
 
 interface StrategyPairFinalist {
-  long: StrategyFinalist;
-  short: StrategyFinalist;
+  strategyA: StrategyFinalist;
+  strategyB: StrategyFinalist;
   referenceResult: StrategyCombinationResult;
+  settings: StrategyCombinationBacktestSettings;
 }
+
+type StrategyCombinationBacktestSettings = Omit<
+  BacktestSettings,
+  "interval"
+> & {
+  interval: MarketInterval;
+};
 
 function normalizeAllocation(value: number, fallback: number): number {
   if (!Number.isFinite(value)) return fallback;
@@ -135,59 +172,56 @@ function normalizeAllocation(value: number, fallback: number): number {
 }
 
 function assertAllocationPlanBounds(
-  longAllocation: number,
-  shortAllocation: number,
+  strategyAAllocation: number,
+  strategyBAllocation: number,
 ) {
   if (
-    !Number.isFinite(longAllocation) ||
-    !Number.isFinite(shortAllocation) ||
-    longAllocation < 0 ||
-    shortAllocation < 0 ||
-    longAllocation > 1 ||
-    shortAllocation > 1 ||
-    longAllocation + shortAllocation > 1 + 1e-10
+    !Number.isFinite(strategyAAllocation) ||
+    !Number.isFinite(strategyBAllocation) ||
+    strategyAAllocation < 0 ||
+    strategyBAllocation < 0 ||
+    strategyAAllocation > 1 ||
+    strategyBAllocation > 1 ||
+    strategyAAllocation + strategyBAllocation > 1 + 1e-10
   ) {
     throw new Error(
-      "Long and short allocations must be between zero and one and their sum cannot exceed one",
+      "Strategy allocations must be between zero and one and their sum cannot exceed one",
     );
   }
 }
 
 function assertAlignedTargets(
-  longTarget: readonly number[] | null,
-  shortTarget: readonly number[] | null,
+  strategyATarget: readonly number[] | null,
+  strategyBTarget: readonly number[] | null,
 ) {
-  if (!longTarget && !shortTarget) {
+  if (!strategyATarget && !strategyBTarget) {
     throw new Error("At least one strategy target is required");
   }
   if (
-    longTarget &&
-    shortTarget &&
-    longTarget.length !== shortTarget.length
+    strategyATarget &&
+    strategyBTarget &&
+    strategyATarget.length !== strategyBTarget.length
   ) {
-    throw new Error("Long and short targets must align");
+    throw new Error("Strategy targets must align");
   }
 }
 
 export function buildStrategyPlanAllocationTarget(
-  longTarget: readonly number[] | null,
-  shortTarget: readonly number[] | null,
-  longAllocation: number,
-  shortAllocation: number,
+  strategyATarget: readonly number[] | null,
+  strategyBTarget: readonly number[] | null,
+  strategyAAllocation: number,
+  strategyBAllocation: number,
 ): number[] {
   return buildStrategyPlanTimelineFromTargets(
-    longTarget,
-    shortTarget,
-    longAllocation,
-    shortAllocation,
+    strategyATarget,
+    strategyBTarget,
+    strategyAAllocation,
+    strategyBAllocation,
   ).target;
 }
 
 function buildSingleStrategyTimeline(
   sourceTarget: readonly number[],
-  allocation: number,
-  entryEvent: AllocationSignalEvent,
-  exitEvent: AllocationSignalEvent,
 ): StrategyPlanTimeline {
   let wasActive = false;
   const target: number[] = [];
@@ -196,21 +230,71 @@ function buildSingleStrategyTimeline(
   sourceTarget.forEach((state) => {
     const active = state > 0;
     const events: AllocationSignalEvent[] = [];
-    if (!wasActive && active) events.push(entryEvent);
-    if (wasActive && !active) events.push(exitEvent);
-    target.push(active ? allocation : 0);
+    if (!wasActive && active) events.push("long-entry");
+    if (wasActive && !active) events.push("long-exit");
+    target.push(active ? 1 : 0);
     signalEvents.push(events);
     wasActive = active;
   });
 
-  return { target, signalEvents };
+  return { target, signalEvents, relativeLongStrategy: null };
 }
 
-function buildDualStrategyTimeline(
+export interface StrategySignalHorizon {
+  averageActiveBars: number;
+  activeRunCount: number;
+  transitionCount: number;
+}
+
+export function summarizeStrategySignalHorizon(
+  sourceTarget: readonly number[],
+): StrategySignalHorizon {
+  let activeBars = 0;
+  let activeRunCount = 0;
+  let transitionCount = 0;
+  let wasActive = false;
+
+  sourceTarget.forEach((state, index) => {
+    const active = state > 0;
+    if (active) activeBars += 1;
+    if (active && !wasActive) activeRunCount += 1;
+    if (index > 0 && active !== wasActive) transitionCount += 1;
+    wasActive = active;
+  });
+
+  return {
+    averageActiveBars:
+      activeRunCount > 0 ? activeBars / activeRunCount : 0,
+    activeRunCount,
+    transitionCount,
+  };
+}
+
+export function resolveRelativeLongStrategy(
+  strategyATarget: readonly number[],
+  strategyBTarget: readonly number[],
+): StrategySlot {
+  const strategyA = summarizeStrategySignalHorizon(strategyATarget);
+  const strategyB = summarizeStrategySignalHorizon(strategyBTarget);
+  const averageDifference =
+    strategyA.averageActiveBars - strategyB.averageActiveBars;
+  if (Math.abs(averageDifference) > 1e-10) {
+    return averageDifference > 0 ? "strategyA" : "strategyB";
+  }
+  if (strategyA.transitionCount !== strategyB.transitionCount) {
+    return strategyA.transitionCount < strategyB.transitionCount
+      ? "strategyA"
+      : "strategyB";
+  }
+  return "strategyA";
+}
+
+function buildHierarchicalStrategyTimeline(
   longTarget: readonly number[],
   shortTarget: readonly number[],
   longAllocation: number,
   shortAllocation: number,
+  relativeLongStrategy: StrategySlot,
 ): StrategyPlanTimeline {
   let longWasActive = false;
   let shortSignalWasActive = false;
@@ -256,79 +340,322 @@ function buildDualStrategyTimeline(
     shortSignalWasActive = shortSignalActive;
   });
 
-  return { target, signalEvents };
+  return { target, signalEvents, relativeLongStrategy };
 }
 
 export interface StrategyPlanTimeline {
   target: number[];
   signalEvents: AllocationSignalEvent[][];
+  relativeLongStrategy: StrategySlot | null;
+  intrabarExecutions?: AllocationIntrabarExecution[][];
+}
+
+interface StrategyRoleTargets {
+  strategyA: readonly number[];
+  strategyB: readonly number[];
+}
+
+function selectRoleTargetWindow(
+  bars: readonly MarketBar[],
+  target: readonly number[],
+  roleWindow?: Pick<BacktestSettings, "startTime" | "endTime">,
+): number[] {
+  if (!roleWindow?.startTime && !roleWindow?.endTime) return [...target];
+  return target.filter((_, index) => {
+    const time = bars[index].time;
+    return (
+      (!roleWindow.startTime || time >= roleWindow.startTime) &&
+      (!roleWindow.endTime || time <= roleWindow.endTime)
+    );
+  });
 }
 
 export function buildStrategyPlanTimelineFromTargets(
-  longTarget: readonly number[] | null,
-  shortTarget: readonly number[] | null,
-  longAllocation: number,
-  shortAllocation: number,
+  strategyATarget: readonly number[] | null,
+  strategyBTarget: readonly number[] | null,
+  strategyAAllocation: number,
+  strategyBAllocation: number,
+  roleTargets?: StrategyRoleTargets,
+  fixedRelativeLongStrategy?: StrategySlot,
 ): StrategyPlanTimeline {
-  assertAlignedTargets(longTarget, shortTarget);
-  assertAllocationPlanBounds(longAllocation, shortAllocation);
+  assertAlignedTargets(strategyATarget, strategyBTarget);
+  assertAllocationPlanBounds(strategyAAllocation, strategyBAllocation);
 
-  if (longTarget && shortTarget) {
-    return buildDualStrategyTimeline(
-      longTarget,
-      shortTarget,
-      longAllocation,
-      shortAllocation,
-    );
+  if (strategyATarget && strategyBTarget) {
+    const relativeLongStrategy =
+      fixedRelativeLongStrategy ??
+      resolveRelativeLongStrategy(
+        roleTargets?.strategyA ?? strategyATarget,
+        roleTargets?.strategyB ?? strategyBTarget,
+      );
+    return relativeLongStrategy === "strategyA"
+      ? buildHierarchicalStrategyTimeline(
+          strategyATarget,
+          strategyBTarget,
+          strategyAAllocation,
+          strategyBAllocation,
+          relativeLongStrategy,
+        )
+      : buildHierarchicalStrategyTimeline(
+          strategyBTarget,
+          strategyATarget,
+          strategyBAllocation,
+          strategyAAllocation,
+          relativeLongStrategy,
+        );
   }
 
-  return longTarget
-    ? buildSingleStrategyTimeline(
-        longTarget,
-        longAllocation,
-        "long-entry",
-        "long-exit",
-      )
-    : buildSingleStrategyTimeline(
-        shortTarget ?? [],
-        shortAllocation,
-        "short-entry",
-        "short-exit",
-      );
+  return strategyATarget
+    ? buildSingleStrategyTimeline(strategyATarget)
+    : buildSingleStrategyTimeline(strategyBTarget ?? []);
 }
 
 function buildSelectionTarget(
   bars: MarketBar[],
   selection: StrategySelection | null,
-  expectedHorizon: "long" | "short",
 ): number[] | null {
   if (!selection) return null;
   const strategy = getStrategy(selection.strategyId);
-  if (strategy.horizon !== expectedHorizon) {
-    throw new Error(
-      `${expectedHorizon === "long" ? "Long" : "Short"} strategy must use the ${expectedHorizon} horizon`,
+  return strategy.buildTarget(bars, selection.parameters);
+}
+
+interface StrategyExecutionSeries {
+  target: number[] | null;
+  orderFills: StrategyOrderFill[][];
+  orders?: StrategyOrderSeries;
+}
+
+function buildStrategyExecutionSeries(
+  bars: MarketBar[],
+  selection: StrategySelection | null,
+  fallbackTarget: readonly number[] | null,
+  entryAllowed: readonly boolean[] | null = null,
+): StrategyExecutionSeries {
+  if (!selection || !fallbackTarget) {
+    return {
+      target: null,
+      orderFills: Array.from({ length: bars.length }, () => []),
+    };
+  }
+  const strategy = getStrategy(selection.strategyId);
+  const orders = strategy.buildOrders?.(bars, selection.parameters);
+  if (!orders) {
+    return {
+      target: applyMovingAverageSlopeEntryFilter(
+        fallbackTarget,
+        entryAllowed,
+      ),
+      orderFills: Array.from({ length: bars.length }, () => []),
+    };
+  }
+  if (orders.length !== bars.length || fallbackTarget.length !== bars.length) {
+    throw new Error("Strategy execution plan must align with market bars");
+  }
+
+  const execution = buildStrategyOrderTimeline(
+    bars,
+    orders,
+    entryAllowed,
+  );
+  return {
+    target: execution.target,
+    orderFills: execution.fills,
+    orders,
+  };
+}
+
+function buildPlanIntrabarExecutions(
+  timeline: StrategyPlanTimeline,
+  strategyAAllocation: number,
+  strategyBAllocation: number,
+  strategyAFills: readonly (readonly StrategyOrderFill[])[],
+  strategyBFills: readonly (readonly StrategyOrderFill[])[],
+  hasStrategyA: boolean,
+  hasStrategyB: boolean,
+): AllocationIntrabarExecution[][] {
+  if (!hasStrategyA || !hasStrategyB) {
+    const selectedFills = hasStrategyA ? strategyAFills : strategyBFills;
+    return selectedFills.map((fills) =>
+      fills.map((fill) => ({
+        targetAllocation: fill.action === "buy" ? 1 : 0,
+        fillPrice: fill.fillPrice,
+        signals: [fill.action === "buy" ? "long-entry" : "long-exit"],
+      })),
     );
   }
-  return strategy.buildTarget(bars, selection.parameters);
+
+  const longFills =
+    timeline.relativeLongStrategy === "strategyB"
+      ? strategyBFills
+      : strategyAFills;
+  const shortFills =
+    timeline.relativeLongStrategy === "strategyB"
+      ? strategyAFills
+      : strategyBFills;
+  const longAllocation =
+    timeline.relativeLongStrategy === "strategyB"
+      ? strategyBAllocation
+      : strategyAAllocation;
+  const shortAllocation =
+    timeline.relativeLongStrategy === "strategyB"
+      ? strategyAAllocation
+      : strategyBAllocation;
+
+  return timeline.target.map((_, index) => {
+    const currentLongFills = longFills[index] ?? [];
+    const currentShortFills = shortFills[index] ?? [];
+
+    let currentAllocation = index > 0 ? timeline.target[index - 1] : 0;
+    const executions: AllocationIntrabarExecution[] = [];
+    const applyFills = (
+      fills: readonly StrategyOrderFill[],
+      role: "long" | "short",
+    ) => {
+      fills.forEach((fill) => {
+        let targetAllocation = currentAllocation;
+        let signals: AllocationSignalEvent[] = [];
+        if (role === "long" && fill.action === "buy" && currentAllocation === 0) {
+          targetAllocation = longAllocation;
+          signals = ["long-entry"];
+        } else if (
+          role === "long" &&
+          fill.action === "sell" &&
+          currentAllocation > 0
+        ) {
+          targetAllocation = 0;
+          signals =
+            currentAllocation > longAllocation + 1e-10
+              ? ["long-exit", "short-exit"]
+              : ["long-exit"];
+        } else if (
+          role === "short" &&
+          fill.action === "buy" &&
+          Math.abs(currentAllocation - longAllocation) < 1e-10
+        ) {
+          targetAllocation = longAllocation + shortAllocation;
+          signals = ["short-entry"];
+        } else if (
+          role === "short" &&
+          fill.action === "sell" &&
+          currentAllocation > longAllocation + 1e-10
+        ) {
+          targetAllocation = longAllocation;
+          signals = ["short-exit"];
+        }
+        if (Math.abs(targetAllocation - currentAllocation) > 1e-10) {
+          executions.push({
+            targetAllocation,
+            fillPrice: fill.fillPrice,
+            signals,
+          });
+          currentAllocation = targetAllocation;
+        }
+      });
+    };
+
+    const orderedFills = [
+      ...currentLongFills.map((fill) => ({
+        fill,
+        role: "long" as const,
+      })),
+      ...currentShortFills.map((fill) => ({
+        fill,
+        role: "short" as const,
+      })),
+    ].sort((left, right) => {
+      if (left.fill.action !== right.fill.action) {
+        return left.fill.action === "buy" ? -1 : 1;
+      }
+      const priceDifference =
+        left.fill.action === "buy"
+          ? left.fill.fillPrice - right.fill.fillPrice
+          : right.fill.fillPrice - left.fill.fillPrice;
+      if (Math.abs(priceDifference) > 1e-10) return priceDifference;
+      return left.role === right.role ? 0 : left.role === "long" ? -1 : 1;
+    });
+    orderedFills.forEach(({ fill, role }) => applyFills([fill], role));
+    return executions;
+  });
 }
 
 export function buildStrategyPlanTarget(
   bars: MarketBar[],
   plan: StrategyAllocationPlan,
+  roleWindow?: Pick<BacktestSettings, "startTime" | "endTime">,
 ): number[] {
-  return buildStrategyPlanTimeline(bars, plan).target;
+  return buildStrategyPlanTimeline(bars, plan, roleWindow).target;
 }
 
 export function buildStrategyPlanTimeline(
   bars: MarketBar[],
   plan: StrategyAllocationPlan,
+  roleWindow?: Pick<BacktestSettings, "startTime" | "endTime">,
+  fixedRelativeLongStrategy?: StrategySlot,
 ): StrategyPlanTimeline {
-  return buildStrategyPlanTimelineFromTargets(
-    buildSelectionTarget(bars, plan.long, "long"),
-    buildSelectionTarget(bars, plan.short, "short"),
-    plan.longAllocation,
-    plan.shortAllocation,
+  if (
+    plan.strategyA &&
+    plan.strategyB &&
+    areStrategiesEquivalent(
+      plan.strategyA.strategyId,
+      plan.strategyB.strategyId,
+    )
+  ) {
+    throw new Error("Strategy A and Strategy B must not be equivalent");
+  }
+  const entryAllowed = buildMovingAverageEntryAllowedSeries(
+    bars,
+    plan.entryFilter,
   );
+  const strategyAExecution = buildStrategyExecutionSeries(
+    bars,
+    plan.strategyA,
+    buildSelectionTarget(bars, plan.strategyA),
+    entryAllowed,
+  );
+  const strategyBExecution = buildStrategyExecutionSeries(
+    bars,
+    plan.strategyB,
+    buildSelectionTarget(bars, plan.strategyB),
+    entryAllowed,
+  );
+  const strategyATarget = strategyAExecution.target;
+  const strategyBTarget = strategyBExecution.target;
+  const roleTargets =
+    roleWindow && strategyATarget && strategyBTarget
+      ? {
+          strategyA: selectRoleTargetWindow(
+            bars,
+            strategyATarget,
+            roleWindow,
+          ),
+          strategyB: selectRoleTargetWindow(
+            bars,
+            strategyBTarget,
+            roleWindow,
+          ),
+        }
+      : undefined;
+  const timeline = buildStrategyPlanTimelineFromTargets(
+    strategyATarget,
+    strategyBTarget,
+    plan.strategyAAllocation,
+    plan.strategyBAllocation,
+    roleTargets,
+    fixedRelativeLongStrategy,
+  );
+  const intrabarExecutions = buildPlanIntrabarExecutions(
+    timeline,
+    plan.strategyAAllocation,
+    plan.strategyBAllocation,
+    strategyAExecution.orderFills,
+    strategyBExecution.orderFills,
+    Boolean(plan.strategyA),
+    Boolean(plan.strategyB),
+  );
+  return {
+    ...timeline,
+    intrabarExecutions,
+  };
 }
 
 export interface LiveAllocationGuidance {
@@ -340,9 +667,59 @@ export interface LiveAllocationGuidance {
 export function buildLiveAllocationGuidance(
   bars: MarketBar[],
   plan: StrategyAllocationPlan,
+  roleWindow?: Pick<BacktestSettings, "startTime" | "endTime">,
+  latestBarStatus: MarketLatestBarStatus = "complete",
 ): LiveAllocationGuidance | null {
-  if (bars.length === 0 || (!plan.long && !plan.short)) return null;
-  const target = buildStrategyPlanTarget(bars, plan);
+  if (bars.length === 0 || (!plan.strategyA && !plan.strategyB)) return null;
+  const entryAllowed = buildMovingAverageEntryAllowedSeries(
+    bars,
+    plan.entryFilter,
+  );
+  if (entryAllowed && latestBarStatus !== "complete") {
+    entryAllowed[entryAllowed.length - 1] = false;
+  }
+  const buildLiveTarget = (selection: StrategySelection | null) => {
+    const execution = buildStrategyExecutionSeries(
+      bars,
+      selection,
+      buildSelectionTarget(bars, selection),
+      entryAllowed,
+    );
+    if (
+      latestBarStatus !== "complete" &&
+      !execution.orders &&
+      execution.target &&
+      execution.target.length > 1
+    ) {
+      execution.target[execution.target.length - 1] =
+        execution.target[execution.target.length - 2] ?? 0;
+    }
+    return execution.target;
+  };
+  const strategyATarget = buildLiveTarget(plan.strategyA);
+  const strategyBTarget = buildLiveTarget(plan.strategyB);
+  const roleTargets =
+    roleWindow && strategyATarget && strategyBTarget
+      ? {
+          strategyA: selectRoleTargetWindow(
+            bars,
+            strategyATarget,
+            roleWindow,
+          ),
+          strategyB: selectRoleTargetWindow(
+            bars,
+            strategyBTarget,
+            roleWindow,
+          ),
+        }
+      : undefined;
+  const target = buildStrategyPlanTimelineFromTargets(
+    strategyATarget,
+    strategyBTarget,
+    plan.strategyAAllocation,
+    plan.strategyBAllocation,
+    roleTargets,
+  ).target;
   const targetAllocation = target.at(-1) ?? 0;
   const previousAllocation = target.at(-2) ?? 0;
   const action =
@@ -361,38 +738,89 @@ export function buildStrategyCombinationTarget(
   combination: StrategyCombination,
 ): number[] {
   return buildStrategyPlanTarget(bars, {
-    long: {
-      strategyId: combination.longStrategyId,
-      parameters: combination.longParameters,
+    strategyA: {
+      strategyId: combination.strategyAId,
+      parameters: combination.strategyAParameters,
     },
-    short: {
-      strategyId: combination.shortStrategyId,
-      parameters: combination.shortParameters,
+    strategyB: {
+      strategyId: combination.strategyBId,
+      parameters: combination.strategyBParameters,
     },
-    longAllocation: normalizeAllocation(
-      combination.longAllocation,
-      DEFAULT_LONG_ALLOCATION,
+    strategyAAllocation: normalizeAllocation(
+      combination.strategyAAllocation,
+      DEFAULT_STRATEGY_A_ALLOCATION,
     ),
-    shortAllocation: normalizeAllocation(
-      combination.shortAllocation,
-      DEFAULT_SHORT_ALLOCATION,
+    strategyBAllocation: normalizeAllocation(
+      combination.strategyBAllocation,
+      DEFAULT_STRATEGY_B_ALLOCATION,
     ),
+    entryFilter: cloneMovingAverageSlopeFilter(combination.entryFilter),
   });
 }
 
-function yieldToMainThread(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+export function runStrategyCombinationBacktest(
+  bars: MarketBar[],
+  combination: StrategyCombination,
+  settings: Omit<BacktestSettings, "interval"> & {
+    interval: MarketInterval;
+  },
+  fixedRelativeLongStrategy?: StrategySlot,
+): StrategyCombinationResult {
+  const plan: StrategyAllocationPlan = {
+    strategyA: {
+      strategyId: combination.strategyAId,
+      parameters: { ...combination.strategyAParameters },
+    },
+    strategyB: {
+      strategyId: combination.strategyBId,
+      parameters: { ...combination.strategyBParameters },
+    },
+    strategyAAllocation: combination.strategyAAllocation,
+    strategyBAllocation: combination.strategyBAllocation,
+    entryFilter: cloneMovingAverageSlopeFilter(
+      combination.entryFilter ?? settings.entryFilter,
+    ),
+  };
+  const timeline = buildStrategyPlanTimeline(
+    bars,
+    plan,
+    fixedRelativeLongStrategy ? undefined : settings,
+    fixedRelativeLongStrategy,
+  );
+  if (!timeline.relativeLongStrategy) {
+    throw new Error("A strategy pair requires a relative long strategy");
+  }
+  return {
+    ...runAllocationBacktest(
+      bars,
+      timeline.target,
+      settings,
+      timeline.signalEvents,
+      timeline.intrabarExecutions,
+    ),
+    strategyAId: combination.strategyAId,
+    strategyAParameters: { ...combination.strategyAParameters },
+    strategyBId: combination.strategyBId,
+    strategyBParameters: { ...combination.strategyBParameters },
+    strategyAAllocation: combination.strategyAAllocation,
+    strategyBAllocation: combination.strategyBAllocation,
+    relativeLongStrategy: timeline.relativeLongStrategy,
+    ...(plan.entryFilter
+      ? { entryFilter: cloneMovingAverageSlopeFilter(plan.entryFilter) }
+      : {}),
+  };
 }
 
 function retainFinalist(
-  finalistsByStrategy: Map<StrategyId, BacktestResult[]>,
-  result: BacktestResult,
+  finalistsByStrategy: Map<StrategyId, StrategyFinalist[]>,
+  finalist: StrategyFinalist,
   objective: ScreeningObjective,
 ) {
+  const result = finalist.result;
   const finalists = finalistsByStrategy.get(result.strategyId) ?? [];
-  finalists.push(result);
+  finalists.push(finalist);
   finalists.sort((left, right) =>
-    compareScreeningResults(left, right, objective),
+    compareScreeningResults(left.result, right.result, objective),
   );
   finalistsByStrategy.set(
     result.strategyId,
@@ -400,18 +828,28 @@ function retainFinalist(
   );
 }
 
-function buildFinalists(
-  bars: MarketBar[],
-  finalistsByStrategy: Map<StrategyId, BacktestResult[]>,
-  strategyIds: readonly StrategyId[],
-): StrategyFinalist[] {
-  return strategyIds.flatMap((strategyId) => {
-    const strategy = getStrategy(strategyId);
-    return (finalistsByStrategy.get(strategyId) ?? []).map((result) => ({
-      result,
-      target: strategy.buildTarget(bars, result.parameters),
-    }));
-  });
+function compactBacktestResult(result: BacktestResult): BacktestResult {
+  return {
+    ...result,
+    equity: [],
+    trades: [],
+  };
+}
+
+function retainEntryFilterCandidate(
+  candidatesByStrategy: Map<StrategyId, BacktestResult[]>,
+  result: BacktestResult,
+  objective: ScreeningObjective,
+) {
+  const candidates = candidatesByStrategy.get(result.strategyId) ?? [];
+  candidates.push(compactBacktestResult(result));
+  candidates.sort((left, right) =>
+    compareScreeningResults(left, right, objective),
+  );
+  candidatesByStrategy.set(
+    result.strategyId,
+    candidates.slice(0, SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY),
+  );
 }
 
 function retainCombinationResult(
@@ -419,7 +857,22 @@ function retainCombinationResult(
   result: StrategyCombinationResult,
   objective: ScreeningObjective,
 ) {
-  results.push(result);
+  const existingIndex = results.findIndex(
+    (existing) =>
+      existing.strategyAId === result.strategyAId &&
+      existing.strategyBId === result.strategyBId,
+  );
+  if (
+    existingIndex >= 0 &&
+    compareScreeningResults(result, results[existingIndex], objective) >= 0
+  ) {
+    return;
+  }
+  if (existingIndex >= 0) {
+    results.splice(existingIndex, 1, result);
+  } else {
+    results.push(result);
+  }
   results.sort((left, right) =>
     compareScreeningResults(left, right, objective),
   );
@@ -446,42 +899,83 @@ function retainPairFinalist(
 }
 
 function sameAllocation(
-  left: TwoLayerAllocation,
-  right: TwoLayerAllocation,
+  left: TwoStrategyAllocation,
+  right: TwoStrategyAllocation,
 ): boolean {
   return (
-    Math.abs(left.longAllocation - right.longAllocation) < 1e-10 &&
-    Math.abs(left.shortAllocation - right.shortAllocation) < 1e-10
+    Math.abs(left.strategyAAllocation - right.strategyAAllocation) < 1e-10 &&
+    Math.abs(left.strategyBAllocation - right.strategyBAllocation) < 1e-10
   );
+}
+
+function entryFilterKey(
+  filter: MovingAverageSlopeFilter | null | undefined,
+): string {
+  return filter
+    ? `${filter.movingAverageType}:${filter.period}:${filter.minimumSlopePercent}`
+    : "none";
 }
 
 function runCombinationCandidate(
   bars: MarketBar[],
-  longFinalist: StrategyFinalist,
-  shortFinalist: StrategyFinalist,
-  allocation: TwoLayerAllocation,
-  settings: Omit<BacktestSettings, "interval"> & {
-    interval: MarketInterval;
-  },
+  strategyAFinalist: StrategyFinalist,
+  strategyBFinalist: StrategyFinalist,
+  allocation: TwoStrategyAllocation,
+  settings: StrategyCombinationBacktestSettings,
 ): StrategyCombinationResult {
+  const roleTargets = {
+    strategyA: selectRoleTargetWindow(
+      bars,
+      strategyAFinalist.target,
+      settings,
+    ),
+    strategyB: selectRoleTargetWindow(
+      bars,
+      strategyBFinalist.target,
+      settings,
+    ),
+  };
+  const timeline = buildStrategyPlanTimelineFromTargets(
+    strategyAFinalist.target,
+    strategyBFinalist.target,
+    allocation.strategyAAllocation,
+    allocation.strategyBAllocation,
+    roleTargets,
+  );
   const performance = runAllocationBacktest(
     bars,
-    buildStrategyPlanAllocationTarget(
-      longFinalist.target,
-      shortFinalist.target,
-      allocation.longAllocation,
-      allocation.shortAllocation,
-    ),
+    timeline.target,
     settings,
+    timeline.signalEvents,
+    buildPlanIntrabarExecutions(
+      timeline,
+      allocation.strategyAAllocation,
+      allocation.strategyBAllocation,
+      strategyAFinalist.orderFills,
+      strategyBFinalist.orderFills,
+      true,
+      true,
+    ),
   );
+  if (!timeline.relativeLongStrategy) {
+    throw new Error("A strategy pair requires a relative long strategy");
+  }
   return {
     ...performance,
-    longStrategyId: longFinalist.result.strategyId,
-    longParameters: longFinalist.result.parameters,
-    shortStrategyId: shortFinalist.result.strategyId,
-    shortParameters: shortFinalist.result.parameters,
-    longAllocation: allocation.longAllocation,
-    shortAllocation: allocation.shortAllocation,
+    strategyAId: strategyAFinalist.result.strategyId,
+    strategyAParameters: strategyAFinalist.result.parameters,
+    strategyBId: strategyBFinalist.result.strategyId,
+    strategyBParameters: strategyBFinalist.result.parameters,
+    strategyAAllocation: allocation.strategyAAllocation,
+    strategyBAllocation: allocation.strategyBAllocation,
+    relativeLongStrategy: timeline.relativeLongStrategy,
+    ...(settings.entryFilter
+      ? {
+          entryFilter: cloneMovingAverageSlopeFilter(
+            settings.entryFilter,
+          ),
+        }
+      : {}),
   };
 }
 
@@ -492,17 +986,46 @@ export async function optimizeStrategyCombinations(
   },
   options: OptimizeStrategyCombinationsOptions = {},
 ): Promise<CombinationOptimizationResult> {
-  const candidates = buildScreeningCandidates(options.maxPerStrategy);
-  const analysisBars = selectScreeningBars(bars, settings);
+  const candidates = options.candidates
+    ? [...options.candidates]
+    : buildScreeningCandidates();
+  const requestedEntryFilters = [
+    ...new Map(
+      (options.entryFilters ?? []).map((filter) => [
+        entryFilterKey(filter),
+        cloneMovingAverageSlopeFilter(filter)!,
+      ]),
+    ).values(),
+  ];
+  const baseEntryFilter =
+    requestedEntryFilters.length > 0
+      ? null
+      : cloneMovingAverageSlopeFilter(settings.entryFilter);
+  const baseEntryAllowed = resolveMovingAverageEntryAllowedSeries(
+    bars,
+    baseEntryFilter,
+    requestedEntryFilters.length > 0
+      ? undefined
+      : settings.entryFilterAllowed,
+  );
+  const baseSettings: StrategyCombinationBacktestSettings = {
+    ...settings,
+    entryFilter: baseEntryFilter,
+    entryFilterAllowed: baseEntryAllowed ?? undefined,
+  };
   const objective = options.objective ?? "balanced";
   const allocationCandidates =
-    options.allocationCandidates ?? TWO_LAYER_ALLOCATION_CANDIDATES;
+    options.allocationCandidates ?? TWO_STRATEGY_ALLOCATION_CANDIDATES;
   const referenceAllocation =
     allocationCandidates.find(
       (allocation) =>
-        Math.abs(allocation.longAllocation - DEFAULT_LONG_ALLOCATION) <
+        Math.abs(
+          allocation.strategyAAllocation - DEFAULT_STRATEGY_A_ALLOCATION,
+        ) <
           1e-10 &&
-        Math.abs(allocation.shortAllocation - DEFAULT_SHORT_ALLOCATION) <
+        Math.abs(
+          allocation.strategyBAllocation - DEFAULT_STRATEGY_B_ALLOCATION,
+        ) <
           1e-10,
     ) ?? allocationCandidates[0];
   const remainingAllocations = referenceAllocation
@@ -515,36 +1038,79 @@ export async function optimizeStrategyCombinations(
   const pairFinalistLimit = Number.isFinite(requestedPairFinalistLimit)
     ? Math.max(Math.floor(requestedPairFinalistLimit), 1)
     : MAX_COMBINATION_PAIR_FINALISTS;
-  const yieldEvery = Math.max(Math.floor(options.yieldEvery ?? 24), 1);
-  const finalistsByStrategy = new Map<StrategyId, BacktestResult[]>();
+  const yieldEvery = Math.max(
+    Math.floor(options.yieldEvery ?? DEFAULT_SCREENING_YIELD_EVERY),
+    1,
+  );
+  const finalistsByStrategy = new Map<
+    StrategyId,
+    StrategyFinalist[]
+  >();
+  const entryFilterCandidatesByStrategy = new Map<
+    StrategyId,
+    BacktestResult[]
+  >();
   const pairFinalists: StrategyPairFinalist[] = [];
   const results: StrategyCombinationResult[] = [];
   let evaluatedCount = 0;
   let failedCount = 0;
+  const strategyCandidateCount = candidates.length;
   let totalCandidates = candidates.length;
 
   options.onProgress?.({
     completed: 0,
     total: totalCandidates,
+    stageCompleted: 0,
+    stageTotal: strategyCandidateCount,
     failed: 0,
     stage: "strategies",
-    longStrategyId: null,
-    shortStrategyId: null,
+    strategyAId: null,
+    strategyBId: null,
   });
+  await yieldForScreening();
 
   for (const candidate of candidates) {
     if (options.signal?.aborted) break;
     try {
+      const selection = {
+        strategyId: candidate.strategyId,
+        parameters: candidate.parameters,
+      };
+      const strategy = getStrategy(candidate.strategyId);
+      const execution = buildStrategyExecutionSeries(
+        bars,
+        selection,
+        strategy.buildTarget(bars, candidate.parameters),
+        baseEntryAllowed,
+      );
+      const target = execution.target ?? [];
+      const result = runBacktestFromTarget(
+        bars,
+        candidate.strategyId,
+        candidate.parameters,
+        target,
+        baseSettings,
+        execution.orders,
+      );
       retainFinalist(
         finalistsByStrategy,
-        runBacktest(
-          analysisBars,
-          candidate.strategyId,
-          candidate.parameters,
-          settings,
-        ),
+        {
+          result,
+          target,
+          orderFills: execution.orderFills,
+        },
         objective,
       );
+      if (
+        requestedEntryFilters.length > 0 &&
+        supportsScreeningMovingAverageSlopeFilter(strategy.id)
+      ) {
+        retainEntryFilterCandidate(
+          entryFilterCandidatesByStrategy,
+          result,
+          objective,
+        );
+      }
     } catch {
       failedCount += 1;
     }
@@ -552,59 +1118,274 @@ export async function optimizeStrategyCombinations(
 
     if (
       evaluatedCount % yieldEvery === 0 ||
-      evaluatedCount === candidates.length
+      evaluatedCount === strategyCandidateCount
     ) {
       options.onProgress?.({
         completed: evaluatedCount,
         total: totalCandidates,
+        stageCompleted: evaluatedCount,
+        stageTotal: strategyCandidateCount,
         failed: failedCount,
         stage: "strategies",
-        longStrategyId: null,
-        shortStrategyId: null,
+        strategyAId: candidate.strategyId,
+        strategyBId: null,
       });
-      await yieldToMainThread();
+      await yieldForScreening();
     }
   }
 
+  if (
+    !options.signal?.aborted &&
+    requestedEntryFilters.length > 0
+  ) {
+    const entryFilterCandidateCount =
+      requestedEntryFilters.length *
+      [...entryFilterCandidatesByStrategy.values()].reduce(
+        (sum, candidatesForStrategy) =>
+          sum + candidatesForStrategy.length,
+        0,
+      );
+    totalCandidates += entryFilterCandidateCount;
+    options.onProgress?.({
+      completed: evaluatedCount,
+      total: totalCandidates,
+      stageCompleted: 0,
+      stageTotal: entryFilterCandidateCount,
+      failed: failedCount,
+      stage: "entryFilters",
+      strategyAId: null,
+      strategyBId: null,
+    });
+    await yieldForScreening();
+
+    let evaluatedEntryFilterCount = 0;
+    entryFilterLoop: for (const entryFilter of requestedEntryFilters) {
+      const entryAllowed = buildMovingAverageEntryAllowedSeries(
+        bars,
+        entryFilter,
+      );
+      const filterSettings: StrategyCombinationBacktestSettings = {
+        ...settings,
+        entryFilter,
+        entryFilterAllowed: entryAllowed ?? undefined,
+      };
+      for (const [strategyId, candidatesForStrategy] of
+        entryFilterCandidatesByStrategy) {
+        for (const candidate of candidatesForStrategy) {
+          if (options.signal?.aborted) break entryFilterLoop;
+          try {
+            const selection = {
+              strategyId,
+              parameters: candidate.parameters,
+            };
+            const strategy = getStrategy(strategyId);
+            const execution = buildStrategyExecutionSeries(
+              bars,
+              selection,
+              strategy.buildTarget(bars, candidate.parameters),
+              entryAllowed,
+            );
+            const target = execution.target ?? [];
+            retainFinalist(
+              finalistsByStrategy,
+              {
+                result: runBacktestFromTarget(
+                  bars,
+                  strategyId,
+                  candidate.parameters,
+                  target,
+                  filterSettings,
+                  execution.orders,
+                ),
+                target,
+                orderFills: execution.orderFills,
+              },
+              objective,
+            );
+          } catch {
+            failedCount += 1;
+          }
+          evaluatedCount += 1;
+          evaluatedEntryFilterCount += 1;
+
+          if (
+            evaluatedCount % yieldEvery === 0 ||
+            evaluatedEntryFilterCount === entryFilterCandidateCount
+          ) {
+            options.onProgress?.({
+              completed: evaluatedCount,
+              total: totalCandidates,
+              stageCompleted: evaluatedEntryFilterCount,
+              stageTotal: entryFilterCandidateCount,
+              failed: failedCount,
+              stage: "entryFilters",
+              strategyAId: strategyId,
+              strategyBId: null,
+            });
+            await yieldForScreening();
+          }
+        }
+      }
+    }
+  }
+
+  const singleFinalists = STRATEGIES.map(
+    (strategy) => finalistsByStrategy.get(strategy.id)?.[0],
+  ).filter(
+    (finalist): finalist is StrategyFinalist => Boolean(finalist),
+  );
+
   if (!options.signal?.aborted) {
-    const longFinalists = buildFinalists(
-      analysisBars,
-      finalistsByStrategy,
-      LONG_HORIZON_STRATEGY_IDS,
-    );
-    const shortFinalists = buildFinalists(
-      analysisBars,
-      finalistsByStrategy,
-      SHORT_HORIZON_STRATEGY_IDS,
-    );
     const pairCount = referenceAllocation
-      ? longFinalists.length * shortFinalists.length
+      ? singleFinalists.reduce(
+          (count, strategyAFinalist, strategyAIndex) =>
+            count +
+            singleFinalists
+              .slice(strategyAIndex + 1)
+              .filter(
+                (strategyBFinalist) =>
+                  !areStrategiesEquivalent(
+                    strategyAFinalist.result.strategyId,
+                    strategyBFinalist.result.strategyId,
+                  ),
+              ).length,
+          0,
+        )
       : 0;
-    totalCandidates = candidates.length + pairCount;
+    totalCandidates = strategyCandidateCount + pairCount;
+    if (requestedEntryFilters.length > 0) {
+      totalCandidates +=
+        requestedEntryFilters.length *
+        [...entryFilterCandidatesByStrategy.values()].reduce(
+          (sum, candidatesForStrategy) =>
+            sum + candidatesForStrategy.length,
+          0,
+        );
+    }
 
     options.onProgress?.({
       completed: evaluatedCount,
       total: totalCandidates,
+      stageCompleted: 0,
+      stageTotal: pairCount,
       failed: failedCount,
       stage: "pairs",
-      longStrategyId: null,
-      shortStrategyId: null,
+      strategyAId: null,
+      strategyBId: null,
     });
+    await yieldForScreening();
+    let evaluatedPairCount = 0;
+    const entryAllowedByFilter = new Map<string, boolean[] | null>();
+    const executionCache = new Map<string, StrategyFinalist>();
+    const resolvePairSettings = (
+      entryFilter: MovingAverageSlopeFilter | null,
+    ): StrategyCombinationBacktestSettings => {
+      const key = entryFilterKey(entryFilter);
+      let entryAllowed = entryAllowedByFilter.get(key);
+      if (entryAllowed === undefined) {
+        entryAllowed = resolveMovingAverageEntryAllowedSeries(
+          bars,
+          entryFilter,
+        );
+        entryAllowedByFilter.set(key, entryAllowed);
+      }
+      return {
+        ...settings,
+        entryFilter,
+        entryFilterAllowed: entryAllowed ?? undefined,
+      };
+    };
+    const resolvePairFinalist = (
+      finalist: StrategyFinalist,
+      entryFilter: MovingAverageSlopeFilter | null,
+    ): StrategyFinalist => {
+      if (
+        movingAverageSlopeFiltersEqual(
+          finalist.result.entryFilter,
+          entryFilter,
+        )
+      ) {
+        return finalist;
+      }
+      const key = `${finalist.result.strategyId}:${JSON.stringify(
+        finalist.result.parameters,
+      )}:${entryFilterKey(entryFilter)}`;
+      const cached = executionCache.get(key);
+      if (cached) return cached;
+      const entryAllowed = resolvePairSettings(entryFilter)
+        .entryFilterAllowed;
+      const selection = {
+        strategyId: finalist.result.strategyId,
+        parameters: finalist.result.parameters,
+      };
+      const execution = buildStrategyExecutionSeries(
+        bars,
+        selection,
+        getStrategy(selection.strategyId).buildTarget(
+          bars,
+          selection.parameters,
+        ),
+        entryAllowed ?? null,
+      );
+      const resolved = {
+        result: finalist.result,
+        target: execution.target ?? [],
+        orderFills: execution.orderFills,
+      };
+      executionCache.set(key, resolved);
+      return resolved;
+    };
 
-    pairLoop: for (const longFinalist of longFinalists) {
-      for (const shortFinalist of shortFinalists) {
+    pairLoop: for (
+      let strategyAIndex = 0;
+      strategyAIndex < singleFinalists.length;
+      strategyAIndex += 1
+    ) {
+      const strategyAFinalist = singleFinalists[strategyAIndex];
+      for (
+        let strategyBIndex = strategyAIndex + 1;
+        strategyBIndex < singleFinalists.length;
+        strategyBIndex += 1
+      ) {
+        const strategyBFinalist = singleFinalists[strategyBIndex];
+        const strategyAId = strategyAFinalist.result.strategyId;
+        const strategyBId = strategyBFinalist.result.strategyId;
+        if (areStrategiesEquivalent(strategyAId, strategyBId)) continue;
         if (options.signal?.aborted || !referenceAllocation) break pairLoop;
         try {
+          const sharedEntryFilter =
+            movingAverageSlopeFiltersEqual(
+              strategyAFinalist.result.entryFilter,
+              strategyBFinalist.result.entryFilter,
+            )
+              ? cloneMovingAverageSlopeFilter(
+                  strategyAFinalist.result.entryFilter,
+                )
+              : null;
+          const pairSettings = resolvePairSettings(sharedEntryFilter);
+          const resolvedStrategyA = resolvePairFinalist(
+            strategyAFinalist,
+            sharedEntryFilter,
+          );
+          const resolvedStrategyB = resolvePairFinalist(
+            strategyBFinalist,
+            sharedEntryFilter,
+          );
           const referenceResult = runCombinationCandidate(
-            analysisBars,
-            longFinalist,
-            shortFinalist,
+            bars,
+            resolvedStrategyA,
+            resolvedStrategyB,
             referenceAllocation,
-            settings,
+            pairSettings,
           );
           retainPairFinalist(
             pairFinalists,
-            { long: longFinalist, short: shortFinalist, referenceResult },
+            {
+              strategyA: resolvedStrategyA,
+              strategyB: resolvedStrategyB,
+              referenceResult,
+              settings: pairSettings,
+            },
             objective,
             pairFinalistLimit,
           );
@@ -612,20 +1393,23 @@ export async function optimizeStrategyCombinations(
           failedCount += 1;
         }
         evaluatedCount += 1;
+        evaluatedPairCount += 1;
 
         if (
           evaluatedCount % yieldEvery === 0 ||
-          evaluatedCount === totalCandidates
+          evaluatedPairCount === pairCount
         ) {
           options.onProgress?.({
             completed: evaluatedCount,
             total: totalCandidates,
+            stageCompleted: evaluatedPairCount,
+            stageTotal: pairCount,
             failed: failedCount,
             stage: "pairs",
-            longStrategyId: longFinalist.result.strategyId,
-            shortStrategyId: shortFinalist.result.strategyId,
+            strategyAId,
+            strategyBId,
           });
-          await yieldToMainThread();
+          await yieldForScreening();
         }
       }
     }
@@ -635,11 +1419,16 @@ export async function optimizeStrategyCombinations(
       options.onProgress?.({
         completed: evaluatedCount,
         total: totalCandidates,
+        stageCompleted: 0,
+        stageTotal:
+          pairFinalists.length * remainingAllocations.length,
         failed: failedCount,
         stage: "allocations",
-        longStrategyId: null,
-        shortStrategyId: null,
+        strategyAId: null,
+        strategyBId: null,
       });
+      await yieldForScreening();
+      let evaluatedAllocationCount = 0;
 
       allocationLoop: for (const finalist of pairFinalists) {
         retainCombinationResult(
@@ -653,11 +1442,11 @@ export async function optimizeStrategyCombinations(
             retainCombinationResult(
               results,
               runCombinationCandidate(
-                analysisBars,
-                finalist.long,
-                finalist.short,
+                bars,
+                finalist.strategyA,
+                finalist.strategyB,
                 allocation,
-                settings,
+                finalist.settings,
               ),
               objective,
             );
@@ -665,6 +1454,7 @@ export async function optimizeStrategyCombinations(
             failedCount += 1;
           }
           evaluatedCount += 1;
+          evaluatedAllocationCount += 1;
 
           if (
             evaluatedCount % yieldEvery === 0 ||
@@ -673,12 +1463,15 @@ export async function optimizeStrategyCombinations(
             options.onProgress?.({
               completed: evaluatedCount,
               total: totalCandidates,
+              stageCompleted: evaluatedAllocationCount,
+              stageTotal:
+                pairFinalists.length * remainingAllocations.length,
               failed: failedCount,
               stage: "allocations",
-              longStrategyId: finalist.long.result.strategyId,
-              shortStrategyId: finalist.short.result.strategyId,
+              strategyAId: finalist.strategyA.result.strategyId,
+              strategyBId: finalist.strategyB.result.strategyId,
             });
-            await yieldToMainThread();
+            await yieldForScreening();
           }
         }
       }
@@ -686,6 +1479,11 @@ export async function optimizeStrategyCombinations(
   }
 
   return {
+    singleResults: singleFinalists
+      .map((finalist) => finalist.result)
+      .sort((left, right) =>
+        compareScreeningResults(left, right, objective),
+      ),
     results,
     evaluatedCount,
     totalCandidates,

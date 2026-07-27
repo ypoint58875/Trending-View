@@ -1,7 +1,16 @@
 export type MarketInterval = "1m" | "5m" | "15m" | "30m" | "60m" | "1d";
 export type MarketAssetType = "index" | "etf" | "commodity";
-export type MarketDataProvider = "eastmoney" | "yahoo" | "nasdaq";
+export type MarketDataProvider =
+  | "eastmoney"
+  | "yahoo"
+  | "nasdaq"
+  | "eodhd";
 export type MarketPriceAdjustment = "raw" | "corporate-action-adjusted";
+export type MarketLatestBarStatus =
+  | "complete"
+  | "in-progress"
+  | "unknown";
+export const MAX_MARKET_INSTRUMENT_NAME_LENGTH = 256;
 export type MarketExchange =
   | "SSE"
   | "SZSE"
@@ -42,6 +51,7 @@ export interface MarketSeries {
   priceAdjustment: MarketPriceAdjustment;
   previousClose: number;
   bars: MarketBar[];
+  latestBarStatus: MarketLatestBarStatus;
   source: MarketDataProvider;
   fetchedAt: string;
 }

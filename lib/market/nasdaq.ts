@@ -8,6 +8,7 @@ import {
   clampMarketSeriesLimit,
   requestsExtendedDailyHistory,
 } from "./history";
+import { resolveLatestDailyBarStatus } from "./session";
 
 const HISTORICAL_ENDPOINT = "https://api.nasdaq.com/api/quote";
 const DEFAULT_HEADERS = {
@@ -137,13 +138,19 @@ export async function fetchNasdaqDailySeries(
     throw new Error(message || "Nasdaq returned no historical data");
   }
 
+  const fetchedAt = new Date();
   return {
     instrument,
     interval: "1d",
     priceAdjustment: "raw",
     previousClose: bars[0].open,
     bars,
+    latestBarStatus: resolveLatestDailyBarStatus(
+      bars.at(-1)!.time,
+      instrument.exchange,
+      fetchedAt,
+    ),
     source: "nasdaq",
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: fetchedAt.toISOString(),
   };
 }

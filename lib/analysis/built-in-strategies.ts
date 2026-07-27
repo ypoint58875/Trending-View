@@ -5,12 +5,13 @@ import {
   bollingerBands,
   ema,
   macd,
-  parabolicSar,
+  parabolicSarState,
   rsi,
   sma,
   stochasticSlow,
   supertrend,
 } from "./indicators";
+import { buildStrategyOrderTimeline } from "./strategy-execution";
 import {
   emptyOrderSeries,
   type StrategyOrderSeries,
@@ -44,7 +45,9 @@ export type TradingViewBuiltInStrategyId =
 
 export const INTRABAR_PRICE_ORDER_STRATEGY_IDS = [
   "tv-channel-breakout",
+  "tv-greedy",
   "tv-momentum",
+  "tv-parabolic-sar",
   "tv-pivot-reversal",
   "tv-price-channel",
   "tv-volty-expan-close",
@@ -64,6 +67,10 @@ export interface BuiltInStrategyDefinition {
     bars: MarketBar[],
     parameters: StrategyParameters,
   ) => StrategyOrderSeries;
+  buildPendingNextOpenAction?: (
+    bars: MarketBar[],
+    parameters: StrategyParameters,
+  ) => "buy" | "sell" | null;
 }
 
 function period(parameters: StrategyParameters, key: string, fallback: number) {
@@ -282,19 +289,55 @@ function greedy(
     carry(target, index);
     const current = bars[index];
     const previous = bars[index - 1];
-    if (
-      meetsMinimumBody(current, parameters) &&
-      (current.open > previous.high || current.close > current.open)
-    ) {
+    if (current.open > previous.high) {
       target[index] = 1;
-    } else if (
-      meetsMinimumBody(current, parameters) &&
-      (current.open < previous.low || current.close < current.open)
-    ) {
+    } else if (current.open < previous.low) {
       target[index] = 0;
+    } else if (meetsMinimumBody(current, parameters)) {
+      if (current.close > current.open) target[index] = 1;
+      if (current.close < current.open) target[index] = 0;
     }
   }
   return target;
+}
+
+function greedyOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const orders = emptyOrderSeries(bars.length);
+
+  for (let index = 1; index < bars.length; index += 1) {
+    const current = bars[index];
+    const previous = bars[index - 1];
+    const gapUp = current.open > previous.high;
+    const gapDown = current.open < previous.low;
+    const previousBodyQualifies = meetsMinimumBody(previous, parameters);
+    const previousBullish =
+      previousBodyQualifies && previous.close > previous.open;
+    const previousBearish =
+      previousBodyQualifies && previous.close < previous.open;
+
+    orders[index] = {
+      entryStop: null,
+      exitStop: null,
+      entryAtOpen: gapUp || (!gapDown && previousBullish),
+      exitAtOpen: gapDown || (!gapUp && previousBearish),
+    };
+  }
+
+  return orders;
+}
+
+function greedyPendingNextOpenAction(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): "buy" | "sell" | null {
+  const latest = bars.at(-1);
+  if (!latest || !meetsMinimumBody(latest, parameters)) return null;
+  if (latest.close > latest.open) return "buy";
+  if (latest.close < latest.open) return "sell";
+  return null;
 }
 
 function insideBar(
@@ -449,30 +492,35 @@ function parabolicSarStrategy(
   bars: MarketBar[],
   parameters: StrategyParameters,
 ): number[] {
-  const sar = parabolicSar(
+  return buildStrategyOrderTimeline(
+    bars,
+    parabolicSarOrders(bars, parameters),
+  ).target;
+}
+
+function parabolicSarOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const state = parabolicSarState(
     bars,
     value(parameters, "start", 0.02),
     value(parameters, "increment", 0.02),
     value(parameters, "maximum", 0.2),
   );
-  const target = holdTarget(bars.length);
+  const orders = emptyOrderSeries(bars.length);
 
   for (let index = 2; index < bars.length; index += 1) {
-    carry(target, index);
-    if (sar[index] === null || sar[index - 1] === null) continue;
-    if (
-      bars[index].close > sar[index]! &&
-      bars[index - 1].close <= sar[index - 1]!
-    ) {
-      target[index] = 1;
-    } else if (
-      bars[index].close < sar[index]! &&
-      bars[index - 1].close >= sar[index - 1]!
-    ) {
-      target[index] = 0;
+    const trigger = state.trigger[index];
+    if (trigger === null) continue;
+    if (state.triggerDirection[index] > 0) {
+      orders[index].exitStop = trigger;
+    } else if (state.triggerDirection[index] < 0) {
+      orders[index].entryStop = trigger;
     }
   }
-  return target;
+
+  return orders;
 }
 
 function isPivotHigh(
@@ -845,6 +893,8 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
     indicatorId: "atr",
     defaultParameters: { minimumBodyPercent: 0 },
     buildTarget: greedy,
+    buildOrders: greedyOrders,
+    buildPendingNextOpenAction: greedyPendingNextOpenAction,
   },
   {
     id: "tv-inside-bar",
@@ -882,6 +932,7 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
     indicatorId: "supertrend",
     defaultParameters: { start: 0.02, increment: 0.02, maximum: 0.2 },
     buildTarget: parabolicSarStrategy,
+    buildOrders: parabolicSarOrders,
   },
   {
     id: "tv-pivot-extension",

@@ -1,0 +1,2 @@
+ALTER TABLE `saved_backtests` ADD `display_order` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX `saved_backtests_owner_display_order_idx` ON `saved_backtests` (`owner_email`,`display_order`);

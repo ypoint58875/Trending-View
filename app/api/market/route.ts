@@ -4,11 +4,12 @@ import {
   DAILY_HISTORY_LIMIT,
   clampMarketSeriesLimit,
 } from "@/lib/market/history";
-import type {
-  MarketAssetType,
-  MarketDataProvider,
-  MarketInstrument,
-  MarketInterval,
+import {
+  MAX_MARKET_INSTRUMENT_NAME_LENGTH,
+  type MarketAssetType,
+  type MarketDataProvider,
+  type MarketInstrument,
+  type MarketInterval,
 } from "@/lib/market/types";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const secid = (url.searchParams.get("secid") || "100.N225").slice(0, 40);
   const code = (url.searchParams.get("code") || "N225").slice(0, 24);
-  const name = (url.searchParams.get("name") || code).slice(0, 40);
+  const name = (url.searchParams.get("name") || code).slice(
+    0,
+    MAX_MARKET_INSTRUMENT_NAME_LENGTH,
+  );
   const exchange = (url.searchParams.get("exchange") ||
     "JPX") as MarketInstrument["exchange"];
   const provider = (url.searchParams.get("provider") ||
@@ -57,7 +61,8 @@ export async function GET(request: Request) {
   const validProvider =
     provider === "eastmoney" ||
     provider === "yahoo" ||
-    provider === "nasdaq";
+    provider === "nasdaq" ||
+    provider === "eodhd";
   const validAssetType =
     assetType === "index" ||
     assetType === "etf" ||

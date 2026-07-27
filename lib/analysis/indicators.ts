@@ -290,14 +290,26 @@ export function stochasticSlow(
   return { k, d };
 }
 
-export function parabolicSar(
+export interface ParabolicSarState {
+  value: NumericSeries;
+  direction: number[];
+  trigger: NumericSeries;
+  triggerDirection: number[];
+}
+
+export function parabolicSarState(
   bars: MarketBar[],
   start = 0.02,
   increment = 0.02,
   maximum = 0.2,
-): NumericSeries {
+): ParabolicSarState {
   const output: NumericSeries = new Array(bars.length).fill(null);
-  if (bars.length < 2) return output;
+  const direction = new Array<number>(bars.length).fill(0);
+  const trigger: NumericSeries = new Array(bars.length).fill(null);
+  const triggerDirection = new Array<number>(bars.length).fill(0);
+  if (bars.length < 2) {
+    return { value: output, direction, trigger, triggerDirection };
+  }
 
   const initialAcceleration = Math.max(start, 0.0001);
   const accelerationStep = Math.max(increment, 0);
@@ -311,13 +323,16 @@ export function parabolicSar(
     ? Math.min(bars[0].low, bars[1].low)
     : Math.max(bars[0].high, bars[1].high);
   output[1] = current;
+  direction[1] = isLong ? 1 : -1;
 
   for (let index = 2; index < bars.length; index += 1) {
     current += acceleration * (extreme - current);
 
     if (isLong) {
       current = Math.min(current, bars[index - 1].low, bars[index - 2].low);
-      if (bars[index].low < current) {
+      trigger[index] = current;
+      triggerDirection[index] = 1;
+      if (bars[index].low <= current) {
         isLong = false;
         current = extreme;
         extreme = bars[index].low;
@@ -331,7 +346,9 @@ export function parabolicSar(
       }
     } else {
       current = Math.max(current, bars[index - 1].high, bars[index - 2].high);
-      if (bars[index].high > current) {
+      trigger[index] = current;
+      triggerDirection[index] = -1;
+      if (bars[index].high >= current) {
         isLong = true;
         current = extreme;
         extreme = bars[index].high;
@@ -346,9 +363,19 @@ export function parabolicSar(
     }
 
     output[index] = current;
+    direction[index] = isLong ? 1 : -1;
   }
 
-  return output;
+  return { value: output, direction, trigger, triggerDirection };
+}
+
+export function parabolicSar(
+  bars: MarketBar[],
+  start = 0.02,
+  increment = 0.02,
+  maximum = 0.2,
+): NumericSeries {
+  return parabolicSarState(bars, start, increment, maximum).value;
 }
 
 export function cci(bars: MarketBar[], period = 20): NumericSeries {
@@ -534,7 +561,7 @@ export function supertrend(
     }
     trend[index] = direction[index] === 1 ? lower[index] : upper[index];
   }
-  return { trend, direction };
+  return { trend, direction, upper, lower };
 }
 
 export function ichimoku(

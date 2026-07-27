@@ -1,6 +1,6 @@
 import type { MarketBar, MarketInterval } from "@/lib/market/types";
 import {
-  runBacktest,
+  runBacktestFromTarget,
   type BacktestPerformance,
   type BacktestResult,
   type BacktestSettings,
@@ -12,11 +12,13 @@ import {
   type StrategyHorizon,
   type StrategyParameters,
 } from "./strategies";
+import { buildStrategyOrderTimeline } from "./strategy-execution";
+import {
+  applyMovingAverageSlopeEntryFilter,
+  resolveMovingAverageEntryAllowedSeries,
+} from "./entry-filter";
 
-export const MAX_PARAMETER_SETS_PER_STRATEGY = 2_500;
-export const DEFAULT_PARAMETER_SETS_PER_STRATEGY =
-  MAX_PARAMETER_SETS_PER_STRATEGY;
-export const SCREENING_WARMUP_BARS = 500;
+export const DEFAULT_SCREENING_YIELD_EVERY = 8;
 
 const INTEGER_STRATEGY_PARAMETER_KEYS = new Set([
   "fast",
@@ -49,9 +51,7 @@ export function normalizeStrategyParameterInput(
 
 export const SCREENING_OBJECTIVES = [
   "balanced",
-  "returnDrawdown",
   "totalReturn",
-  "minDrawdown",
   "sharpe",
 ] as const;
 
@@ -78,7 +78,7 @@ export interface ScreeningOptimizationResult {
 }
 
 interface OptimizeStrategiesOptions {
-  maxPerStrategy?: number;
+  candidates?: readonly ScreeningCandidate[];
   objective?: ScreeningObjective;
   signal?: AbortSignal;
   yieldEvery?: number;
@@ -155,6 +155,14 @@ const bollingerSpace: ParameterSpace = {
   ],
 };
 
+const donchianSpace: ParameterSpace = {
+  domains: [
+    { key: "entryPeriod", values: integerRange(5, 100, 5) },
+    { key: "exitPeriod", values: integerRange(2, 50, 2) },
+  ],
+  isValid: ({ entryPeriod, exitPeriod }) => exitPeriod < entryPeriod,
+};
+
 const supertrendSpace: ParameterSpace = {
   domains: [
     { key: "period", values: integerRange(5, 50) },
@@ -186,13 +194,8 @@ const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
   "rsi-reversal": oscillatorReversalSpace,
   "macd-momentum": macdSpace,
   "bollinger-reversion": bollingerSpace,
-  "donchian-breakout": {
-    domains: [
-      { key: "entryPeriod", values: integerRange(5, 100, 5) },
-      { key: "exitPeriod", values: integerRange(2, 50, 2) },
-    ],
-    isValid: ({ entryPeriod, exitPeriod }) => exitPeriod < entryPeriod,
-  },
+  "donchian-breakout": donchianSpace,
+  "donchian-intrabar": donchianSpace,
   "kdj-reversal": {
     domains: [
       { key: "period", values: integerRange(5, 30) },
@@ -202,6 +205,7 @@ const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
     isValid: ({ entry, exit }) => entry < exit,
   },
   "supertrend-trend": supertrendSpace,
+  "supertrend-stop": supertrendSpace,
   "ichimoku-trend": {
     domains: [
       { key: "conversionPeriod", values: integerRange(5, 20) },
@@ -385,61 +389,15 @@ export function buildNearbyParameterSets(
   return [...parameterSets.values()];
 }
 
-function clampCandidateLimit(value: number): number {
-  if (!Number.isFinite(value)) return DEFAULT_PARAMETER_SETS_PER_STRATEGY;
-  return Math.min(
-    Math.max(Math.floor(value), 1),
-    MAX_PARAMETER_SETS_PER_STRATEGY,
-  );
-}
-
-function selectEvenly(
-  parameters: StrategyParameters[],
-  limit: number,
-  defaultParameters: StrategyParameters,
-): StrategyParameters[] {
-  const defaultKey = JSON.stringify(defaultParameters);
-  if (parameters.length <= limit) {
-    if (
-      parameters.some((candidate) => JSON.stringify(candidate) === defaultKey)
-    ) {
-      return parameters;
-    }
-    return [defaultParameters, ...parameters].slice(0, limit);
-  }
-
-  const selected = new Map<string, StrategyParameters>();
-  selected.set(defaultKey, defaultParameters);
-
-  for (let index = 0; index < limit && selected.size < limit; index += 1) {
-    const sourceIndex = Math.round(
-      (index * (parameters.length - 1)) / Math.max(limit - 1, 1),
-    );
-    const candidate = parameters[sourceIndex];
-    selected.set(JSON.stringify(candidate), candidate);
-  }
-
-  for (const candidate of parameters) {
-    if (selected.size >= limit) break;
-    selected.set(JSON.stringify(candidate), candidate);
-  }
-
-  return [...selected.values()].slice(0, limit);
-}
-
 export function buildScreeningCandidates(
-  maxPerStrategy = DEFAULT_PARAMETER_SETS_PER_STRATEGY,
   horizons: readonly StrategyHorizon[] = ["long", "short"],
 ): ScreeningCandidate[] {
-  const limit = clampCandidateLimit(maxPerStrategy);
   const includedHorizons = new Set(horizons);
   return STRATEGIES.filter((strategy) =>
     includedHorizons.has(strategy.horizon),
   ).flatMap((strategy) => {
-    const parameterSets = selectEvenly(
-      buildParameterSets(PARAMETER_SPACES[strategy.id]),
-      limit,
-      getStrategy(strategy.id).defaultParameters,
+    const parameterSets = buildParameterSets(
+      PARAMETER_SPACES[strategy.id],
     );
     return parameterSets.map((parameters) => ({
       strategyId: strategy.id,
@@ -456,15 +414,8 @@ export function screeningObjectiveValue(
   result: BacktestPerformance,
   objective: ScreeningObjective,
 ): number {
-  if (objective === "returnDrawdown") {
-    const drawdownFloor = Math.max(Math.abs(result.maxDrawdown), 0.1);
-    return finiteOrNegativeInfinity(result.totalReturn / drawdownFloor);
-  }
   if (objective === "totalReturn") {
     return finiteOrNegativeInfinity(result.totalReturn);
-  }
-  if (objective === "minDrawdown") {
-    return finiteOrNegativeInfinity(result.maxDrawdown);
   }
   if (objective === "sharpe") {
     return finiteOrNegativeInfinity(result.sharpe);
@@ -507,43 +458,22 @@ export function compareScreeningResults(
   return comparisons.find((comparison) => comparison !== 0) ?? 0;
 }
 
-function yieldToMainThread(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+interface CooperativeScheduler {
+  yield?: () => Promise<void>;
 }
 
-export function selectScreeningBars(
-  bars: MarketBar[],
-  settings: Pick<BacktestSettings, "startTime" | "endTime">,
-  warmupBars = SCREENING_WARMUP_BARS,
-): MarketBar[] {
-  if (bars.length === 0) return bars;
-
-  const startBoundary = settings.startTime
-    ? Date.parse(`${settings.startTime}T00:00:00+08:00`)
-    : Number.NEGATIVE_INFINITY;
-  const endBoundary = settings.endTime
-    ? Date.parse(`${settings.endTime}T23:59:59+08:00`)
-    : Number.POSITIVE_INFINITY;
-  const firstRangeIndex = Number.isFinite(startBoundary)
-    ? bars.findIndex((bar) => bar.timestamp >= startBoundary)
-    : 0;
-  const startIndex =
-    firstRangeIndex < 0
-      ? Math.max(0, bars.length - Math.max(Math.floor(warmupBars), 0))
-      : Math.max(
-          0,
-          firstRangeIndex - Math.max(Math.floor(warmupBars), 0),
-        );
-  const firstAfterRangeIndex = Number.isFinite(endBoundary)
-    ? bars.findIndex(
-        (bar, index) => index >= startIndex && bar.timestamp > endBoundary,
-      )
-    : -1;
-
-  return bars.slice(
-    startIndex,
-    firstAfterRangeIndex < 0 ? bars.length : firstAfterRangeIndex,
-  );
+export function yieldForScreening(): Promise<void> {
+  const cooperativeScheduler = (
+    globalThis as typeof globalThis & {
+      scheduler?: CooperativeScheduler;
+    }
+  ).scheduler;
+  return (async () => {
+    if (cooperativeScheduler?.yield) {
+      await cooperativeScheduler.yield();
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  })();
 }
 
 export async function optimizeStrategies(
@@ -553,10 +483,23 @@ export async function optimizeStrategies(
   },
   options: OptimizeStrategiesOptions = {},
 ): Promise<ScreeningOptimizationResult> {
-  const candidates = buildScreeningCandidates(options.maxPerStrategy);
-  const analysisBars = selectScreeningBars(bars, settings);
+  const entryAllowed = resolveMovingAverageEntryAllowedSeries(
+    bars,
+    settings.entryFilter,
+    settings.entryFilterAllowed,
+  );
+  const evaluationSettings = {
+    ...settings,
+    entryFilterAllowed: entryAllowed ?? undefined,
+  };
+  const candidates = options.candidates
+    ? [...options.candidates]
+    : buildScreeningCandidates();
   const objective = options.objective ?? "balanced";
-  const yieldEvery = Math.max(Math.floor(options.yieldEvery ?? 24), 1);
+  const yieldEvery = Math.max(
+    Math.floor(options.yieldEvery ?? DEFAULT_SCREENING_YIELD_EVERY),
+    1,
+  );
   const bestByStrategy = new Map<StrategyId, BacktestResult>();
   let evaluatedCount = 0;
   let failedCount = 0;
@@ -567,15 +510,29 @@ export async function optimizeStrategies(
     failed: 0,
     strategyId: candidates[0]?.strategyId ?? null,
   });
+  await yieldForScreening();
 
   for (const candidate of candidates) {
     if (options.signal?.aborted) break;
     try {
-      const result = runBacktest(
-        analysisBars,
+      const strategy = getStrategy(candidate.strategyId);
+      const orders =
+        settings.executionPolicy === "next-open"
+          ? undefined
+          : strategy.buildOrders?.(bars, candidate.parameters);
+      const target = orders
+        ? buildStrategyOrderTimeline(bars, orders, entryAllowed).target
+        : applyMovingAverageSlopeEntryFilter(
+            strategy.buildTarget(bars, candidate.parameters),
+            entryAllowed,
+          );
+      const result = runBacktestFromTarget(
+        bars,
         candidate.strategyId,
         candidate.parameters,
-        settings,
+        target,
+        evaluationSettings,
+        orders,
       );
       const currentBest = bestByStrategy.get(candidate.strategyId);
       if (
@@ -599,7 +556,7 @@ export async function optimizeStrategies(
         failed: failedCount,
         strategyId: candidate.strategyId,
       });
-      await yieldToMainThread();
+      await yieldForScreening();
     }
   }
 

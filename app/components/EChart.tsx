@@ -17,6 +17,14 @@ export interface DataZoomWindow {
   end: number;
 }
 
+export const ECHART_REPLACE_MERGE_COMPONENTS = [
+  "grid",
+  "xAxis",
+  "yAxis",
+  "dataZoom",
+  "series",
+] as const;
+
 interface DataZoomEvent {
   start?: number;
   end?: number;
@@ -71,8 +79,10 @@ export function EChart({
       renderer: "canvas",
     });
     chartRef.current = chart;
-    const handleDataZoom = (event: DataZoomEvent) => {
-      dataZoomWindowRef.current = readDataZoomWindow(event);
+    const handleDataZoom = (...args: unknown[]) => {
+      dataZoomWindowRef.current = readDataZoomWindow(
+        (args[0] ?? {}) as DataZoomEvent,
+      );
     };
     chart.on("datazoom", handleDataZoom);
 
@@ -98,7 +108,10 @@ export function EChart({
         ? applyDataZoomWindow(option, dataZoomWindowRef.current)
         : option;
 
-    chart.setOption(nextOption, { notMerge: true, lazyUpdate: false });
+    chart.setOption(nextOption, {
+      lazyUpdate: false,
+      replaceMerge: [...ECHART_REPLACE_MERGE_COMPONENTS],
+    });
     dataZoomResetKeyRef.current = dataZoomResetKey;
   }, [dataZoomResetKey, option, preserveDataZoom]);
 

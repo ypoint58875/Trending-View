@@ -5,10 +5,12 @@ import {
   BarChart3,
   Bookmark,
   CandlestickChart,
+  ChevronDown,
   ChevronRight,
   Eye,
   EyeOff,
   FlaskConical,
+  GripVertical,
   LineChart,
   LoaderCircle,
   RefreshCw,
@@ -21,7 +23,14 @@ import {
   Trash2,
   Trophy,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+} from "react";
 import { BacktestChart } from "./components/BacktestChart";
 import {
   PriceChart,
@@ -36,53 +45,81 @@ import {
   type AllocationBacktestResult,
   type BacktestPerformance,
   type BacktestResult,
+  type BacktestSettings,
 } from "@/lib/analysis/backtest";
 import {
+  INDICATOR_PREFERENCES_STORAGE_KEY,
   INDICATORS,
   createDefaultIndicatorSettings,
   getDefaultIndicatorParameters,
   getIndicator,
+  indicatorConfigurationsEqual,
+  parseIndicatorWorkspacePreferences,
   type IndicatorId,
 } from "@/lib/analysis/indicator-registry";
 import {
-  DEFAULT_PARAMETER_SETS_PER_STRATEGY,
-  MAX_PARAMETER_SETS_PER_STRATEGY,
   SCREENING_OBJECTIVES,
   isIntegerStrategyParameterKey,
   normalizeStrategyParameterInput,
-  optimizeStrategies,
   screeningObjectiveValue,
+  yieldForScreening,
   type ScreeningObjective,
-  type ScreeningProgress,
 } from "@/lib/analysis/screening";
 import {
+  STRATEGIES,
+  areStrategiesEquivalent,
   getStrategy,
-  getStrategiesByHorizon,
   type StrategyId,
   type StrategyParameters,
 } from "@/lib/analysis/strategies";
 import {
-  DEFAULT_LONG_ALLOCATION,
-  DEFAULT_SHORT_ALLOCATION,
-  LONG_LAYER_ALLOCATION_CANDIDATES,
-  SHORT_LAYER_ALLOCATION_CANDIDATES,
-  TWO_LAYER_ALLOCATION_CANDIDATES,
+  DEFAULT_STRATEGY_A_ALLOCATION,
+  DEFAULT_STRATEGY_B_ALLOCATION,
+  STRATEGY_LAYER_ALLOCATION_CANDIDATES,
+  TWO_STRATEGY_ALLOCATION_CANDIDATES,
   buildLiveAllocationGuidance,
   buildStrategyPlanTimeline,
-  optimizeStrategyCombinations,
   type CombinationScreeningProgress,
   type StrategyAllocationPlan,
   type StrategyCombinationResult,
 } from "@/lib/analysis/strategy-combinations";
 import {
+  DEFAULT_ROLLING_WINDOW_YEARS,
+  DEFAULT_SAMPLE_VALIDATION_PERIODS,
+  DEFAULT_SAMPLE_VALIDATION_SESSIONS,
+  SCREENING_VALIDATION_MODES,
+  ScreeningValidationError,
+  resolveTradingSessionRange,
+  resolveTrailingTradingSessionRange,
+  runScreeningWithValidation,
+  type ScreeningCandidateReference,
+  type ScreeningCombinationResult,
+  type ScreeningRangeValidationConfig,
+  type ScreeningSamplePeriodConfig,
+  type ScreeningSingleResult,
+  type ScreeningValidationConfig,
+  type ScreeningValidationErrorCode,
+  type ScreeningValidationMode,
+  type ScreeningValidationProgress,
+  type ScreeningValidationReport,
+} from "@/lib/analysis/screening-validation";
+import {
+  DEFAULT_STRATEGY_SHORTLIST_DEPUTY_COUNT,
+  selectStrategyShortlist,
+  type StrategyShortlistEntry,
+} from "@/lib/analysis/strategy-shortlist";
+import {
+  MAX_SAVED_BACKTEST_SCROLL_RECORDS,
+  canReuseSavedBacktestMarketSeries,
   createSaveBacktestInput,
+  groupSavedBacktests,
+  reorderSavedBacktestGroups,
+  reorderSavedBacktestsWithinGroup,
+  savedBacktestInstrumentKey,
+  strategyPlansEqual,
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
 import { buildLiveStrategyGuidance } from "@/lib/analysis/live-guidance";
-import {
-  classifyManualExecutionWindow,
-  type ManualExecutionWindow,
-} from "@/lib/analysis/execution-timing";
 import { buildAllocationTradeMarkers } from "@/lib/analysis/trade-markers";
 import {
   analyzeStrategyStability,
@@ -90,12 +127,28 @@ import {
   type StabilityEvidenceReason,
 } from "@/lib/analysis/stability";
 import type {
+  MarketBar,
   MarketInstrument,
   MarketInterval,
   MarketSeries,
 } from "@/lib/market/types";
 import { DAILY_HISTORY_LIMIT } from "@/lib/market/history";
 import { mergeLatestMarketSeries } from "@/lib/market/series";
+import {
+  readCachedMarketSeriesEntry,
+  writeCachedMarketSeries,
+} from "@/lib/market/client-cache";
+import {
+  DEFAULT_MOVING_AVERAGE_SLOPE_FILTER,
+  MAX_MOVING_AVERAGE_SLOPE_PERIOD,
+  MOVING_AVERAGE_SLOPE_TYPES,
+  SCREENING_MOVING_AVERAGE_SLOPE_MINIMUM_PERCENT,
+  SCREENING_MOVING_AVERAGE_SLOPE_PERIODS,
+  buildScreeningMovingAverageSlopeFilters,
+  cloneMovingAverageSlopeFilter,
+  type MovingAverageSlopeFilter,
+  type MovingAverageSlopeType,
+} from "@/lib/analysis/entry-filter";
 
 const defaultInstrument: MarketInstrument = {
   secid: "100.N225",
@@ -118,12 +171,12 @@ const priceChartLabels = {
   series: { ...copy.chart.series },
 };
 
-const longStrategyLineLabels: StrategyLineLabels = {
+const relativeLongStrategyLineLabels: StrategyLineLabels = {
   prefix: copy.chart.strategyLines.longPrefix,
   roles: { ...copy.chart.strategyLines.roles },
 };
 
-const shortStrategyLineLabels: StrategyLineLabels = {
+const relativeShortStrategyLineLabels: StrategyLineLabels = {
   prefix: copy.chart.strategyLines.shortPrefix,
   roles: { ...copy.chart.strategyLines.roles },
 };
@@ -134,40 +187,68 @@ const backtestChartLabels = {
 };
 
 const DAILY_INTERVAL: MarketInterval = "1d";
-const HISTORICAL_EXECUTION_POLICY = "next-open" as const;
-const LONG_ALLOCATION_OPTIONS = LONG_LAYER_ALLOCATION_CANDIDATES.map(
+const HISTORICAL_EXECUTION_POLICY = "hybrid" as const;
+const STRATEGY_ALLOCATION_OPTIONS = STRATEGY_LAYER_ALLOCATION_CANDIDATES.map(
   (allocation) => allocation * 100,
 );
-const SHORT_ALLOCATION_OPTIONS = SHORT_LAYER_ALLOCATION_CANDIDATES.map(
-  (allocation) => allocation * 100,
-);
-const DUAL_ALLOCATION_OPTIONS = TWO_LAYER_ALLOCATION_CANDIDATES.map(
-  ({ longAllocation, shortAllocation }) => ({
-    long: longAllocation * 100,
-    short: shortAllocation * 100,
+const DUAL_ALLOCATION_OPTIONS = TWO_STRATEGY_ALLOCATION_CANDIDATES.map(
+  ({ strategyAAllocation, strategyBAllocation }) => ({
+    strategyA: strategyAAllocation * 100,
+    strategyB: strategyBAllocation * 100,
   }),
 );
+const DEFAULT_SCREENING_CUSTOM_RANGE: ScreeningRangeValidationConfig["range"] = {
+  startTime: "",
+  endTime: "",
+};
 
-function nearestAllocation(
-  options: readonly number[],
-  value: number,
-): number {
-  return options.reduce((nearest, option) =>
-    Math.abs(option - value) < Math.abs(nearest - value) ? option : nearest,
-  );
+function cloneStrategyPlan(
+  plan: StrategyAllocationPlan | null,
+): StrategyAllocationPlan | null {
+  if (!plan) return null;
+  return {
+    strategyA: plan.strategyA
+      ? {
+          strategyId: plan.strategyA.strategyId,
+          parameters: { ...plan.strategyA.parameters },
+        }
+      : null,
+    strategyB: plan.strategyB
+      ? {
+          strategyId: plan.strategyB.strategyId,
+          parameters: { ...plan.strategyB.parameters },
+        }
+      : null,
+    strategyAAllocation: plan.strategyAAllocation,
+    strategyBAllocation: plan.strategyBAllocation,
+    entryFilter: cloneMovingAverageSlopeFilter(plan.entryFilter),
+  };
+}
+
+function defaultAppliedStrategyPlan(): StrategyAllocationPlan {
+  return {
+    strategyA: {
+      strategyId: "sma-cross",
+      parameters: { ...getStrategy("sma-cross").defaultParameters },
+    },
+    strategyB: null,
+    strategyAAllocation: 1,
+    strategyBAllocation: 0,
+    entryFilter: null,
+  };
 }
 
 function nearestDualAllocation(
-  longAllocation: number,
-  shortAllocation: number,
+  strategyAAllocation: number,
+  strategyBAllocation: number,
 ) {
   return DUAL_ALLOCATION_OPTIONS.reduce((nearest, option) => {
     const nearestDistance =
-      Math.abs(nearest.long - longAllocation) +
-      Math.abs(nearest.short - shortAllocation);
+      Math.abs(nearest.strategyA - strategyAAllocation) +
+      Math.abs(nearest.strategyB - strategyBAllocation);
     const optionDistance =
-      Math.abs(option.long - longAllocation) +
-      Math.abs(option.short - shortAllocation);
+      Math.abs(option.strategyA - strategyAAllocation) +
+      Math.abs(option.strategyB - strategyBAllocation);
     return optionDistance < nearestDistance ? option : nearest;
   });
 }
@@ -184,7 +265,20 @@ const updateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hourCycle: "h23",
 });
 
+const cacheTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
 const LIVE_REFRESH_INTERVAL_MS = 60_000;
+
+type SavedBacktestDragState =
+  | { kind: "group"; groupKey: string }
+  | { kind: "record"; groupKey: string; recordId: number };
 
 function formatPercent(value: number, signed = false) {
   const prefix = signed && value > 0 ? "+" : "";
@@ -200,6 +294,49 @@ function formatNumber(value: number, digits = 2) {
 
 function datePart(time: string) {
   return time.slice(0, 10);
+}
+
+function runStrategyPlanRangeBacktest(
+  bars: MarketBar[],
+  plan: StrategyAllocationPlan,
+  settings: BacktestSettings,
+): BacktestResult | AllocationBacktestResult {
+  const singleSelection =
+    Boolean(plan.strategyA) !== Boolean(plan.strategyB)
+      ? (plan.strategyA ?? plan.strategyB)
+      : null;
+  const usesSingleFullAllocation =
+    Boolean(singleSelection) &&
+    (plan.strategyA
+      ? plan.strategyAAllocation === 1
+      : plan.strategyBAllocation === 1);
+  if (usesSingleFullAllocation && singleSelection) {
+    return runBacktest(
+      bars,
+      singleSelection.strategyId,
+      singleSelection.parameters,
+      settings,
+    );
+  }
+  const timeline = buildStrategyPlanTimeline(bars, plan, settings);
+  return runAllocationBacktest(
+    bars,
+    timeline.target,
+    settings,
+    timeline.signalEvents,
+    timeline.intrabarExecutions,
+  );
+}
+
+function isMarketSeries(value: unknown): value is MarketSeries {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<MarketSeries>;
+  return (
+    Array.isArray(candidate.bars) &&
+    candidate.instrument !== undefined &&
+    typeof candidate.interval === "string" &&
+    typeof candidate.fetchedAt === "string"
+  );
 }
 
 function canonicalizeSearchQuery(query: string) {
@@ -236,28 +373,67 @@ function resultTone(result: BacktestPerformance) {
     : "neutral";
 }
 
+type ScreeningCautionReason = keyof typeof copy.screening.cautionReasons;
+
+function resultCautionReasons(
+  result: BacktestPerformance,
+): ScreeningCautionReason[] {
+  const reasons: ScreeningCautionReason[] = [];
+  if (result.totalReturn <= 0) reasons.push("return");
+  if (result.sharpe <= 0) reasons.push("sharpe");
+  if (result.tradeCount < 2) reasons.push("trades");
+  return reasons;
+}
+
+function resultStatusTitle(result: BacktestPerformance) {
+  const reasons = resultCautionReasons(result);
+  if (reasons.length === 0) return copy.screening.suitableReason;
+  return `${copy.screening.cautionReason}${copy.common.colon}${reasons
+    .map((reason) => copy.screening.cautionReasons[reason])
+    .join(` ${copy.common.separator} `)}`;
+}
+
 function formatObjectiveValue(
   result: BacktestPerformance,
   objective: ScreeningObjective,
 ) {
   const value = screeningObjectiveValue(result, objective);
-  if (objective === "totalReturn" || objective === "minDrawdown") {
-    return formatPercent(value, objective === "totalReturn");
-  }
+  if (objective === "totalReturn") return formatPercent(value, true);
   return formatNumber(value, 2);
 }
 
-const longStrategies = getStrategiesByHorizon("long");
-const shortStrategies = getStrategiesByHorizon("short");
+function rankingPerformance(
+  result: ScreeningSingleResult | ScreeningCombinationResult,
+): BacktestPerformance {
+  return result.screeningValidation?.rankingPerformance ?? result;
+}
+
+function selectionScore(
+  result: ScreeningSingleResult | ScreeningCombinationResult,
+): number | null {
+  return result.screeningValidation?.selectionScore ?? null;
+}
+
+function formatSelectionValue(
+  result: ScreeningSingleResult | ScreeningCombinationResult,
+  objective: ScreeningObjective,
+) {
+  const score = selectionScore(result);
+  return score === null
+    ? formatObjectiveValue(rankingPerformance(result), objective)
+    : formatNumber(score, 2);
+}
 
 function emptyCombinationProgress(): CombinationScreeningProgress {
   return {
     completed: 0,
     total: 0,
+    stageCompleted: 0,
+    stageTotal: 0,
     failed: 0,
     stage: "strategies",
-    longStrategyId: null,
-    shortStrategyId: null,
+    strategyAId: null,
+    strategyBId: null,
   };
 }
 
@@ -329,30 +505,208 @@ function StrategyParameterFields({
   );
 }
 
+interface MovingAverageSlopeFilterDraft extends MovingAverageSlopeFilter {
+  enabled: boolean;
+}
+
+function createMovingAverageSlopeFilterDraft(
+  filter?: MovingAverageSlopeFilter | null,
+): MovingAverageSlopeFilterDraft {
+  return {
+    ...(filter ?? DEFAULT_MOVING_AVERAGE_SLOPE_FILTER),
+    enabled: Boolean(filter),
+  };
+}
+
+function activeMovingAverageSlopeFilter(
+  draft: MovingAverageSlopeFilterDraft,
+): MovingAverageSlopeFilter | null {
+  return draft.enabled
+    ? {
+        movingAverageType: draft.movingAverageType,
+        period: draft.period,
+        minimumSlopePercent: draft.minimumSlopePercent,
+      }
+    : null;
+}
+
+function formatMovingAverageSlopeFilter(
+  filter: MovingAverageSlopeFilter | null | undefined,
+) {
+  if (!filter) return copy.entryFilter.disabled;
+  return `${filter.movingAverageType.toUpperCase()}(${filter.period}) ${copy.entryFilter.slopeAtLeast} ${formatNumber(filter.minimumSlopePercent)}%`;
+}
+
+function MovingAverageSlopeFilterFields({
+  draft,
+  namePrefix,
+  onChange,
+  disabled = false,
+  context,
+}: {
+  draft: MovingAverageSlopeFilterDraft;
+  namePrefix: string;
+  onChange: (draft: MovingAverageSlopeFilterDraft) => void;
+  disabled?: boolean;
+  context: "lab" | "screening";
+}) {
+  const controlsDisabled = disabled || !draft.enabled;
+  return (
+    <fieldset className={`entry-filter-fields ${context}`}>
+      <legend>{copy.entryFilter.title}</legend>
+      <label className="entry-filter-toggle">
+        <input
+          name={`${namePrefix}-enabled`}
+          type="checkbox"
+          checked={draft.enabled}
+          disabled={disabled}
+          onChange={(event) =>
+            onChange({
+              ...(context === "screening"
+                ? DEFAULT_MOVING_AVERAGE_SLOPE_FILTER
+                : draft),
+              enabled: event.target.checked,
+            })
+          }
+        />
+        <span>{copy.entryFilter.enabled}</span>
+      </label>
+      {context === "screening" ? (
+        <div
+          className={`entry-filter-inputs screening-fixed ${controlsDisabled ? "disabled" : ""}`}
+        >
+          <label>
+            <span>{copy.entryFilter.movingAverageType}</span>
+            <output>EMA</output>
+          </label>
+          <label>
+            <span>{copy.entryFilter.period}</span>
+            <output>
+              {SCREENING_MOVING_AVERAGE_SLOPE_PERIODS[0]}
+              {"–"}
+              {SCREENING_MOVING_AVERAGE_SLOPE_PERIODS.at(-1)}
+            </output>
+          </label>
+          <label>
+            <span>{copy.entryFilter.minimumSlope}</span>
+            <output>
+              {SCREENING_MOVING_AVERAGE_SLOPE_MINIMUM_PERCENT}%
+            </output>
+          </label>
+        </div>
+      ) : (
+        <div className="entry-filter-inputs">
+          <label>
+            <span>{copy.entryFilter.movingAverageType}</span>
+            <select
+              name={`${namePrefix}-moving-average-type`}
+              value={draft.movingAverageType}
+              disabled={controlsDisabled}
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  movingAverageType:
+                    event.target.value as MovingAverageSlopeType,
+                })
+              }
+            >
+              {MOVING_AVERAGE_SLOPE_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>{copy.entryFilter.period}</span>
+            <input
+              name={`${namePrefix}-period`}
+              type="number"
+              min={2}
+              max={MAX_MOVING_AVERAGE_SLOPE_PERIOD}
+              step={1}
+              value={draft.period}
+              disabled={controlsDisabled}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                onChange({
+                  ...draft,
+                  period: Math.min(
+                    Math.max(
+                      Number.isFinite(value) ? Math.floor(value) : 2,
+                      2,
+                    ),
+                    MAX_MOVING_AVERAGE_SLOPE_PERIOD,
+                  ),
+                });
+              }}
+            />
+          </label>
+          <label>
+            <span>{copy.entryFilter.minimumSlope}</span>
+            <input
+              name={`${namePrefix}-minimum-slope`}
+              type="number"
+              step={0.01}
+              value={draft.minimumSlopePercent}
+              disabled={controlsDisabled}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                onChange({
+                  ...draft,
+                  minimumSlopePercent: Number.isFinite(value)
+                    ? value
+                    : 0,
+                });
+              }}
+            />
+          </label>
+        </div>
+      )}
+      <small>
+        {draft.enabled
+          ? context === "screening"
+            ? copy.entryFilter.screeningHint
+            : copy.entryFilter.hint
+          : copy.entryFilter.disabledHint}
+      </small>
+    </fieldset>
+  );
+}
+
 export function MarketWorkspace() {
   const [instrument, setInstrument] =
     useState<MarketInstrument>(defaultInstrument);
-  const [series, setSeries] = useState<MarketSeries | null>(null);
+  const [seriesState, setSeries] = useState<MarketSeries | null>(null);
+  const series = isMarketSeries(seriesState) ? seriesState : null;
   const [chartType, setChartType] = useState<"candlestick" | "line">(
     "candlestick",
   );
   const [focusedIndicator, setFocusedIndicator] =
-    useState<IndicatorId>("macd");
+    useState<IndicatorId>("sma");
   const [visibleIndicatorIds, setVisibleIndicatorIds] = useState<IndicatorId[]>(
-    ["macd"],
+    [],
   );
   const [indicatorSettings, setIndicatorSettings] = useState(
     createDefaultIndicatorSettings,
   );
-  const [longStrategyId, setLongStrategyId] = useState<StrategyId | "">(
+  const [indicatorPreferencesReady, setIndicatorPreferencesReady] =
+    useState(false);
+  const [strategyAId, setStrategyAId] = useState<StrategyId | "">(
     "sma-cross",
   );
-  const [longParameters, setLongParameters] = useState<StrategyParameters>(
+  const [strategyAParameters, setStrategyAParameters] =
+    useState<StrategyParameters>(
     getStrategy("sma-cross").defaultParameters,
   );
-  const [shortStrategyId, setShortStrategyId] = useState<StrategyId | "">("");
-  const [shortParameters, setShortParameters] =
+  const [strategyBId, setStrategyBId] = useState<StrategyId | "">("");
+  const [strategyBParameters, setStrategyBParameters] =
     useState<StrategyParameters>({});
+  const [appliedStrategyPlan, setAppliedStrategyPlan] =
+    useState<StrategyAllocationPlan | null>(defaultAppliedStrategyPlan);
+  const [strategyEntryFilterDraft, setStrategyEntryFilterDraft] = useState(
+    () => createMovingAverageSlopeFilterDraft(),
+  );
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [initialCash, setInitialCash] = useState(100_000);
@@ -363,56 +717,79 @@ export function MarketWorkspace() {
   const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
   const [errorCode, setErrorCode] = useState("");
+  const [cachedPreviewAt, setCachedPreviewAt] = useState<number | null>(
+    null,
+  );
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [screening, setScreening] = useState(false);
-  const [screenResults, setScreenResults] = useState<BacktestResult[]>([]);
-  const [maxParameterSets, setMaxParameterSets] = useState(
-    DEFAULT_PARAMETER_SETS_PER_STRATEGY,
-  );
+  const [screeningError, setScreeningError] = useState<
+    ScreeningValidationErrorCode | "run" | ""
+  >("");
+  const [screenResults, setScreenResults] = useState<
+    ScreeningSingleResult[]
+  >([]);
   const [screeningObjective, setScreeningObjective] =
     useState<ScreeningObjective>("balanced");
-  const [screenProgress, setScreenProgress] = useState<ScreeningProgress>({
-    completed: 0,
-    total: 0,
-    failed: 0,
-    strategyId: null,
-  });
-  const [combinationScreening, setCombinationScreening] = useState(false);
-  const [
-    combinationScreeningObjective,
-    setCombinationScreeningObjective,
-  ] = useState<ScreeningObjective>("balanced");
-  const [combinationMaxParameterSets, setCombinationMaxParameterSets] =
-    useState(DEFAULT_PARAMETER_SETS_PER_STRATEGY);
-  const [combinationResults, setCombinationResults] = useState<
-    StrategyCombinationResult[]
-  >([]);
-  const [longAllocationPercent, setLongAllocationPercent] = useState(
-    DEFAULT_LONG_ALLOCATION * 100,
+  const [screenResultsObjective, setScreenResultsObjective] =
+    useState<ScreeningObjective>("balanced");
+  const [screeningValidationMode, setScreeningValidationMode] =
+    useState<ScreeningValidationMode>("sample");
+  const [screeningEntryFilterDraft, setScreeningEntryFilterDraft] = useState(
+    () => createMovingAverageSlopeFilterDraft(),
   );
-  const [shortAllocationPercent, setShortAllocationPercent] = useState(
-    DEFAULT_SHORT_ALLOCATION * 100,
+  const [sampleValidationPeriods, setSampleValidationPeriods] =
+    useState<ScreeningSamplePeriodConfig[]>(() =>
+      DEFAULT_SAMPLE_VALIDATION_PERIODS.map((period) => ({
+        ...period,
+      })),
+    );
+  const [screeningCustomRange, setScreeningCustomRange] = useState(
+    DEFAULT_SCREENING_CUSTOM_RANGE,
   );
-  const [combinationProgress, setCombinationProgress] =
+  const [rollingWindowYears, setRollingWindowYears] = useState(
+    DEFAULT_ROLLING_WINDOW_YEARS,
+  );
+  const [validationProgress, setValidationProgress] =
+    useState<ScreeningValidationProgress | null>(null);
+  const [validationReport, setValidationReport] =
+    useState<ScreeningValidationReport | null>(null);
+  const [screenProgress, setScreenProgress] =
     useState<CombinationScreeningProgress>(emptyCombinationProgress);
+  const [combinationResults, setCombinationResults] = useState<
+    ScreeningCombinationResult[]
+  >([]);
+  const [strategyAAllocationPercent, setStrategyAAllocationPercent] = useState(
+    DEFAULT_STRATEGY_A_ALLOCATION * 100,
+  );
+  const [strategyBAllocationPercent, setStrategyBAllocationPercent] = useState(
+    DEFAULT_STRATEGY_B_ALLOCATION * 100,
+  );
   const [savedBacktests, setSavedBacktests] = useState<
     SavedBacktestRecord[]
   >([]);
   const [savedBacktestsLoading, setSavedBacktestsLoading] = useState(true);
   const [savedBacktestsError, setSavedBacktestsError] = useState(false);
+  const [expandedSavedBacktestGroups, setExpandedSavedBacktestGroups] =
+    useState<string[]>([]);
+  const [savedBacktestDrag, setSavedBacktestDrag] =
+    useState<SavedBacktestDragState | null>(null);
+  const [savedBacktestDropTarget, setSavedBacktestDropTarget] = useState("");
+  const [savedBacktestOrderSaving, setSavedBacktestOrderSaving] =
+    useState(false);
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
-  const [manualExecutionWindow, setManualExecutionWindow] =
-    useState<ManualExecutionWindow>("next-open");
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const chartSectionRef = useRef<HTMLElement>(null);
-  const pendingSavedBacktestRef = useRef<SavedBacktestRecord | null>(null);
   const screeningAbortRef = useRef<AbortController | null>(null);
-  const combinationAbortRef = useRef<AbortController | null>(null);
   const currentSeriesKeyRef = useRef("");
   const latestSeriesDateRef = useRef("");
   const marketSeriesRef = useRef<MarketSeries | null>(null);
+  const cachedSeriesActiveRef = useRef(false);
+  const sharedRangeSessionsRef = useRef(
+    DEFAULT_SAMPLE_VALIDATION_SESSIONS,
+  );
+  const sharedRangeRef = useRef({ startDate: "", endDate: "" });
   const activeIndicator = getIndicator(focusedIndicator);
   const indicatorParameters = indicatorSettings[focusedIndicator];
   const focusedIndicatorVisible =
@@ -424,6 +801,10 @@ export function MarketWorkspace() {
         parameters: indicatorSettings[id],
       })),
     [indicatorSettings, visibleIndicatorIds],
+  );
+  const savedBacktestGroups = useMemo(
+    () => groupSavedBacktests(savedBacktests),
+    [savedBacktests],
   );
 
   const fetchMarket = useCallback(
@@ -462,10 +843,81 @@ export function MarketWorkspace() {
       };
 
       try {
-        const currentSeries = marketSeriesRef.current;
+        const currentSeries = isMarketSeries(marketSeriesRef.current)
+          ? marketSeriesRef.current
+          : null;
+        if (currentSeries === null && marketSeriesRef.current !== null) {
+          marketSeriesRef.current = null;
+          currentSeriesKeyRef.current = "";
+          latestSeriesDateRef.current = "";
+        }
         const refreshesLatestOnly =
           currentSeries !== null &&
-          currentSeriesKeyRef.current === seriesKey;
+          currentSeriesKeyRef.current === seriesKey &&
+          !cachedSeriesActiveRef.current;
+        const applyLoadedSeries = (payload: MarketSeries) => {
+          marketSeriesRef.current = payload;
+          setSeries(payload);
+
+          if (!payload.bars.length) return;
+          const sameSeries = currentSeriesKeyRef.current === seriesKey;
+          const previousLatestDate = latestSeriesDateRef.current;
+          const firstDate = datePart(payload.bars[0].time);
+          const lastDate = datePart(
+            payload.bars[payload.bars.length - 1].time,
+          );
+          const currentRange = sharedRangeRef.current;
+          const followsLatest =
+            sameSeries &&
+            (!currentRange.endDate ||
+              currentRange.endDate === previousLatestDate ||
+              currentRange.endDate > lastDate);
+          const keepsHistoricalRange =
+            sameSeries &&
+            !followsLatest &&
+            currentRange.startDate >= firstDate &&
+            currentRange.endDate <= lastDate;
+          const nextRange = keepsHistoricalRange
+            ? resolveTradingSessionRange(
+                payload.bars,
+                currentRange.startDate,
+                currentRange.endDate,
+              )
+            : resolveTrailingTradingSessionRange(
+                payload.bars,
+                sharedRangeSessionsRef.current,
+                lastDate,
+              );
+          if (nextRange) {
+            sharedRangeRef.current = {
+              startDate: nextRange.startTime,
+              endDate: nextRange.endTime,
+            };
+            sharedRangeSessionsRef.current = nextRange.sessions;
+            setStartDate(nextRange.startTime);
+            setEndDate(nextRange.endTime);
+            setSampleValidationPeriods([
+              { sessions: nextRange.sessions, weight: 100 },
+            ]);
+          }
+          currentSeriesKeyRef.current = seriesKey;
+          latestSeriesDateRef.current = lastDate;
+        };
+
+        if (!refreshesLatestOnly) {
+          const cached = await readCachedMarketSeriesEntry(
+            instrument,
+            DAILY_INTERVAL,
+          );
+          if (signal.aborted) return;
+          if (cached) {
+            applyLoadedSeries(cached.series);
+            cachedSeriesActiveRef.current = true;
+            setCachedPreviewAt(cached.cachedAt);
+            setErrorCode("CACHED_PREVIEW");
+          }
+        }
+
         let payload: MarketSeries;
 
         if (refreshesLatestOnly) {
@@ -474,11 +926,20 @@ export function MarketWorkspace() {
             "latest",
             5,
           );
-          payload =
+          if (
             latest.source === currentSeries.source &&
             latest.priceAdjustment === currentSeries.priceAdjustment
-              ? mergeLatestMarketSeries(currentSeries, latest, seriesLimit)
-              : currentSeries;
+          ) {
+            payload = mergeLatestMarketSeries(
+              currentSeries,
+              latest,
+              seriesLimit,
+            );
+            setErrorCode("");
+          } else {
+            payload = currentSeries;
+            setErrorCode("LATEST_SERIES_MISMATCH");
+          }
         } else {
           const history = await loadSeries(
             instrument,
@@ -501,62 +962,20 @@ export function MarketWorkspace() {
                 latest,
                 seriesLimit,
               );
+              setErrorCode("");
+            } else {
+              setErrorCode("LATEST_SERIES_MISMATCH");
             }
           } catch (error) {
             if ((error as Error).name === "AbortError") throw error;
             // Cached history remains usable when the latest-bar request fails.
+            setErrorCode("LATEST_UNAVAILABLE");
           }
         }
-        marketSeriesRef.current = payload;
-        setSeries(payload);
-
-        if (payload.bars.length) {
-          const sameSeries = currentSeriesKeyRef.current === seriesKey;
-          const previousLatestDate = latestSeriesDateRef.current;
-          const firstDate = datePart(payload.bars[0].time);
-          const rangeStart = datePart(
-            payload.bars[Math.max(0, payload.bars.length - 500)].time,
-          );
-          const lastDate = datePart(
-            payload.bars[payload.bars.length - 1].time,
-          );
-          const saved = pendingSavedBacktestRef.current;
-          const restoresSavedRange =
-            saved?.instrument.secid === instrument.secid &&
-            saved.instrument.provider === instrument.provider;
-          setStartDate((current) => {
-            if (
-              restoresSavedRange &&
-              saved.startDate >= firstDate &&
-              saved.startDate <= lastDate
-            ) {
-              return saved.startDate;
-            }
-            if (sameSeries && current >= firstDate && current <= lastDate) {
-              return current;
-            }
-            return rangeStart;
-          });
-          setEndDate((current) => {
-            if (
-              restoresSavedRange &&
-              saved.endDate >= firstDate &&
-              saved.endDate <= lastDate
-            ) {
-              return saved.endDate;
-            }
-            const followsLatest =
-              sameSeries &&
-              (!current ||
-                current === previousLatestDate ||
-                current > lastDate);
-            if (followsLatest || !sameSeries) return lastDate;
-            return current;
-          });
-          if (restoresSavedRange) pendingSavedBacktestRef.current = null;
-          currentSeriesKeyRef.current = seriesKey;
-          latestSeriesDateRef.current = lastDate;
-        }
+        applyLoadedSeries(payload);
+        cachedSeriesActiveRef.current = false;
+        setCachedPreviewAt(null);
+        void writeCachedMarketSeries(payload, [instrument]);
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           setErrorCode((error as Error).message || "UNKNOWN");
@@ -580,19 +999,14 @@ export function MarketWorkspace() {
   }, [fetchMarket, refreshVersion]);
 
   useEffect(() => {
-    const refreshExecutionWindow = () => {
-      setManualExecutionWindow(classifyManualExecutionWindow());
-    };
     const refreshVisibleMarket = () => {
       if (document.visibilityState === "visible") {
-        refreshExecutionWindow();
         setRefreshVersion((value) => value + 1);
       }
     };
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") refreshVisibleMarket();
     };
-    const initialExecutionTimer = window.setTimeout(refreshExecutionWindow, 0);
     const refreshTimer = window.setInterval(
       refreshVisibleMarket,
       LIVE_REFRESH_INTERVAL_MS,
@@ -600,7 +1014,6 @@ export function MarketWorkspace() {
     window.addEventListener("focus", refreshVisibleMarket);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      window.clearTimeout(initialExecutionTimer);
       window.clearInterval(refreshTimer);
       window.removeEventListener("focus", refreshVisibleMarket);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -651,19 +1064,65 @@ export function MarketWorkspace() {
   useEffect(
     () => () => {
       screeningAbortRef.current?.abort();
-      combinationAbortRef.current?.abort();
     },
     [],
   );
 
   useEffect(() => {
-    const controller = new AbortController();
-    const loadSavedBacktests = async () => {
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem(
+          INDICATOR_PREFERENCES_STORAGE_KEY,
+        );
+        if (stored) {
+          const preferences = parseIndicatorWorkspacePreferences(
+            JSON.parse(stored) as unknown,
+          );
+          if (preferences) {
+            setFocusedIndicator(preferences.focusedIndicator);
+            setVisibleIndicatorIds(preferences.visibleIndicatorIds);
+            setIndicatorSettings(preferences.settings);
+          } else {
+            window.localStorage.removeItem(INDICATOR_PREFERENCES_STORAGE_KEY);
+          }
+        }
+      } catch {
+        // Indicator preferences remain at safe defaults when storage is blocked.
+      } finally {
+        setIndicatorPreferencesReady(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!indicatorPreferencesReady) return;
+    try {
+      window.localStorage.setItem(
+        INDICATOR_PREFERENCES_STORAGE_KEY,
+        JSON.stringify({
+          focusedIndicator,
+          visibleIndicatorIds,
+          settings: indicatorSettings,
+        }),
+      );
+    } catch {
+      // Indicator preferences remain available for the current page session.
+    }
+  }, [
+    focusedIndicator,
+    indicatorPreferencesReady,
+    indicatorSettings,
+    visibleIndicatorIds,
+  ]);
+
+  const loadSavedBacktests = useCallback(
+    async (signal?: AbortSignal) => {
       setSavedBacktestsLoading(true);
       setSavedBacktestsError(false);
       try {
         const response = await fetch("/api/saved-backtests", {
-          signal: controller.signal,
+          signal,
           cache: "no-store",
         });
         const payload = (await response.json()) as {
@@ -676,12 +1135,22 @@ export function MarketWorkspace() {
           setSavedBacktestsError(true);
         }
       } finally {
-        if (!controller.signal.aborted) setSavedBacktestsLoading(false);
+        if (!signal?.aborted) setSavedBacktestsLoading(false);
       }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void loadSavedBacktests(controller.signal);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
     };
-    void loadSavedBacktests();
-    return () => controller.abort();
-  }, []);
+  }, [loadSavedBacktests]);
 
   const latest = series?.bars.at(-1);
   const previous = series?.bars.at(-2);
@@ -691,96 +1160,208 @@ export function MarketWorkspace() {
   const priceChangePercent =
     comparisonPrice === 0 ? 0 : (priceChange / comparisonPrice) * 100;
   const strategyPlan = useMemo<StrategyAllocationPlan | null>(() => {
-    if (!longStrategyId && !shortStrategyId) return null;
-    const longAllocation = longStrategyId
-      ? Math.min(Math.max(longAllocationPercent / 100, 0), 1)
+    if (!strategyAId && !strategyBId) return null;
+    const dualStrategy = Boolean(strategyAId && strategyBId);
+    const strategyAAllocation = strategyAId
+      ? dualStrategy
+        ? Math.min(Math.max(strategyAAllocationPercent / 100, 0), 1)
+        : 1
       : 0;
-    const shortAllocation = Math.min(
-      shortStrategyId
-        ? Math.max(shortAllocationPercent / 100, 0)
-        : 0,
-      1 - longAllocation,
-    );
+    const strategyBAllocation = strategyBId
+      ? dualStrategy
+        ? Math.min(
+            Math.max(strategyBAllocationPercent / 100, 0),
+            1 - strategyAAllocation,
+          )
+        : 1
+      : 0;
     return {
-      long: longStrategyId
+      strategyA: strategyAId
         ? {
-            strategyId: longStrategyId,
-            parameters: longParameters,
+            strategyId: strategyAId,
+            parameters: strategyAParameters,
           }
         : null,
-      short: shortStrategyId
+      strategyB: strategyBId
         ? {
-            strategyId: shortStrategyId,
-            parameters: shortParameters,
+            strategyId: strategyBId,
+            parameters: strategyBParameters,
           }
         : null,
-      longAllocation,
-      shortAllocation,
+      strategyAAllocation,
+      strategyBAllocation,
+      entryFilter: activeMovingAverageSlopeFilter(
+        strategyEntryFilterDraft,
+      ),
     };
   }, [
-    longParameters,
-    longAllocationPercent,
-    longStrategyId,
-    shortParameters,
-    shortAllocationPercent,
-    shortStrategyId,
+    strategyAParameters,
+    strategyAAllocationPercent,
+    strategyAId,
+    strategyBParameters,
+    strategyBAllocationPercent,
+    strategyBId,
+    strategyEntryFilterDraft,
   ]);
   const singleSelection =
-    strategyPlan && Boolean(strategyPlan.long) !== Boolean(strategyPlan.short)
-      ? (strategyPlan.long ?? strategyPlan.short)
+    strategyPlan &&
+    Boolean(strategyPlan.strategyA) !== Boolean(strategyPlan.strategyB)
+      ? (strategyPlan.strategyA ?? strategyPlan.strategyB)
       : null;
   const usesSingleFullAllocation =
     Boolean(singleSelection) &&
-    (strategyPlan?.long
-      ? strategyPlan.longAllocation === 1
-      : strategyPlan?.shortAllocation === 1);
-  const liveGuidance = useMemo(() => {
+    (strategyPlan?.strategyA
+      ? strategyPlan.strategyAAllocation === 1
+      : strategyPlan?.strategyBAllocation === 1);
+  const activeStrategyTimeline = useMemo(() => {
     if (!series?.bars.length || !strategyPlan) return null;
+    try {
+      return buildStrategyPlanTimeline(series.bars, strategyPlan, {
+        startTime: startDate || series.bars[0].time,
+        endTime: endDate || series.bars.at(-1)!.time,
+      });
+    } catch {
+      return null;
+    }
+  }, [endDate, series, startDate, strategyPlan]);
+  const relativeLongStrategy = activeStrategyTimeline?.relativeLongStrategy;
+  const appliedSingleSelection =
+    appliedStrategyPlan &&
+    Boolean(appliedStrategyPlan.strategyA) !==
+      Boolean(appliedStrategyPlan.strategyB)
+      ? (appliedStrategyPlan.strategyA ?? appliedStrategyPlan.strategyB)
+      : null;
+  const appliedUsesSingleFullAllocation =
+    Boolean(appliedSingleSelection) &&
+    (appliedStrategyPlan?.strategyA
+      ? appliedStrategyPlan.strategyAAllocation === 1
+      : appliedStrategyPlan?.strategyBAllocation === 1);
+  const appliedStrategyTimeline = useMemo(() => {
+    if (!series?.bars.length || !appliedStrategyPlan) return null;
+    try {
+      return buildStrategyPlanTimeline(series.bars, appliedStrategyPlan, {
+        startTime: startDate || series.bars[0].time,
+        endTime: endDate || series.bars.at(-1)!.time,
+      });
+    } catch {
+      return null;
+    }
+  }, [appliedStrategyPlan, endDate, series, startDate]);
+  const appliedRelativeLongStrategy =
+    appliedStrategyTimeline?.relativeLongStrategy;
+  const liveGuidance = useMemo(() => {
+    if (!series?.bars.length || !appliedStrategyPlan) return null;
     try {
       const allocation = buildLiveAllocationGuidance(
         series.bars,
-        strategyPlan,
+        appliedStrategyPlan,
+        {
+          startTime: startDate || series.bars[0].time,
+          endTime: endDate || series.bars.at(-1)!.time,
+        },
+        series.latestBarStatus,
       );
       const exact =
-        usesSingleFullAllocation && singleSelection
+        appliedUsesSingleFullAllocation && appliedSingleSelection
           ? buildLiveStrategyGuidance(
               series.bars,
-              singleSelection.strategyId,
-              singleSelection.parameters,
+              appliedSingleSelection.strategyId,
+              appliedSingleSelection.parameters,
+              series.latestBarStatus,
+              appliedStrategyPlan.entryFilter,
             )
           : null;
+      const orderPrices = [
+        appliedStrategyPlan.strategyA
+          ? {
+              slot: "A",
+              selection: appliedStrategyPlan.strategyA,
+            }
+          : null,
+        appliedStrategyPlan.strategyB
+          ? {
+              slot: "B",
+              selection: appliedStrategyPlan.strategyB,
+            }
+          : null,
+      ].flatMap((item) => {
+        if (!item) return [];
+        const guidance = buildLiveStrategyGuidance(
+          series.bars,
+          item.selection.strategyId,
+          item.selection.parameters,
+          series.latestBarStatus,
+          appliedStrategyPlan.entryFilter,
+        );
+        if (
+          !guidance ||
+          (guidance.executionMode !== "intrabar-order" &&
+            guidance.pendingNextOpenAction === null) ||
+          (guidance.todayEntryPrice === null &&
+            guidance.todayExitPrice === null &&
+            guidance.pendingNextOpenAction === null)
+        ) {
+          return [];
+        }
+        return [
+          {
+            slot: item.slot,
+            entryPrice: guidance.todayEntryPrice,
+            exitPrice: guidance.todayExitPrice,
+            pendingNextOpenAction: guidance.pendingNextOpenAction,
+          },
+        ];
+      });
+      const exactAction = exact
+        ? (exact.pendingNextOpenAction ?? exact.action)
+        : ("wait" as const);
       const exactAllocation = exact
         ? {
             action:
-              exact.action === "buy"
+              exactAction === "buy"
                 ? ("increase" as const)
-                : exact.action === "sell"
+                : exactAction === "sell"
                   ? ("reduce" as const)
-                  : exact.action,
+                  : exactAction,
             previousAllocation:
-              exact.action === "buy" || exact.action === "wait" ? 0 : 1,
+              exactAction === "buy" || exactAction === "wait" ? 0 : 1,
             targetAllocation:
-              exact.action === "buy" || exact.action === "hold" ? 1 : 0,
+              exactAction === "buy" || exactAction === "hold" ? 1 : 0,
           }
         : null;
       return allocation
         ? {
             ...(exactAllocation ?? allocation),
             barTime: exact?.barTime ?? series.bars.at(-1)?.time ?? "",
+            executionMode:
+              (exact?.pendingNextOpenAction
+                ? ("next-open" as const)
+                : exact?.executionMode) ??
+              (orderPrices.length > 0
+                ? ("hybrid-plan" as const)
+                : "next-open"),
+            triggerPrice: exact?.triggerPrice ?? null,
+            orderPrices,
           }
         : null;
     } catch {
       return null;
     }
   }, [
+    appliedSingleSelection,
+    appliedStrategyPlan,
+    appliedUsesSingleFullAllocation,
+    endDate,
     series,
-    singleSelection,
-    strategyPlan,
-    usesSingleFullAllocation,
+    startDate,
   ]);
   const lastUpdated = series?.fetchedAt
     ? updateTimeFormatter.format(new Date(series.fetchedAt))
     : copy.common.unavailable;
+  const cachedPreviewTime =
+    cachedPreviewAt === null
+      ? null
+      : cacheTimeFormatter.format(new Date(cachedPreviewAt));
 
   const backtest = useMemo<
     BacktestResult | AllocationBacktestResult | null
@@ -802,6 +1383,7 @@ export function MarketWorkspace() {
         endTime: endDate,
         interval: DAILY_INTERVAL,
         executionPolicy: HISTORICAL_EXECUTION_POLICY,
+        entryFilter: strategyPlan.entryFilter,
       } as const;
       if (usesSingleFullAllocation && singleSelection) {
         return runBacktest(
@@ -811,12 +1393,18 @@ export function MarketWorkspace() {
           settings,
         );
       }
-      const timeline = buildStrategyPlanTimeline(series.bars, strategyPlan);
+      const timeline =
+        activeStrategyTimeline ??
+        buildStrategyPlanTimeline(series.bars, strategyPlan, {
+          startTime: startDate,
+          endTime: endDate,
+        });
       return runAllocationBacktest(
         series.bars,
         timeline.target,
         settings,
         timeline.signalEvents,
+        timeline.intrabarExecutions,
       );
     } catch {
       return null;
@@ -829,8 +1417,67 @@ export function MarketWorkspace() {
     singleSelection,
     slippagePercent,
     startDate,
+    activeStrategyTimeline,
     strategyPlan,
     usesSingleFullAllocation,
+  ]);
+  const appliedBacktest = useMemo<
+    BacktestResult | AllocationBacktestResult | null
+  >(() => {
+    if (
+      !series?.bars.length ||
+      !startDate ||
+      !endDate ||
+      !appliedStrategyPlan
+    ) {
+      return null;
+    }
+    try {
+      const settings = {
+        initialCash,
+        commissionRate: commissionPercent / 100,
+        slippageRate: slippagePercent / 100,
+        startTime: startDate,
+        endTime: endDate,
+        interval: DAILY_INTERVAL,
+        executionPolicy: HISTORICAL_EXECUTION_POLICY,
+        entryFilter: appliedStrategyPlan.entryFilter,
+      } as const;
+      if (appliedUsesSingleFullAllocation && appliedSingleSelection) {
+        return runBacktest(
+          series.bars,
+          appliedSingleSelection.strategyId,
+          appliedSingleSelection.parameters,
+          settings,
+        );
+      }
+      const timeline =
+        appliedStrategyTimeline ??
+        buildStrategyPlanTimeline(series.bars, appliedStrategyPlan, {
+          startTime: startDate,
+          endTime: endDate,
+        });
+      return runAllocationBacktest(
+        series.bars,
+        timeline.target,
+        settings,
+        timeline.signalEvents,
+        timeline.intrabarExecutions,
+      );
+    } catch {
+      return null;
+    }
+  }, [
+    appliedSingleSelection,
+    appliedStrategyPlan,
+    appliedStrategyTimeline,
+    appliedUsesSingleFullAllocation,
+    commissionPercent,
+    endDate,
+    initialCash,
+    series,
+    slippagePercent,
+    startDate,
   ]);
 
   const stability = useMemo(() => {
@@ -838,6 +1485,7 @@ export function MarketWorkspace() {
       !series?.bars.length ||
       !startDate ||
       !endDate ||
+      !strategyPlan ||
       !singleSelection ||
       !usesSingleFullAllocation
     ) {
@@ -856,6 +1504,7 @@ export function MarketWorkspace() {
           endTime: endDate,
           interval: DAILY_INTERVAL,
           executionPolicy: HISTORICAL_EXECUTION_POLICY,
+          entryFilter: strategyPlan.entryFilter,
         },
       );
       return analysis;
@@ -870,6 +1519,7 @@ export function MarketWorkspace() {
     singleSelection,
     slippagePercent,
     startDate,
+    strategyPlan,
     usesSingleFullAllocation,
   ]);
   const stabilityNearby = stability?.nearby ?? null;
@@ -884,33 +1534,39 @@ export function MarketWorkspace() {
     readonly ChartStrategyConfiguration[]
   >(
     () =>
-      strategyPlan
+      appliedStrategyPlan
         ? [
-            ...(strategyPlan.long
+            ...(appliedStrategyPlan.strategyA
               ? [
                   {
-                    id: strategyPlan.long.strategyId,
-                    parameters: strategyPlan.long.parameters,
-                    lineLabels: longStrategyLineLabels,
+                    id: appliedStrategyPlan.strategyA.strategyId,
+                    parameters: appliedStrategyPlan.strategyA.parameters,
+                    lineLabels:
+                      appliedRelativeLongStrategy === "strategyB"
+                        ? relativeShortStrategyLineLabels
+                        : relativeLongStrategyLineLabels,
                   },
                 ]
               : []),
-            ...(strategyPlan.short
+            ...(appliedStrategyPlan.strategyB
               ? [
                   {
-                    id: strategyPlan.short.strategyId,
-                    parameters: strategyPlan.short.parameters,
-                    lineLabels: shortStrategyLineLabels,
+                    id: appliedStrategyPlan.strategyB.strategyId,
+                    parameters: appliedStrategyPlan.strategyB.parameters,
+                    lineLabels:
+                      appliedRelativeLongStrategy === "strategyB"
+                        ? relativeLongStrategyLineLabels
+                        : relativeShortStrategyLineLabels,
                   },
                 ]
               : []),
           ]
         : [],
-    [strategyPlan],
+    [appliedRelativeLongStrategy, appliedStrategyPlan],
   );
   const allocationTradeMarkers =
-    backtest && "rebalances" in backtest
-      ? buildAllocationTradeMarkers(backtest.rebalances)
+    appliedBacktest && "rebalances" in appliedBacktest
+      ? buildAllocationTradeMarkers(appliedBacktest.rebalances)
       : undefined;
 
   const scrollToStrategyChart = () => {
@@ -923,139 +1579,184 @@ export function MarketWorkspace() {
   };
 
   const applyCurrentStrategyToChart = () => {
-    if (!strategyPlan) return;
+    setAppliedStrategyPlan(cloneStrategyPlan(strategyPlan));
     scrollToStrategyChart();
   };
 
   const applySingleStrategy = (
     nextStrategyId: StrategyId,
     nextParameters?: StrategyParameters,
+    entryFilter?: MovingAverageSlopeFilter | null,
   ) => {
     const next = getStrategy(nextStrategyId);
     const mergedParameters = {
       ...next.defaultParameters,
       ...nextParameters,
     };
-    if (next.horizon === "long") {
-      setLongStrategyId(nextStrategyId);
-      setLongParameters(mergedParameters);
-      setShortStrategyId("");
-      setShortParameters({});
-    } else {
-      setLongStrategyId("");
-      setLongParameters({});
-      setShortStrategyId(nextStrategyId);
-      setShortParameters(mergedParameters);
-    }
-    setLongAllocationPercent(
-      next.horizon === "long" ? DEFAULT_LONG_ALLOCATION * 100 : 0,
+    setStrategyAId(nextStrategyId);
+    setStrategyAParameters(mergedParameters);
+    setStrategyBId("");
+    setStrategyBParameters({});
+    setStrategyAAllocationPercent(100);
+    setStrategyBAllocationPercent(0);
+    setStrategyEntryFilterDraft(
+      createMovingAverageSlopeFilterDraft(entryFilter),
     );
-    setShortAllocationPercent(
-      next.horizon === "short" ? DEFAULT_SHORT_ALLOCATION * 100 : 0,
-    );
+    setAppliedStrategyPlan({
+      strategyA: {
+        strategyId: nextStrategyId,
+        parameters: { ...mergedParameters },
+      },
+      strategyB: null,
+      strategyAAllocation: 1,
+      strategyBAllocation: 0,
+      entryFilter: cloneMovingAverageSlopeFilter(entryFilter),
+    });
     scrollToStrategyChart();
   };
 
-  const selectLongStrategy = (nextStrategyId: StrategyId | "") => {
-    setLongStrategyId(nextStrategyId);
-    setLongParameters(
+  const selectStrategyA = (nextStrategyId: StrategyId | "") => {
+    if (
+      nextStrategyId &&
+      strategyBId &&
+      areStrategiesEquivalent(nextStrategyId, strategyBId)
+    ) {
+      return;
+    }
+    setStrategyAId(nextStrategyId);
+    setStrategyAParameters(
       nextStrategyId
         ? { ...getStrategy(nextStrategyId).defaultParameters }
         : {},
     );
     if (!nextStrategyId) {
-      setLongAllocationPercent(0);
-    } else if (shortStrategyId) {
+      setStrategyAAllocationPercent(0);
+      if (strategyBId) setStrategyBAllocationPercent(100);
+    } else if (strategyBId) {
       const nextAllocation = nearestDualAllocation(
-        longAllocationPercent,
-        shortAllocationPercent,
+        strategyAAllocationPercent,
+        strategyBAllocationPercent,
       );
-      setLongAllocationPercent(nextAllocation.long);
-      setShortAllocationPercent(nextAllocation.short);
+      setStrategyAAllocationPercent(nextAllocation.strategyA);
+      setStrategyBAllocationPercent(nextAllocation.strategyB);
     } else {
-      setLongAllocationPercent((current) =>
-        nearestAllocation(LONG_ALLOCATION_OPTIONS, current),
-      );
+      setStrategyAAllocationPercent(100);
     }
   };
 
-  const selectShortStrategy = (nextStrategyId: StrategyId | "") => {
-    setShortStrategyId(nextStrategyId);
-    setShortParameters(
+  const selectStrategyB = (nextStrategyId: StrategyId | "") => {
+    if (
+      nextStrategyId &&
+      strategyAId &&
+      areStrategiesEquivalent(nextStrategyId, strategyAId)
+    ) {
+      return;
+    }
+    setStrategyBId(nextStrategyId);
+    setStrategyBParameters(
       nextStrategyId
         ? { ...getStrategy(nextStrategyId).defaultParameters }
         : {},
     );
     if (!nextStrategyId) {
-      setShortAllocationPercent(0);
-    } else if (longStrategyId) {
+      setStrategyBAllocationPercent(0);
+      if (strategyAId) setStrategyAAllocationPercent(100);
+    } else if (strategyAId) {
       const nextAllocation = nearestDualAllocation(
-        longAllocationPercent,
-        shortAllocationPercent || DEFAULT_SHORT_ALLOCATION * 100,
+        strategyAAllocationPercent,
+        strategyBAllocationPercent ||
+          DEFAULT_STRATEGY_B_ALLOCATION * 100,
       );
-      setLongAllocationPercent(nextAllocation.long);
-      setShortAllocationPercent(nextAllocation.short);
+      setStrategyAAllocationPercent(nextAllocation.strategyA);
+      setStrategyBAllocationPercent(nextAllocation.strategyB);
     } else {
-      setShortAllocationPercent((current) =>
-        nearestAllocation(
-          SHORT_ALLOCATION_OPTIONS,
-          current || DEFAULT_SHORT_ALLOCATION * 100,
-        ),
-      );
+      setStrategyBAllocationPercent(100);
     }
   };
 
-  const selectLongAllocation = (nextLongAllocation: number) => {
-    if (!shortStrategyId) {
-      setLongAllocationPercent(nextLongAllocation);
+  const selectStrategyAAllocation = (nextStrategyAAllocation: number) => {
+    if (!strategyBId) {
+      setStrategyAAllocationPercent(100);
       return;
     }
     const compatible = DUAL_ALLOCATION_OPTIONS.filter(
-      (option) => option.long === nextLongAllocation,
+      (option) => option.strategyA === nextStrategyAAllocation,
     );
     const nextAllocation = compatible.reduce((nearest, option) =>
-      Math.abs(option.short - shortAllocationPercent) <
-      Math.abs(nearest.short - shortAllocationPercent)
+      Math.abs(option.strategyB - strategyBAllocationPercent) <
+      Math.abs(nearest.strategyB - strategyBAllocationPercent)
         ? option
         : nearest,
     );
-    setLongAllocationPercent(nextAllocation.long);
-    setShortAllocationPercent(nextAllocation.short);
+    setStrategyAAllocationPercent(nextAllocation.strategyA);
+    setStrategyBAllocationPercent(nextAllocation.strategyB);
   };
 
-  const selectShortAllocation = (nextShortAllocation: number) => {
-    if (!longStrategyId) {
-      setShortAllocationPercent(nextShortAllocation);
+  const selectStrategyBAllocation = (nextStrategyBAllocation: number) => {
+    if (!strategyAId) {
+      setStrategyBAllocationPercent(100);
       return;
     }
     const compatible = DUAL_ALLOCATION_OPTIONS.filter(
-      (option) => option.short === nextShortAllocation,
+      (option) => option.strategyB === nextStrategyBAllocation,
     );
     const nextAllocation = compatible.reduce((nearest, option) =>
-      Math.abs(option.long - longAllocationPercent) <
-      Math.abs(nearest.long - longAllocationPercent)
+      Math.abs(option.strategyA - strategyAAllocationPercent) <
+      Math.abs(nearest.strategyA - strategyAAllocationPercent)
         ? option
         : nearest,
     );
-    setLongAllocationPercent(nextAllocation.long);
-    setShortAllocationPercent(nextAllocation.short);
+    setStrategyAAllocationPercent(nextAllocation.strategyA);
+    setStrategyBAllocationPercent(nextAllocation.strategyB);
   };
 
   const applyCombinationResult = (result: StrategyCombinationResult) => {
-    setLongStrategyId(result.longStrategyId);
-    setLongParameters({ ...result.longParameters });
-    setShortStrategyId(result.shortStrategyId);
-    setShortParameters({ ...result.shortParameters });
-    setLongAllocationPercent(Math.round(result.longAllocation * 100));
-    setShortAllocationPercent(Math.round(result.shortAllocation * 100));
+    setStrategyAId(result.strategyAId);
+    setStrategyAParameters({ ...result.strategyAParameters });
+    setStrategyBId(result.strategyBId);
+    setStrategyBParameters({ ...result.strategyBParameters });
+    setStrategyAAllocationPercent(
+      Math.round(result.strategyAAllocation * 100),
+    );
+    setStrategyBAllocationPercent(
+      Math.round(result.strategyBAllocation * 100),
+    );
+    setStrategyEntryFilterDraft(
+      createMovingAverageSlopeFilterDraft(result.entryFilter),
+    );
+    setAppliedStrategyPlan({
+      strategyA: {
+        strategyId: result.strategyAId,
+        parameters: { ...result.strategyAParameters },
+      },
+      strategyB: {
+        strategyId: result.strategyBId,
+        parameters: { ...result.strategyBParameters },
+      },
+      strategyAAllocation: result.strategyAAllocation,
+      strategyBAllocation: result.strategyBAllocation,
+      entryFilter: cloneMovingAverageSlopeFilter(result.entryFilter),
+    });
     scrollToStrategyChart();
   };
 
-  const focusIndicator = (nextIndicator: IndicatorId) => {
+  const applyShortlistEntry = (entry: StrategyShortlistEntry) => {
+    if (entry.kind === "single") {
+      applySingleStrategy(
+        entry.result.strategyId,
+        entry.result.parameters,
+        entry.result.entryFilter,
+      );
+      return;
+    }
+    applyCombinationResult(entry.result);
+  };
+
+  const toggleIndicator = (nextIndicator: IndicatorId) => {
     setFocusedIndicator(nextIndicator);
     setVisibleIndicatorIds((current) =>
       current.includes(nextIndicator)
-        ? current
+        ? current.filter((id) => id !== nextIndicator)
         : [...current, nextIndicator],
     );
   };
@@ -1098,7 +1799,7 @@ export function MarketWorkspace() {
   };
 
   const saveCurrentBacktest = async () => {
-    if (!backtest || !strategyPlan) return;
+    if (!appliedBacktest || !appliedStrategyPlan) return;
     setSaveStatus("saving");
     try {
       const response = await fetch("/api/saved-backtests", {
@@ -1106,15 +1807,16 @@ export function MarketWorkspace() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           createSaveBacktestInput(
-            instrument,
+            series?.instrument ?? instrument,
             DAILY_INTERVAL,
-            strategyPlan,
+            appliedStrategyPlan,
             startDate,
             endDate,
             initialCash,
             commissionPercent,
             slippagePercent,
-            backtest,
+            appliedBacktest,
+            visibleIndicators,
           ),
         ),
       });
@@ -1124,10 +1826,21 @@ export function MarketWorkspace() {
       if (!response.ok || !payload.savedBacktest) {
         throw new Error("PERSISTENCE_UNAVAILABLE");
       }
-      setSavedBacktests((current) => [
-        payload.savedBacktest!,
-        ...current.filter((item) => item.id !== payload.savedBacktest!.id),
-      ]);
+      const savedBacktest = payload.savedBacktest;
+      setSavedBacktests((current) =>
+        [
+          savedBacktest,
+          ...current.filter((record) => record.id !== savedBacktest.id),
+        ].slice(0, MAX_SAVED_BACKTEST_SCROLL_RECORDS),
+      );
+      const savedGroupKey = savedBacktestInstrumentKey(
+        savedBacktest.instrument,
+      );
+      setExpandedSavedBacktestGroups((current) =>
+        current.includes(savedGroupKey)
+          ? current
+          : [...current, savedGroupKey],
+      );
       setSavedBacktestsError(false);
       setSaveStatus("saved");
       window.setTimeout(() => setSaveStatus("idle"), 1600);
@@ -1136,78 +1849,118 @@ export function MarketWorkspace() {
     }
   };
 
-  const resetSingleScreening = () => {
+  const resetScreening = () => {
     screeningAbortRef.current?.abort();
     screeningAbortRef.current = null;
     setScreening(false);
+    setScreeningError("");
     setScreenResults([]);
-    setScreenProgress({
-      completed: 0,
-      total: 0,
-      failed: 0,
-      strategyId: null,
-    });
-  };
-
-  const resetCombinationScreening = () => {
-    combinationAbortRef.current?.abort();
-    combinationAbortRef.current = null;
-    setCombinationScreening(false);
     setCombinationResults([]);
-    setCombinationProgress(emptyCombinationProgress());
+    setValidationProgress(null);
+    setValidationReport(null);
+    setScreenProgress(emptyCombinationProgress());
   };
 
-  const resetScreening = () => {
-    resetSingleScreening();
-    resetCombinationScreening();
+  const clearMarketSeries = () => {
+    marketSeriesRef.current = null;
+    cachedSeriesActiveRef.current = false;
+    currentSeriesKeyRef.current = "";
+    latestSeriesDateRef.current = "";
+    setSeries(null);
+    setCachedPreviewAt(null);
+    setErrorCode("");
+    setLoading(true);
   };
 
   const openSavedBacktest = (saved: SavedBacktestRecord) => {
-    resetScreening();
-    const changesInstrument =
-      saved.instrument.secid !== instrument.secid ||
-      saved.instrument.provider !== instrument.provider;
-    const requiresMarketReload =
-      changesInstrument || !series || series.interval !== DAILY_INTERVAL;
-    pendingSavedBacktestRef.current = requiresMarketReload ? saved : null;
-    if (changesInstrument) {
+    const restoredStrategyB =
+      saved.plan.strategyA &&
+      saved.plan.strategyB &&
+      areStrategiesEquivalent(
+        saved.plan.strategyA.strategyId,
+        saved.plan.strategyB.strategyId,
+      )
+        ? null
+        : saved.plan.strategyB;
+    const sameCanonicalInstrument =
+      savedBacktestInstrumentKey(saved.instrument) ===
+      savedBacktestInstrumentKey(series?.instrument ?? instrument);
+    const reusesCurrentSeries = canReuseSavedBacktestMarketSeries(
+      saved.instrument,
+      series?.instrument ?? instrument,
+      series,
+      DAILY_INTERVAL,
+    );
+    if (!sameCanonicalInstrument) {
+      clearMarketSeries();
       setInstrument(saved.instrument);
-    } else if (requiresMarketReload) {
+    } else if (!reusesCurrentSeries) {
+      clearMarketSeries();
       setRefreshVersion((value) => value + 1);
     }
-    setLongStrategyId(saved.plan.long?.strategyId ?? "");
-    setLongParameters(
-      saved.plan.long ? { ...saved.plan.long.parameters } : {},
+    setVisibleIndicatorIds(saved.indicators.map((indicator) => indicator.id));
+    setIndicatorSettings((current) => {
+      const next = { ...current };
+      for (const indicator of saved.indicators) {
+        next[indicator.id] = { ...indicator.parameters };
+      }
+      return next;
+    });
+    setFocusedIndicator(saved.indicators[0]?.id ?? "sma");
+    setStrategyAId(saved.plan.strategyA?.strategyId ?? "");
+    setStrategyAParameters(
+      saved.plan.strategyA ? { ...saved.plan.strategyA.parameters } : {},
     );
-    setShortStrategyId(saved.plan.short?.strategyId ?? "");
-    setShortParameters(
-      saved.plan.short ? { ...saved.plan.short.parameters } : {},
+    setStrategyBId(restoredStrategyB?.strategyId ?? "");
+    setStrategyBParameters(
+      restoredStrategyB ? { ...restoredStrategyB.parameters } : {},
     );
-    const savedLongAllocation = Math.round(saved.plan.longAllocation * 100);
-    const savedShortAllocation = Math.round(saved.plan.shortAllocation * 100);
-    if (saved.plan.long && saved.plan.short) {
+    setStrategyEntryFilterDraft(
+      createMovingAverageSlopeFilterDraft(saved.plan.entryFilter),
+    );
+    const savedStrategyAAllocation = Math.round(
+      saved.plan.strategyAAllocation * 100,
+    );
+    const savedStrategyBAllocation = Math.round(
+      saved.plan.strategyBAllocation * 100,
+    );
+    let restoredStrategyAAllocation = 0;
+    let restoredStrategyBAllocation = 0;
+    if (saved.plan.strategyA && restoredStrategyB) {
       const nextAllocation = nearestDualAllocation(
-        savedLongAllocation,
-        savedShortAllocation,
+        savedStrategyAAllocation,
+        savedStrategyBAllocation,
       );
-      setLongAllocationPercent(nextAllocation.long);
-      setShortAllocationPercent(nextAllocation.short);
-    } else if (saved.plan.long) {
-      setLongAllocationPercent(
-        nearestAllocation(LONG_ALLOCATION_OPTIONS, savedLongAllocation),
-      );
-      setShortAllocationPercent(0);
+      restoredStrategyAAllocation = nextAllocation.strategyA;
+      restoredStrategyBAllocation = nextAllocation.strategyB;
+      setStrategyAAllocationPercent(nextAllocation.strategyA);
+      setStrategyBAllocationPercent(nextAllocation.strategyB);
+    } else if (saved.plan.strategyA) {
+      restoredStrategyAAllocation = 100;
+      setStrategyAAllocationPercent(100);
+      setStrategyBAllocationPercent(0);
     } else {
-      setLongAllocationPercent(0);
-      setShortAllocationPercent(
-        nearestAllocation(
-          SHORT_ALLOCATION_OPTIONS,
-          savedShortAllocation || DEFAULT_SHORT_ALLOCATION * 100,
-        ),
-      );
+      restoredStrategyBAllocation = 100;
+      setStrategyAAllocationPercent(0);
+      setStrategyBAllocationPercent(100);
     }
-    setStartDate(saved.startDate);
-    setEndDate(saved.endDate);
+    setAppliedStrategyPlan({
+      strategyA: saved.plan.strategyA
+        ? {
+            strategyId: saved.plan.strategyA.strategyId,
+            parameters: { ...saved.plan.strategyA.parameters },
+          }
+        : null,
+      strategyB: restoredStrategyB
+        ? {
+            strategyId: restoredStrategyB.strategyId,
+            parameters: { ...restoredStrategyB.parameters },
+          }
+        : null,
+      strategyAAllocation: restoredStrategyAAllocation / 100,
+      strategyBAllocation: restoredStrategyBAllocation / 100,
+      entryFilter: cloneMovingAverageSlopeFilter(saved.plan.entryFilter),
+    });
     setInitialCash(saved.initialCash);
     setCommissionPercent(saved.commissionPercent);
     setSlippagePercent(saved.slippagePercent);
@@ -1219,110 +1972,263 @@ export function MarketWorkspace() {
         method: "DELETE",
       });
       if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
-      setSavedBacktests((current) =>
-        current.filter((saved) => saved.id !== id),
-      );
+      await loadSavedBacktests();
     } catch {
       setSavedBacktestsError(true);
     }
   };
 
+  const toggleSavedBacktestGroup = (groupKey: string) => {
+    setExpandedSavedBacktestGroups((current) =>
+      current.includes(groupKey)
+        ? current.filter((key) => key !== groupKey)
+        : [...current, groupKey],
+    );
+  };
+
+  const startSavedBacktestDrag = (
+    event: ReactDragEvent<HTMLElement>,
+    drag: SavedBacktestDragState,
+  ) => {
+    if (savedBacktestOrderSaving) {
+      event.preventDefault();
+      return;
+    }
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData(
+      "application/x-quantscope-saved-backtest",
+      JSON.stringify(drag),
+    );
+    setSavedBacktestDrag(drag);
+  };
+
+  const finishSavedBacktestDrag = () => {
+    setSavedBacktestDrag(null);
+    setSavedBacktestDropTarget("");
+  };
+
+  const persistSavedBacktestOrder = async (
+    nextOrder: SavedBacktestRecord[],
+  ) => {
+    if (
+      nextOrder.length !== savedBacktests.length ||
+      nextOrder.every(
+        (record, index) => record.id === savedBacktests[index]?.id,
+      )
+    ) {
+      finishSavedBacktestDrag();
+      return;
+    }
+    const previousOrder = savedBacktests;
+    setSavedBacktests(nextOrder);
+    setSavedBacktestsError(false);
+    setSavedBacktestOrderSaving(true);
+    finishSavedBacktestDrag();
+    try {
+      const response = await fetch("/api/saved-backtests", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderedIds: nextOrder.map((record) => record.id),
+        }),
+      });
+      if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+    } catch {
+      setSavedBacktests(previousOrder);
+      setSavedBacktestsError(true);
+    } finally {
+      setSavedBacktestOrderSaving(false);
+    }
+  };
+
+  const dropSavedBacktestGroup = (
+    event: ReactDragEvent<HTMLElement>,
+    targetGroupKey: string,
+  ) => {
+    event.stopPropagation();
+    if (
+      savedBacktestDrag?.kind !== "group" ||
+      savedBacktestDrag.groupKey === targetGroupKey
+    ) {
+      finishSavedBacktestDrag();
+      return;
+    }
+    event.preventDefault();
+    void persistSavedBacktestOrder(
+      reorderSavedBacktestGroups(
+        savedBacktests,
+        savedBacktestDrag.groupKey,
+        targetGroupKey,
+      ),
+    );
+  };
+
+  const dropSavedBacktestRecord = (
+    event: ReactDragEvent<HTMLElement>,
+    targetGroupKey: string,
+    targetRecordId: number,
+  ) => {
+    event.stopPropagation();
+    if (
+      savedBacktestDrag?.kind !== "record" ||
+      savedBacktestDrag.groupKey !== targetGroupKey ||
+      savedBacktestDrag.recordId === targetRecordId
+    ) {
+      finishSavedBacktestDrag();
+      return;
+    }
+    event.preventDefault();
+    void persistSavedBacktestOrder(
+      reorderSavedBacktestsWithinGroup(
+        savedBacktests,
+        targetGroupKey,
+        savedBacktestDrag.recordId,
+        targetRecordId,
+      ),
+    );
+  };
+
+  const moveSavedBacktestGroupByOffset = (
+    groupKey: string,
+    offset: -1 | 1,
+  ) => {
+    const groupIndex = savedBacktestGroups.findIndex(
+      (group) => group.key === groupKey,
+    );
+    const target = savedBacktestGroups[groupIndex + offset];
+    if (!target) return;
+    void persistSavedBacktestOrder(
+      reorderSavedBacktestGroups(savedBacktests, groupKey, target.key),
+    );
+  };
+
+  const moveSavedBacktestRecordByOffset = (
+    groupKey: string,
+    recordId: number,
+    offset: -1 | 1,
+  ) => {
+    const group = savedBacktestGroups.find(
+      (candidate) => candidate.key === groupKey,
+    );
+    const recordIndex =
+      group?.records.findIndex((record) => record.id === recordId) ?? -1;
+    const target = group?.records[recordIndex + offset];
+    if (!target) return;
+    void persistSavedBacktestOrder(
+      reorderSavedBacktestsWithinGroup(
+        savedBacktests,
+        groupKey,
+        recordId,
+        target.id,
+      ),
+    );
+  };
+
   const startScreening = async () => {
     if (!series?.bars.length) return;
+    const runObjective = screeningObjective;
+    const latestDate = datePart(series.bars.at(-1)!.time);
+    const validationConfig: ScreeningValidationConfig =
+      screeningValidationMode === "sample"
+        ? {
+            mode: "sample",
+            periods: sampleValidationPeriods.map((period) => ({
+              ...period,
+            })),
+          }
+        : screeningValidationMode === "range"
+          ? {
+              mode: "range",
+              range: {
+                ...screeningCustomRange,
+                startTime: screeningCustomRange.startTime || startDate,
+                endTime:
+                  screeningCustomRange.endTime || endDate || latestDate,
+              },
+            }
+          : {
+              mode: "rolling",
+              range: {
+                ...screeningCustomRange,
+                startTime: screeningCustomRange.startTime || startDate,
+                endTime:
+                  screeningCustomRange.endTime || endDate || latestDate,
+              },
+              windowYears: rollingWindowYears,
+            };
     screeningAbortRef.current?.abort();
     const controller = new AbortController();
     screeningAbortRef.current = controller;
     setScreening(true);
+    setScreeningError("");
     setScreenResults([]);
-    setScreenProgress({
-      completed: 0,
-      total: 0,
-      failed: 0,
-      strategyId: null,
-    });
+    setCombinationResults([]);
+    setValidationProgress(null);
+    setValidationReport(null);
+    setScreenProgress(emptyCombinationProgress());
+    await yieldForScreening();
 
-    const outcome = await optimizeStrategies(
-      series.bars,
-      {
-        initialCash,
-        commissionRate: commissionPercent / 100,
-        slippageRate: slippagePercent / 100,
-        startTime: startDate,
-        endTime: endDate,
-        interval: DAILY_INTERVAL,
-        executionPolicy: HISTORICAL_EXECUTION_POLICY,
-      },
-      {
-        maxPerStrategy: maxParameterSets,
-        objective: screeningObjective,
-        signal: controller.signal,
-        onProgress: setScreenProgress,
-      },
-    );
+    try {
+      const outcome = await runScreeningWithValidation(
+        series.bars,
+        {
+          initialCash,
+          commissionRate: commissionPercent / 100,
+          slippageRate: slippagePercent / 100,
+          startTime: startDate,
+          endTime: endDate,
+          interval: DAILY_INTERVAL,
+          executionPolicy: HISTORICAL_EXECUTION_POLICY,
+          entryFilter: activeMovingAverageSlopeFilter(
+            screeningEntryFilterDraft,
+          ),
+        },
+        validationConfig,
+        {
+          objective: runObjective,
+          entryFilters: screeningEntryFilterDraft.enabled
+            ? buildScreeningMovingAverageSlopeFilters()
+            : undefined,
+          signal: controller.signal,
+          onProgress: setScreenProgress,
+          onValidationProgress: setValidationProgress,
+        },
+      );
 
-    if (screeningAbortRef.current !== controller) return;
-    setScreenResults(outcome.results);
-    setScreenProgress((current) => ({
-      ...current,
-      completed: outcome.evaluatedCount,
-      total: outcome.totalCandidates,
-      failed: outcome.failedCount,
-    }));
-    setScreening(false);
-    screeningAbortRef.current = null;
+      if (screeningAbortRef.current !== controller) return;
+      setScreenResults(outcome.singleResults);
+      setCombinationResults(outcome.results);
+      setScreenResultsObjective(runObjective);
+      setValidationReport(outcome.validationReport);
+      setScreenProgress((current) => ({
+        ...current,
+        completed: outcome.evaluatedCount,
+        total: outcome.totalCandidates,
+        failed: outcome.failedCount,
+      }));
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setScreeningError(
+          error instanceof ScreeningValidationError
+            ? error.code
+            : "run",
+        );
+      }
+    } finally {
+      if (screeningAbortRef.current === controller) {
+        setScreening(false);
+        screeningAbortRef.current = null;
+      }
+    }
   };
 
   const stopScreening = () => {
     screeningAbortRef.current?.abort();
   };
 
-  const startCombinationScreening = async () => {
-    if (!series?.bars.length) return;
-    combinationAbortRef.current?.abort();
-    const controller = new AbortController();
-    combinationAbortRef.current = controller;
-    setCombinationScreening(true);
-    setCombinationResults([]);
-    setCombinationProgress(emptyCombinationProgress());
-
-    const outcome = await optimizeStrategyCombinations(
-      series.bars,
-      {
-        initialCash,
-        commissionRate: commissionPercent / 100,
-        slippageRate: slippagePercent / 100,
-        startTime: startDate,
-        endTime: endDate,
-        interval: DAILY_INTERVAL,
-        executionPolicy: HISTORICAL_EXECUTION_POLICY,
-      },
-      {
-        maxPerStrategy: combinationMaxParameterSets,
-        objective: combinationScreeningObjective,
-        signal: controller.signal,
-        onProgress: setCombinationProgress,
-      },
-    );
-
-    if (combinationAbortRef.current !== controller) return;
-    setCombinationResults(outcome.results);
-    setCombinationProgress((current) => ({
-      ...current,
-      completed: outcome.evaluatedCount,
-      total: outcome.totalCandidates,
-      failed: outcome.failedCount,
-    }));
-    setCombinationScreening(false);
-    combinationAbortRef.current = null;
-  };
-
-  const stopCombinationScreening = () => {
-    combinationAbortRef.current?.abort();
-  };
-
   const chooseInstrument = (nextInstrument: MarketInstrument) => {
     resetScreening();
-    pendingSavedBacktestRef.current = null;
+    clearMarketSeries();
     setInstrument(nextInstrument);
     setQuery("");
     setSearchResults([]);
@@ -1340,14 +2246,247 @@ export function MarketWorkspace() {
   const maxDate = series?.bars.length
     ? datePart(series.bars[series.bars.length - 1].time)
     : "";
-  const screeningBusy = screening || combinationScreening;
-  const bestCombination = combinationResults[0] ?? null;
+  const activeInstrument = series?.instrument ?? instrument;
+  const activeInstrumentKey = savedBacktestInstrumentKey(activeInstrument);
+  const sharedRangeSessions =
+    sampleValidationPeriods[0]?.sessions ??
+    DEFAULT_SAMPLE_VALIDATION_SESSIONS;
+  const maximumSharedRangeSessions = Math.max(
+    3,
+    series?.bars.length ?? DEFAULT_SAMPLE_VALIDATION_SESSIONS,
+  );
+  const applySharedTradingSessionRange = (
+    range: ReturnType<typeof resolveTradingSessionRange>,
+  ) => {
+    if (!range) return;
+    const normalizedRange =
+      range.sessions >= 3 || !series?.bars.length
+        ? range
+        : resolveTrailingTradingSessionRange(
+            series.bars,
+            3,
+            range.endTime,
+          );
+    if (!normalizedRange) return;
+    sharedRangeRef.current = {
+      startDate: normalizedRange.startTime,
+      endDate: normalizedRange.endTime,
+    };
+    sharedRangeSessionsRef.current = normalizedRange.sessions;
+    setStartDate(normalizedRange.startTime);
+    setEndDate(normalizedRange.endTime);
+    setSampleValidationPeriods([
+      { sessions: normalizedRange.sessions, weight: 100 },
+    ]);
+  };
+  const updateSharedRangeFromDates = (
+    nextStartDate: string,
+    nextEndDate: string,
+  ) => {
+    if (!series?.bars.length) return;
+    applySharedTradingSessionRange(
+      resolveTradingSessionRange(
+        series.bars,
+        nextStartDate,
+        nextEndDate,
+      ),
+    );
+  };
+  const updateSharedRangeFromSessions = (requestedSessions: number) => {
+    const sessions = Math.min(
+      Math.max(
+        Number.isFinite(requestedSessions)
+          ? Math.floor(requestedSessions)
+          : 3,
+        3,
+      ),
+      maximumSharedRangeSessions,
+    );
+    sharedRangeSessionsRef.current = sessions;
+    if (!series?.bars.length) {
+      setSampleValidationPeriods([{ sessions, weight: 100 }]);
+      return;
+    }
+    applySharedTradingSessionRange(
+      resolveTrailingTradingSessionRange(
+        series.bars,
+        sessions,
+        endDate || maxDate,
+      ),
+    );
+  };
+  const savedBacktestRangeMetrics = useMemo(() => {
+    const metrics = new Map<number, BacktestPerformance | null>();
+    if (!series?.bars.length || !startDate || !endDate) return metrics;
+    for (const saved of savedBacktests) {
+      if (
+        saved.interval !== DAILY_INTERVAL ||
+        savedBacktestInstrumentKey(saved.instrument) !==
+          activeInstrumentKey
+      ) {
+        continue;
+      }
+      try {
+        metrics.set(
+          saved.id,
+          runStrategyPlanRangeBacktest(series.bars, saved.plan, {
+            initialCash: saved.initialCash,
+            commissionRate: saved.commissionPercent / 100,
+            slippageRate: saved.slippagePercent / 100,
+            startTime: startDate,
+            endTime: endDate,
+            interval: DAILY_INTERVAL,
+            executionPolicy: HISTORICAL_EXECUTION_POLICY,
+            entryFilter: saved.plan.entryFilter,
+          }),
+        );
+      } catch {
+        metrics.set(saved.id, null);
+      }
+    }
+    return metrics;
+  }, [
+    activeInstrumentKey,
+    endDate,
+    savedBacktests,
+    series,
+    startDate,
+  ]);
+  const screeningBusy = screening;
+  const resultsValidationMode =
+    screenResults[0]?.screeningValidation?.mode ??
+    combinationResults[0]?.screeningValidation?.mode ??
+    null;
+  const hasScreeningResults =
+    screenResults.length > 0 || combinationResults.length > 0;
+  const screeningResultEntryFilter =
+    screenResults[0]?.entryFilter ??
+    combinationResults[0]?.entryFilter ??
+    null;
+  const strategyShortlist = useMemo(
+    () =>
+      selectStrategyShortlist(
+        screenResults,
+        combinationResults,
+        series?.bars ?? [],
+        {
+          objective: screenResultsObjective,
+          selectionScore: (result) => {
+            const screeningResult = result as
+              | ScreeningSingleResult
+              | ScreeningCombinationResult;
+            if (
+              screeningResult.screeningValidation?.selectionScore !==
+              undefined
+            ) {
+              return (
+                screeningResult.screeningValidation.selectionScore ??
+                null
+              );
+            }
+            return screeningObjectiveValue(
+              screeningResult.screeningValidation
+                ?.rankingPerformance ?? screeningResult,
+              screenResultsObjective,
+            );
+          },
+        },
+      ),
+    [
+      combinationResults,
+      screenResults,
+      screenResultsObjective,
+      series?.bars,
+    ],
+  );
+  const strategyShortlistDeputyCount = strategyShortlist.filter(
+    (entry) => entry.role === "secondary",
+  ).length;
+  const strategyShortlistNeedsIndependentDeputies =
+    strategyShortlist.length > 0 &&
+    strategyShortlistDeputyCount <
+      DEFAULT_STRATEGY_SHORTLIST_DEPUTY_COUNT;
+  const screenProgressStageIndex =
+    screenProgress.stage === "strategies"
+      ? 0
+      : screenProgress.stage === "entryFilters"
+        ? 1
+        : screenProgress.stage === "pairs"
+          ? 2
+          : 3;
+  const screenProgressValue =
+    screenProgressStageIndex +
+    (screenProgress.stageTotal > 0
+      ? Math.min(
+          Math.max(
+            screenProgress.stageCompleted / screenProgress.stageTotal,
+            0,
+          ),
+          1,
+        )
+      : screenProgressStageIndex > 0
+        ? 1
+        : 0);
+  const validationPhaseValue = validationProgress
+    ? validationProgress.phase === "optimization"
+      ? screenProgressValue
+      : validationProgress.phase === "selection"
+        ? 4 +
+          (validationProgress.mode === "sample"
+            ? validationProgress.foldIndex
+            : 0) +
+          (validationProgress.total > 0
+            ? validationProgress.completed / validationProgress.total
+            : 0)
+        : validationProgress.phase === "display"
+          ? 4 +
+            validationProgress.foldCount +
+            (validationProgress.total > 0
+              ? validationProgress.completed /
+                validationProgress.total
+              : 0)
+        : 5 +
+          (validationProgress.total > 0
+            ? validationProgress.completed / validationProgress.total
+            : 0)
+    : 0;
+  const validationProgressMaximum =
+    validationProgress?.mode === "rolling"
+      ? Math.max(validationProgress.foldCount * 5, 1)
+      : validationProgress?.mode === "range"
+        ? 6
+        : 5 + (validationProgress?.foldCount ?? 3);
+  const validationProgressValue = validationProgress
+    ? validationProgress.mode === "rolling"
+      ? validationProgress.foldIndex * 5 +
+        Math.min(validationPhaseValue, 5)
+      : validationPhaseValue
+    : screenProgressValue;
+  const screeningProgressMaximum = validationProgress
+    ? validationProgressMaximum
+    : 4;
+  const selectedValidationCandidateName = (
+    reference: ScreeningCandidateReference,
+  ) => {
+    const strategyAName = copy.strategies[reference.strategyAId].name;
+    return reference.strategyBId
+      ? `${strategyAName} + ${copy.strategies[reference.strategyBId].name}`
+      : strategyAName;
+  };
   const selectedStrategySummary = [
-    ...(strategyPlan?.long
-      ? [copy.strategies[strategyPlan.long.strategyId].name]
+    ...(strategyPlan?.strategyA
+      ? [copy.strategies[strategyPlan.strategyA.strategyId].name]
       : []),
-    ...(strategyPlan?.short
-      ? [copy.strategies[strategyPlan.short.strategyId].name]
+    ...(strategyPlan?.strategyB
+      ? [copy.strategies[strategyPlan.strategyB.strategyId].name]
+      : []),
+  ].join(" + ");
+  const appliedStrategySummary = [
+    ...(appliedStrategyPlan?.strategyA
+      ? [copy.strategies[appliedStrategyPlan.strategyA.strategyId].name]
+      : []),
+    ...(appliedStrategyPlan?.strategyB
+      ? [copy.strategies[appliedStrategyPlan.strategyB.strategyId].name]
       : []),
   ].join(" + ");
 
@@ -1405,12 +2544,13 @@ export function MarketWorkspace() {
 
       <section className="instrument-strip">
         <div className="instrument-identity">
-          <span className="exchange-badge">{instrument.exchange}</span>
+          <span className="exchange-badge">{activeInstrument.exchange}</span>
           <div>
-            <h1>{series?.instrument.name ?? instrument.name}</h1>
+            <h1>{activeInstrument.name}</h1>
             <p>
-              {instrument.exchange}:{instrument.code} {copy.common.separator}{" "}
-              {copy.assetTypes[instrument.assetType]}
+              {activeInstrument.exchange}:{activeInstrument.code}{" "}
+              {copy.common.separator}{" "}
+              {copy.assetTypes[activeInstrument.assetType]}
             </p>
           </div>
         </div>
@@ -1472,11 +2612,46 @@ export function MarketWorkspace() {
               ? `${copy.liveGuidance.descriptions[liveGuidance.action]} ${copy.common.separator} ${liveGuidance.barTime}`
               : copy.liveGuidance.waitingForData}
           </small>
+          {liveGuidance?.orderPrices.map((order) => (
+            <small key={order.slot}>
+              {[
+                order.entryPrice !== null
+                  ? `${order.slot} ${copy.liveGuidance.todayEntryPrice} ${formatNumber(
+                      order.entryPrice,
+                    )}`
+                  : null,
+                order.exitPrice !== null
+                  ? `${order.slot} ${copy.liveGuidance.todayExitPrice} ${formatNumber(
+                      order.exitPrice,
+                    )}`
+                  : null,
+                order.pendingNextOpenAction
+                  ? `${order.slot} ${
+                      copy.liveGuidance.pendingNextOpen[
+                        order.pendingNextOpenAction
+                      ]
+                    }`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(` ${copy.common.separator} `)}
+            </small>
+          ))}
           <em>
-            {copy.liveGuidance.execution[manualExecutionWindow]}{" "}
+            {copy.liveGuidance.execution[liveGuidance?.executionMode ?? "next-open"]}{" "}
             {copy.common.separator} {copy.liveGuidance.disclosure}{" "}
             {copy.common.separator}{" "}
-            {copy.liveGuidance.autoRefresh}
+             {copy.liveGuidance.autoRefresh}
+             {series?.latestBarStatus === "in-progress"
+               ? ` ${copy.common.separator} ${copy.liveGuidance.inProgressBar}`
+               : series?.latestBarStatus === "unknown"
+                 ? ` ${copy.common.separator} ${copy.liveGuidance.unknownBarStatus}`
+                 : ""}
+             {liveGuidance?.orderPrices.some(
+              (order) => order.pendingNextOpenAction !== null,
+            )
+              ? ` ${copy.common.separator} ${copy.liveGuidance.pendingGapOverride}`
+              : ""}
           </em>
         </div>
 
@@ -1536,7 +2711,7 @@ export function MarketWorkspace() {
                 className={`${focused ? "focused" : ""} ${
                   visible ? "visible" : ""
                 }`.trim()}
-                onClick={() => focusIndicator(item.id)}
+                onClick={() => toggleIndicator(item.id)}
                 title={accessibleLabel}
               >
                 {copy.indicators[item.id].short}
@@ -1638,7 +2813,7 @@ export function MarketWorkspace() {
                   {copy.indicatorSettings.activeStrategy}{" "}
                   {copy.common.separator} {copy.chart.strategyLines.prefix}{" "}
                   {copy.common.separator}{" "}
-                  {selectedStrategySummary || copy.lab.noStrategy}
+                  {appliedStrategySummary || copy.lab.noStrategy}
                 </small>
               </strong>
             </div>
@@ -1673,8 +2848,15 @@ export function MarketWorkspace() {
                     <span>
                       {series.bars.length} {copy.chart.bars}
                     </span>
-                    <span>{copy.sources[series.source]}</span>
-                    <span>
+                     <span>{copy.sources[series.source]}</span>
+                     <span>
+                       {
+                         copy.chart.latestBarStatus[
+                           series.latestBarStatus
+                         ]
+                       }
+                     </span>
+                     <span>
                       {copy.marketStats.asOf} {lastUpdated}
                     </span>
                     <span>{copy.liveGuidance.autoRefresh}</span>
@@ -1706,24 +2888,37 @@ export function MarketWorkspace() {
                 </button>
               </div>
             )}
-            {series && (
-              <PriceChart
+             {series && (
+               <PriceChart
                 bars={series.bars}
                 trades={
-                  backtest && "trades" in backtest
-                    ? backtest.trades
+                  appliedBacktest && "trades" in appliedBacktest
+                    ? appliedBacktest.trades
                     : []
                 }
                 tradeMarkers={allocationTradeMarkers}
-                dataKey={`${instrument.secid}:${DAILY_INTERVAL}`}
+                dataKey={`${activeInstrument.provider}:${activeInstrument.secid}:${DAILY_INTERVAL}`}
                 chartType={chartType}
                 visibleIndicators={visibleIndicators}
                 strategyConfigurations={strategyConfigurations}
                 ariaLabel={copy.chart.aria}
                 labels={priceChartLabels}
-              />
-            )}
-          </div>
+               />
+             )}
+             {errorCode && series && (
+               <div className="chart-refresh-warning" role="status">
+                 <ShieldAlert size={14} />
+                 <span>
+                   {copy.errors[
+                     errorCode as keyof typeof copy.errors
+                   ] ?? copy.errors.UNKNOWN}
+                   {cachedPreviewTime
+                     ? ` ${copy.common.separator} ${copy.chart.cacheTime}${copy.common.colon}${cachedPreviewTime}`
+                     : ""}
+                 </span>
+               </div>
+             )}
+           </div>
         </section>
 
         <aside className="saved-shortcuts-panel panel">
@@ -1731,12 +2926,24 @@ export function MarketWorkspace() {
             <div>
               <span className="eyebrow">{copy.savedBacktests.eyebrow}</span>
               <strong>{copy.savedBacktests.title}</strong>
+              {startDate && endDate && (
+                <small className="saved-shortcuts-range">
+                  {copy.savedBacktests.returnRange}
+                  {copy.common.colon}
+                  {startDate} — {endDate}
+                  {" "}
+                  {copy.common.separator}
+                  {" "}
+                  {sharedRangeSessions}
+                  {copy.screening.tradingSessions}
+                </small>
+              )}
             </div>
             <div className="saved-shortcuts-save">
               <button
                 className={`save-backtest-button ${saveStatus}`}
                 type="button"
-                disabled={!backtest || saveStatus === "saving"}
+                disabled={!appliedBacktest || saveStatus === "saving"}
                 onClick={() => void saveCurrentBacktest()}
                 aria-label={copy.savedBacktests.save}
                 title={copy.savedBacktests.save}
@@ -1764,10 +2971,6 @@ export function MarketWorkspace() {
             className="saved-backtest-shortcuts"
             aria-label={copy.savedBacktests.title}
           >
-            <div className="saved-shortcuts-summary">
-              <span>{copy.savedBacktests.savedCount}</span>
-              <strong>{savedBacktests.length}</strong>
-            </div>
             {savedBacktestsLoading ? (
               <div className="saved-shortcuts-state">
                 <LoaderCircle className="spin" size={14} />
@@ -1781,84 +2984,325 @@ export function MarketWorkspace() {
               </div>
             ) : (
               <div className="saved-shortcuts-list">
-                {savedBacktests.map((saved) => {
-                  const active =
-                    saved.instrument.secid === instrument.secid &&
-                    saved.instrument.provider === instrument.provider;
+                {savedBacktestsError && (
+                  <div className="saved-shortcuts-inline-error" role="status">
+                    {copy.savedBacktests.loadError}
+                  </div>
+                )}
+                {savedBacktestGroups.map((group) => {
+                  const expanded =
+                    expandedSavedBacktestGroups.includes(group.key);
+                  const groupPanelId = `saved-backtest-group-${group.key.replace(
+                    /[^A-Za-z0-9_-]/g,
+                    "-",
+                  )}`;
+                  const groupDropKey = `group:${group.key}`;
                   return (
                     <div
-                      className={`saved-shortcut ${active ? "active" : ""}`}
-                      key={saved.id}
+                      className={`saved-shortcut-group ${
+                        savedBacktestDrag?.kind === "group" &&
+                        savedBacktestDrag.groupKey === group.key
+                          ? "dragging"
+                          : ""
+                      } ${
+                        savedBacktestDropTarget === groupDropKey
+                          ? "drag-over"
+                          : ""
+                      }`}
+                      key={group.key}
+                      onDragOver={(event) => {
+                        if (
+                          savedBacktestDrag?.kind === "group" &&
+                          savedBacktestDrag.groupKey !== group.key
+                        ) {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          setSavedBacktestDropTarget(groupDropKey);
+                        }
+                      }}
+                      onDrop={(event) =>
+                        dropSavedBacktestGroup(event, group.key)
+                      }
                     >
-                      <button
-                        className="saved-shortcut-main"
-                        type="button"
-                        onClick={() => openSavedBacktest(saved)}
-                        title={copy.savedBacktests.open}
-                      >
-                        <span className="saved-shortcut-name">
-                          <strong>{saved.instrument.name}</strong>
-                          <b
-                            className={
-                              saved.metrics.totalReturn >= 0
-                                ? "positive"
-                                : "negative"
+                      <div className="saved-shortcut-group-heading">
+                        <button
+                          className="saved-shortcut-drag-handle"
+                          type="button"
+                          draggable={!savedBacktestOrderSaving}
+                          onDragStart={(event) =>
+                            startSavedBacktestDrag(event, {
+                              kind: "group",
+                              groupKey: group.key,
+                            })
+                          }
+                          onDragEnd={finishSavedBacktestDrag}
+                          onKeyDown={(event) => {
+                            if (event.key === "ArrowUp") {
+                              event.preventDefault();
+                              moveSavedBacktestGroupByOffset(group.key, -1);
+                            } else if (event.key === "ArrowDown") {
+                              event.preventDefault();
+                              moveSavedBacktestGroupByOffset(group.key, 1);
                             }
-                          >
-                            {formatPercent(
-                              saved.metrics.totalReturn,
-                              true,
-                            )}
-                          </b>
-                        </span>
-                        <small>
-                          {saved.instrument.exchange}:{saved.instrument.code}
-                          {" "}
-                          {copy.common.separator}{" "}
-                          {copy.intervals[saved.interval]}
-                          {" "}
-                          {copy.common.separator}{" "}
-                          {[
-                            saved.plan.long
-                              ? copy.strategies[
-                                  saved.plan.long.strategyId
-                                ].name
-                              : null,
-                            saved.plan.short
-                              ? copy.strategies[
-                                  saved.plan.short.strategyId
-                                ].name
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" + ")}
-                          {" "}
-                          {copy.common.separator}{" "}
-                          {saved.plan.long
-                            ? `A ${Math.round(saved.plan.longAllocation * 100)}%`
-                            : ""}
-                          {saved.plan.long && saved.plan.short ? " + " : ""}
-                          {saved.plan.short
-                            ? `B ${Math.round(saved.plan.shortAllocation * 100)}%`
-                            : ""}
-                        </small>
-                        {saved.interval !== DAILY_INTERVAL && (
-                          <span className="saved-shortcut-legacy">
-                            {copy.savedBacktests.legacyIntervalPrefix}{" "}
-                            {copy.intervals[saved.interval]}{" "}
-                            {copy.savedBacktests.legacyIntervalSuffix}
+                          }}
+                          aria-label={`${copy.savedBacktests.reorderGroup} ${group.instrument.name}`}
+                        >
+                          <GripVertical size={14} />
+                        </button>
+                        <button
+                          className="saved-shortcut-group-toggle"
+                          type="button"
+                          onClick={() =>
+                            toggleSavedBacktestGroup(group.key)
+                          }
+                          aria-expanded={expanded}
+                          aria-controls={groupPanelId}
+                        >
+                          {expanded ? (
+                            <ChevronDown size={14} />
+                          ) : (
+                            <ChevronRight size={14} />
+                          )}
+                          <span>
+                            <strong>{group.instrument.name}</strong>
+                            <small>
+                              {group.instrument.exchange}:
+                              {group.instrument.code}
+                            </small>
                           </span>
-                        )}
-                      </button>
-                      <button
-                        className="saved-shortcut-delete"
-                        type="button"
-                        onClick={() => void deleteSavedBacktest(saved.id)}
-                        aria-label={`${copy.savedBacktests.remove} ${saved.instrument.name}`}
-                        title={copy.savedBacktests.remove}
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                          <b>
+                            {group.records.length}
+                            {copy.savedBacktests.savedPlans}
+                          </b>
+                        </button>
+                      </div>
+
+                      {expanded && (
+                        <div
+                          className="saved-shortcut-group-records"
+                          id={groupPanelId}
+                        >
+                          {group.records.map((saved) => {
+                            const requestedInstrumentActive =
+                              saved.instrument.secid === instrument.secid &&
+                              saved.instrument.provider ===
+                                instrument.provider;
+                            const resolvedInstrumentActive =
+                              saved.instrument.secid ===
+                                activeInstrument.secid &&
+                              saved.instrument.provider ===
+                                activeInstrument.provider;
+                            const active =
+                              (requestedInstrumentActive ||
+                                resolvedInstrumentActive) &&
+                              saved.interval === DAILY_INTERVAL &&
+                              appliedStrategyPlan !== null &&
+                              strategyPlansEqual(
+                                saved.plan,
+                                appliedStrategyPlan,
+                              ) &&
+                              saved.initialCash === initialCash &&
+                              saved.commissionPercent ===
+                                commissionPercent &&
+                              saved.slippagePercent === slippagePercent;
+                            const indicatorsActive =
+                              indicatorConfigurationsEqual(
+                                saved.indicators,
+                                visibleIndicators,
+                              );
+                            const strategyLabel = [
+                              saved.plan.strategyA
+                                ? copy.strategies[
+                                    saved.plan.strategyA.strategyId
+                                  ].name
+                                : null,
+                              saved.plan.strategyB
+                                ? copy.strategies[
+                                    saved.plan.strategyB.strategyId
+                                  ].name
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" + ");
+                            const recordDropKey = `record:${saved.id}`;
+                            const currentRangeMetrics =
+                              savedBacktestRangeMetrics.get(saved.id) ??
+                              null;
+                            const usesCurrentRange =
+                              savedBacktestRangeMetrics.has(saved.id);
+                            const displayedReturn =
+                              currentRangeMetrics?.totalReturn ?? null;
+                            return (
+                              <div
+                                className={`saved-shortcut ${
+                                  active && indicatorsActive
+                                    ? "active"
+                                    : ""
+                                } ${
+                                  savedBacktestDrag?.kind === "record" &&
+                                  savedBacktestDrag.recordId === saved.id
+                                    ? "dragging"
+                                    : ""
+                                } ${
+                                  savedBacktestDropTarget === recordDropKey
+                                    ? "drag-over"
+                                    : ""
+                                }`}
+                                key={saved.id}
+                                onDragOver={(event) => {
+                                  if (
+                                    savedBacktestDrag?.kind === "record" &&
+                                    savedBacktestDrag.groupKey === group.key &&
+                                    savedBacktestDrag.recordId !== saved.id
+                                  ) {
+                                    event.preventDefault();
+                                    event.dataTransfer.dropEffect = "move";
+                                    setSavedBacktestDropTarget(recordDropKey);
+                                  }
+                                }}
+                                onDrop={(event) =>
+                                  dropSavedBacktestRecord(
+                                    event,
+                                    group.key,
+                                    saved.id,
+                                  )
+                                }
+                              >
+                                <button
+                                  className="saved-shortcut-drag-handle"
+                                  type="button"
+                                  draggable={!savedBacktestOrderSaving}
+                                  onDragStart={(event) =>
+                                    startSavedBacktestDrag(event, {
+                                      kind: "record",
+                                      groupKey: group.key,
+                                      recordId: saved.id,
+                                    })
+                                  }
+                                  onDragEnd={finishSavedBacktestDrag}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "ArrowUp") {
+                                      event.preventDefault();
+                                      moveSavedBacktestRecordByOffset(
+                                        group.key,
+                                        saved.id,
+                                        -1,
+                                      );
+                                    } else if (
+                                      event.key === "ArrowDown"
+                                    ) {
+                                      event.preventDefault();
+                                      moveSavedBacktestRecordByOffset(
+                                        group.key,
+                                        saved.id,
+                                        1,
+                                      );
+                                    }
+                                  }}
+                                  aria-label={`${copy.savedBacktests.reorderRecord} ${strategyLabel}`}
+                                >
+                                  <GripVertical size={12} />
+                                </button>
+                                <button
+                                  className="saved-shortcut-main"
+                                  type="button"
+                                  onClick={() => openSavedBacktest(saved)}
+                                  aria-label={`${copy.savedBacktests.open} ${group.instrument.name} ${strategyLabel}`}
+                                >
+                                  <span className="saved-shortcut-name">
+                                    <strong>{strategyLabel}</strong>
+                                    <b
+                                      className={
+                                        displayedReturn === null
+                                          ? "neutral"
+                                          : displayedReturn >= 0
+                                            ? "positive"
+                                            : "negative"
+                                      }
+                                    >
+                                      {displayedReturn === null
+                                        ? copy.common.unavailable
+                                        : formatPercent(
+                                            displayedReturn,
+                                            true,
+                                          )}
+                                    </b>
+                                  </span>
+                                  <small>
+                                    {usesCurrentRange
+                                      ? copy.savedBacktests.currentRange
+                                      : copy.savedBacktests
+                                          .switchToCalculate}
+                                  </small>
+                                  <small>
+                                    {copy.intervals[saved.interval]}{" "}
+                                    {copy.common.separator}{" "}
+                                    {saved.plan.strategyA
+                                      ? `A ${Math.round(
+                                          saved.plan
+                                            .strategyAAllocation * 100,
+                                        )}%`
+                                      : ""}
+                                    {saved.plan.strategyA &&
+                                    saved.plan.strategyB
+                                      ? " + "
+                                      : ""}
+                                    {saved.plan.strategyB
+                                      ? `B ${Math.round(
+                                          saved.plan
+                                            .strategyBAllocation * 100,
+                                        )}%`
+                                      : ""}
+                                  </small>
+                                  <small>
+                                    {copy.savedBacktests.indicatorsPrefix}{" "}
+                                    {saved.indicators.length > 0
+                                      ? saved.indicators
+                                          .map(
+                                            (indicator) =>
+                                              copy.indicators[
+                                                indicator.id
+                                              ].short,
+                                          )
+                                          .join(" + ")
+                                      : copy.savedBacktests.noIndicators}
+                                  </small>
+                                  <small>
+                                    {copy.entryFilter.savedPrefix}{" "}
+                                    {formatMovingAverageSlopeFilter(
+                                      saved.plan.entryFilter,
+                                    )}
+                                  </small>
+                                  {saved.interval !== DAILY_INTERVAL && (
+                                    <span className="saved-shortcut-legacy">
+                                      {
+                                        copy.savedBacktests
+                                          .legacyIntervalPrefix
+                                      }{" "}
+                                      {copy.intervals[saved.interval]}{" "}
+                                      {
+                                        copy.savedBacktests
+                                          .legacyIntervalSuffix
+                                      }
+                                    </span>
+                                  )}
+                                </button>
+                                <button
+                                  className="saved-shortcut-delete"
+                                  type="button"
+                                  onClick={() =>
+                                    void deleteSavedBacktest(saved.id)
+                                  }
+                                  aria-label={`${copy.savedBacktests.remove} ${group.instrument.name} ${strategyLabel}`}
+                                  title={copy.savedBacktests.remove}
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1877,14 +3321,28 @@ export function MarketWorkspace() {
                 <strong>
                   {selectedStrategySummary || copy.lab.noStrategy}
                 </strong>
-                {longStrategyId && (
-                  <span className="horizon-badge long">
-                    {copy.strategyHorizons.long}
+                {strategyAId && strategyBId && relativeLongStrategy && (
+                  <span
+                    className={`horizon-badge ${
+                      relativeLongStrategy === "strategyA" ? "long" : "short"
+                    }`}
+                  >
+                    A ·{" "}
+                    {relativeLongStrategy === "strategyA"
+                      ? copy.lab.relativeLong
+                      : copy.lab.relativeShort}
                   </span>
                 )}
-                {shortStrategyId && (
-                  <span className="horizon-badge short">
-                    {copy.strategyHorizons.short}
+                {strategyAId && strategyBId && relativeLongStrategy && (
+                  <span
+                    className={`horizon-badge ${
+                      relativeLongStrategy === "strategyB" ? "long" : "short"
+                    }`}
+                  >
+                    B ·{" "}
+                    {relativeLongStrategy === "strategyB"
+                      ? copy.lab.relativeLong
+                      : copy.lab.relativeShort}
                   </span>
                 )}
               </div>
@@ -1893,7 +3351,6 @@ export function MarketWorkspace() {
               <button
                 className="apply-current-strategy-button"
                 type="button"
-                disabled={!strategyPlan}
                 onClick={applyCurrentStrategyToChart}
                 aria-label={copy.lab.applyToChart}
                 title={copy.lab.applyToChart}
@@ -1909,69 +3366,85 @@ export function MarketWorkspace() {
           <div className="strategy-selector-grid">
             <div className="strategy-selector-card">
               <label className="field-label">
-                <span>{copy.lab.longStrategy}</span>
+                <span>{copy.lab.strategyA}</span>
                 <select
-                  name="long-strategy"
-                  value={longStrategyId}
+                  name="strategy-a"
+                  value={strategyAId}
                   onChange={(event) =>
-                    selectLongStrategy(
+                    selectStrategyA(
                       event.target.value as StrategyId | "",
                     )
                   }
                 >
-                  <option value="">{copy.lab.noLongStrategy}</option>
-                  {longStrategies.map((strategy) => (
-                    <option key={strategy.id} value={strategy.id}>
+                  <option value="">{copy.lab.noStrategyA}</option>
+                  {STRATEGIES.map((strategy) => (
+                    <option
+                      key={strategy.id}
+                      value={strategy.id}
+                      disabled={
+                        strategyBId
+                          ? areStrategiesEquivalent(strategy.id, strategyBId)
+                          : false
+                      }
+                    >
                       {copy.strategies[strategy.id].name}
                     </option>
                   ))}
                 </select>
                 <small>
-                  {longStrategyId
-                    ? copy.strategies[longStrategyId].description
-                    : copy.lab.noLongDescription}
+                  {strategyAId
+                    ? copy.strategies[strategyAId].description
+                    : copy.lab.noStrategyADescription}
                 </small>
               </label>
-              {longStrategyId && (
+              {strategyAId && (
                 <StrategyParameterFields
-                  heading={copy.lab.longParameters}
-                  namePrefix="long"
-                  parameters={longParameters}
-                  onChange={setLongParameters}
+                  heading={copy.lab.strategyAParameters}
+                  namePrefix="strategy-a"
+                  parameters={strategyAParameters}
+                  onChange={setStrategyAParameters}
                 />
               )}
             </div>
             <div className="strategy-selector-card">
               <label className="field-label">
-                <span>{copy.lab.shortStrategy}</span>
+                <span>{copy.lab.strategyB}</span>
                 <select
-                  name="short-strategy"
-                  value={shortStrategyId}
+                  name="strategy-b"
+                  value={strategyBId}
                   onChange={(event) =>
-                    selectShortStrategy(
+                    selectStrategyB(
                       event.target.value as StrategyId | "",
                     )
                   }
                 >
-                  <option value="">{copy.lab.noShortStrategy}</option>
-                  {shortStrategies.map((strategy) => (
-                    <option key={strategy.id} value={strategy.id}>
+                  <option value="">{copy.lab.noStrategyB}</option>
+                  {STRATEGIES.map((strategy) => (
+                    <option
+                      key={strategy.id}
+                      value={strategy.id}
+                      disabled={
+                        strategyAId
+                          ? areStrategiesEquivalent(strategy.id, strategyAId)
+                          : false
+                      }
+                    >
                       {copy.strategies[strategy.id].name}
                     </option>
                   ))}
                 </select>
                 <small>
-                  {shortStrategyId
-                    ? copy.strategies[shortStrategyId].description
-                    : copy.lab.noShortDescription}
+                  {strategyBId
+                    ? copy.strategies[strategyBId].description
+                    : copy.lab.noStrategyBDescription}
                 </small>
               </label>
-              {shortStrategyId && (
+              {strategyBId && (
                 <StrategyParameterFields
-                  heading={copy.lab.shortParameters}
-                  namePrefix="short"
-                  parameters={shortParameters}
-                  onChange={setShortParameters}
+                  heading={copy.lab.strategyBParameters}
+                  namePrefix="strategy-b"
+                  parameters={strategyBParameters}
+                  onChange={setStrategyBParameters}
                 />
               )}
             </div>
@@ -1979,43 +3452,69 @@ export function MarketWorkspace() {
 
           <div className="allocation-grid">
             <label className="field-label">
-              <span>{copy.lab.longAllocation}</span>
+              <span>{copy.lab.strategyAAllocation}</span>
               <select
-                name="long-allocation"
-                value={longAllocationPercent}
-                disabled={!longStrategyId}
+                name="strategy-a-allocation"
+                value={
+                  strategyPlan?.strategyA
+                    ? Math.round(strategyPlan.strategyAAllocation * 100)
+                    : 0
+                }
+                disabled={!strategyAId || !strategyBId}
                 onChange={(event) =>
-                  selectLongAllocation(Number(event.target.value))
+                  selectStrategyAAllocation(Number(event.target.value))
                 }
               >
-                {LONG_ALLOCATION_OPTIONS.map((allocation) => (
-                  <option key={allocation} value={allocation}>
-                    {allocation}%
-                  </option>
-                ))}
+                {!strategyAId ? (
+                  <option value={0}>0%</option>
+                ) : !strategyBId ? (
+                  <option value={100}>100%</option>
+                ) : (
+                  STRATEGY_ALLOCATION_OPTIONS.map((allocation) => (
+                    <option key={allocation} value={allocation}>
+                      {allocation}%
+                    </option>
+                  ))
+                )}
               </select>
-              <small>{copy.lab.longAllocationHint}</small>
+              <small>{copy.lab.strategyAAllocationHint}</small>
             </label>
             <label className="field-label">
-              <span>{copy.lab.shortAllocation}</span>
+              <span>{copy.lab.strategyBAllocation}</span>
               <select
-                name="short-allocation"
-                value={shortAllocationPercent}
-                disabled={!shortStrategyId}
+                name="strategy-b-allocation"
+                value={
+                  strategyPlan?.strategyB
+                    ? Math.round(strategyPlan.strategyBAllocation * 100)
+                    : 0
+                }
+                disabled={!strategyAId || !strategyBId}
                 onChange={(event) =>
-                  selectShortAllocation(Number(event.target.value))
+                  selectStrategyBAllocation(Number(event.target.value))
                 }
               >
-                {!shortStrategyId && <option value={0}>0%</option>}
-                {SHORT_ALLOCATION_OPTIONS.map((allocation) => (
-                  <option key={allocation} value={allocation}>
-                    {allocation}%
-                  </option>
-                ))}
+                {!strategyBId ? (
+                  <option value={0}>0%</option>
+                ) : !strategyAId ? (
+                  <option value={100}>100%</option>
+                ) : (
+                  STRATEGY_ALLOCATION_OPTIONS.map((allocation) => (
+                    <option key={allocation} value={allocation}>
+                      {allocation}%
+                    </option>
+                  ))
+                )}
               </select>
-              <small>{copy.lab.shortAllocationHint}</small>
+              <small>{copy.lab.strategyBAllocationHint}</small>
             </label>
           </div>
+
+          <MovingAverageSlopeFilterFields
+            context="lab"
+            namePrefix="strategy-entry-filter"
+            draft={strategyEntryFilterDraft}
+            onChange={setStrategyEntryFilterDraft}
+          />
 
           <div className="date-grid">
             <label className="field-label">
@@ -2026,8 +3525,10 @@ export function MarketWorkspace() {
                 min={minDate}
                 max={endDate || maxDate}
                 onChange={(event) => {
-                  resetScreening();
-                  setStartDate(event.target.value);
+                  updateSharedRangeFromDates(
+                    event.target.value,
+                    endDate,
+                  );
                 }}
               />
             </label>
@@ -2039,8 +3540,10 @@ export function MarketWorkspace() {
                 min={startDate || minDate}
                 max={maxDate}
                 onChange={(event) => {
-                  resetScreening();
-                  setEndDate(event.target.value);
+                  updateSharedRangeFromDates(
+                    startDate,
+                    event.target.value,
+                  );
                 }}
               />
             </label>
@@ -2055,7 +3558,6 @@ export function MarketWorkspace() {
                 min={1000}
                 step={10000}
                 onChange={(event) => {
-                  resetScreening();
                   setInitialCash(Math.max(Number(event.target.value), 1000))
                 }}
               />
@@ -2068,7 +3570,6 @@ export function MarketWorkspace() {
                 min={0}
                 step={0.01}
                 onChange={(event) => {
-                  resetScreening();
                   setCommissionPercent(Math.max(Number(event.target.value), 0))
                 }}
               />
@@ -2081,7 +3582,6 @@ export function MarketWorkspace() {
                 min={0}
                 step={0.01}
                 onChange={(event) => {
-                  resetScreening();
                   setSlippagePercent(Math.max(Number(event.target.value), 0))
                 }}
               />
@@ -2285,120 +3785,758 @@ export function MarketWorkspace() {
 
       <section className="screening-panel panel">
         <div className="screening-intro">
-          <span className="eyebrow">{copy.screening.eyebrow}</span>
-          <h2>
-            <Sparkles size={21} />
-            {copy.screening.title}
-          </h2>
-          <p>{copy.screening.description}</p>
-          <div className="screening-config">
-            <label className="screening-control-field">
-              <span>{copy.screening.objective}</span>
-              <select
-                name="single-screening-objective"
-                value={screeningObjective}
+          <div className="screening-intro-main">
+            <div className="screening-title">
+              <span className="eyebrow">{copy.screening.eyebrow}</span>
+              <h2>
+                <Sparkles size={21} />
+                {copy.screening.title}
+              </h2>
+              <p>{copy.screening.description}</p>
+            </div>
+            <div className="screening-config">
+              <fieldset className="screening-config-group screening-optimization-group">
+                <legend>{copy.screening.optimizationGroup}</legend>
+                <div className="screening-optimization-grid">
+                  <label className="screening-control-field">
+                    <span>{copy.screening.objective}</span>
+                    <select
+                      name="strategy-screening-objective"
+                      value={screeningObjective}
+                      disabled={screeningBusy}
+                      onChange={(event) => {
+                        setScreeningObjective(
+                          event.target.value as ScreeningObjective,
+                        );
+                      }}
+                    >
+                      {SCREENING_OBJECTIVES.map((value) => (
+                        <option value={value} key={value}>
+                          {copy.screening.objectives[value]}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      {
+                        copy.screening.objectiveDescriptions[
+                          screeningObjective
+                        ]
+                      }
+                    </small>
+                  </label>
+                  <div className="screening-control-field screening-full-traversal">
+                    <span>{copy.screening.parameterTraversal}</span>
+                    <strong>{copy.screening.fullTraversal}</strong>
+                    <small>{copy.screening.fullTraversalHint}</small>
+                  </div>
+                </div>
+              </fieldset>
+              <MovingAverageSlopeFilterFields
+                context="screening"
+                namePrefix="screening-entry-filter"
+                draft={screeningEntryFilterDraft}
+                onChange={setScreeningEntryFilterDraft}
                 disabled={screeningBusy}
-                onChange={(event) => {
-                  setScreeningObjective(
-                    event.target.value as ScreeningObjective,
-                  );
-                  resetSingleScreening();
-                }}
-              >
-                {SCREENING_OBJECTIVES.map((value) => (
-                  <option value={value} key={value}>
-                    {copy.screening.objectives[value]}
-                  </option>
-                ))}
-              </select>
-              <small>
-                {copy.screening.objectiveDescriptions[screeningObjective]}
-              </small>
-            </label>
-            <label className="screening-control-field">
-              <span>{copy.screening.maxPerStrategy}</span>
-              <input
-                name="single-max-parameter-sets"
-                type="number"
-                min={1}
-                max={MAX_PARAMETER_SETS_PER_STRATEGY}
-                step={50}
-                value={maxParameterSets}
-                disabled={screeningBusy}
-                onChange={(event) => {
-                  const nextValue = Number(event.target.value);
-                  setMaxParameterSets(
-                    Math.min(
-                      Math.max(
-                        Number.isFinite(nextValue)
-                          ? Math.floor(nextValue)
-                          : 1,
-                        1,
-                      ),
-                      MAX_PARAMETER_SETS_PER_STRATEGY,
-                    ),
-                  );
-                  resetSingleScreening();
-                }}
               />
-              <small>
-                {copy.screening.limitHint}{" "}
-                {MAX_PARAMETER_SETS_PER_STRATEGY}
-              </small>
-            </label>
+              <fieldset className="screening-config-group screening-validation-group">
+                <legend>{copy.screening.validationGroup}</legend>
+                <label className="screening-control-field screening-validation-mode">
+                  <span>{copy.screening.validationMode}</span>
+                  <select
+                    name="strategy-screening-validation"
+                    value={screeningValidationMode}
+                    disabled={screeningBusy}
+                    onChange={(event) => {
+                      setScreeningValidationMode(
+                        event.target.value as ScreeningValidationMode,
+                      );
+                    }}
+                  >
+                    {SCREENING_VALIDATION_MODES.map((value) => (
+                      <option value={value} key={value}>
+                        {copy.screening.validationModes[value]}
+                      </option>
+                    ))}
+                  </select>
+                  <small>
+                    {
+                      copy.screening.validationDescriptions[
+                        screeningValidationMode
+                      ]
+                    }
+                  </small>
+                </label>
+              {screeningValidationMode === "sample" && (
+                <fieldset className="screening-sample-windows">
+                  <legend>{copy.screening.samplePeriodsTitle}</legend>
+                  <label className="screening-sample-period-field">
+                    <span>{copy.screening.samplePeriodSessions}</span>
+                    <input
+                      name="strategy-sample-period-sessions"
+                      type="number"
+                      min={3}
+                      max={maximumSharedRangeSessions}
+                      step={1}
+                      value={sharedRangeSessions}
+                      disabled={screeningBusy}
+                      onChange={(event) => {
+                        updateSharedRangeFromSessions(
+                          Number(event.target.value),
+                        );
+                      }}
+                    />
+                  </label>
+                  <small>{copy.screening.samplePeriodsHint}</small>
+                </fieldset>
+              )}
+              {(screeningValidationMode === "range" ||
+                screeningValidationMode === "rolling") && (
+                <fieldset
+                  className={`screening-date-windows ${
+                    screeningValidationMode === "rolling"
+                      ? "rolling-range"
+                      : "single-range"
+                  }`}
+                >
+                  <legend>
+                    {screeningValidationMode === "rolling"
+                      ? copy.screening.rollingRangeTitle
+                      : copy.screening.rangeValidationTitle}
+                  </legend>
+                  <div className="screening-date-window">
+                    <label>
+                      <span>{copy.lab.start}</span>
+                      <input
+                        name="strategy-screening-range-start"
+                        type="date"
+                        value={
+                          screeningCustomRange.startTime || startDate
+                        }
+                        disabled={screeningBusy}
+                        onChange={(event) => {
+                          setScreeningCustomRange((current) => ({
+                            ...current,
+                            startTime: event.target.value,
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label>
+                      <span>{copy.lab.end}</span>
+                      <input
+                        name="strategy-screening-range-end"
+                        type="date"
+                        value={
+                          screeningCustomRange.endTime ||
+                          endDate ||
+                          maxDate
+                        }
+                        disabled={screeningBusy}
+                        onChange={(event) => {
+                          setScreeningCustomRange((current) => ({
+                            ...current,
+                            endTime: event.target.value,
+                          }));
+                        }}
+                      />
+                    </label>
+                  </div>
+                  {screeningValidationMode === "rolling" && (
+                    <label className="screening-control-field screening-rolling-window">
+                      <span>{copy.screening.rollingWindowYears}</span>
+                      <input
+                        name="strategy-rolling-window-years"
+                        type="number"
+                        min={1}
+                        max={30}
+                        step={1}
+                        value={rollingWindowYears}
+                        disabled={screeningBusy}
+                        onChange={(event) => {
+                          const nextValue = Number(event.target.value);
+                          setRollingWindowYears(
+                            Math.min(
+                              Math.max(
+                                Number.isFinite(nextValue)
+                                  ? Math.floor(nextValue)
+                                  : 1,
+                                1,
+                              ),
+                              30,
+                            ),
+                          );
+                        }}
+                      />
+                      <small>
+                        {copy.screening.rollingWindowYearsHint}
+                      </small>
+                    </label>
+                  )}
+                </fieldset>
+              )}
+              </fieldset>
+            </div>
+            <div className="screening-action-field">
+              <span>{copy.screening.actionLabel}</span>
+              <button
+                type="button"
+                className={`primary-action ${screening ? "stop" : ""}`}
+                disabled={!series}
+                onClick={() =>
+                  screening ? stopScreening() : void startScreening()
+                }
+              >
+                {screening ? (
+                  <Square size={14} fill="currentColor" />
+                ) : (
+                  <Sparkles size={16} />
+                )}
+                {screening ? copy.screening.stop : copy.screening.action}
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            className={`primary-action ${screening ? "stop" : ""}`}
-            disabled={!series || combinationScreening}
-            onClick={() =>
-              screening ? stopScreening() : void startScreening()
-            }
-          >
-            {screening ? (
-              <Square size={14} fill="currentColor" />
-            ) : (
-              <Sparkles size={16} />
-            )}
-            {screening ? copy.screening.stop : copy.screening.action}
-          </button>
+          <div className="screening-meta">
+            <div className="screening-meta-copy">
+              <p className="screening-status-rule">
+                {copy.screening.statusRule}
+              </p>
+              {hasScreeningResults && (
+                <p className="screening-result-context">
+                  {copy.screening.resultSnapshotNotice}
+                  {" "}
+                  {copy.screening.sampleResultMetricNotice}
+                  {" "}
+                  {copy.screening.entryFilterSnapshot}{" "}
+                  {copy.entryFilter.resultPrefix}
+                  {copy.common.colon}
+                  {formatMovingAverageSlopeFilter(
+                    screeningResultEntryFilter,
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="risk-note">
+              <ShieldAlert size={15} />
+              <span>{copy.screening.validationOverfit}</span>
+            </div>
+          </div>
+          {screeningError && (
+            <div className="screening-run-error" role="alert">
+              <ShieldAlert size={14} />
+              <span>
+                {copy.screening.validationErrors[screeningError]}
+              </span>
+            </div>
+          )}
           {screenProgress.total > 0 && (
             <div className="screening-progress" aria-live="polite">
               <div>
                 <span>
                   {screening
-                    ? copy.screening.running
+                    ? validationProgress
+                      ? `${
+                        validationProgress.mode === "rolling"
+                          ? `${copy.screening.rollingWindow} ${
+                              validationProgress.foldIndex + 1
+                            } / ${validationProgress.foldCount} ${copy.common.separator} `
+                          : validationProgress.mode === "sample" &&
+                              validationProgress.phase === "selection"
+                            ? `${copy.screening.sampleWindow} ${
+                                validationProgress.foldIndex + 1
+                              } / ${validationProgress.foldCount} ${copy.common.separator} `
+                          : ""
+                        }${
+                          validationProgress.phase === "optimization"
+                            ? screenProgress.stage === "strategies"
+                              ? copy.combinationScreening.runningStrategies
+                              : screenProgress.stage === "entryFilters"
+                                ? copy.combinationScreening
+                                    .runningEntryFilters
+                                : screenProgress.stage === "pairs"
+                                  ? copy.combinationScreening.runningPairs
+                                  : copy.combinationScreening
+                                      .runningAllocations
+                            : validationProgress.phase === "selection"
+                              ? copy.screening.runningValidation
+                              : validationProgress.phase === "display"
+                                ? copy.screening.runningDisplayMetrics
+                              : copy.screening.runningTest
+                        }`
+                      : screenProgress.stage === "strategies"
+                        ? copy.combinationScreening.runningStrategies
+                        : screenProgress.stage === "entryFilters"
+                          ? copy.combinationScreening.runningEntryFilters
+                          : screenProgress.stage === "pairs"
+                            ? copy.combinationScreening.runningPairs
+                            : copy.combinationScreening.runningAllocations
                     : screenProgress.completed < screenProgress.total
                       ? copy.screening.stopped
                     : copy.screening.completed}
                 </span>
                 <strong>
-                  {screenProgress.completed} / {screenProgress.total}
+                  {validationProgress &&
+                  validationProgress.phase !== "optimization"
+                    ? validationProgress.completed
+                    : screenProgress.stageCompleted}{" "}
+                  /{" "}
+                  {validationProgress &&
+                  validationProgress.phase !== "optimization"
+                    ? validationProgress.total
+                    : screenProgress.stageTotal}
                   {screenProgress.failed > 0
                     ? ` · ${screenProgress.failed} ${copy.screening.skipped}`
                     : ""}
                 </strong>
               </div>
               <progress
-                max={screenProgress.total}
-                value={screenProgress.completed}
+                max={screeningProgressMaximum}
+                value={validationProgressValue}
               />
             </div>
           )}
-          <div className="risk-note">
-            <ShieldAlert size={15} />
-            <span>{copy.screening.overfit}</span>
-          </div>
         </div>
 
-        <div className="screening-results">
+        {validationReport && (
+          <section className="screening-validation-report">
+            <div className="screening-validation-report-heading">
+              <div>
+                <ShieldAlert size={16} />
+                <strong>
+                  {
+                    copy.screening.validationReportTitles[
+                      validationReport.mode
+                    ]
+                  }
+                </strong>
+              </div>
+              <p>
+                {
+                  copy.screening.validationResultRules[
+                    validationReport.mode
+                  ]
+                }
+              </p>
+            </div>
+            {validationReport.mode === "sample" ? (
+              <>
+                <div className="screening-validation-windows sample">
+                  <div>
+                    <span>
+                      {copy.screening.sampleWindow} ·{" "}
+                      {validationReport.periods[0]?.sessions}{" "}
+                      {copy.screening.tradingSessions}
+                    </span>
+                    <strong>
+                      {validationReport.window.startTime} —{" "}
+                      {validationReport.window.endTime}
+                    </strong>
+                  </div>
+                </div>
+                <div className="screening-validation-summary">
+                  <div>
+                    <span>{copy.screening.selectedCandidate}</span>
+                    <strong>
+                      {selectedValidationCandidateName(
+                        validationReport.selected,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.weightedRankScore}</span>
+                    <strong>
+                      {formatNumber(
+                        validationReport.selectionScore,
+                        2,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.displayPeriodReturn}</span>
+                    <strong
+                      className={
+                        validationReport.performance.totalReturn >= 0
+                          ? "positive"
+                          : "negative"
+                      }
+                    >
+                      {formatPercent(
+                        validationReport.performance.totalReturn,
+                        true,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.longPeriodDrawdown}</span>
+                    <strong className="negative">
+                      {formatPercent(
+                        validationReport.periods.at(-1)!
+                          .performance.maxDrawdown,
+                      )}
+                    </strong>
+                  </div>
+                </div>
+                <div className="results-table-wrap screening-period-table">
+                  <table className="results-table">
+                    <thead>
+                      <tr>
+                        <th>{copy.screening.samplePeriod}</th>
+                        <th>{copy.screening.return}</th>
+                        <th>{copy.screening.drawdown}</th>
+                        <th>{copy.screening.sharpe}</th>
+                        <th>{copy.screening.normalizedRankScore}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {validationReport.periods.map((period) => (
+                        <tr key={period.sessions}>
+                          <td>
+                            {period.sessions}{" "}
+                            {copy.screening.tradingSessions}
+                          </td>
+                          <td
+                            className={
+                              period.performance.totalReturn >= 0
+                                ? "positive"
+                                : "negative"
+                            }
+                          >
+                            {formatPercent(
+                              period.performance.totalReturn,
+                              true,
+                            )}
+                          </td>
+                          <td className="negative">
+                            {formatPercent(
+                              period.performance.maxDrawdown,
+                            )}
+                          </td>
+                          <td>
+                            {formatNumber(
+                              period.performance.sharpe,
+                            )}
+                          </td>
+                          <td>
+                            {formatNumber(period.rankScore, 2)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : validationReport.mode === "range" ? (
+              <>
+                <div className="screening-validation-windows">
+                  <div>
+                    <span>{copy.screening.rangeWindow}</span>
+                    <strong>
+                      {validationReport.range.startTime} —{" "}
+                      {validationReport.range.endTime}
+                    </strong>
+                  </div>
+                </div>
+                <div className="screening-validation-summary">
+                  <div>
+                    <span>{copy.screening.selectedCandidate}</span>
+                    <strong>
+                      {selectedValidationCandidateName(
+                        validationReport.selected,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.rangeReturn}</span>
+                    <strong
+                      className={
+                        validationReport.performance.totalReturn >= 0
+                          ? "positive"
+                          : "negative"
+                      }
+                    >
+                      {formatPercent(
+                        validationReport.performance.totalReturn,
+                        true,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.drawdown}</span>
+                    <strong className="negative">
+                      {formatPercent(
+                        validationReport.performance.maxDrawdown,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.sharpe}</span>
+                    <strong>
+                      {formatNumber(
+                        validationReport.performance.sharpe,
+                      )}
+                    </strong>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="screening-validation-summary rolling">
+                  <div>
+                    <span>{copy.screening.selectedCandidate}</span>
+                    <strong>
+                      {selectedValidationCandidateName(
+                        validationReport.selected,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.weightedRankScore}</span>
+                    <strong>
+                      {formatNumber(
+                        validationReport.selectionScore,
+                        2,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.completedWindows}</span>
+                    <strong>{validationReport.folds.length}</strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.positiveWindows}</span>
+                    <strong>
+                      {validationReport.positiveFoldCount} /{" "}
+                      {validationReport.folds.length}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.averageReturn}</span>
+                    <strong
+                      className={
+                        validationReport.averageReturn >= 0
+                          ? "positive"
+                          : "negative"
+                      }
+                    >
+                      {formatPercent(
+                        validationReport.averageReturn,
+                        true,
+                      )}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screening.worstDrawdown}</span>
+                    <strong className="negative">
+                      {formatPercent(validationReport.worstDrawdown)}
+                    </strong>
+                  </div>
+                </div>
+                <details className="screening-fold-details">
+                  <summary>{copy.screening.viewRollingDetails}</summary>
+                  <div className="results-table-wrap">
+                    <table className="results-table">
+                      <thead>
+                        <tr>
+                          <th>{copy.screening.rollingWindow}</th>
+                          <th>{copy.screening.normalizedRankScore}</th>
+                          <th>{copy.screening.return}</th>
+                          <th>{copy.screening.drawdown}</th>
+                          <th>{copy.screening.sharpe}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {validationReport.folds.map((fold) => (
+                          <tr
+                            key={`${fold.window.startTime}-${fold.window.endTime}`}
+                          >
+                            <td>
+                              {fold.window.startTime} —{" "}
+                              {fold.window.endTime}
+                              {fold.partial
+                                ? ` ${copy.screening.partialWindow}`
+                                : ""}
+                            </td>
+                            <td>
+                              {formatNumber(fold.rankScore, 2)}
+                            </td>
+                            <td
+                              className={
+                                fold.performance.totalReturn >= 0
+                                  ? "positive"
+                                  : "negative"
+                              }
+                            >
+                              {formatPercent(
+                                fold.performance.totalReturn,
+                                true,
+                              )}
+                            </td>
+                            <td className="negative">
+                              {formatPercent(
+                                fold.performance.maxDrawdown,
+                              )}
+                            </td>
+                            <td>
+                              {formatNumber(fold.performance.sharpe)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </>
+            )}
+          </section>
+        )}
+
+        {strategyShortlist.length > 0 && (
+          <section
+            className="strategy-shortlist"
+            aria-labelledby="strategy-shortlist-title"
+          >
+            <div className="strategy-shortlist-heading">
+              <div>
+                <ShieldAlert size={17} />
+                <strong id="strategy-shortlist-title">
+                  {copy.shortlist.title}
+                </strong>
+              </div>
+              <p>{copy.shortlist.description}</p>
+            </div>
+            <div className="strategy-shortlist-grid">
+              {strategyShortlist.map((entry) => {
+                const strategyName =
+                  entry.kind === "single"
+                    ? copy.strategies[entry.result.strategyId].name
+                    : `${copy.strategies[entry.result.strategyAId].name} + ${
+                        copy.strategies[entry.result.strategyBId].name
+                      }`;
+                const recentExcess = entry.recentReview.recentExcessReturn;
+                return (
+                  <button
+                    className={`strategy-shortlist-card ${entry.role}`}
+                    key={entry.key}
+                    type="button"
+                    aria-label={`${copy.screening.applyToChart}: ${strategyName}`}
+                    onClick={() => applyShortlistEntry(entry)}
+                  >
+                    <span className="strategy-shortlist-card-topline">
+                      <b>
+                        {entry.role === "primary"
+                          ? copy.shortlist.primary
+                          : entry.role === "secondary"
+                            ? `${copy.shortlist.secondary} ${entry.roleIndex}`
+                            : `${copy.shortlist.alternative} ${entry.roleIndex}`}
+                      </b>
+                      <small>
+                        {entry.kind === "single"
+                          ? copy.shortlist.single
+                          : copy.shortlist.combination}
+                      </small>
+                    </span>
+                    <strong className="strategy-shortlist-name">
+                      {strategyName}
+                    </strong>
+                    <span className="strategy-shortlist-detail">
+                      {entry.kind === "single"
+                        ? Object.entries(entry.result.parameters)
+                            .map(([key, value]) => `${key} ${value}`)
+                            .join(` ${copy.common.separator} `)
+                        : `A ${Math.round(
+                            entry.result.strategyAAllocation * 100,
+                          )}% + B ${Math.round(
+                            entry.result.strategyBAllocation * 100,
+                          )}%`}
+                    </span>
+                    <dl className="strategy-shortlist-metrics">
+                      <div>
+                        <dt>{copy.screening.return}</dt>
+                        <dd
+                          className={
+                            entry.result.totalReturn >= 0
+                              ? "positive"
+                              : "negative"
+                          }
+                        >
+                          {formatPercent(entry.result.totalReturn, true)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{copy.screening.drawdown}</dt>
+                        <dd className="negative">
+                          {formatPercent(entry.result.maxDrawdown)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{copy.screening.sharpe}</dt>
+                        <dd>{formatNumber(entry.result.sharpe)}</dd>
+                      </div>
+                      <div>
+                        <dt>{copy.screening.trades}</dt>
+                        <dd>{entry.result.tradeCount}</dd>
+                      </div>
+                    </dl>
+                    <span className="strategy-shortlist-review">
+                      <b
+                        className={`review-${entry.recentReview.status}`}
+                      >
+                        {
+                          copy.shortlist.reviewStatuses[
+                            entry.recentReview.status
+                          ]
+                        }
+                      </b>
+                      <small>
+                        {copy.shortlist.recentExcess}{" "}
+                        {recentExcess === null
+                          ? copy.common.unavailable
+                          : formatPercent(recentExcess, true)}
+                      </small>
+                    </span>
+                    {entry.role !== "primary" && (
+                      <span className="strategy-shortlist-similarity">
+                        {copy.shortlist.similarity}{" "}
+                        <b>
+                          {copy.shortlist.similarityLevels[entry.similarity]}
+                        </b>
+                        {entry.maxCorrelationToSelected !== null && (
+                          <small>
+                            {copy.shortlist.correlation}{" "}
+                            {formatNumber(
+                              entry.maxCorrelationToSelected,
+                              2,
+                            )}
+                          </small>
+                        )}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {strategyShortlistNeedsIndependentDeputies && (
+              <p className="strategy-shortlist-independent-warning">
+                <ShieldAlert size={14} />
+                {copy.shortlist.insufficientDeputies}
+              </p>
+            )}
+            <p className="strategy-shortlist-note">
+              <ShieldAlert size={14} />
+              {copy.shortlist.note}
+            </p>
+          </section>
+        )}
+
+        <div className="screening-results-grid">
+          <section
+            className="screening-result-column screening-results"
+            aria-labelledby="single-strategy-results-title"
+          >
           <div className="results-heading">
             <div>
               <Trophy size={17} />
-              <strong>
-                {screenResults.length
-                  ? copy.screening.completed
-                  : copy.screening.title}
+              <strong id="single-strategy-results-title">
+                {copy.screening.singleResultsTitle}
               </strong>
             </div>
             {screenResults.length > 0 && (
@@ -2427,14 +4565,39 @@ export function MarketWorkspace() {
                     <th>{copy.screening.drawdown}</th>
                     <th>{copy.screening.sharpe}</th>
                     <th>{copy.screening.trades}</th>
-                    <th>{copy.screening.objectiveValue}</th>
-                    <th />
+                    <th>
+                      {resultsValidationMode === "sample"
+                        ? copy.screening.weightedRankScore
+                        : copy.screening.selectionObjectiveValue}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {screenResults.slice(0, 8).map((result, index) => (
+                  {screenResults.map((result, index) => (
                     <tr
+                      className="clickable-result-row"
                       key={`${result.strategyId}-${JSON.stringify(result.parameters)}`}
+                      tabIndex={0}
+                      title={copy.screening.applyToChart}
+                      aria-label={`${copy.screening.applyToChart}: ${
+                        copy.strategies[result.strategyId].name
+                      }`}
+                      onClick={() =>
+                        applySingleStrategy(
+                          result.strategyId,
+                          result.parameters,
+                          result.entryFilter,
+                        )
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        applySingleStrategy(
+                          result.strategyId,
+                          result.parameters,
+                          result.entryFilter,
+                        );
+                      }}
                     >
                       <td>
                         <span className={`rank rank-${index + 1}`}>
@@ -2443,23 +4606,32 @@ export function MarketWorkspace() {
                       </td>
                       <td>
                         <div className="strategy-cell">
-                          <strong>
-                            {copy.strategies[result.strategyId].name}
-                          </strong>
-                          <span
-                            className={`horizon-badge ${getStrategy(result.strategyId).horizon}`}
-                          >
-                            {
-                              copy.strategyHorizons[
-                                getStrategy(result.strategyId).horizon
-                              ]
-                            }
-                          </span>
+                          <div className="strategy-name-line">
+                            <strong>
+                              {copy.strategies[result.strategyId].name}
+                            </strong>
+                            <span
+                              className={`horizon-badge ${getStrategy(result.strategyId).horizon}`}
+                            >
+                              {
+                                copy.strategyHorizons[
+                                  getStrategy(result.strategyId).horizon
+                                ]
+                              }
+                            </span>
+                          </div>
                           <small>
                             {Object.entries(result.parameters)
                               .map(([key, value]) => `${key} ${value}`)
                               .join(` ${copy.common.separator} `)}
                           </small>
+                          {result.entryFilter && (
+                            <small className="result-entry-filter">
+                              {formatMovingAverageSlopeFilter(
+                                result.entryFilter,
+                              )}
+                            </small>
+                          )}
                         </div>
                       </td>
                       <td
@@ -2475,33 +4647,20 @@ export function MarketWorkspace() {
                       <td>{formatNumber(result.sharpe)}</td>
                       <td>{result.tradeCount}</td>
                       <td>
-                        <span className={`fit-badge ${resultTone(result)}`}>
+                        <span
+                          className={`fit-badge ${resultTone(result)}`}
+                          title={resultStatusTitle(result)}
+                        >
                           {resultTone(result) === "positive"
                             ? copy.screening.suitable
                             : copy.screening.caution}
                           <b>
-                            {formatObjectiveValue(
+                            {formatSelectionValue(
                               result,
-                              screeningObjective,
+                              screenResultsObjective,
                             )}
                           </b>
                         </span>
-                      </td>
-                      <td>
-                        <button
-                          className="apply-button"
-                          type="button"
-                          title={copy.screening.applyToChart}
-                          onClick={() =>
-                            applySingleStrategy(
-                              result.strategyId,
-                              result.parameters,
-                            )
-                          }
-                        >
-                          {copy.screening.use}
-                          <ChevronRight size={14} />
-                        </button>
                       </td>
                     </tr>
                   ))}
@@ -2509,147 +4668,17 @@ export function MarketWorkspace() {
               </table>
             </div>
           )}
-        </div>
+          </section>
 
         <section
-          className="combination-screening"
-          aria-labelledby="combination-screening-title"
+          className="screening-result-column combination-results"
+          aria-labelledby="combination-strategy-results-title"
         >
-          <div className="combination-intro">
-            <span className="eyebrow">
-              {copy.combinationScreening.eyebrow}
-            </span>
-            <h2 id="combination-screening-title">
-              <Sparkles size={21} />
-              {copy.combinationScreening.title}
-            </h2>
-            <p>{copy.combinationScreening.description}</p>
-
-            <div className="screening-config">
-              <label className="screening-control-field">
-                <span>{copy.screening.objective}</span>
-                <select
-                  name="combination-screening-objective"
-                  value={combinationScreeningObjective}
-                  disabled={screeningBusy}
-                  onChange={(event) => {
-                    setCombinationScreeningObjective(
-                      event.target.value as ScreeningObjective,
-                    );
-                    resetCombinationScreening();
-                  }}
-                >
-                  {SCREENING_OBJECTIVES.map((value) => (
-                    <option value={value} key={value}>
-                      {copy.screening.objectives[value]}
-                    </option>
-                  ))}
-                </select>
-                <small>
-                  {
-                    copy.screening.objectiveDescriptions[
-                      combinationScreeningObjective
-                    ]
-                  }
-                </small>
-              </label>
-              <label className="screening-control-field">
-                <span>{copy.screening.maxPerStrategy}</span>
-                <input
-                  name="combination-max-parameter-sets"
-                  type="number"
-                  min={1}
-                  max={MAX_PARAMETER_SETS_PER_STRATEGY}
-                  step={50}
-                  value={combinationMaxParameterSets}
-                  disabled={screeningBusy}
-                  onChange={(event) => {
-                    const nextValue = Number(event.target.value);
-                    setCombinationMaxParameterSets(
-                      Math.min(
-                        Math.max(
-                          Number.isFinite(nextValue)
-                            ? Math.floor(nextValue)
-                            : 1,
-                          1,
-                        ),
-                        MAX_PARAMETER_SETS_PER_STRATEGY,
-                      ),
-                    );
-                    resetCombinationScreening();
-                  }}
-                />
-                <small>
-                  {copy.screening.limitHint}{" "}
-                  {MAX_PARAMETER_SETS_PER_STRATEGY}
-                </small>
-              </label>
-            </div>
-
-            <button
-              type="button"
-              className={`primary-action ${combinationScreening ? "stop" : ""}`}
-              disabled={!series || screening}
-              onClick={() =>
-                combinationScreening
-                  ? stopCombinationScreening()
-                  : void startCombinationScreening()
-              }
-            >
-              {combinationScreening ? (
-                <Square size={14} fill="currentColor" />
-              ) : (
-                <Sparkles size={16} />
-              )}
-              {combinationScreening
-                ? copy.combinationScreening.stop
-                : copy.combinationScreening.action}
-            </button>
-
-            {combinationProgress.total > 0 && (
-              <div className="screening-progress" aria-live="polite">
-                <div>
-                  <span>
-                    {combinationScreening
-                      ? combinationProgress.stage === "strategies"
-                        ? copy.combinationScreening.runningStrategies
-                        : combinationProgress.stage === "pairs"
-                          ? copy.combinationScreening.runningPairs
-                          : copy.combinationScreening.runningAllocations
-                      : combinationProgress.completed <
-                          combinationProgress.total
-                        ? copy.combinationScreening.stopped
-                        : copy.combinationScreening.completed}
-                  </span>
-                  <strong>
-                    {combinationProgress.completed} /{" "}
-                    {combinationProgress.total}
-                    {combinationProgress.failed > 0
-                      ? ` · ${combinationProgress.failed} ${copy.screening.skipped}`
-                      : ""}
-                  </strong>
-                </div>
-                <progress
-                  max={combinationProgress.total}
-                  value={combinationProgress.completed}
-                />
-              </div>
-            )}
-
-            <div className="risk-note">
-              <ShieldAlert size={15} />
-              <span>{copy.combinationScreening.overfit}</span>
-            </div>
-          </div>
-
-          <div className="combination-results">
             <div className="results-heading">
               <div>
                 <Trophy size={17} />
-                <strong>
-                  {combinationResults.length
-                    ? copy.combinationScreening.completed
-                    : copy.combinationScreening.title}
+                <strong id="combination-strategy-results-title">
+                  {copy.screening.combinationResultsTitle}
                 </strong>
               </div>
               {combinationResults.length > 0 && (
@@ -2657,7 +4686,7 @@ export function MarketWorkspace() {
                   {combinationResults.length}{" "}
                   {copy.combinationScreening.bestResults}
                   {" · "}
-                  {combinationProgress.completed}{" "}
+                  {screenProgress.completed}{" "}
                   {copy.screening.backtests}
                 </span>
               )}
@@ -2675,21 +4704,41 @@ export function MarketWorkspace() {
                     <thead>
                       <tr>
                         <th>{copy.screening.rank}</th>
-                        <th>{copy.combinationScreening.longStrategy}</th>
-                        <th>{copy.combinationScreening.shortStrategy}</th>
+                        <th>{copy.combinationScreening.strategyA}</th>
+                        <th>{copy.combinationScreening.strategyB}</th>
                         <th>{copy.combinationScreening.allocationPlan}</th>
                         <th>{copy.screening.return}</th>
                         <th>{copy.screening.drawdown}</th>
                         <th>{copy.screening.sharpe}</th>
                         <th>{copy.combinationScreening.rebalances}</th>
-                        <th>{copy.screening.objectiveValue}</th>
-                        <th />
+                        <th>
+                          {resultsValidationMode === "sample"
+                            ? copy.screening.weightedRankScore
+                            : copy.screening.selectionObjectiveValue}
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
-                      {combinationResults.slice(0, 8).map((result, index) => (
+                      {combinationResults.map((result, index) => (
                         <tr
-                          key={`${result.longStrategyId}-${JSON.stringify(result.longParameters)}-${result.shortStrategyId}-${JSON.stringify(result.shortParameters)}-${result.longAllocation}-${result.shortAllocation}`}
+                          className="clickable-result-row"
+                          key={`${result.strategyAId}-${result.strategyBId}`}
+                          tabIndex={0}
+                          title={copy.screening.applyToChart}
+                          aria-label={`${copy.screening.applyToChart}: ${
+                            copy.strategies[result.strategyAId].name
+                          } + ${copy.strategies[result.strategyBId].name}`}
+                          onClick={() => applyCombinationResult(result)}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key !== "Enter" &&
+                              event.key !== " "
+                            ) {
+                              return;
+                            }
+                            event.preventDefault();
+                            applyCombinationResult(result);
+                          }}
                         >
                           <td>
                             <span className={`rank rank-${index + 1}`}>
@@ -2698,14 +4747,24 @@ export function MarketWorkspace() {
                           </td>
                           <td>
                             <div className="strategy-cell">
-                              <strong>
-                                {copy.strategies[result.longStrategyId].name}
-                              </strong>
-                              <span className="horizon-badge long">
-                                {copy.strategyHorizons.long}
-                              </span>
+                              <div className="strategy-name-line">
+                                <strong>
+                                  {copy.strategies[result.strategyAId].name}
+                                </strong>
+                                <span
+                                  className={`horizon-badge ${
+                                    result.relativeLongStrategy === "strategyA"
+                                      ? "long"
+                                      : "short"
+                                  }`}
+                                >
+                                  {result.relativeLongStrategy === "strategyA"
+                                    ? copy.lab.relativeLong
+                                    : copy.lab.relativeShort}
+                                </span>
+                              </div>
                               <small>
-                                {Object.entries(result.longParameters)
+                                {Object.entries(result.strategyAParameters)
                                   .map(
                                     ([key, value]) => `${key} ${value}`,
                                   )
@@ -2715,14 +4774,24 @@ export function MarketWorkspace() {
                           </td>
                           <td>
                             <div className="strategy-cell">
-                              <strong>
-                                {copy.strategies[result.shortStrategyId].name}
-                              </strong>
-                              <span className="horizon-badge short">
-                                {copy.strategyHorizons.short}
-                              </span>
+                              <div className="strategy-name-line">
+                                <strong>
+                                  {copy.strategies[result.strategyBId].name}
+                                </strong>
+                                <span
+                                  className={`horizon-badge ${
+                                    result.relativeLongStrategy === "strategyB"
+                                      ? "long"
+                                      : "short"
+                                  }`}
+                                >
+                                  {result.relativeLongStrategy === "strategyB"
+                                    ? copy.lab.relativeLong
+                                    : copy.lab.relativeShort}
+                                </span>
+                              </div>
                               <small>
-                                {Object.entries(result.shortParameters)
+                                {Object.entries(result.strategyBParameters)
                                   .map(
                                     ([key, value]) => `${key} ${value}`,
                                   )
@@ -2733,18 +4802,33 @@ export function MarketWorkspace() {
                           <td>
                             <div className="allocation-plan-cell">
                               <strong>
-                                A {Math.round(result.longAllocation * 100)}%
+                                A{" "}
+                                {Math.round(
+                                  result.strategyAAllocation * 100,
+                                )}
+                                %
                                 {" + "}
-                                B {Math.round(result.shortAllocation * 100)}%
+                                B{" "}
+                                {Math.round(
+                                  result.strategyBAllocation * 100,
+                                )}
+                                %
                               </strong>
                               <small>
                                 {copy.combinationScreening.maximumHolding}{" "}
                                 {Math.round(
-                                  (result.longAllocation +
-                                    result.shortAllocation) *
+                                  (result.strategyAAllocation +
+                                    result.strategyBAllocation) *
                                     100,
                                 )}%
                               </small>
+                              {result.entryFilter && (
+                                <small className="result-entry-filter">
+                                  {formatMovingAverageSlopeFilter(
+                                    result.entryFilter,
+                                  )}
+                                </small>
+                              )}
                             </div>
                           </td>
                           <td
@@ -2764,30 +4848,18 @@ export function MarketWorkspace() {
                           <td>
                             <span
                               className={`fit-badge ${resultTone(result)}`}
+                              title={resultStatusTitle(result)}
                             >
                               {resultTone(result) === "positive"
                                 ? copy.screening.suitable
                                 : copy.screening.caution}
                               <b>
-                                {formatObjectiveValue(
+                                {formatSelectionValue(
                                   result,
-                                  combinationScreeningObjective,
+                                  screenResultsObjective,
                                 )}
                               </b>
                             </span>
-                          </td>
-                          <td>
-                            <button
-                              className="apply-button"
-                              type="button"
-                              title={copy.screening.applyToChart}
-                              onClick={() =>
-                                applyCombinationResult(result)
-                              }
-                            >
-                              {copy.screening.use}
-                              <ChevronRight size={14} />
-                            </button>
                           </td>
                         </tr>
                       ))}
@@ -2795,33 +4867,10 @@ export function MarketWorkspace() {
                   </table>
                 </div>
 
-                {bestCombination ? (
-                  <div className="combination-preview">
-                    <strong>{copy.combinationScreening.preview}</strong>
-                    <span>
-                      {copy.strategies[bestCombination.longStrategyId].name}
-                      {" + "}
-                      {copy.strategies[bestCombination.shortStrategyId].name}
-                      {" · "}
-                      A {Math.round(bestCombination.longAllocation * 100)}%
-                      {" + "}
-                      B {Math.round(bestCombination.shortAllocation * 100)}%
-                    </span>
-                    <BacktestChart
-                      result={bestCombination}
-                      ariaLabel={copy.chart.backtestAria}
-                      labels={backtestChartLabels}
-                    />
-                  </div>
-                ) : (
-                  <div className="screening-empty">
-                    <p>{copy.combinationScreening.noPreview}</p>
-                  </div>
-                )}
               </>
             )}
-          </div>
         </section>
+        </div>
       </section>
       </section>
 

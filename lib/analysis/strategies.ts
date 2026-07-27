@@ -13,10 +13,15 @@ import {
   vwap,
 } from "./indicators";
 import {
+  INTRABAR_PRICE_ORDER_STRATEGY_IDS as TRADINGVIEW_INTRABAR_PRICE_ORDER_STRATEGY_IDS,
   TRADINGVIEW_BUILT_IN_STRATEGIES,
   type TradingViewBuiltInStrategyId,
 } from "./built-in-strategies";
-import type { StrategyOrderSeries } from "./strategy-orders";
+import { buildStrategyOrderTimeline } from "./strategy-execution";
+import {
+  emptyOrderSeries,
+  type StrategyOrderSeries,
+} from "./strategy-orders";
 
 export type StrategyId =
   | "sma-cross"
@@ -25,8 +30,10 @@ export type StrategyId =
   | "macd-momentum"
   | "bollinger-reversion"
   | "donchian-breakout"
+  | "donchian-intrabar"
   | "kdj-reversal"
   | "supertrend-trend"
+  | "supertrend-stop"
   | "ichimoku-trend"
   | "mfi-reversal"
   | "roc-momentum"
@@ -38,11 +45,13 @@ export interface StrategyParameters {
 }
 
 export type StrategyHorizon = "long" | "short";
+export type StrategyEquivalenceGroup = "macd-cross" | "supertrend-close";
 
 export interface StrategyDefinition {
   id: StrategyId;
   horizon: StrategyHorizon;
   indicatorId: string;
+  equivalenceGroup?: StrategyEquivalenceGroup;
   defaultParameters: StrategyParameters;
   buildTarget: (
     bars: MarketBar[],
@@ -52,6 +61,10 @@ export interface StrategyDefinition {
     bars: MarketBar[],
     parameters: StrategyParameters,
   ) => StrategyOrderSeries;
+  buildPendingNextOpenAction?: (
+    bars: MarketBar[],
+    parameters: StrategyParameters,
+  ) => "buy" | "sell" | null;
 }
 
 const LONG_HORIZON_IDS = new Set<StrategyId>([
@@ -59,7 +72,9 @@ const LONG_HORIZON_IDS = new Set<StrategyId>([
   "ema-cross",
   "macd-momentum",
   "donchian-breakout",
+  "donchian-intrabar",
   "supertrend-trend",
+  "supertrend-stop",
   "ichimoku-trend",
   "roc-momentum",
   "tv-bollinger-directed",
@@ -74,6 +89,14 @@ const LONG_HORIZON_IDS = new Set<StrategyId>([
 
 function strategyHorizon(id: StrategyId): StrategyHorizon {
   return LONG_HORIZON_IDS.has(id) ? "long" : "short";
+}
+
+function builtInEquivalenceGroup(
+  id: TradingViewBuiltInStrategyId,
+): StrategyEquivalenceGroup | undefined {
+  if (id === "tv-macd") return "macd-cross";
+  if (id === "tv-supertrend") return "supertrend-close";
+  return undefined;
 }
 
 function crossingTarget(
@@ -215,6 +238,46 @@ function donchianBreakout(
   return target;
 }
 
+function donchianIntrabarOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const entryPeriod = Math.max(Math.round(parameters.entryPeriod), 1);
+  const exitPeriod = Math.max(Math.round(parameters.exitPeriod), 1);
+  const orders = emptyOrderSeries(bars.length);
+
+  for (let index = 1; index < bars.length; index += 1) {
+    const entryWindow =
+      index >= entryPeriod
+        ? bars.slice(index - entryPeriod, index)
+        : null;
+    const exitWindow =
+      index >= exitPeriod
+        ? bars.slice(index - exitPeriod, index)
+        : null;
+    orders[index] = {
+      entryStop: entryWindow
+        ? Math.max(...entryWindow.map((bar) => bar.high))
+        : null,
+      exitStop: exitWindow
+        ? Math.min(...exitWindow.map((bar) => bar.low))
+        : null,
+    };
+  }
+
+  return orders;
+}
+
+function donchianIntrabar(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
+  return buildStrategyOrderTimeline(
+    bars,
+    donchianIntrabarOrders(bars, parameters),
+  ).target;
+}
+
 function kdjReversal(
   bars: MarketBar[],
   parameters: StrategyParameters,
@@ -265,6 +328,34 @@ function supertrendTrend(
     parameters.multiplier,
   );
   return values.direction.map((direction) => (direction > 0 ? 1 : 0));
+}
+
+function supertrendStopOrders(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): StrategyOrderSeries {
+  const period = Math.max(Math.round(parameters.period), 1);
+  const values = supertrend(bars, period, parameters.multiplier);
+  const orders = emptyOrderSeries(bars.length);
+
+  for (let index = period; index < bars.length; index += 1) {
+    orders[index] = {
+      entryStop: values.upper[index - 1],
+      exitStop: values.lower[index - 1],
+    };
+  }
+
+  return orders;
+}
+
+function supertrendStop(
+  bars: MarketBar[],
+  parameters: StrategyParameters,
+): number[] {
+  return buildStrategyOrderTimeline(
+    bars,
+    supertrendStopOrders(bars, parameters),
+  ).target;
 }
 
 function ichimokuTrend(
@@ -393,6 +484,7 @@ export const STRATEGIES: StrategyDefinition[] = [
     id: "macd-momentum",
     horizon: "long",
     indicatorId: "macd",
+    equivalenceGroup: "macd-cross",
     defaultParameters: { fast: 12, slow: 26, signal: 9 },
     buildTarget: macdMomentum,
   },
@@ -411,6 +503,14 @@ export const STRATEGIES: StrategyDefinition[] = [
     buildTarget: donchianBreakout,
   },
   {
+    id: "donchian-intrabar",
+    horizon: "long",
+    indicatorId: "atr",
+    defaultParameters: { entryPeriod: 20, exitPeriod: 10 },
+    buildTarget: donchianIntrabar,
+    buildOrders: donchianIntrabarOrders,
+  },
+  {
     id: "kdj-reversal",
     horizon: "short",
     indicatorId: "kdj",
@@ -421,8 +521,17 @@ export const STRATEGIES: StrategyDefinition[] = [
     id: "supertrend-trend",
     horizon: "long",
     indicatorId: "supertrend",
+    equivalenceGroup: "supertrend-close",
     defaultParameters: { period: 10, multiplier: 3 },
     buildTarget: supertrendTrend,
+  },
+  {
+    id: "supertrend-stop",
+    horizon: "long",
+    indicatorId: "supertrend",
+    defaultParameters: { period: 10, multiplier: 3 },
+    buildTarget: supertrendStop,
+    buildOrders: supertrendStopOrders,
   },
   {
     id: "ichimoku-trend",
@@ -459,6 +568,7 @@ export const STRATEGIES: StrategyDefinition[] = [
   ...TRADINGVIEW_BUILT_IN_STRATEGIES.map((strategy) => ({
     ...strategy,
     horizon: strategyHorizon(strategy.id),
+    equivalenceGroup: builtInEquivalenceGroup(strategy.id),
   })),
 ];
 
@@ -470,6 +580,12 @@ export const SHORT_HORIZON_STRATEGY_IDS: StrategyId[] = STRATEGIES.filter(
   (strategy) => strategy.horizon === "short",
 ).map((strategy) => strategy.id);
 
+export const INTRABAR_PRICE_ORDER_STRATEGY_IDS = [
+  "donchian-intrabar",
+  "supertrend-stop",
+  ...TRADINGVIEW_INTRABAR_PRICE_ORDER_STRATEGY_IDS,
+] as const satisfies readonly StrategyId[];
+
 export function getStrategiesByHorizon(
   horizon: StrategyHorizon,
 ): StrategyDefinition[] {
@@ -480,4 +596,14 @@ export function getStrategy(id: StrategyId): StrategyDefinition {
   const strategy = STRATEGIES.find((candidate) => candidate.id === id);
   if (!strategy) throw new Error(`Unknown strategy: ${id}`);
   return strategy;
+}
+
+export function areStrategiesEquivalent(
+  left: StrategyId,
+  right: StrategyId,
+): boolean {
+  if (left === right) return true;
+  const leftGroup = getStrategy(left).equivalenceGroup;
+  const rightGroup = getStrategy(right).equivalenceGroup;
+  return Boolean(leftGroup && leftGroup === rightGroup);
 }

@@ -11,7 +11,8 @@
     "start": "vinext start",
     "local:dev": "vinext dev -p 3000 -H 127.0.0.1",
     "local:db:migrate": "wrangler d1 migrations apply DB --local --config wrangler.local.jsonc --persist-to .wrangler/state",
-    "test": "tsx --test tests/*.test.ts && npm run build && node --test tests/rendered-html.test.mjs",
+    "test": "npm run typecheck && tsx --test tests/*.test.ts && npm run build && node --test tests/rendered-html.test.mjs",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

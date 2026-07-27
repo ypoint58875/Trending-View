@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyDataZoomWindow } from "../app/components/EChart";
+import {
+  ECHART_REPLACE_MERGE_COMPONENTS,
+  applyDataZoomWindow,
+} from "../app/components/EChart";
 import {
   buildIndicatorSeries,
   buildPriceChartLegend,
@@ -27,11 +30,17 @@ type ZoomEntry = {
   brushSelect?: boolean;
   realtime?: boolean;
   zoomLock?: boolean;
+  zoomOnMouseWheel?: boolean;
+  moveOnMouseMove?: boolean;
+  moveOnMouseWheel?: boolean;
 };
 
 type MarkerSeries = {
   symbol?: string;
   symbolRotate?: number;
+  symbolOffset?: [number, number];
+  silent?: boolean;
+  clip?: boolean;
   itemStyle?: {
     color?: string;
     borderColor?: string;
@@ -43,6 +52,8 @@ type MarkerSeries = {
   };
   data?: Array<{
     name?: string;
+    value?: [string, number];
+    tradePrice?: number;
     label?: {
       formatter?: string;
     };
@@ -56,6 +67,7 @@ type IndicatorSeries = {
   xAxisIndex?: number;
   yAxisIndex?: number;
   showSymbol?: boolean;
+  silent?: boolean;
   connectNulls?: boolean;
   smooth?: boolean;
   lineStyle?: {
@@ -301,6 +313,9 @@ test("uses dedicated high-contrast colors for trade markers", () => {
   assert.equal(buy.itemStyle?.borderWidth, 1.5);
   assert.equal(buy.label?.color, "#e0f2fe");
   assert.equal(buy.label?.backgroundColor, "rgba(7, 15, 22, 0.82)");
+  assert.deepEqual(buy.symbolOffset, [0, 16]);
+  assert.equal(buy.silent, true);
+  assert.equal(buy.clip, false);
 
   assert.equal(sell.symbol, "triangle");
   assert.equal(sell.symbolRotate, 180);
@@ -309,11 +324,37 @@ test("uses dedicated high-contrast colors for trade markers", () => {
   assert.equal(sell.itemStyle?.borderWidth, 1.5);
   assert.equal(sell.label?.color, "#ffedd5");
   assert.equal(sell.label?.backgroundColor, "rgba(7, 15, 22, 0.82)");
+  assert.deepEqual(sell.symbolOffset, [0, -16]);
+  assert.equal(sell.silent, true);
+  assert.equal(sell.clip, false);
 
   assert.equal(rangeExit.itemStyle?.color, "#94a3b8");
+  assert.deepEqual(rangeExit.symbolOffset, [0, -14]);
+  assert.equal(rangeExit.silent, true);
+  assert.equal(rangeExit.clip, false);
 });
 
-test("labels allocation markers by long and short strategy actions", () => {
+test("places allocation markers outside candles without intercepting chart drag", () => {
+  const markerBars: MarketBar[] = [
+    {
+      ...chartBars[1],
+      time: "2026-01-02",
+      open: 101,
+      high: 105,
+      low: 98,
+      close: 103,
+      volume: 1_000,
+    },
+    {
+      ...chartBars[2],
+      time: "2026-01-03",
+      open: 103,
+      high: 106,
+      low: 97,
+      close: 100,
+      volume: 1_100,
+    },
+  ];
   const [buy, sell] = buildTradeMarkerSeriesFromMarkers(
     {
       buys: [
@@ -343,18 +384,31 @@ test("labels allocation markers by long and short strategy actions", () => {
       shortSell: "Short sell",
       rangeExit: "Range exit",
     },
+    markerBars,
   ) as unknown as MarkerSeries[];
 
   assert.equal(buy.data?.[0].name, "Short buy");
   assert.equal(buy.data?.[0].label?.formatter, "Short buy");
+  assert.deepEqual(buy.data?.[0].value, ["2026-01-02", 98]);
+  assert.equal(buy.data?.[0].tradePrice, 100);
+  assert.equal(buy.silent, true);
   assert.equal(sell.data?.[0].name, "Close");
   assert.equal(sell.data?.[0].label?.formatter, "Close");
+  assert.deepEqual(sell.data?.[0].value, ["2026-01-03", 106]);
+  assert.equal(sell.data?.[0].tradePrice, 99);
+  assert.equal(sell.silent, true);
 });
 
 test("makes the selected price-chart zoom window directly draggable", () => {
   const dataZoom = entries(1_000, [0, 1, 2, 3]);
+  const inside = dataZoom.find((entry) => entry.type === "inside");
   const slider = dataZoom.find((entry) => entry.type === "slider");
 
+  assert.ok(inside);
+  assert.equal(inside.zoomLock, false);
+  assert.equal(inside.zoomOnMouseWheel, true);
+  assert.equal(inside.moveOnMouseMove, true);
+  assert.equal(inside.moveOnMouseWheel, false);
   assert.ok(slider);
   assert.equal(slider.id, "price-zoom-slider");
   assert.equal(slider.brushSelect, false);
@@ -471,6 +525,7 @@ test("renders strategy price lines on the main axes with semantic dashed styles"
     assert.equal(item.xAxisIndex, 0);
     assert.equal(item.yAxisIndex, 0);
     assert.equal(item.showSymbol, false);
+    assert.equal(item.silent, true);
     assert.equal(item.connectNulls, false);
     assert.equal(item.smooth, false);
     assert.equal(item.areaStyle, undefined);
@@ -503,4 +558,19 @@ test("restores a dragged zoom window after chart options change", () => {
     assert.equal(entry.start, 88);
     assert.equal(entry.end, 100);
   }
+});
+
+test("replaces variable chart components without recreating interaction state", () => {
+  assert.deepEqual(ECHART_REPLACE_MERGE_COMPONENTS, [
+    "grid",
+    "xAxis",
+    "yAxis",
+    "dataZoom",
+    "series",
+  ]);
+  const replacedComponents = new Set<string>(
+    ECHART_REPLACE_MERGE_COMPONENTS,
+  );
+  assert.equal(replacedComponents.has("tooltip"), false);
+  assert.equal(replacedComponents.has("axisPointer"), false);
 });

@@ -15,6 +15,27 @@
       "when": 1784939960095,
       "tag": "0001_gray_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784962839530,
+      "tag": "0002_flawless_korvac",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1784975532504,
+      "tag": "0003_heavy_nemesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1785053033430,
+      "tag": "0004_real_ulik",
+      "breakpoints": true
     }
   ]
 }

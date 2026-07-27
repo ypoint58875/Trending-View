@@ -203,6 +203,24 @@ export function buildStrategyPriceLines(
   inputParameters: StrategyParameters,
 ): StrategyPriceLine[] {
   const parameters = completeParameters(strategyId, inputParameters);
+  if (strategyId === "tv-greedy") {
+    return [
+      priceLine(
+        strategyId,
+        "entry",
+        "entry",
+        completedExtreme(bars, 1, "high"),
+        bars.length,
+      ),
+      priceLine(
+        strategyId,
+        "exit",
+        "exit",
+        completedExtreme(bars, 1, "low"),
+        bars.length,
+      ),
+    ];
+  }
   const orders = buildStrategyOrders(bars, strategyId, parameters);
   if (orders) {
     return [

@@ -88,6 +88,10 @@ test("local package commands pin loopback and persistent D1 state", () => {
 
 test("PowerShell launcher validates, migrates, verifies, and opens localhost", () => {
   const launcher = readProjectFile("scripts/start-local.ps1");
+  const firstReadyProbe = launcher.indexOf("if (Test-QuantScopeReady)");
+  const migrationStart = launcher.indexOf(
+    'Write-Host "Applying local database migrations..."',
+  );
 
   assert.notEqual(launcher, "");
   assert.match(launcher, /\[version\]"22\.13\.0"/);
@@ -99,6 +103,12 @@ test("PowerShell launcher validates, migrates, verifies, and opens localhost", (
   assert.match(launcher, /TimeoutMilliseconds = 60000/);
   assert.match(launcher, /QuantScope/);
   assert.doesNotMatch(launcher, /chatgpt\.site/i);
+  assert.ok(firstReadyProbe >= 0);
+  assert.ok(migrationStart >= 0);
+  assert.ok(
+    firstReadyProbe < migrationStart,
+    "an already-running QuantScope server must be reused before D1 migration",
+  );
 });
 
 test("dependency readiness rejects missing and damaged installs", () => {

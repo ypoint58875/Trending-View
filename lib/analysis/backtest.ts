@@ -7,6 +7,17 @@ import {
   type StrategyId,
   type StrategyParameters,
 } from "./strategies";
+import {
+  buildStrategyOrderTimeline,
+  resolveStrategyOrderFills,
+} from "./strategy-execution";
+import type { StrategyOrderSeries } from "./strategy-orders";
+import {
+  applyMovingAverageSlopeEntryFilter,
+  cloneMovingAverageSlopeFilter,
+  resolveMovingAverageEntryAllowedSeries,
+  type MovingAverageSlopeFilter,
+} from "./entry-filter";
 
 export interface BacktestSettings {
   initialCash: number;
@@ -16,6 +27,8 @@ export interface BacktestSettings {
   endTime?: string;
   interval: MarketInterval;
   executionPolicy?: "hybrid" | "next-open";
+  entryFilter?: MovingAverageSlopeFilter | null;
+  entryFilterAllowed?: readonly boolean[];
 }
 
 export interface EquityPoint {
@@ -51,6 +64,7 @@ export interface BacktestResult extends BacktestPerformance {
   winRate: number;
   profitFactor: number;
   trades: BacktestTrade[];
+  entryFilter?: MovingAverageSlopeFilter | null;
 }
 
 export interface AllocationRebalance {
@@ -60,6 +74,12 @@ export interface AllocationRebalance {
   fillPrice: number;
   reason: "strategy" | "range-end";
   signals?: AllocationSignalEvent[];
+}
+
+export interface AllocationIntrabarExecution {
+  targetAllocation: number;
+  fillPrice: number;
+  signals: AllocationSignalEvent[];
 }
 
 export interface AllocationBacktestResult extends BacktestPerformance {
@@ -150,8 +170,7 @@ function summarizePerformance(
   const score =
     totalReturn * 0.45 +
     Math.max(Math.min(sharpe, 5), -5) * 8 +
-    maxDrawdown * 0.35 +
-    Math.min(tradeCount, 20) * 0.2;
+    maxDrawdown * 0.35;
 
   return {
     totalReturn,
@@ -176,6 +195,9 @@ export function runAllocationBacktest(
   fullTarget: number[],
   settings: BacktestSettings,
   fullSignalEvents?: readonly (readonly AllocationSignalEvent[])[],
+  fullIntrabarExecutions?: readonly (
+    readonly AllocationIntrabarExecution[]
+  )[],
 ): AllocationBacktestResult {
   if (fullTarget.length !== allBars.length) {
     throw new Error("Allocation target must align with market bars");
@@ -183,12 +205,23 @@ export function runAllocationBacktest(
   if (fullSignalEvents && fullSignalEvents.length !== allBars.length) {
     throw new Error("Allocation signal events must align with market bars");
   }
+  if (
+    fullIntrabarExecutions &&
+    fullIntrabarExecutions.length !== allBars.length
+  ) {
+    throw new Error("Allocation intrabar executions must align with market bars");
+  }
 
   const indexedBars = allBars
     .map((bar, index) => ({
       bar,
+      originalIndex: index,
       target: clampAllocation(fullTarget[index] ?? 0),
       signals: fullSignalEvents?.[index] ?? [],
+      intrabarExecutions:
+        settings.executionPolicy === "next-open"
+          ? []
+          : (fullIntrabarExecutions?.[index] ?? []),
     }))
     .filter(({ bar }) =>
       filterRange([bar], settings.startTime, settings.endTime).length,
@@ -206,22 +239,23 @@ export function runAllocationBacktest(
   const rebalances: AllocationRebalance[] = [];
   let plannedAllocation = 0;
 
-  const rebalanceAtOpen = (
+  const rebalanceAtPrice = (
     bar: MarketBar,
+    marketPrice: number,
     targetAllocation: number,
     signals: readonly AllocationSignalEvent[],
   ) => {
-    const equityAtOpen = cash + units * bar.open;
-    if (equityAtOpen <= 0 || bar.open <= 0) return;
+    const equityAtFill = cash + units * marketPrice;
+    if (equityAtFill <= 0 || marketPrice <= 0) return;
     const fromAllocation = clampAllocation(
-      (units * bar.open) / equityAtOpen,
+      (units * marketPrice) / equityAtFill,
     );
-    const desiredUnits = (equityAtOpen * targetAllocation) / bar.open;
+    const desiredUnits = (equityAtFill * targetAllocation) / marketPrice;
     const unitDelta = desiredUnits - units;
     const tolerance = Math.max(desiredUnits, units, 1) * 1e-10;
 
     if (unitDelta > tolerance) {
-      const fillPrice = bar.open * (1 + slippageRate);
+      const fillPrice = marketPrice * (1 + slippageRate);
       const unitCost = fillPrice * (1 + commissionRate);
       const boughtUnits = Math.min(unitDelta, cash / unitCost);
       if (boughtUnits <= tolerance) return;
@@ -236,7 +270,7 @@ export function runAllocationBacktest(
         signals: [...signals],
       });
     } else if (unitDelta < -tolerance) {
-      const fillPrice = bar.open * (1 - slippageRate);
+      const fillPrice = marketPrice * (1 - slippageRate);
       const soldUnits = Math.min(-unitDelta, units);
       if (soldUnits <= tolerance) return;
       cash += soldUnits * fillPrice * (1 - commissionRate);
@@ -253,16 +287,46 @@ export function runAllocationBacktest(
   };
 
   for (let index = 0; index < indexedBars.length; index += 1) {
-    const { bar } = indexedBars[index];
-    if (index > 0) {
+    const { bar, originalIndex } = indexedBars[index];
+    if (index === 0) {
+      const priorIndex = originalIndex - 1;
+      const openingAllocation =
+        priorIndex >= 0 ? clampAllocation(fullTarget[priorIndex] ?? 0) : 0;
+      if (Math.abs(openingAllocation - plannedAllocation) > 1e-10) {
+        rebalanceAtPrice(
+          bar,
+          bar.open,
+          openingAllocation,
+          priorIndex >= 0 ? (fullSignalEvents?.[priorIndex] ?? []) : [],
+        );
+        plannedAllocation = openingAllocation;
+      }
+    } else {
       const nextAllocation = indexedBars[index - 1].target;
       if (Math.abs(nextAllocation - plannedAllocation) > 1e-10) {
-        rebalanceAtOpen(
+        rebalanceAtPrice(
           bar,
+          bar.open,
           nextAllocation,
           indexedBars[index - 1].signals,
         );
         plannedAllocation = nextAllocation;
+      }
+    }
+
+    for (const execution of indexedBars[index].intrabarExecutions) {
+      const targetAllocation = clampAllocation(execution.targetAllocation);
+      if (
+        Number.isFinite(execution.fillPrice) &&
+        Math.abs(targetAllocation - plannedAllocation) > 1e-10
+      ) {
+        rebalanceAtPrice(
+          bar,
+          execution.fillPrice,
+          targetAllocation,
+          execution.signals,
+        );
+        plannedAllocation = targetAllocation;
       }
     }
 
@@ -314,18 +378,66 @@ export function runBacktest(
   settings: BacktestSettings,
 ): BacktestResult {
   const strategy = getStrategy(strategyId);
-  const fullTarget = strategy.buildTarget(allBars, parameters);
   const fullOrders =
     settings.executionPolicy === "next-open"
       ? undefined
       : strategy.buildOrders?.(allBars, parameters);
+  const entryAllowed = resolveMovingAverageEntryAllowedSeries(
+    allBars,
+    settings.entryFilter,
+    settings.entryFilterAllowed,
+  );
+  const fullTarget = fullOrders
+    ? buildStrategyOrderTimeline(allBars, fullOrders, entryAllowed).target
+    : applyMovingAverageSlopeEntryFilter(
+        strategy.buildTarget(allBars, parameters),
+        entryAllowed,
+      );
+  return runBacktestFromTarget(
+    allBars,
+    strategyId,
+    parameters,
+    fullTarget,
+    {
+      ...settings,
+      entryFilterAllowed: entryAllowed ?? undefined,
+    },
+    fullOrders,
+  );
+}
+
+export function runBacktestFromTarget(
+  allBars: MarketBar[],
+  strategyId: StrategyId,
+  parameters: StrategyParameters,
+  fullTarget: readonly number[],
+  settings: BacktestSettings,
+  cachedOrders?: StrategyOrderSeries,
+): BacktestResult {
+  if (fullTarget.length !== allBars.length) {
+    throw new Error("Strategy target must align with market bars");
+  }
+  const strategy = getStrategy(strategyId);
+  const fullOrders =
+    settings.executionPolicy === "next-open"
+      ? undefined
+      : (cachedOrders ?? strategy.buildOrders?.(allBars, parameters));
   if (fullOrders && fullOrders.length !== allBars.length) {
     throw new Error("Strategy order plan must align with market bars");
   }
+  const entryAllowed = resolveMovingAverageEntryAllowedSeries(
+    allBars,
+    settings.entryFilter,
+    settings.entryFilterAllowed,
+  );
+  const effectiveTarget = fullOrders
+    ? fullTarget
+    : applyMovingAverageSlopeEntryFilter(fullTarget, entryAllowed);
   const indexedBars = allBars
     .map((bar, index) => ({
       bar,
-      target: (fullTarget[index] ?? 0) > 0 ? 1 : 0,
+      originalIndex: index,
+      target: (effectiveTarget[index] ?? 0) > 0 ? 1 : 0,
       orders: fullOrders?.[index],
     }))
     .filter(({ bar }) => filterRange([bar], settings.startTime, settings.endTime).length);
@@ -383,24 +495,34 @@ export function runBacktest(
     entryTime = nextEntryTime;
   };
 
+  const firstIndexedBar = indexedBars[0];
+  const priorTargetIndex = firstIndexedBar.originalIndex - 1;
+  if (
+    priorTargetIndex >= 0 &&
+    (effectiveTarget[priorTargetIndex] ?? 0) > 0
+  ) {
+    openPosition(firstIndexedBar.bar.open, firstIndexedBar.bar.time);
+  }
+
   for (let index = 0; index < indexedBars.length; index += 1) {
-    const { bar, orders } = indexedBars[index];
+    const { bar, orders, originalIndex } = indexedBars[index];
 
     if (orders) {
-      if (
-        units > 0 &&
-        orders.exitStop !== null &&
-        Number.isFinite(orders.exitStop) &&
-        bar.low <= orders.exitStop
-      ) {
-        closePosition(Math.min(bar.open, orders.exitStop), bar.time);
-      } else if (
-        units === 0 &&
-        orders.entryStop !== null &&
-        Number.isFinite(orders.entryStop) &&
-        bar.high >= orders.entryStop
-      ) {
-        openPosition(Math.max(bar.open, orders.entryStop), bar.time);
+      const allowEntry =
+        !entryAllowed ||
+        (originalIndex > 0 && entryAllowed[originalIndex - 1]);
+      const fills = resolveStrategyOrderFills(
+        bar,
+        orders,
+        units > 0 ? "long" : "flat",
+        allowEntry,
+      );
+      for (const fill of fills) {
+        if (fill.action === "sell") {
+          closePosition(fill.fillPrice, bar.time);
+        } else {
+          openPosition(fill.fillPrice, bar.time);
+        }
       }
     } else if (index > 0) {
       const priorTarget = indexedBars[index - 1].target;
@@ -452,5 +574,8 @@ export function runBacktest(
     profitFactor:
       grossLoss === 0 ? (grossProfit > 0 ? 99 : 0) : grossProfit / grossLoss,
     trades,
+    ...(settings.entryFilter
+      ? { entryFilter: cloneMovingAverageSlopeFilter(settings.entryFilter) }
+      : {}),
   };
 }

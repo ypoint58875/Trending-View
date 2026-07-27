@@ -37,6 +37,22 @@ export interface IndicatorDefinition {
   parameters: readonly IndicatorParameterDefinition[];
 }
 
+export type IndicatorSettings = Record<IndicatorId, IndicatorParameters>;
+
+export interface IndicatorConfiguration {
+  id: IndicatorId;
+  parameters: IndicatorParameters;
+}
+
+export interface IndicatorWorkspacePreferences {
+  focusedIndicator: IndicatorId;
+  visibleIndicatorIds: IndicatorId[];
+  settings: IndicatorSettings;
+}
+
+export const INDICATOR_PREFERENCES_STORAGE_KEY =
+  "quantscope.indicator-preferences.v1";
+
 function parameter(
   key: string,
   defaultValue: number,
@@ -138,14 +154,148 @@ export function getDefaultIndicatorParameters(
   );
 }
 
-export function createDefaultIndicatorSettings(): Record<
-  IndicatorId,
-  IndicatorParameters
-> {
+export function createDefaultIndicatorSettings(): IndicatorSettings {
   return Object.fromEntries(
     INDICATORS.map((indicator) => [
       indicator.id,
       getDefaultIndicatorParameters(indicator.id),
     ]),
-  ) as Record<IndicatorId, IndicatorParameters>;
+  ) as IndicatorSettings;
+}
+
+export function createDefaultIndicatorWorkspacePreferences(): IndicatorWorkspacePreferences {
+  return {
+    focusedIndicator: "sma",
+    visibleIndicatorIds: [],
+    settings: createDefaultIndicatorSettings(),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isIndicatorId(value: unknown): value is IndicatorId {
+  return (
+    typeof value === "string" &&
+    INDICATORS.some((indicator) => indicator.id === value)
+  );
+}
+
+function parseIndicatorParameters(
+  indicatorId: IndicatorId,
+  value: unknown,
+): IndicatorParameters | null {
+  if (!isRecord(value)) return null;
+  const definition = getIndicator(indicatorId);
+  const parameterKeys = new Set(
+    definition.parameters.map((parameter) => parameter.key),
+  );
+  if (
+    Object.keys(value).length !== parameterKeys.size ||
+    Object.keys(value).some((key) => !parameterKeys.has(key))
+  ) {
+    return null;
+  }
+
+  const parameters: IndicatorParameters = {};
+  for (const parameter of definition.parameters) {
+    const candidate = value[parameter.key];
+    if (
+      typeof candidate !== "number" ||
+      !Number.isFinite(candidate) ||
+      candidate < parameter.minimum ||
+      candidate > 1_000_000 ||
+      (parameter.step === 1 && !Number.isInteger(candidate))
+    ) {
+      return null;
+    }
+    parameters[parameter.key] = candidate;
+  }
+  return parameters;
+}
+
+export function createIndicatorConfigurations(
+  visibleIndicatorIds: readonly IndicatorId[],
+  settings: IndicatorSettings,
+): IndicatorConfiguration[] {
+  return visibleIndicatorIds.map((id) => ({
+    id,
+    parameters: { ...settings[id] },
+  }));
+}
+
+export function parseIndicatorConfigurations(
+  value: unknown,
+): IndicatorConfiguration[] | null {
+  if (!Array.isArray(value) || value.length > INDICATORS.length) return null;
+
+  const configurations: IndicatorConfiguration[] = [];
+  const seen = new Set<IndicatorId>();
+  for (const item of value) {
+    if (!isRecord(item) || !isIndicatorId(item.id) || seen.has(item.id)) {
+      return null;
+    }
+    const parameters = parseIndicatorParameters(item.id, item.parameters);
+    if (!parameters) return null;
+    seen.add(item.id);
+    configurations.push({ id: item.id, parameters });
+  }
+  return configurations;
+}
+
+export function parseIndicatorWorkspacePreferences(
+  value: unknown,
+): IndicatorWorkspacePreferences | null {
+  if (
+    !isRecord(value) ||
+    !isIndicatorId(value.focusedIndicator) ||
+    !Array.isArray(value.visibleIndicatorIds) ||
+    !isRecord(value.settings)
+  ) {
+    return null;
+  }
+
+  const visibleIndicatorIds: IndicatorId[] = [];
+  const seen = new Set<IndicatorId>();
+  for (const indicatorId of value.visibleIndicatorIds) {
+    if (!isIndicatorId(indicatorId) || seen.has(indicatorId)) return null;
+    seen.add(indicatorId);
+    visibleIndicatorIds.push(indicatorId);
+  }
+
+  const settings = createDefaultIndicatorSettings();
+  for (const indicator of INDICATORS) {
+    if (!(indicator.id in value.settings)) continue;
+    const parameters = parseIndicatorParameters(
+      indicator.id,
+      value.settings[indicator.id],
+    );
+    if (!parameters) return null;
+    settings[indicator.id] = parameters;
+  }
+
+  return {
+    focusedIndicator: value.focusedIndicator,
+    visibleIndicatorIds,
+    settings,
+  };
+}
+
+export function indicatorConfigurationsEqual(
+  left: readonly IndicatorConfiguration[],
+  right: readonly IndicatorConfiguration[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((configuration, index) => {
+      const other = right[index];
+      if (!other || configuration.id !== other.id) return false;
+      const entries = Object.entries(configuration.parameters);
+      return (
+        entries.length === Object.keys(other.parameters).length &&
+        entries.every(([key, value]) => other.parameters[key] === value)
+      );
+    })
+  );
 }

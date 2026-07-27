@@ -1,0 +1,1 @@
+ALTER TABLE `saved_backtests` ADD `indicator_configurations_json` text;

@@ -5,7 +5,6 @@ import {
   real,
   sqliteTable,
   text,
-  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 export const savedBacktests = sqliteTable(
@@ -23,6 +22,7 @@ export const savedBacktests = sqliteTable(
     strategyId: text("strategy_id").notNull(),
     parametersJson: text("parameters_json").notNull(),
     strategyPlanJson: text("strategy_plan_json"),
+    indicatorConfigurationsJson: text("indicator_configurations_json"),
     startDate: text("start_date").notNull(),
     endDate: text("end_date").notNull(),
     initialCash: real("initial_cash").notNull(),
@@ -33,11 +33,12 @@ export const savedBacktests = sqliteTable(
     sharpe: real("sharpe").notNull(),
     tradeCount: integer("trade_count").notNull(),
     score: real("score").notNull(),
+    displayOrder: integer("display_order").notNull().default(0),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
   (table) => [
-    uniqueIndex("saved_backtests_owner_instrument_unique").on(
+    index("saved_backtests_owner_instrument_idx").on(
       table.ownerEmail,
       table.provider,
       table.secid,
@@ -45,6 +46,10 @@ export const savedBacktests = sqliteTable(
     index("saved_backtests_owner_updated_idx").on(
       table.ownerEmail,
       table.updatedAt,
+    ),
+    index("saved_backtests_owner_display_order_idx").on(
+      table.ownerEmail,
+      table.displayOrder,
     ),
   ],
 );

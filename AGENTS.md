@@ -1,5 +1,12 @@
 # QuantScope Project Rules
 
+## Default autonomous execution
+
+- Proceed autonomously by default once the requested outcome and scope are clear.
+- Do not pause for step-by-step confirmation during routine, reversible, in-scope work. Share concise progress updates and continue.
+- Stop for confirmation only before high-risk actions, including destructive or difficult-to-reverse changes, secret exposure, external publishing or communication, security or privilege changes, or material scope ambiguity.
+- Planning, research, and verification requirements remain mandatory, but they are not approval gates unless a high-risk action is involved.
+
 - Keep source code, tests, logs, and internal documentation in English.
 - Keep Chinese user-facing copy in `app/i18n/zh-CN.ts`.
 - Add market providers behind `lib/market/` adapters and normalize output to

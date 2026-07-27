@@ -1,6 +1,8 @@
 export interface StrategyPriceOrders {
   entryStop: number | null;
   exitStop: number | null;
+  entryAtOpen?: boolean;
+  exitAtOpen?: boolean;
 }
 
 export type StrategyOrderSeries = StrategyPriceOrders[];
