@@ -307,7 +307,8 @@ function validatePlan(
   strategyB: StrategySelection | null | undefined,
   strategyAAllocation: number | null,
   strategyBAllocation: number | null,
-  entryFilter: MovingAverageSlopeFilter | null = null,
+  strategyAEntryFilter: MovingAverageSlopeFilter | null = null,
+  strategyBEntryFilter: MovingAverageSlopeFilter | null = null,
 ): StrategyAllocationPlan | null {
   if (
     strategyA === undefined ||
@@ -338,8 +339,19 @@ function validatePlan(
         ? 1
         : 0
       : strategyBAllocation,
-    ...(entryFilter
-      ? { entryFilter: cloneMovingAverageSlopeFilter(entryFilter) }
+    ...(strategyA && strategyAEntryFilter
+      ? {
+          strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+            strategyAEntryFilter,
+          ),
+        }
+      : {}),
+    ...(strategyB && strategyBEntryFilter
+      ? {
+          strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+            strategyBEntryFilter,
+          ),
+        }
       : {}),
   };
 }
@@ -376,7 +388,14 @@ export function strategyPlansEqual(
     strategySelectionsEqual(left.strategyB, right.strategyB) &&
     Math.abs(left.strategyAAllocation - right.strategyAAllocation) < 1e-10 &&
     Math.abs(left.strategyBAllocation - right.strategyBAllocation) < 1e-10 &&
-    movingAverageSlopeFiltersEqual(left.entryFilter, right.entryFilter)
+    movingAverageSlopeFiltersEqual(
+      left.strategyAEntryFilter ?? left.entryFilter,
+      right.strategyAEntryFilter ?? right.entryFilter,
+    ) &&
+    movingAverageSlopeFiltersEqual(
+      left.strategyBEntryFilter ?? left.entryFilter,
+      right.strategyBEntryFilter ?? right.entryFilter,
+    )
   );
 }
 
@@ -432,11 +451,35 @@ export function parseStrategyAllocationPlan(
     "strategyAAllocation" in value ||
     "strategyBAllocation" in value;
   if (!hasNewShape) return parseLegacyStrategyAllocationPlan(value);
-  const entryFilter =
+  const legacyEntryFilter =
     value.entryFilter === undefined || value.entryFilter === null
       ? null
       : parseMovingAverageSlopeFilter(value.entryFilter);
-  if (value.entryFilter !== undefined && value.entryFilter !== null && !entryFilter) {
+  if (
+    value.entryFilter !== undefined &&
+    value.entryFilter !== null &&
+    !legacyEntryFilter
+  ) {
+    return null;
+  }
+  const parseSlotFilter = (slotValue: unknown) =>
+    slotValue === undefined || slotValue === null
+      ? null
+      : parseMovingAverageSlopeFilter(slotValue);
+  const strategyAEntryFilter = parseSlotFilter(
+    value.strategyAEntryFilter,
+  );
+  const strategyBEntryFilter = parseSlotFilter(
+    value.strategyBEntryFilter,
+  );
+  if (
+    (value.strategyAEntryFilter !== undefined &&
+      value.strategyAEntryFilter !== null &&
+      !strategyAEntryFilter) ||
+    (value.strategyBEntryFilter !== undefined &&
+      value.strategyBEntryFilter !== null &&
+      !strategyBEntryFilter)
+  ) {
     return null;
   }
 
@@ -445,7 +488,8 @@ export function parseStrategyAllocationPlan(
     readStrategySelection(value.strategyB),
     readFiniteNumber(value.strategyAAllocation, 0, 1),
     readFiniteNumber(value.strategyBAllocation, 0, 1),
-    entryFilter,
+    strategyAEntryFilter ?? legacyEntryFilter,
+    strategyBEntryFilter ?? legacyEntryFilter,
   );
 }
 
@@ -490,10 +534,17 @@ export function createSaveBacktestInput(
         : null,
       strategyAAllocation: plan.strategyAAllocation,
       strategyBAllocation: plan.strategyBAllocation,
-      ...(plan.entryFilter
+      ...((plan.strategyAEntryFilter ?? plan.entryFilter)
         ? {
-            entryFilter: cloneMovingAverageSlopeFilter(
-              plan.entryFilter,
+            strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+              plan.strategyAEntryFilter ?? plan.entryFilter,
+            ),
+          }
+        : {}),
+      ...((plan.strategyBEntryFilter ?? plan.entryFilter)
+        ? {
+            strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+              plan.strategyBEntryFilter ?? plan.entryFilter,
             ),
           }
         : {}),
@@ -515,6 +566,25 @@ export function createSaveBacktestInput(
       score: result.score,
     },
   };
+}
+
+export function shouldReplaceSavedBacktest(
+  existing: SavedBacktestRecord,
+  input: SaveBacktestInput,
+): boolean {
+  const sameNumber = (left: number, right: number) =>
+    Math.abs(left - right) < 1e-10;
+  return (
+    savedBacktestInstrumentKey(existing.instrument) ===
+      savedBacktestInstrumentKey(input.instrument) &&
+    existing.interval === input.interval &&
+    existing.startDate === input.startDate &&
+    existing.endDate === input.endDate &&
+    sameNumber(existing.initialCash, input.initialCash) &&
+    sameNumber(existing.commissionPercent, input.commissionPercent) &&
+    sameNumber(existing.slippagePercent, input.slippagePercent) &&
+    strategyPlansEqual(existing.plan, input.plan)
+  );
 }
 
 export function parseSaveBacktestInput(

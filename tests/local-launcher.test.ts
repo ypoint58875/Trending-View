@@ -166,10 +166,14 @@ test("startup wait reports ready and an exited server without timing out", () =>
   assert.equal(exited.stdout.trim(), "Exited");
 });
 
-test("saved-backtest route retains the localhost owner fallback", () => {
+test("persistent routes share the localhost owner fallback", () => {
   const route = readProjectFile("app/api/saved-backtests/route.ts");
+  const screeningRoute = readProjectFile("app/api/screening-runs/route.ts");
+  const owner = readProjectFile("app/api/owner.ts");
 
-  assert.match(route, /hostname === "localhost"/);
-  assert.match(route, /hostname === "127\.0\.0\.1"/);
-  assert.match(route, /"local@quantscope\.invalid"/);
+  assert.match(route, /resolveOwnerEmail/);
+  assert.match(screeningRoute, /resolveOwnerEmail/);
+  assert.match(owner, /hostname === "localhost"/);
+  assert.match(owner, /hostname === "127\.0\.0\.1"/);
+  assert.match(owner, /"local@quantscope\.invalid"/);
 });

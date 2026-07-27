@@ -2271,6 +2271,94 @@ button {
   border-top: 1px solid var(--line);
 }
 
+.screening-history {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(56, 189, 248, 0.025);
+}
+
+.screening-history-heading,
+.screening-history-heading > div,
+.screening-history-error {
+  display: flex;
+  align-items: center;
+}
+
+.screening-history-heading {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.screening-history-heading > div {
+  gap: 7px;
+  color: #38bdf8;
+  font-size: 10px;
+}
+
+.screening-history-heading > span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.screening-history-error {
+  gap: 6px;
+  margin: 9px 0 0;
+  color: var(--red);
+  font-size: 8px;
+}
+
+.screening-history-latest,
+.screening-history-comparison {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.screening-history-comparison {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.screening-history-latest > div,
+.screening-history-comparison > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 8px 9px;
+  border: 1px solid rgba(148, 163, 184, 0.11);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.screening-history-latest span,
+.screening-history-comparison span,
+.screening-history-latest small {
+  color: var(--subtle);
+  font-size: 7px;
+}
+
+.screening-history-latest strong,
+.screening-history-comparison strong {
+  overflow: hidden;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.screening-history-details {
+  margin-top: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 6px;
+}
+
+.screening-history-details summary {
+  padding: 8px 10px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 8px;
+}
+
 .screening-period-table {
   margin-top: 10px;
   border: 1px solid rgba(148, 163, 184, 0.12);
@@ -2611,6 +2699,11 @@ button {
     grid-template-columns: 1fr;
   }
 
+  .screening-history-latest,
+  .screening-history-comparison {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .screening-result-column + .screening-result-column {
     border-top: 1px solid var(--line);
     border-left: 0;
@@ -2805,6 +2898,11 @@ button {
 
   .screening-config,
   .screening-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .screening-history-latest,
+  .screening-history-comparison {
     grid-template-columns: 1fr;
   }
 

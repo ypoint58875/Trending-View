@@ -270,7 +270,7 @@ test("period screening ranks and reports only the selected window", async () => 
       slippageRate: 0,
       interval: "1d",
       executionPolicy: "next-open",
-      entryFilter: displayedCombination.entryFilter ?? null,
+      entryFilter: null,
       startTime: selectedBars[0].time,
       endTime: "2025-12-31",
     },
@@ -547,6 +547,65 @@ test("rolling screening equally aggregates configured-window ranks", async () =>
     },
   );
   assert.equal(displayedSingle.totalReturn, directSingle.totalReturn);
+});
+
+test("rolling screening evaluates ten finalists per strategy before collapsing", async () => {
+  const bars = createMonthlyBars(2000, 2005, 6);
+  const completeCandidates = buildScreeningCandidates();
+  const candidates = [
+    ...completeCandidates
+      .filter((candidate) => candidate.strategyId === "sma-cross")
+      .slice(0, 12),
+    ...completeCandidates
+      .filter((candidate) => candidate.strategyId === "rsi-reversal")
+      .slice(0, 1),
+  ];
+  const selectionTotals: number[] = [];
+  const outcome = await runScreeningWithValidation(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+      executionPolicy: "next-open",
+    },
+    {
+      mode: "rolling",
+      range: {
+        startTime: "2000-01-01",
+        endTime: "2005-06-01",
+      },
+      windowYears: 3,
+    },
+    {
+      candidates,
+      maxPairFinalists: 1,
+      allocationCandidates: [
+        { strategyAAllocation: 0.6, strategyBAllocation: 0.4 },
+      ],
+      yieldEvery: 10_000,
+      onValidationProgress: (progress) => {
+        if (progress.phase === "selection") {
+          selectionTotals.push(progress.total);
+        }
+      },
+    },
+  );
+
+  assert.equal(
+    outcome.singleResults.filter(
+      (result) => result.strategyId === "sma-cross",
+    ).length,
+    1,
+  );
+  assert.ok(
+    selectionTotals.some(
+      (total) =>
+        total >
+        outcome.singleResults.length + outcome.results.length,
+    ),
+  );
 });
 
 test("rejects a reversed custom range", async () => {

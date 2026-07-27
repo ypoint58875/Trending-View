@@ -1310,3 +1310,79 @@ state, never for active-window return, Sharpe, drawdown, or score. Describe all
 three as recent-adaptive in-sample screening rather than out-of-sample
 validation. Remove trade count from balanced score; retain it only for result
 display and candidate/observe-only status.
+
+## 2026-07-27 dedicated screening worker and durable run archive
+
+### CPU execution and run-local reuse
+
+Two execution approaches were compared:
+
+1. Continue cooperative yielding on the browser main thread. This allows
+   React to repaint between chunks, but every strategy target, filter, and
+   backtest still competes with input, chart, and stop-button work.
+2. Move the existing pure screening coordinator into one dedicated module Web
+   Worker. Progress and cancellation cross a small message protocol, while
+   the current analysis functions remain the single calculation engine used
+   by tests and direct backtests.
+
+Vite recommends the standard module-worker constructor
+`new Worker(new URL(..., import.meta.url), { type: "module" })`. MDN documents
+that worker messages use the structured clone algorithm, which supports the
+plain market/result objects used here but not callback functions or DOM
+objects:
+
+- https://vite.dev/guide/features.html#web-workers
+- https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers
+- https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm
+
+Decision: use option 2 and keep the core optimizer browser-independent. The
+worker owns one `AbortController`; the page sends serializable input and
+receives progress, result, cancellation, or error messages. A direct-core
+fallback is retained only where `Worker` is unavailable.
+
+Two cache scopes were also compared:
+
+1. Persist prior screening results or candidate output in browser storage.
+   This makes a later run appear faster but risks stale rankings and conflicts
+   with the requirement that every run recompute from current data/settings.
+2. Keep only run-local computation maps inside the worker: EMA allowed-state
+   arrays are keyed by filter, and raw target/order execution is retained only
+   for the bounded EMA and rolling finalist pools. The maps disappear when
+   the worker terminates.
+
+Decision: use option 2. No IndexedDB/local-storage screening-result cache is
+introduced. A SHA-256 market-data fingerprint is calculated from normalized
+OHLCV input for provenance; MDN documents `SubtleCrypto.digest()` for this
+non-authentication checksum use:
+
+- https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest
+
+### Durable audit history
+
+Two persistence shapes were compared:
+
+1. Store one large JSON document in device storage. It is simple but not
+   owner-scoped, is easy to lose, and cannot reliably distinguish multiple
+   devices or deployed sessions.
+2. Store one compact owner-scoped run row in the existing D1 database. Keep
+   indexed identity/date columns for retrieval and compact JSON only for
+   settings, retained rankings, and the selected report.
+
+Cloudflare recommends indexes for frequently filtered multi-column access and
+documents a 2 MB maximum row/string size. D1 prepared statements provide
+bound parameters and its batch API provides transactional multi-statement
+writes:
+
+- https://developers.cloudflare.com/d1/best-practices/use-indexes/
+- https://developers.cloudflare.com/d1/platform/limits/
+- https://developers.cloudflare.com/d1/worker-api/prepared-statements/
+- https://developers.cloudflare.com/d1/worker-api/d1-database/#batch
+
+Decision: use option 2 with an `(owner_email, instrument_key, created_at)`
+index. Archive only the complete retained ranking shown/used after selection,
+not equity curves or all 37,131 raw trials. The archive records provider,
+adjustment, fetch time, last bar, bar count, fingerprint, validation config,
+objective, costs, ranking, and report. It is audit-only: it is never loaded
+into the current result tables and is never an input to calculation. The UI
+compares the new run with the immediately previous run for the same canonical
+instrument, exposing winner changes and top-ranking overlap.

@@ -114,11 +114,25 @@ function stableParameterKey(parameters: Record<string, number>): string {
     .join(",");
 }
 
+function filterKey(
+  filter: BacktestResult["entryFilter"],
+): string | null {
+  return filter
+    ? `${filter.movingAverageType}:${filter.period}:${filter.minimumSlopePercent}`
+    : null;
+}
+
 function singleCandidate(
   result: BacktestResult,
 ): StrategyShortlistCandidate {
+  const entryFilterKey = filterKey(result.entryFilter);
   return {
-    key: `single:${result.strategyId}:${stableParameterKey(result.parameters)}`,
+    key: [
+      "single",
+      result.strategyId,
+      stableParameterKey(result.parameters),
+      ...(entryFilterKey ? [entryFilterKey] : []),
+    ].join(":"),
     kind: "single",
     result,
     plan: {
@@ -129,6 +143,8 @@ function singleCandidate(
       strategyB: null,
       strategyAAllocation: 1,
       strategyBAllocation: 0,
+      strategyAEntryFilter: result.entryFilter ?? null,
+      strategyBEntryFilter: null,
     },
     strategyIds: [result.strategyId],
     qualityRank: 0,
@@ -138,6 +154,12 @@ function singleCandidate(
 function combinationCandidate(
   result: StrategyCombinationResult,
 ): StrategyShortlistCandidate {
+  const strategyAEntryFilterKey = filterKey(
+    result.strategyAEntryFilter,
+  );
+  const strategyBEntryFilterKey = filterKey(
+    result.strategyBEntryFilter,
+  );
   return {
     key: [
       "combination",
@@ -147,6 +169,12 @@ function combinationCandidate(
       stableParameterKey(result.strategyBParameters),
       result.strategyAAllocation,
       result.strategyBAllocation,
+      ...(strategyAEntryFilterKey || strategyBEntryFilterKey
+        ? [
+            strategyAEntryFilterKey ?? "none",
+            strategyBEntryFilterKey ?? "none",
+          ]
+        : []),
     ].join(":"),
     kind: "combination",
     result,
@@ -161,6 +189,8 @@ function combinationCandidate(
       },
       strategyAAllocation: result.strategyAAllocation,
       strategyBAllocation: result.strategyBAllocation,
+      strategyAEntryFilter: result.strategyAEntryFilter ?? null,
+      strategyBEntryFilter: result.strategyBEntryFilter ?? null,
     },
     strategyIds: [result.strategyAId, result.strategyBId],
     qualityRank: 0,

@@ -527,7 +527,7 @@ export const zhCN = {
     eyebrow: "AUTO LAB",
     title: "一键策略筛选",
     description:
-      "先完成全部 34 类单策略参数筛选，再自动组合每类策略的唯一优胜结果，并比较 60%/40% 与 40%/60% 两组仓位。",
+      "先完整遍历全部 34 类单策略参数；适宜策略再复筛 EMA5～8，然后自动组合各类单策略优胜结果，并比较 50/50、60/40、40/60、70/30、30/70 仓位。",
     optimizationGroup: "优化规模",
     validationGroup: "验证方式",
     objective: "优化目标",
@@ -545,9 +545,9 @@ export const zhCN = {
     parameterTraversal: "参数遍历范围",
     fullTraversal: "全部有限参数组合",
     fullTraversalHint:
-      "先完整遍历每个策略的参数域；适宜使用趋势过滤的策略只取前 30 组继续比较 EMA(5)、EMA(6)、EMA(7)、EMA(8)。",
+      "先完整遍历每个策略的参数域；适宜使用趋势过滤的策略只取前 60 组继续比较 EMA(5)、EMA(6)、EMA(7)、EMA(8)。",
     entryFilterSnapshot:
-      "右侧入场过滤启用后，仅趋势、突破和动量类策略的前 30 组参数继续比较 EMA(5–8)、斜率 0；每个结果保留自己的最优周期。",
+      "右侧入场过滤启用后，仅趋势、突破和动量类策略的前 60 组参数继续比较 EMA(5–8)、斜率 0；组合中的 A、B 分别保留自己的最佳过滤器。",
     validationMode: "筛选方式",
     validationModes: {
       sample: "周期筛选",
@@ -560,7 +560,7 @@ export const zhCN = {
       range:
         "只按自定义起止区间筛选并排名；区间前行情仅恢复指标和持仓状态，不计入评分。",
       rolling:
-        "把自定义总区间拆成固定长度滚动窗口，各窗口排名等权汇总；不设置训练期或样本外区间。",
+        "把自定义总区间拆成固定长度滚动窗口；每类单策略保留总区间前 10 名进入各窗口，各窗口排名等权汇总，不设置训练期或样本外区间。",
     },
     rangeValidationTitle: "自定义筛选区间",
     rollingRangeTitle: "滚动筛选总区间",
@@ -631,7 +631,7 @@ export const zhCN = {
     validationOverfit:
       "三种方式都使用设定区间参与选型；区间越近期，结果越偏向当前市场状态。",
     resultSnapshotNotice:
-      "筛选结果保留为上次运行快照；修改策略实验室只更新实验室回测，再次执行筛选才会更新结果。",
+      "本页显示本次完成结果，但不写入筛选结果缓存；历史档案仅用于追溯和对比，不参与下一次计算。",
     sampleResultMetricNotice:
       "结果表中的收益、回撤、夏普和综合分都来自当前筛选区间；窗口前行情只用于连续指标与持仓状态。",
     validationReportTitles: {
@@ -659,6 +659,23 @@ export const zhCN = {
     worstDrawdown: "窗口最差回撤",
     viewRollingDetails: "查看滚动窗口明细",
     partialWindow: "（未完整）",
+  },
+  screeningHistory: {
+    title: "筛选历史与周度对比",
+    loading: "正在读取运行档案",
+    loadError: "运行档案保存或读取失败；本次计算结果仍可使用。",
+    runs: "次已归档运行",
+    latestWinner: "本次第一名",
+    marketSnapshot: "行情快照",
+    runTime: "运行时间",
+    winnerChange: "冠军变化",
+    changed: "已变化",
+    unchanged: "未变化",
+    topTenOverlap: "前 10 重合",
+    previousRank: "本次冠军上次排名",
+    returnDelta: "同候选收益变化",
+    viewHistory: "查看历史运行",
+    mode: "筛选方式",
   },
   shortlist: {
     title: "主副策略建议",
@@ -692,7 +709,7 @@ export const zhCN = {
   },
   combinationScreening: {
     runningStrategies: "第 1 步：完整遍历单策略参数…",
-    runningEntryFilters: "第 2 步：前 30 组参数进行 EMA5–8 复筛…",
+    runningEntryFilters: "第 2 步：前 60 组参数进行 EMA5–8 复筛…",
     runningPairs: "第 3 步：组合每个单策略的唯一优胜结果…",
     runningAllocations: "第 4 步：优化组合仓位…",
     empty:

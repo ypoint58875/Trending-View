@@ -15,6 +15,7 @@ import {
 } from "./screening";
 import {
   optimizeStrategyCombinations,
+  ROLLING_SINGLE_FINALISTS_PER_STRATEGY,
   runStrategyCombinationBacktest,
   type CombinationOptimizationResult,
   type CombinationScreeningProgress,
@@ -174,7 +175,7 @@ export interface ScreeningValidationProgress {
 export interface ScreeningValidationOutcome
   extends Omit<
     CombinationOptimizationResult,
-    "singleResults" | "results"
+    "singleResults" | "results" | "singleCandidatePool"
   > {
   singleResults: ScreeningSingleResult[];
   results: ScreeningCombinationResult[];
@@ -440,8 +441,23 @@ function stableParameters(
     .join(",");
 }
 
+function stableEntryFilter(
+  filter:
+    | BacktestResult["entryFilter"]
+    | StrategyCombinationResult["strategyAEntryFilter"],
+): string {
+  return filter
+    ? `${filter.movingAverageType}:${filter.period}:${filter.minimumSlopePercent}`
+    : "none";
+}
+
 function singleKey(result: BacktestResult): string {
-  return `single:${result.strategyId}:${stableParameters(result.parameters)}`;
+  return [
+    "single",
+    result.strategyId,
+    stableParameters(result.parameters),
+    stableEntryFilter(result.entryFilter),
+  ].join(":");
 }
 
 function combinationKey(result: StrategyCombinationResult): string {
@@ -453,6 +469,8 @@ function combinationKey(result: StrategyCombinationResult): string {
     stableParameters(result.strategyBParameters),
     result.strategyAAllocation,
     result.strategyBAllocation,
+    stableEntryFilter(result.strategyAEntryFilter),
+    stableEntryFilter(result.strategyBEntryFilter),
   ].join(":");
 }
 
@@ -562,7 +580,7 @@ async function evaluateFrozenCandidates(
           result,
           {
             ...settings,
-            entryFilter: result.entryFilter ?? null,
+            entryFilter: null,
             entryFilterAllowed: undefined,
           },
           freezeRelativeRoles
@@ -925,6 +943,8 @@ async function runRollingValidation(
     withWindow(settings, range),
     {
       ...options,
+      retainedSinglesPerStrategy:
+        ROLLING_SINGLE_FINALISTS_PER_STRATEGY,
       onProgress: (progress) => {
         options.onProgress?.(progress);
         options.onValidationProgress?.({
@@ -954,15 +974,19 @@ async function runRollingValidation(
   }> = [];
   let evaluatedCount = optimization.evaluatedCount;
   let failedCount = optimization.failedCount;
+  const rollingSingleCandidatePool =
+    optimization.singleCandidatePool.length > 0
+      ? optimization.singleCandidatePool
+      : optimization.singleResults;
   const evaluationCandidateCount =
-    optimization.singleResults.length + optimization.results.length;
+    rollingSingleCandidatePool.length + optimization.results.length;
 
   for (let foldIndex = 0; foldIndex < folds.length; foldIndex += 1) {
     const fold = folds[foldIndex];
     const evaluation = await evaluateFrozenCandidates(
       bars,
       withWindow(settings, fold.window),
-      optimization.singleResults,
+      rollingSingleCandidatePool,
       optimization.results,
       {
         mode: "rolling",
@@ -1025,7 +1049,7 @@ async function runRollingValidation(
     return total / scores.length;
   };
   const singleResults: ScreeningSingleResult[] =
-    optimization.singleResults
+    rollingSingleCandidatePool
       .map((result) => {
         const selectionScore = selectionScoreFor(result);
         return selectionScore === null
@@ -1077,9 +1101,24 @@ async function runRollingValidation(
       ? difference
       : compareScreeningResults(left, right, objective);
   };
-  singleResults.sort(compareRollingScores);
+  const bestSingleByStrategy = new Map<
+    BacktestResult["strategyId"],
+    ScreeningSingleResult
+  >();
+  singleResults.forEach((result) => {
+    const current = bestSingleByStrategy.get(result.strategyId);
+    if (!current || compareRollingScores(result, current) < 0) {
+      bestSingleByStrategy.set(result.strategyId, result);
+    }
+  });
+  const retainedSingleResults = [...bestSingleByStrategy.values()].sort(
+    compareRollingScores,
+  );
   combinationResults.sort(compareRollingScores);
-  const selected = [...singleResults, ...combinationResults].sort(
+  const selected = [
+    ...retainedSingleResults,
+    ...combinationResults,
+  ].sort(
     compareRollingScores,
   )[0];
   const reports: ScreeningValidationFoldReport[] = selected
@@ -1136,7 +1175,7 @@ async function runRollingValidation(
       : null;
 
   return {
-    singleResults,
+    singleResults: retainedSingleResults,
     results: combinationResults,
     evaluatedCount,
     totalCandidates:

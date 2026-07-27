@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, max, sql } from "drizzle-orm";
-import { getChatGPTUser } from "@/app/chatgpt-auth";
+import { resolveOwnerEmail } from "@/app/api/owner";
 import { savedBacktests } from "@/db/schema";
 import {
   MAX_SAVED_BACKTEST_SCROLL_RECORDS,
@@ -7,6 +7,7 @@ import {
   parseSaveBacktestInput,
   parseSavedBacktestOrderInput,
   parseStrategyAllocationPlan,
+  shouldReplaceSavedBacktest,
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
 import {
@@ -22,16 +23,6 @@ type SavedBacktestRow = typeof savedBacktests.$inferSelect;
 async function getSavedBacktestDb() {
   const { getDb } = await import("@/db");
   return getDb();
-}
-
-async function resolveOwnerEmail(request: Request) {
-  const user = await getChatGPTUser();
-  if (user) return user.email.trim().toLowerCase();
-
-  const hostname = new URL(request.url).hostname;
-  return hostname === "localhost" || hostname === "127.0.0.1"
-    ? "local@quantscope.invalid"
-    : null;
 }
 
 function parseStoredParameters(value: string): StrategyParameters {
@@ -182,6 +173,34 @@ export async function POST(request: Request) {
 
   try {
     const db = await getSavedBacktestDb();
+    const replacementRows = await db
+      .select()
+      .from(savedBacktests)
+      .where(eq(savedBacktests.ownerEmail, ownerEmail))
+      .orderBy(desc(savedBacktests.updatedAt), desc(savedBacktests.id))
+      .limit(MAX_SAVED_BACKTEST_SCROLL_RECORDS);
+    const replacement = replacementRows.find((candidate) =>
+      shouldReplaceSavedBacktest(toRecord(candidate), input),
+    );
+    if (replacement) {
+      const [row] = await db
+        .update(savedBacktests)
+        .set({
+          ...values,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(
+          and(
+            eq(savedBacktests.ownerEmail, ownerEmail),
+            eq(savedBacktests.id, replacement.id),
+          ),
+        )
+        .returning();
+      return Response.json({
+        savedBacktest: toRecord(row),
+        replaced: true,
+      });
+    }
     const [orderRow] = await db
       .select({ value: max(savedBacktests.displayOrder) })
       .from(savedBacktests)
@@ -193,7 +212,10 @@ export async function POST(request: Request) {
         displayOrder: Number(orderRow?.value ?? 0) + 1,
       })
       .returning();
-    return Response.json({ savedBacktest: toRecord(row) }, { status: 201 });
+    return Response.json(
+      { savedBacktest: toRecord(row), replaced: false },
+      { status: 201 },
+    );
   } catch (error) {
     return persistenceError(error);
   }

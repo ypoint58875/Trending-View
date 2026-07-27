@@ -88,15 +88,18 @@ derived from each saved plan and costs over that shared range instead of
 displaying the creation-time metric. Inactive instrument groups show no numeric
 return until their history is active, avoiding a stale cross-range comparison.
 
-One strategy-screening action generates all 37,131 finite parameter
-combinations from the shared registry, applies one objective, and yields
-between small batches. For each explicitly eligible trend, breakout, or
-momentum strategy, it retains compact metrics for the top 30 unfiltered
+One strategy-screening action sends the complete market snapshot and settings
+to a dedicated module Web Worker, which generates all 37,131 finite parameter
+combinations from the shared registry and applies one objective. For each
+explicitly eligible trend, breakout, or momentum strategy, it retains compact
+metrics and raw execution state for the top 60 unfiltered
 parameter sets and compares EMA(5), EMA(6), EMA(7), and EMA(8) at a 0% slope.
-Every strategy then contributes exactly one final winner. The optimizer ranks
-every unordered pair of non-equivalent winners at reference A=60% and B=40%,
-retains up to 4,096 pairs, and replays the alternate A=40% and B=60%
-assignment. The current catalog produces 559 pairs, so none are pruned. Final
+Every strategy then contributes its final winner to normal pair screening;
+rolling screening retains the best ten candidates per strategy for window
+aggregation before collapsing back to one displayed winner per strategy. The
+optimizer ranks every unordered pair of non-equivalent retained single results
+and compares 50/50, 60/40, 40/60, 70/30, and 30/70 allocations. The current
+unique-winner catalog produces 559 strategy-ID pairs. Final
 combination output keeps only the best parameter/allocation result for each
 unique unordered strategy-ID pair. The UI renders standalone and combination
 outputs in equal fixed-layout columns beneath one horizontal control bar and
@@ -106,13 +109,13 @@ Clicking or keyboard-activating a result row applies it directly; the strategy
 A/B columns keep names and horizon labels inline, and the strategy lab remains
 the sole equity-preview surface. Every target is generated from
 the complete loaded history; only performance is restricted to the selected
-date range. Only the final unique winner per strategy retains its complete
-execution state for pair replay; the EMA Top-30 stage stores compact
-performance records.
+date range. Indicator, target, and order arrays are cached only inside the
+Worker run and are discarded when it terminates. Completed result objects are
+not loaded as a future calculation cache.
 
 `screening-validation.ts` wraps the same optimizer without duplicating its
 candidate domain or objective rules. Period screening performs the complete
-parameter, EMA Top-30, combination, and allocation workflow inside one
+parameter, EMA Top-60, combination, and allocation workflow inside one
 configured trailing window. The default is 128 sessions and is synchronized
 bidirectionally with the strategy-lab range. Range screening performs the same
 workflow over one custom start/end interval and has no separate training,
@@ -124,9 +127,12 @@ drive the final order.
 
 All three modes build indicators, strategy targets, and opening position state
 from complete loaded history so a scoring boundary does not reset a
-continuously running strategy. Only transactions and performance inside the
-active period, custom range, or rolling window feed its return, Sharpe,
-drawdown, and objective. The balanced objective is `0.45 * totalReturn +
+continuously running strategy. If exposure already exists, the active range
+inherits units and cash directly at its first open without recording a trade or
+cost. At the end it marks remaining units to the last close without a forced
+sale. Only real signal transactions and performance inside the active period,
+custom range, or rolling window feed its return, Sharpe, drawdown, and
+objective. The balanced objective is `0.45 * totalReturn +
 8 * clamp(Sharpe, -5, 5) + 0.35 * maxDrawdown`; trade count remains report and
 candidate-status evidence only. These modes are recent-adaptive in-sample
 selectors and make no out-of-sample claim.
@@ -157,13 +163,14 @@ transitions and then Strategy A. A new relative-long entry establishes its
 assigned allocation and deliberately ignores a relative-short signal already
 active. Only a later fresh relative-short entry adds its allocation; its paired
 exit removes that layer. The relative-long exit clears both layers. The
-allocation plan uses 100% whenever exactly one strategy is selected; 60/40
-assignments exist only for dual plans. The allocation backtest applies
+allocation plan uses 100% whenever exactly one strategy is selected; dual
+plans allow 50/50, 60/40, 40/60, 70/30, and 30/70. The allocation backtest applies
 close-confirmed changed states at the next open and causal price-order states
 on the touched bar. Complete-history state initializes any already-active
-position at the first selected open. It does not recenter an unchanged state
-after price drift, applies costs to each actual transition, and liquidates at
-the selected range end. Rebalances carry
+position at the first selected open without a transaction or cost. It does not
+recenter an unchanged state after price drift and applies costs only to actual
+in-range transitions. It marks the selected-range end to the last close
+without liquidation. Rebalances carry
 relative long/short entry/exit attribution, and a gate exit with an active
 short layer renders as one close action.
 
@@ -197,11 +204,20 @@ shortcut carries the exact filter into the applied plan, backtest, stability
 diagnostic, chart, and live guidance. When the screening draft is enabled, the
 optimizer creates separate EMA(5), EMA(6), EMA(7), and EMA(8) contexts at a
 fixed 0% threshold only for the explicit trend/breakout/momentum family and
-only after selecting each eligible strategy's top 30 unfiltered parameter
-sets. Combination screening uses each strategy's unique final winner. Because
-the current plan schema has one shared entry filter, a pair retains that filter
-only when both winners selected the same EMA; otherwise the pair is replayed
-without a shared EMA filter and is ranked on that coherent plan.
+only after selecting each eligible strategy's top 60 unfiltered parameter
+sets. Combination plans store `strategyAEntryFilter` and
+`strategyBEntryFilter`; every leg is replayed with the exact filter state that
+qualified its retained single result, including mixed filtered/unfiltered and
+different-EMA pairs.
+
+`screening-runs.ts` is the persistence boundary for audit archives. It builds a
+stable candidate key, strips heavy equity/trade/rebalance arrays from the
+validation report, and hashes the normalized market snapshot with SHA-256.
+`/api/screening-runs` scopes every read and write by the shared owner resolver
+and canonical instrument key. D1 stores source, adjustment, fetch time, last
+bar, data fingerprint, retained compact ranking, settings, and validation
+configuration. The UI compares the newest two runs. This archive is provenance,
+not optimization input or a result cache.
 
 Live guidance reuses the same strategy registry. Target-state strategies
 compare the newest dynamic bar target with the preceding target. Price-order

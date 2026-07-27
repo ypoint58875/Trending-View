@@ -237,7 +237,20 @@ export function runAllocationBacktest(
   const slippageRate = Math.max(settings.slippageRate, 0);
   const equity: EquityPoint[] = [];
   const rebalances: AllocationRebalance[] = [];
-  let plannedAllocation = 0;
+  const firstIndexedBar = indexedBars[0];
+  const priorTargetIndex = firstIndexedBar.originalIndex - 1;
+  const openingAllocation =
+    priorTargetIndex >= 0
+      ? clampAllocation(fullTarget[priorTargetIndex] ?? 0)
+      : 0;
+  if (openingAllocation > 0) {
+    const openingEquity = cash;
+    units =
+      (openingEquity * openingAllocation) /
+      firstIndexedBar.bar.open;
+    cash = openingEquity * (1 - openingAllocation);
+  }
+  let plannedAllocation = openingAllocation;
 
   const rebalanceAtPrice = (
     bar: MarketBar,
@@ -287,21 +300,8 @@ export function runAllocationBacktest(
   };
 
   for (let index = 0; index < indexedBars.length; index += 1) {
-    const { bar, originalIndex } = indexedBars[index];
-    if (index === 0) {
-      const priorIndex = originalIndex - 1;
-      const openingAllocation =
-        priorIndex >= 0 ? clampAllocation(fullTarget[priorIndex] ?? 0) : 0;
-      if (Math.abs(openingAllocation - plannedAllocation) > 1e-10) {
-        rebalanceAtPrice(
-          bar,
-          bar.open,
-          openingAllocation,
-          priorIndex >= 0 ? (fullSignalEvents?.[priorIndex] ?? []) : [],
-        );
-        plannedAllocation = openingAllocation;
-      }
-    } else {
+    const { bar } = indexedBars[index];
+    if (index > 0) {
       const nextAllocation = indexedBars[index - 1].target;
       if (Math.abs(nextAllocation - plannedAllocation) > 1e-10) {
         rebalanceAtPrice(
@@ -339,29 +339,12 @@ export function runAllocationBacktest(
     });
   }
 
-  if (units > 0) {
-    const lastBar = indexedBars[indexedBars.length - 1].bar;
-    const equityBeforeClose = cash + units * lastBar.close;
-    const fromAllocation = clampAllocation(
-      (units * lastBar.close) / equityBeforeClose,
-    );
-    const fillPrice = lastBar.close * (1 - slippageRate);
-    cash += units * fillPrice * (1 - commissionRate);
-    units = 0;
-    rebalances.push({
-      time: lastBar.time,
-      fromAllocation,
-      targetAllocation: 0,
-      fillPrice,
-      reason: "range-end",
-      signals: [],
-    });
-    equity[equity.length - 1].equity = cash;
-  }
+  const lastBar = indexedBars[indexedBars.length - 1].bar;
+  const finalEquity = cash + units * lastBar.close;
 
   return {
     ...summarizePerformance(
-      cash,
+      finalEquity,
       equity,
       indexedBars.map(({ bar }) => bar),
       rebalances.length,
@@ -451,6 +434,7 @@ export function runBacktestFromTarget(
   let entryPrice = 0;
   let entryTime = "";
   let entryCost = 0;
+  let inheritedPosition = false;
   const commissionRate = Math.max(settings.commissionRate, 0);
   const slippageRate = Math.max(settings.slippageRate, 0);
   let peak = cash;
@@ -468,19 +452,22 @@ export function runBacktestFromTarget(
     const proceeds = units * fillPrice;
     const fee = proceeds * commissionRate;
     cash += proceeds - fee;
-    trades.push({
-      entryTime,
-      exitTime,
-      entryPrice,
-      exitPrice: fillPrice,
-      returnPercent:
-        ((proceeds - fee - entryCost) / Math.max(entryCost, 1)) * 100,
-      exitReason,
-    });
+    if (!inheritedPosition) {
+      trades.push({
+        entryTime,
+        exitTime,
+        entryPrice,
+        exitPrice: fillPrice,
+        returnPercent:
+          ((proceeds - fee - entryCost) / Math.max(entryCost, 1)) * 100,
+        exitReason,
+      });
+    }
     units = 0;
     entryPrice = 0;
     entryTime = "";
     entryCost = 0;
+    inheritedPosition = false;
   };
 
   const openPosition = (marketPrice: number, nextEntryTime: string) => {
@@ -493,6 +480,7 @@ export function runBacktestFromTarget(
     cash -= entryCost;
     entryPrice = fillPrice;
     entryTime = nextEntryTime;
+    inheritedPosition = false;
   };
 
   const firstIndexedBar = indexedBars[0];
@@ -501,7 +489,11 @@ export function runBacktestFromTarget(
     priorTargetIndex >= 0 &&
     (effectiveTarget[priorTargetIndex] ?? 0) > 0
   ) {
-    openPosition(firstIndexedBar.bar.open, firstIndexedBar.bar.time);
+    entryPrice = firstIndexedBar.bar.open;
+    entryCost = cash;
+    units = cash / firstIndexedBar.bar.open;
+    cash = 0;
+    inheritedPosition = true;
   }
 
   for (let index = 0; index < indexedBars.length; index += 1) {
@@ -542,11 +534,8 @@ export function runBacktestFromTarget(
     });
   }
 
-  if (units > 0) {
-    const lastBar = indexedBars[indexedBars.length - 1].bar;
-    closePosition(lastBar.close, lastBar.time, "range-end");
-    equity[equity.length - 1].equity = cash;
-  }
+  const lastBar = indexedBars[indexedBars.length - 1].bar;
+  const finalEquity = cash + units * lastBar.close;
 
   const winningTrades = trades.filter((trade) => trade.returnPercent > 0);
   const losingTrades = trades.filter((trade) => trade.returnPercent < 0);
@@ -558,7 +547,7 @@ export function runBacktestFromTarget(
     losingTrades.reduce((sum, trade) => sum + trade.returnPercent, 0),
   );
   const performance = summarizePerformance(
-    cash,
+    finalEquity,
     equity,
     indexedBars.map(({ bar }) => bar),
     trades.length,

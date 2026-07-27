@@ -140,6 +140,12 @@ archive and is always refreshed in the background.
 Saved backtest shortcuts use D1 and are a separate product-record pipeline.
 They are not a market-data cache or a raw-source archive.
 
+Completed screening runs also use D1, but only as compact traceability records.
+Each row records the normalized series source, adjustment mode, fetched time,
+last bar, bar count, SHA-256 bar fingerprint, screening configuration, and
+retained compact ranking. It does not store provider raw payloads or full
+equity/trade arrays and is never read as an optimization cache.
+
 ## Future recommendations
 
 The following items are not implemented:

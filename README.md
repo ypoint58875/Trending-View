@@ -31,8 +31,9 @@ trades or run unattended jobs.
 - Explicit price-adjustment metadata from the selected `MarketSeries`.
   Eastmoney, EODHD, and valid Yahoo daily series are marked
   `corporate-action-adjusted`; Nasdaq is a raw daily fallback.
-- Explicit green-up/red-down chart legend and separate range-end valuation
-  markers so a forced backtest close is not presented as a strategy sell.
+- Explicit green-up/red-down chart legend. A selected-range boundary inherits
+  an already-open position without a synthetic fill or cost and marks the
+  ending position to the last close without forcing a sale.
 - Twenty independently configurable indicators, including moving-average
   variants, Bollinger Bands, Ichimoku, Supertrend, momentum, volatility, and
   volume studies. One indicator is focused for editing while an ordered
@@ -56,14 +57,15 @@ trades or run unattended jobs.
 - Long-only manual-history execution. Close-confirmed target changes trade at
   the following daily open; causal stop levels calculated from completed bars
   can fill inside the active bar and use its open after a gap.
-- An optional moving-average-slope entry filter shared by the strategy lab,
-  one-click screening, applied guidance, and saved shortcuts. It supports SMA,
+- An optional moving-average-slope entry-filter subsystem used by the strategy
+  lab, one-click screening, applied guidance, and saved shortcuts. Strategy A
+  and Strategy B keep independent filter settings. It supports SMA,
   EMA, or WMA with a period of at least two sessions and compares the
   normalized one-session slope in percent. The control is off by default with
   an EMA(7), 0%/session preset; it delays only new buys and never forces an
   exit. One-click screening first evaluates every unfiltered parameter set.
   It then compares EMA(5), EMA(6), EMA(7), and EMA(8), at a fixed 0%
-  threshold, only for the top 30 unfiltered parameter sets in the explicit
+  threshold, only for the top 60 unfiltered parameter sets in the explicit
   trend, breakout, and momentum family. Other families remain unfiltered.
   Each result stores its winning filter state; the strategy lab remains
   editable for manual replay.
@@ -73,8 +75,10 @@ trades or run unattended jobs.
   instrument, complete optional Strategy A/B plan, both parameter sets,
   allocations, date range, cost settings, and the indicators that were visible
   at save time with their exact parameters.
-  The shortcut bar contains the Save current strategy action. Each click adds
-  a strategy snapshot, so one instrument can retain multiple shortcuts. The
+  The shortcut bar contains the Save current strategy action. A save replaces
+  the existing record when instrument, plan, range, cash, and costs are
+  identical—even when only visible indicators changed; a materially different
+  setup creates a new snapshot. The
   scrollable list shows one collapsed row per instrument; expanding it reveals
   the saved strategy/indicator snapshots. Instrument groups and snapshots can
   be reordered by drag and drop or keyboard arrows, and that order persists.
@@ -118,11 +122,19 @@ trades or run unattended jobs.
   builds every candidate signal over the complete loaded history and limits
   only performance measurement to the selected range. This preserves sticky
   position state across long quiet periods. If that state is already long
-  before the selected start, the simulation initializes the position at the
-  first selected open instead of waiting for another signal. The EMA stage
-  keeps only compact metrics for each eligible strategy's top 30 unfiltered
+  before the selected start, the simulation inherits the position at the
+  first selected open without a trade or cost. The EMA stage
+  keeps only compact metrics for each eligible strategy's top 60 unfiltered
   parameter sets. Only the final unique winner per strategy keeps its complete
   execution state for pair replay.
+- Screening runs in a dedicated module Web Worker. Indicator, target, and
+  execution arrays are reused only inside that run; completed results are not
+  restored as a calculation cache after refresh.
+- Every completed run writes a compact audit archive containing source,
+  adjustment mode, last bar, data fingerprint, screening configuration,
+  retained ranking, and validation summary. The UI compares the newest run
+  with the prior run for the same canonical instrument; archives never feed
+  the next optimization.
 - A two-selector strategy lab where Strategy A and Strategy B can each be any
   different registered strategy and either selector can be omitted. For a dual
   plan, the selected-range target with the longer average active run becomes
@@ -134,7 +146,7 @@ trades or run unattended jobs.
   roles are shown in the lab and recalculate when dates or parameters change.
   Each selector exposes its own parameter settings directly below it.
   Selecting only one strategy always backtests and saves it at 100% allocation;
-  the 60%/40% choices apply only to dual plans.
+  dual plans compare 50/50, 60/40, 40/60, 70/30, and 30/70.
   Its Apply action clones the current draft plan to the trend chart and moves
   the view to that chart; selector/parameter edits do not change chart lines,
   markers, or live guidance before Apply. Durable saving remains a separate
@@ -262,9 +274,11 @@ fill. Greedy also shows a completed-candle instruction that is pending for the
 next open; a qualifying opposite gap at that open can replace that direction.
 
 Editing strategy-lab plans, dates, cash, or cost settings and saving a backtest
-do not clear completed one-click screening results. They remain a last-run
-snapshot until another screening starts or the instrument changes. Local D1
-state writes are excluded from the development file watcher.
+do not clear the current page's completed one-click screening results. They
+remain visible until another screening starts or the instrument changes, but
+are not loaded from a calculation cache after refresh. Compact D1 run archives
+exist only for provenance and week-to-week comparison. Local D1 state writes
+are excluded from the development file watcher.
 
 The optional moving-average-slope entry filter uses
 `(MA[t] / MA[t-1] - 1) * 100`, rather than a raw price-unit difference, so one
@@ -300,9 +314,10 @@ a constant target after ordinary price drift. Every finalist holding choice is
 replayed through the allocation backtest, so exposure, costs, return,
 drawdown, and Sharpe affect its rank. The staged four-phase search is exhaustive
 across the full registered 37,131-parameter Cartesian product. EMA5-8 is a
-second-stage comparison over only the top 30 unfiltered candidates for each
-eligible family, after which combination screening uses one unique winner per
-strategy across all unordered non-equivalent pairs and both 60/40 assignments.
+second-stage comparison over only the top 60 unfiltered candidates for each
+eligible family, after which combination screening uses retained single
+results across all unordered non-equivalent pairs and compares 50/50, 60/40,
+40/60, 70/30, and 30/70 assignments.
 This reduces combination work without eliminating overfitting.
 Close-confirmed changes execute at the following daily open, while
 causal predefined price orders may execute on the touched bar under the same

@@ -137,7 +137,8 @@ trade only to make a test pass.
    range limits performance measurement, not signal construction.
 2. The first stage intentionally evaluates all 37,131 registered parameter
    combinations. There is no production cap or sampling control.
-3. Confirm only compact metrics for each eligible strategy's top 30 unfiltered
+3. Confirm only compact metrics and reusable execution state for each eligible
+   strategy's top 60 unfiltered
    candidates survive into the EMA stage. Only the final unique winner per
    strategy should retain complete execution state for pair replay.
 4. Confirm the unified run advances through parameter, entry-filter, pair, and allocation
@@ -146,21 +147,21 @@ trade only to make a test pass.
 5. Confirm EMA(5-8) runs only for the explicit trend/breakout/momentum family.
    Channel BreakOut and Price Channel must participate; reversal and
    candlestick families must remain unfiltered.
-6. Confirm each pair uses the exact parameters of its two unique standalone
-   winners. With 34 winners and two equivalent ID pairs excluded, the current
-   maximum is 559 pairs under the 4,096 safety bound. Both 60/40 and 40/60
-   assignments should be compared.
+6. Confirm each pair uses the exact parameters and independent A/B entry
+   filters of its retained standalone results. With 34 unique winners and two
+   equivalent ID pairs excluded, the current maximum is 559 strategy-ID pairs
+   under the 4,096 safety bound. Compare 50/50, 60/40, 40/60, 70/30, and
+   30/70.
 7. Use the stop action when a run is no longer useful.
-8. Confirm progress continues to advance. Before the first evaluation, at each
-   stage transition, and after every eight evaluations, the optimizer yields
-   through the browser cooperative scheduler and then crosses a timer-task
-   boundary. The timer boundary is required because a chain of prioritized
-   scheduler continuations can otherwise finish without giving React and the
-   browser a visible paint opportunity. The chart and stop control should
-   therefore appear before the heavy loop and remain responsive.
-9. If rolling-window replay is too slow or concurrent users become a
-   requirement, move execution to a Web Worker or durable server queue without
-   changing the registered candidate domain.
+8. Confirm `screening.worker.ts` was emitted by the production build and that
+   progress messages continue while the main page remains interactive. The
+   stop action should send cancellation and terminate the Worker promptly.
+9. For rolling mode, confirm the selection pool retains up to ten candidates
+   per strategy for every window and collapses to one displayed winner only
+   after equal-window ranking.
+10. If screens must survive page closure or run concurrently across devices,
+   move the same protocol to a durable server queue without changing the
+   registered candidate domain.
 
 ## Screening card changes after Apply
 
@@ -199,7 +200,7 @@ trade only to make a test pass.
    selectors and scrolled to the main chart. Enter and Space should provide
    the same keyboard action while the row is focused.
 3. Confirm the result's A and B values match the two strategy-lab allocation
-   selectors. Dual plans must be 60/40 or 40/60; the two strategy parameter
+   selectors. Dual plans must be 50/50, 60/40, 40/60, 70/30, or 30/70; the two strategy parameter
    sections should sit directly below their own selectors.
 4. Reference lines exist only for strategies with a continuous price
    reference; a candle/oscillator rule may legitimately add no line.

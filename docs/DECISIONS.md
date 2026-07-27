@@ -511,3 +511,34 @@ objective. Balanced score is
 `0.45 * currentWindowReturn + 8 * clamp(currentWindowSharpe, -5, 5) +
 0.35 * currentWindowMaxDrawdown`. Trade count remains visible and continues to
 control candidate/observe-only presentation, but it never changes the score.
+
+## D-029: Continuous range boundaries, independent filters, Worker execution, and audit archives
+
+Supersede any earlier range-end liquidation and synthetic boundary-fill rule.
+When complete pre-range execution state is already invested, initialize the
+selected range with the corresponding units and cash at its first open without
+a trade, commission, or slippage. Do not count an inherited entry toward trade
+statistics. At the final bar, mark open units to the close without a sale,
+transaction record, commission, or slippage. Only actual strategy transitions
+inside the selected range create trades or rebalances.
+
+Supersede D-026's Top-30, shared-filter, and two-allocation limits. Eligible EMA
+families refine their Top 60 unfiltered parameter sets under no filter and
+EMA5-8. Combination plans retain independent `strategyAEntryFilter` and
+`strategyBEntryFilter` states. Compare 50/50, 60/40, 40/60, 70/30, and 30/70.
+Rolling mode retains Top 10 candidates per strategy for window replay and
+collapses to one displayed winner per strategy after equal-window aggregation.
+
+Run production screening in a module Web Worker. Reuse indicator, target, and
+execution arrays only during that Worker run; do not persist completed results
+as an optimization cache. Persist a separate compact D1 audit archive after a
+successful run with owner, canonical instrument, source, adjustment, last bar,
+data fingerprint, configuration, objective, retained ranking, and compact
+validation summary. Archives support week-to-week comparison and never seed a
+later calculation.
+
+When saving a backtest, update the existing owner-scoped row only if canonical
+instrument, interval, full plan (including independent filters), range, cash,
+commission, and slippage match. Indicator visibility/settings and recalculated
+metrics are replaceable presentation state. Any material strategy or execution
+setting difference creates a new row.

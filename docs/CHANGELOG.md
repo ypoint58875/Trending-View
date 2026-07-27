@@ -2,6 +2,23 @@
 
 ## 2026-07-27
 
+- Changed selected-range accounting to inherit pre-existing positions without
+  a synthetic fill or cost and to mark open ending positions to the final close
+  without forced liquidation. Trade counts now contain only real in-range
+  signal transactions.
+- Gave Strategy A and Strategy B independent entry filters, expanded EMA
+  refinement from Top 30 to Top 60, retained Top 10 singles per strategy for
+  rolling-window replay, and expanded dual allocation comparison to 50/50,
+  60/40, 40/60, 70/30, and 30/70.
+- Moved production one-click screening into a module Web Worker with run-local
+  target/indicator reuse and typed progress/cancellation messages. Completed
+  results are not cached for calculation reuse.
+- Added owner-scoped D1 screening-run archives with source/adjustment
+  provenance, last bar, SHA-256 market fingerprint, configuration, compact
+  retained ranking, and week-to-week comparison.
+- Changed Save current strategy so an identical instrument/plan/range/cost
+  setup updates its existing row; indicator-only changes no longer create a
+  duplicate shortcut.
 - Replaced pre-window and train/selection/test screening with three
   recent-adaptive modes: one synchronized N-session period, one custom range,
   and equal-rank fixed-width rolling windows over one custom total interval.

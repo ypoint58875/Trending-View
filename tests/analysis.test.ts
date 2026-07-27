@@ -51,9 +51,16 @@ import {
   reorderSavedBacktestGroups,
   reorderSavedBacktestsWithinGroup,
   savedBacktestInstrumentKey,
+  shouldReplaceSavedBacktest,
   strategyPlansEqual,
   type SavedBacktestRecord,
 } from "../lib/analysis/saved-backtests";
+import {
+  compareScreeningRuns,
+  createSaveScreeningRunInput,
+  fingerprintMarketSeries,
+  parseSaveScreeningRunInput,
+} from "../lib/analysis/screening-runs";
 import {
   INTRABAR_PRICE_ORDER_STRATEGY_IDS,
   LONG_HORIZON_STRATEGY_IDS,
@@ -1510,17 +1517,23 @@ test("builds optional A, optional B, and hierarchical dual-strategy allocations"
   );
 });
 
-test("builds only the two 40/60 full-allocation strategy assignments", () => {
-  assert.deepEqual(STRATEGY_LAYER_ALLOCATION_CANDIDATES, [0.4, 0.6]);
+test("builds five full-allocation strategy assignments", () => {
+  assert.deepEqual(
+    STRATEGY_LAYER_ALLOCATION_CANDIDATES,
+    [0.3, 0.4, 0.5, 0.6, 0.7],
+  );
   assert.deepEqual(TWO_STRATEGY_ALLOCATION_CANDIDATES, [
     { strategyAAllocation: 0.6, strategyBAllocation: 0.4 },
     { strategyAAllocation: 0.4, strategyBAllocation: 0.6 },
+    { strategyAAllocation: 0.5, strategyBAllocation: 0.5 },
+    { strategyAAllocation: 0.7, strategyBAllocation: 0.3 },
+    { strategyAAllocation: 0.3, strategyBAllocation: 0.7 },
   ]);
   assert.ok(
     TWO_STRATEGY_ALLOCATION_CANDIDATES.every(
       ({ strategyAAllocation, strategyBAllocation }) =>
-        [0.4, 0.6].includes(strategyAAllocation) &&
-        [0.4, 0.6].includes(strategyBAllocation) &&
+        [0.3, 0.4, 0.5, 0.6, 0.7].includes(strategyAAllocation) &&
+        [0.3, 0.4, 0.5, 0.6, 0.7].includes(strategyBAllocation) &&
         strategyAAllocation + strategyBAllocation === 1,
     ),
   );
@@ -1776,7 +1789,8 @@ test("rebalances hierarchical allocations at the next open and applies costs", (
   assert.equal(result.rebalances[1].targetAllocation, 0.6);
   assert.equal(result.rebalances[2].time, bars[4].time);
   assert.equal(result.rebalances[2].targetAllocation, 1);
-  assert.equal(result.rebalances.at(-1)?.reason, "range-end");
+  assert.equal(result.rebalances.at(-1)?.reason, "strategy");
+  assert.equal(result.rebalances.length, 3);
   assert.equal(result.tradeCount, result.rebalances.length);
   assert.ok(result.finalEquity > 10_000);
   assert.ok(result.finalEquity < 12_000);
@@ -1914,10 +1928,12 @@ test("aligns selected-range capital to the complete-history opening state", () =
   );
   const allocation = runAllocationBacktest(bars, fullTarget, settings);
 
-  assert.equal(direct.trades[0].entryTime, bars[3].time);
-  assert.equal(direct.trades[0].entryPrice, bars[3].open);
-  assert.equal(allocation.rebalances[0].time, bars[3].time);
-  assert.equal(allocation.rebalances[0].targetAllocation, 1);
+  assert.equal(direct.tradeCount, 0);
+  assert.equal(direct.trades.length, 0);
+  assert.equal(allocation.tradeCount, 0);
+  assert.equal(allocation.rebalances.length, 0);
+  assert.equal(direct.finalEquity, allocation.finalEquity);
+  assert.ok(direct.finalEquity > settings.initialCash);
 });
 
 test("carries a price-order position into a selected range before resolving exits", () => {
@@ -1952,11 +1968,9 @@ test("carries a price-order position into a selected range before resolving exit
     orders,
   );
 
-  assert.equal(result.tradeCount, 1);
-  assert.equal(result.trades[0].entryTime, bars[3].time);
-  assert.equal(result.trades[0].entryPrice, bars[3].open);
-  assert.equal(result.trades[0].exitTime, bars[4].time);
-  assert.equal(result.trades[0].exitPrice, 13.5);
+  assert.equal(result.tradeCount, 0);
+  assert.equal(result.trades.length, 0);
+  assert.ok(result.finalEquity > 10_000);
 });
 
 test("executes price-reference strategies at following opens in manual history", () => {
@@ -2105,8 +2119,9 @@ test("keeps Donchian close confirmation and adds a touched-bar variant", () => {
     settings,
   );
 
-  assert.equal(intrabar.trades[0].entryTime, bars[2].time);
-  assert.equal(intrabar.trades[0].entryPrice, 11);
+  assert.equal(intrabar.tradeCount, 0);
+  assert.ok(intrabar.finalEquity < settings.initialCash);
+  assert.equal(closeConfirmed.finalEquity, settings.initialCash);
   assert.equal(closeConfirmed.tradeCount, 0);
 });
 
@@ -2995,7 +3010,7 @@ test("uses a conservative entry-then-exit path when both channel stops touch", (
   assert.ok(direct.totalReturn < 0);
 });
 
-test("marks a final valuation close separately from a strategy sell", () => {
+test("marks an open final position to market without a synthetic sell", () => {
   const bars = makeOhlcBars([
     { open: 10, high: 10.5, low: 9.5, close: 10 },
     { open: 11, high: 12.5, low: 10.8, close: 12 },
@@ -3013,10 +3028,11 @@ test("marks a final valuation close separately from a strategy sell", () => {
     },
   );
 
-  assert.equal(result.trades.at(-1)?.exitReason, "range-end");
+  assert.equal(result.tradeCount, 0);
+  assert.ok(result.finalEquity > 10_000);
   const markers = buildTradeMarkers(result.trades);
   assert.equal(markers.sells.length, 0);
-  assert.equal(markers.rangeExits.length, 1);
+  assert.equal(markers.rangeExits.length, 0);
 });
 
 test("maps allocation increases, reductions, and valuation exits to markers", () => {
@@ -3183,7 +3199,7 @@ test("keeps screening cards identical to applying the same full-history strategy
     settings,
   );
   assert.deepEqual(screened, applied);
-  assert.equal(screened.tradeCount, 1);
+  assert.equal(screened.tradeCount, 0);
 
   const combinedOutcome = await optimizeStrategyCombinations(
     bars,
@@ -3381,7 +3397,7 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
   }
 });
 
-test("screens EMA 5-8 only for the top 30 eligible-family parameter sets", async () => {
+test("screens EMA 5-8 only for the top 60 eligible-family parameter sets", async () => {
   assert.ok(
     SCREENING_MOVING_AVERAGE_SLOPE_STRATEGY_IDS.includes(
       "tv-channel-breakout",
@@ -3406,7 +3422,7 @@ test("screens EMA 5-8 only for the top 30 eligible-family parameter sets", async
   const candidates = [
     ...completeCandidates
       .filter((candidate) => candidate.strategyId === "sma-cross")
-      .slice(0, 35),
+      .slice(0, 75),
     ...completeCandidates
       .filter((candidate) => candidate.strategyId === "rsi-reversal")
       .slice(0, 1),
@@ -3463,11 +3479,23 @@ test("screens EMA 5-8 only for the top 30 eligible-family parameter sets", async
     );
   }
   for (const result of outcome.results) {
+    const strategyAResult = outcome.singleResults.find(
+      (single) => single.strategyId === result.strategyAId,
+    );
+    const strategyBResult = outcome.singleResults.find(
+      (single) => single.strategyId === result.strategyBId,
+    );
     assert.deepEqual(
       result.strategyAParameters,
-      outcome.singleResults.find(
-        (single) => single.strategyId === result.strategyAId,
-      )?.parameters,
+      strategyAResult?.parameters,
+    );
+    assert.deepEqual(
+      result.strategyAEntryFilter ?? null,
+      strategyAResult?.entryFilter ?? null,
+    );
+    assert.deepEqual(
+      result.strategyBEntryFilter ?? null,
+      strategyBResult?.entryFilter ?? null,
     );
     assert.deepEqual(
       result.strategyBParameters,
@@ -3656,7 +3684,7 @@ test("ranks screening results by the selected optimization objective", () => {
 
 test("builds every unique parameter set without per-strategy sampling", () => {
   assert.equal(DEFAULT_SCREENING_YIELD_EVERY, 8);
-  assert.equal(SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY, 30);
+  assert.equal(SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY, 60);
   assert.equal(buildScreeningCandidates().length, 37_131);
 
   const screeningCandidates = buildScreeningCandidates();
@@ -4207,6 +4235,9 @@ test("requires 120 in-range observations and two completed base trades", () => {
       if (index === 1) {
         return { open: 101, high: 103, low: 100, close: 102 };
       }
+      if (index === 2) {
+        return { open: 101, high: 102, low: 99, close: 100 };
+      }
       return { open: 100, high: 101, low: 99, close: 100 };
     }),
   );
@@ -4345,7 +4376,8 @@ test("validates saved backtests and rejects unsupported assets", () => {
     },
   };
   assert.deepEqual(
-    parseSaveBacktestInput(filteredPayload)?.plan.entryFilter,
+    parseSaveBacktestInput(filteredPayload)?.plan
+      .strategyAEntryFilter,
     DEFAULT_MOVING_AVERAGE_SLOPE_FILTER,
   );
   assert.equal(
@@ -4505,6 +4537,190 @@ test("validates saved backtests and rejects unsupported assets", () => {
     }),
     null,
   );
+});
+
+test("replaces a saved setup when only visible indicators change", () => {
+  const baseInput = parseSaveBacktestInput({
+    instrument: {
+      secid: "100.N225",
+      code: "N225",
+      name: "Nikkei 225",
+      exchange: "JPX",
+      assetType: "index",
+      provider: "eastmoney",
+    },
+    interval: "1d",
+    strategyId: "tv-channel-breakout",
+    parameters: { length: 4, tick: 0.01 },
+    plan: {
+      strategyA: {
+        strategyId: "tv-channel-breakout",
+        parameters: { length: 4, tick: 0.01 },
+      },
+      strategyB: null,
+      strategyAAllocation: 1,
+      strategyBAllocation: 0,
+      strategyAEntryFilter: {
+        movingAverageType: "ema",
+        period: 8,
+        minimumSlopePercent: 0,
+      },
+    },
+    indicators: [],
+    startDate: "2026-01-19",
+    endDate: "2026-07-27",
+    initialCash: 100_000,
+    commissionPercent: 0.03,
+    slippagePercent: 0.02,
+    metrics: {
+      totalReturn: 30.51,
+      maxDrawdown: -5.64,
+      sharpe: 2.64,
+      tradeCount: 6,
+      score: 32.31,
+    },
+  });
+  assert.ok(baseInput);
+  const existing: SavedBacktestRecord = {
+    ...baseInput,
+    id: 7,
+    createdAt: "2026-07-20 00:00:00",
+    updatedAt: "2026-07-20 00:00:00",
+  };
+  assert.equal(
+    shouldReplaceSavedBacktest(existing, {
+      ...baseInput,
+      indicators: [
+        { id: "ema", parameters: { period: 8 } },
+      ],
+    }),
+    true,
+  );
+  assert.equal(
+    shouldReplaceSavedBacktest(existing, {
+      ...baseInput,
+      plan: {
+        ...baseInput.plan,
+        strategyA: {
+          strategyId: "tv-channel-breakout",
+          parameters: { length: 5, tick: 0.01 },
+        },
+      },
+    }),
+    false,
+  );
+});
+
+test("fingerprints and compares compact screening run archives", async () => {
+  const bars = makeBars([10, 11, 12, 11, 13]);
+  const series = {
+    instrument: {
+      secid: "100.N225",
+      code: "N225",
+      name: "Nikkei 225",
+      exchange: "JPX" as const,
+      assetType: "index" as const,
+      provider: "eastmoney" as const,
+    },
+    interval: "1d" as const,
+    priceAdjustment: "corporate-action-adjusted" as const,
+    previousClose: 9,
+    bars,
+    latestBarStatus: "complete" as const,
+    source: "eastmoney" as const,
+    fetchedAt: "2026-07-27T08:00:00.000Z",
+  };
+  const result = runBacktest(
+    bars,
+    "sma-cross",
+    { fast: 2, slow: 3 },
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+  );
+  const fingerprint = await fingerprintMarketSeries(series);
+  assert.match(fingerprint, /^[a-f0-9]{64}$/);
+  assert.equal(await fingerprintMarketSeries(series), fingerprint);
+  const validationConfig = {
+    mode: "range" as const,
+    range: {
+      startTime: bars[0].time.slice(0, 10),
+      endTime: bars.at(-1)!.time.slice(0, 10),
+    },
+  };
+  const input = createSaveScreeningRunInput(
+    series,
+    validationConfig,
+    "balanced",
+    {
+      initialCash: 100_000,
+      commissionPercent: 0,
+      slippagePercent: 0,
+    },
+    {
+      singleResults: [result],
+      results: [],
+      evaluatedCount: 1,
+      totalCandidates: 1,
+      failedCount: 0,
+      cancelled: false,
+      validationReport: {
+        mode: "range",
+        range: validationConfig.range,
+        selected: {
+          kind: "single",
+          strategyAId: result.strategyId,
+          strategyBId: null,
+        },
+        performance: result,
+      },
+    },
+    fingerprint,
+  );
+  assert.ok(parseSaveScreeningRunInput(input));
+  assert.equal(
+    parseSaveScreeningRunInput({
+      ...input,
+      instrumentKey: "index:fake",
+    }),
+    null,
+  );
+  assert.equal(
+    parseSaveScreeningRunInput({
+      ...input,
+      selectedCandidateKey: "single:fake",
+    }),
+    null,
+  );
+  assert.equal(input.candidates.length, 1);
+  assert.equal(
+    JSON.stringify(input.validationReport).includes("equity"),
+    false,
+  );
+  const previous = {
+    id: 1,
+    ...input,
+    createdAt: "2026-07-20 00:00:00",
+  };
+  const current = {
+    id: 2,
+    ...input,
+    candidates: input.candidates.map((candidate) => ({
+      ...candidate,
+      metrics: {
+        ...candidate.metrics,
+        totalReturn: candidate.metrics.totalReturn + 2,
+      },
+    })),
+    createdAt: "2026-07-27 00:00:00",
+  };
+  const comparison = compareScreeningRuns(current, previous);
+  assert.equal(comparison?.winnerChanged, false);
+  assert.equal(comparison?.topTenOverlap, 1);
+  assert.equal(comparison?.totalReturnDelta, 2);
 });
 
 test("matches saved strategy plans by selections, parameters, and allocations", () => {

@@ -122,6 +122,10 @@ It does not independently recalculate adjustment factors or rescale volume.
   Cleanup removes only the oldest surplus processed entries.
 - Committed `data/raw/` fixtures are source samples, not runtime cache entries.
 - D1 saved backtests are durable user records, not cache.
+- D1 screening-run rows are compact provenance and comparison records, not a
+  calculation cache. They never restore candidate arrays or seed screening.
+- Worker target, indicator, and order caches exist only for one active
+  screening run and disappear when that Worker terminates.
 - No scheduled server cache cleanup or raw-archive deletion exists in
   application code.
 

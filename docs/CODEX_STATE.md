@@ -71,8 +71,9 @@ Implemented:
 - A current-bar long-only strategy guidance card that reports the target
   allocation plus increase, reduce, hold, or remain-flat state from the newest
   available provider bar.
-- An explicit green-up/red-down legend and a neutral range-end valuation marker
-  that is separate from genuine strategy exits.
+- An explicit green-up/red-down legend. Selected-range backtests inherit an
+  already-open position without a transaction or cost and mark any ending
+  position to the final close without a forced exit.
 - Dedicated sky-blue buy and orange sell markers with light borders and dark
   label backgrounds, visually separated from green-up/red-down candles.
 - A directly draggable 22-pixel chart timeline selection with visible resize
@@ -94,22 +95,22 @@ Implemented:
   completed data and fill on the touched bar, using the open for gaps. Greedy
   executes open-only gaps at that open and completed-candle direction at the
   following open. A target already active before the selected start initializes
-  exposure at the first selected open. If a flat strategy's entry and exit
+  exposure at the first selected open without a transaction or cost. If a flat strategy's entry and exit
   stops are both touched on one daily bar, the engine records the conservative
   entry-then-exit sequence. Selected-range initialization for price-order
   strategies is derived from the full executed order timeline rather than a
   separate close-target approximation.
 - Long-only positions, costs, metrics, equity, drawdown, and chart-level
   buy/sell markers derived from actual fills.
-- An optional cross-strategy SMA/EMA/WMA slope entry filter shared by the
-  strategy lab, stability diagnostics, one-click standalone/combination
+- An optional cross-strategy SMA/EMA/WMA slope entry-filter subsystem shared by
+  the strategy lab, stability diagnostics, one-click standalone/combination
   screening, applied metrics, live guidance, and saved shortcuts. It is off by
   default with an EMA(7), 0%/session preset, uses normalized causal slopes,
   delays only new buys, and never forces a sell. Lab and screening drafts are
-  independent; each completed screening result freezes and reapplies its
-  filter. One-click screening first ranks the complete unfiltered grid. It then
+  independent; Strategy A and Strategy B retain and replay independent filter
+  states. One-click screening first ranks the complete unfiltered grid. It then
   compares EMA(5), EMA(6), EMA(7), and EMA(8), at a 0% slope, only for each
-  explicit trend/breakout/momentum strategy family's top 30 unfiltered
+  explicit trend/breakout/momentum strategy family's top 60 unfiltered
   parameter sets. Channel BreakOut and Price Channel are included; reversal
   and candlestick families remain unfiltered.
 - Nearby-parameter sensitivity diagnostics that perturb one parameter at a
@@ -125,14 +126,12 @@ Implemented:
   drawdown-deterioration thresholds. Regimes retain causal pre-range warm-up.
 - Exhaustive parameter-grid optimization across all 34 strategies, with all
   37,131 valid finite strategy-parameter combinations, no sampling control,
-  cancellation, and best-per-strategy result retention. The UI
-  yields before entering the optimizer; the optimizer then yields before its
-  first evaluation, at each stage transition, and every eight evaluations.
-  Each browser cooperative yield is followed by a timer-task boundary so React
-  progress commits receive a real paint opportunity instead of chaining
-  prioritized continuations until completion. Screening
+  cancellation, and best-per-strategy result retention. A dedicated module Web
+  Worker owns the full optimizer and its run-local target/indicator caches, so
+  progress and cancellation messages do not depend on main-thread calculation.
+  Screening
   builds targets from complete loaded history and restricts only performance
-  metrics to the selected range. The EMA phase retains compact Top-30 metrics;
+  metrics to the selected range. The EMA phase retains compact Top-60 metrics;
   only each strategy's unique final winner keeps complete execution state for
   pair replay.
 - Three deterministic screening objectives: balanced score, maximum return,
@@ -155,9 +154,9 @@ Implemented:
   stream, and one stop action. Its left result
   column returns exactly one best parameter set per standalone strategy. The
   same four-stage run retains one unique final winner per strategy and
-  automatically ranks every unordered pair of non-equivalent winners at A=60%
-  and B=40%, keeps up to 4,096 pair finalists, then evaluates the alternate
-  A=40%/B=60% assignment. Holdings remain 0%, 40%, 60%, or 100%. The current
+  automatically ranks every unordered pair of non-equivalent winners, keeps up
+  to 4,096 pair finalists, then compares 50/50, 60/40, 40/60, 70/30, and
+  30/70. Holdings remain 0%, 30%, 40%, 50%, 60%, 70%, or 100%. The current
   maximum is 559 winner pairs, so every retained pair reaches the
   allocation stage. Its right result column keeps one best result per unique
   unordered strategy-ID pair, ranks up to 32 pairs, displays A/B plus the
@@ -171,8 +170,16 @@ Implemented:
   Complete earlier history remains available for indicator and opening-state
   continuity, but only active-window performance enters any objective. The
   modes have no training/test stage and make no out-of-sample claim. Completed
-  results remain a last-run snapshot across lab plan, date, cash, and cost
-  edits.
+  results remain visible in the current page but are never restored as a
+  calculation cache.
+- Each completed screen persists a compact owner/instrument-scoped run archive
+  with market source, adjustment, fetch time, last bar, bar count, SHA-256 data
+  fingerprint, validation configuration, objective, settings, retained ranking,
+  and compact validation report. The UI shows prior-run and Top-10 overlap
+  comparisons. Archives are audit records and never seed a later screen.
+- Saving an identical instrument/plan/range/cash/cost setup replaces its
+  existing record, including visible-indicator changes, while preserving record
+  identity and order. A materially different setup still inserts a new record.
 - The strategy lab initializes a newly loaded instrument to its latest 128
   trading bars, using the same default constant as period screening.
   The period-session input and lab start/end dates are bidirectionally
@@ -275,6 +282,12 @@ Implemented:
 
 ## Verification status
 
+- Continuous range-boundary accounting, independent A/B filters, EMA Top-60,
+  rolling Top-10 pools, five dual allocations, Worker execution, compact
+  screening archives, and indicator-only saved-record replacement passed all
+  149 TypeScript tests, strict TypeScript, the production build, both
+  rendered/source tests, repository-wide ESLint, `git diff --check`, and local
+  D1 migration `0005_wonderful_silver_surfer.sql` on 2026-07-27.
 - Recent-adaptive period/range/rolling selection, current-window balanced score
   without trade count, single custom-range controls, equal rolling-window rank
   aggregation, continuous pre-window indicator/position state, and updated
@@ -603,8 +616,9 @@ Implemented:
 
 1. Replace public website endpoints with a licensed global market-data feed.
 2. Add venue-specific trading constraints and adjustment-mode controls.
-3. Move large screening jobs to a Web Worker or durable queue when browser
-   execution time becomes unacceptable.
+3. Consider a durable server queue only if screens must survive page closure or
+   run concurrently across devices; normal browser screening now uses a Web
+   Worker.
 4. Add pyramiding, multi-order brackets, limit orders, and optional lower-
    timeframe Bar Magnifier data for templates that require those features.
 5. Add a licensed ingestion/archive pipeline and an explicit runtime cache

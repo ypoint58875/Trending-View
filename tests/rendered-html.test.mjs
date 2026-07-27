@@ -127,10 +127,9 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u65e5\u7ecf 225/);
   assert.match(
     html,
-    /\u5148\u5b8c\u6210\u5168\u90e8 34 \u7c7b\u5355\u7b56\u7565\u53c2\u6570\u7b5b\u9009/,
+    /\u5148\u5b8c\u6574\u904d\u5386\u5168\u90e8 34 \u7c7b\u5355\u7b56\u7565\u53c2\u6570/,
   );
-  assert.match(html, /60%\/40%/);
-  assert.match(html, /40%\/60%/);
+  assert.match(html, /50\/50、60\/40、40\/60、70\/30、30\/70/);
   assert.match(html, /\u5168\u90e8\u6709\u9650\u53c2\u6570\u7ec4\u5408/);
   assert.doesNotMatch(html, /name="strategy-max-parameter-sets"/);
   assert.match(
@@ -249,6 +248,25 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     ),
     "utf8",
   );
+  const screeningWorkerClient = await readFile(
+    new URL(
+      "../lib/analysis/screening-worker-client.ts",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const screeningWorker = await readFile(
+    new URL("../lib/analysis/screening.worker.ts", import.meta.url),
+    "utf8",
+  );
+  const screeningRuns = await readFile(
+    new URL("../lib/analysis/screening-runs.ts", import.meta.url),
+    "utf8",
+  );
+  const screeningRunsRoute = await readFile(
+    new URL("../app/api/screening-runs/route.ts", import.meta.url),
+    "utf8",
+  );
   const shortlist = await readFile(
     new URL("../lib/analysis/strategy-shortlist.ts", import.meta.url),
     "utf8",
@@ -306,7 +324,7 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /saved\.interval !== DAILY_INTERVAL/);
   assert.doesNotMatch(workspace, /copy\.intervals\[DAILY_INTERVAL\]/);
   assert.doesNotMatch(workspace, /setInterval\(saved\.interval\)/);
-  assert.match(workspace, /runScreeningWithValidation/);
+  assert.match(workspace, /runScreeningInWorker/);
   assert.match(workspace, /SCREENING_VALIDATION_MODES/);
   assert.match(screeningValidation, /optimizeStrategyCombinations/);
   assert.match(
@@ -351,7 +369,11 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   );
   assert.match(
     combinations,
-    /SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 30/,
+    /SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 60/,
+  );
+  assert.match(
+    combinations,
+    /ROLLING_SINGLE_FINALISTS_PER_STRATEGY = 10/,
   );
   assert.match(
     combinations,
@@ -369,7 +391,7 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /className="screening-config-group screening-validation-group"/);
   assert.equal(
     workspace.match(/className="result-entry-filter"/g)?.length,
-    2,
+    3,
   );
   assert.doesNotMatch(workspace, /entry-filter-inputs fixed/);
   assert.match(styles, /\.entry-filter-inputs\.screening-fixed/);
@@ -388,9 +410,16 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     (combinations.match(/await yieldForScreening\(\);/g)?.length ?? 0) >= 8,
   );
   assert.match(
-    workspace,
-    /setScreenProgress\(emptyCombinationProgress\(\)\);\s+await yieldForScreening\(\);/,
+    screeningWorkerClient,
+    /new Worker\(\s*new URL\("\.\/screening\.worker\.ts", import\.meta\.url\),\s*\{\s*type: "module"\s*\}/,
   );
+  assert.match(
+    screeningWorkerClient,
+    /type: "cancel",[\s\S]*?worker\.postMessage\(cancelRequest\)/,
+  );
+  assert.match(screeningWorker, /runScreeningWithValidation/);
+  assert.match(screeningWorker, /const controller = new AbortController\(\)/);
+  assert.doesNotMatch(workspace, /await yieldForScreening\(\)/);
   assert.match(strategies, /"donchian-intrabar"/);
   assert.match(strategies, /"supertrend-stop"/);
   assert.match(builtInStrategies, /buildOrders: greedyOrders/);
@@ -405,18 +434,24 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(entryFilter, /applyMovingAverageSlopeEntryFilter/);
   assert.equal(
     workspace.match(/<MovingAverageSlopeFilterFields/g)?.length,
-    2,
+    3,
   );
-  assert.match(workspace, /namePrefix="strategy-entry-filter"/);
+  assert.match(workspace, /namePrefix="strategy-a-entry-filter"/);
+  assert.match(workspace, /namePrefix="strategy-b-entry-filter"/);
   assert.match(workspace, /namePrefix="screening-entry-filter"/);
-  assert.match(workspace, /entryFilter: strategyPlan\.entryFilter/);
+  assert.match(workspace, /strategyPlanEntryFilter\(\s*strategyPlan,\s*"strategyA"/);
+  assert.match(workspace, /strategyPlanEntryFilter\(\s*strategyPlan,\s*"strategyB"/);
   assert.match(
     workspace,
     /entryFilter: activeMovingAverageSlopeFilter\(\s*screeningEntryFilterDraft/,
   );
   assert.match(
     combinations,
-    /entryFilter: cloneMovingAverageSlopeFilter/,
+    /strategyAEntryFilter: cloneMovingAverageSlopeFilter/,
+  );
+  assert.match(
+    combinations,
+    /strategyBEntryFilter: cloneMovingAverageSlopeFilter/,
   );
   assert.match(styles, /\.entry-filter-fields\s*\{/);
   assert.match(strategies, /equivalenceGroup: "macd-cross"/);
@@ -511,7 +546,8 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /copy\.screening\.resultSnapshotNotice/);
   assert.match(workspace, /copy\.screening\.sampleResultMetricNotice/);
   assert.match(workspace, /validationReport\.performance/);
-  assert.match(locale, /筛选结果保留为上次运行快照/);
+  assert.match(locale, /不写入筛选结果缓存/);
+  assert.match(locale, /50\/50、60\/40、40\/60、70\/30、30\/70 仓位/);
   assert.match(
     locale,
     /结果表中的收益、回撤、夏普和综合分都来自当前筛选区间/,
@@ -567,6 +603,9 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(indicatorRegistry, /quantscope\.indicator-preferences\.v1/);
   assert.match(schema, /indicatorConfigurationsJson/);
   assert.match(savedBacktestRoute, /indicatorConfigurationsJson/);
+  assert.match(savedBacktestRoute, /shouldReplaceSavedBacktest/);
+  assert.match(savedBacktestRoute, /replaced: true/);
+  assert.match(saveCurrentBacktestSource, /payload\.replaced/);
   assert.match(workspace, /setStrategyAAllocationPercent\(100\)/);
   assert.match(workspace, /setStrategyBAllocationPercent\(100\)/);
   assert.doesNotMatch(savedBacktestRoute, /onConflictDoUpdate/);
@@ -602,6 +641,19 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(schema, /displayOrder: integer\("display_order"\)/);
   assert.match(schema, /saved_backtests_owner_display_order_idx/);
   assert.doesNotMatch(schema, /saved_backtests_owner_instrument_unique/);
+  assert.match(schema, /export const screeningRuns = sqliteTable/);
+  assert.match(schema, /dataFingerprint: text\("data_fingerprint"\)/);
+  assert.match(schema, /screening_runs_owner_instrument_created_idx/);
+  assert.match(screeningRuns, /crypto\.subtle\.digest\("SHA-256"/);
+  assert.match(screeningRuns, /compareScreeningRuns/);
+  assert.match(screeningRuns, /MAX_SCREENING_RUN_CANDIDATES = 200/);
+  assert.match(screeningRunsRoute, /export async function GET/);
+  assert.match(screeningRunsRoute, /export async function POST/);
+  assert.match(screeningRunsRoute, /previousRun/);
+  assert.match(workspace, /`\/api\/screening-runs\?instrumentKey=/);
+  assert.match(workspace, /createSaveScreeningRunInput\([\s\S]*?dataFingerprint/);
+  assert.match(workspace, /fetch\("\/api\/screening-runs", \{\s*method: "POST"/);
+  assert.match(workspace, /className="screening-history"/);
   assert.match(
     workspace,
     /const HISTORICAL_EXECUTION_POLICY = "hybrid" as const/,

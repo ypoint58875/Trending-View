@@ -36,7 +36,6 @@ import {
   applyMovingAverageSlopeEntryFilter,
   buildMovingAverageEntryAllowedSeries,
   cloneMovingAverageSlopeFilter,
-  movingAverageSlopeFiltersEqual,
   resolveMovingAverageEntryAllowedSeries,
   supportsScreeningMovingAverageSlopeFilter,
   type MovingAverageSlopeFilter,
@@ -46,13 +45,23 @@ export const DEFAULT_STRATEGY_A_ALLOCATION = 0.6;
 export const DEFAULT_STRATEGY_B_ALLOCATION = 0.4;
 export const ALLOWED_POSITION_LEVELS = [
   0,
+  0.3,
   0.4,
+  0.5,
   0.6,
+  0.7,
   1,
 ] as const;
-export const STRATEGY_LAYER_ALLOCATION_CANDIDATES = [0.4, 0.6] as const;
+export const STRATEGY_LAYER_ALLOCATION_CANDIDATES = [
+  0.3,
+  0.4,
+  0.5,
+  0.6,
+  0.7,
+] as const;
 export const COMBINATION_FINALISTS_PER_STRATEGY = 1;
-export const SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 30;
+export const ROLLING_SINGLE_FINALISTS_PER_STRATEGY = 10;
+export const SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 60;
 export const MAX_COMBINATION_PAIR_FINALISTS = 4_096;
 export const MAX_COMBINATION_RESULTS = 32;
 
@@ -71,6 +80,18 @@ export const TWO_STRATEGY_ALLOCATION_CANDIDATES: readonly TwoStrategyAllocation[
       strategyAAllocation: DEFAULT_STRATEGY_B_ALLOCATION,
       strategyBAllocation: DEFAULT_STRATEGY_A_ALLOCATION,
     },
+    {
+      strategyAAllocation: 0.5,
+      strategyBAllocation: 0.5,
+    },
+    {
+      strategyAAllocation: 0.7,
+      strategyBAllocation: 0.3,
+    },
+    {
+      strategyAAllocation: 0.3,
+      strategyBAllocation: 0.7,
+    },
   ];
 
 export interface StrategySelection {
@@ -83,6 +104,9 @@ export interface StrategyAllocationPlan {
   strategyB: StrategySelection | null;
   strategyAAllocation: number;
   strategyBAllocation: number;
+  strategyAEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyBEntryFilter?: MovingAverageSlopeFilter | null;
+  /** Legacy shared filter, read only for backward compatibility. */
   entryFilter?: MovingAverageSlopeFilter | null;
 }
 
@@ -93,6 +117,9 @@ export interface StrategyCombination {
   strategyBParameters: StrategyParameters;
   strategyAAllocation: number;
   strategyBAllocation: number;
+  strategyAEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyBEntryFilter?: MovingAverageSlopeFilter | null;
+  /** Legacy shared filter, read only for backward compatibility. */
   entryFilter?: MovingAverageSlopeFilter | null;
 }
 
@@ -104,6 +131,9 @@ export interface StrategyCombinationResult extends AllocationBacktestResult {
   strategyAAllocation: number;
   strategyBAllocation: number;
   relativeLongStrategy: StrategySlot;
+  strategyAEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyBEntryFilter?: MovingAverageSlopeFilter | null;
+  /** Legacy shared-filter compatibility; new results leave this unset. */
   entryFilter?: MovingAverageSlopeFilter | null;
 }
 
@@ -128,6 +158,7 @@ export interface CombinationScreeningProgress {
 
 export interface CombinationOptimizationResult {
   singleResults: BacktestResult[];
+  singleCandidatePool: BacktestResult[];
   results: StrategyCombinationResult[];
   evaluatedCount: number;
   totalCandidates: number;
@@ -140,6 +171,7 @@ export interface OptimizeStrategyCombinationsOptions {
   objective?: ScreeningObjective;
   entryFilters?: readonly MovingAverageSlopeFilter[];
   allocationCandidates?: readonly TwoStrategyAllocation[];
+  retainedSinglesPerStrategy?: number;
   maxPairFinalists?: number;
   signal?: AbortSignal;
   yieldEvery?: number;
@@ -150,6 +182,12 @@ interface StrategyFinalist {
   result: BacktestResult;
   target: number[];
   orderFills: StrategyOrderFill[][];
+}
+
+interface EntryFilterCandidate {
+  result: BacktestResult;
+  rawTarget: number[];
+  rawOrders?: StrategyOrderSeries;
 }
 
 interface StrategyPairFinalist {
@@ -430,6 +468,7 @@ function buildStrategyExecutionSeries(
   selection: StrategySelection | null,
   fallbackTarget: readonly number[] | null,
   entryAllowed: readonly boolean[] | null = null,
+  cachedOrders?: StrategyOrderSeries,
 ): StrategyExecutionSeries {
   if (!selection || !fallbackTarget) {
     return {
@@ -438,7 +477,8 @@ function buildStrategyExecutionSeries(
     };
   }
   const strategy = getStrategy(selection.strategyId);
-  const orders = strategy.buildOrders?.(bars, selection.parameters);
+  const orders =
+    cachedOrders ?? strategy.buildOrders?.(bars, selection.parameters);
   if (!orders) {
     return {
       target: applyMovingAverageSlopeEntryFilter(
@@ -462,6 +502,17 @@ function buildStrategyExecutionSeries(
     orderFills: execution.fills,
     orders,
   };
+}
+
+function planEntryFilter(
+  plan: StrategyAllocationPlan,
+  slot: StrategySlot,
+): MovingAverageSlopeFilter | null {
+  const slotFilter =
+    slot === "strategyA"
+      ? plan.strategyAEntryFilter
+      : plan.strategyBEntryFilter;
+  return cloneMovingAverageSlopeFilter(slotFilter ?? plan.entryFilter);
 }
 
 function buildPlanIntrabarExecutions(
@@ -602,21 +653,25 @@ export function buildStrategyPlanTimeline(
   ) {
     throw new Error("Strategy A and Strategy B must not be equivalent");
   }
-  const entryAllowed = buildMovingAverageEntryAllowedSeries(
+  const strategyAEntryAllowed = buildMovingAverageEntryAllowedSeries(
     bars,
-    plan.entryFilter,
+    planEntryFilter(plan, "strategyA"),
+  );
+  const strategyBEntryAllowed = buildMovingAverageEntryAllowedSeries(
+    bars,
+    planEntryFilter(plan, "strategyB"),
   );
   const strategyAExecution = buildStrategyExecutionSeries(
     bars,
     plan.strategyA,
     buildSelectionTarget(bars, plan.strategyA),
-    entryAllowed,
+    strategyAEntryAllowed,
   );
   const strategyBExecution = buildStrategyExecutionSeries(
     bars,
     plan.strategyB,
     buildSelectionTarget(bars, plan.strategyB),
-    entryAllowed,
+    strategyBEntryAllowed,
   );
   const strategyATarget = strategyAExecution.target;
   const strategyBTarget = strategyBExecution.target;
@@ -671,14 +726,24 @@ export function buildLiveAllocationGuidance(
   latestBarStatus: MarketLatestBarStatus = "complete",
 ): LiveAllocationGuidance | null {
   if (bars.length === 0 || (!plan.strategyA && !plan.strategyB)) return null;
-  const entryAllowed = buildMovingAverageEntryAllowedSeries(
+  const strategyAEntryAllowed = buildMovingAverageEntryAllowedSeries(
     bars,
-    plan.entryFilter,
+    planEntryFilter(plan, "strategyA"),
   );
-  if (entryAllowed && latestBarStatus !== "complete") {
-    entryAllowed[entryAllowed.length - 1] = false;
+  const strategyBEntryAllowed = buildMovingAverageEntryAllowedSeries(
+    bars,
+    planEntryFilter(plan, "strategyB"),
+  );
+  if (strategyAEntryAllowed && latestBarStatus !== "complete") {
+    strategyAEntryAllowed[strategyAEntryAllowed.length - 1] = false;
   }
-  const buildLiveTarget = (selection: StrategySelection | null) => {
+  if (strategyBEntryAllowed && latestBarStatus !== "complete") {
+    strategyBEntryAllowed[strategyBEntryAllowed.length - 1] = false;
+  }
+  const buildLiveTarget = (
+    selection: StrategySelection | null,
+    entryAllowed: readonly boolean[] | null,
+  ) => {
     const execution = buildStrategyExecutionSeries(
       bars,
       selection,
@@ -696,8 +761,14 @@ export function buildLiveAllocationGuidance(
     }
     return execution.target;
   };
-  const strategyATarget = buildLiveTarget(plan.strategyA);
-  const strategyBTarget = buildLiveTarget(plan.strategyB);
+  const strategyATarget = buildLiveTarget(
+    plan.strategyA,
+    strategyAEntryAllowed,
+  );
+  const strategyBTarget = buildLiveTarget(
+    plan.strategyB,
+    strategyBEntryAllowed,
+  );
   const roleTargets =
     roleWindow && strategyATarget && strategyBTarget
       ? {
@@ -754,7 +825,12 @@ export function buildStrategyCombinationTarget(
       combination.strategyBAllocation,
       DEFAULT_STRATEGY_B_ALLOCATION,
     ),
-    entryFilter: cloneMovingAverageSlopeFilter(combination.entryFilter),
+    strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+      combination.strategyAEntryFilter ?? combination.entryFilter,
+    ),
+    strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+      combination.strategyBEntryFilter ?? combination.entryFilter,
+    ),
   });
 }
 
@@ -777,8 +853,15 @@ export function runStrategyCombinationBacktest(
     },
     strategyAAllocation: combination.strategyAAllocation,
     strategyBAllocation: combination.strategyBAllocation,
-    entryFilter: cloneMovingAverageSlopeFilter(
-      combination.entryFilter ?? settings.entryFilter,
+    strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+      combination.strategyAEntryFilter ??
+        combination.entryFilter ??
+        settings.entryFilter,
+    ),
+    strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+      combination.strategyBEntryFilter ??
+        combination.entryFilter ??
+        settings.entryFilter,
     ),
   };
   const timeline = buildStrategyPlanTimeline(
@@ -805,9 +888,12 @@ export function runStrategyCombinationBacktest(
     strategyAAllocation: combination.strategyAAllocation,
     strategyBAllocation: combination.strategyBAllocation,
     relativeLongStrategy: timeline.relativeLongStrategy,
-    ...(plan.entryFilter
-      ? { entryFilter: cloneMovingAverageSlopeFilter(plan.entryFilter) }
-      : {}),
+    strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+      plan.strategyAEntryFilter,
+    ),
+    strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+      plan.strategyBEntryFilter,
+    ),
   };
 }
 
@@ -815,6 +901,7 @@ function retainFinalist(
   finalistsByStrategy: Map<StrategyId, StrategyFinalist[]>,
   finalist: StrategyFinalist,
   objective: ScreeningObjective,
+  limit: number,
 ) {
   const result = finalist.result;
   const finalists = finalistsByStrategy.get(result.strategyId) ?? [];
@@ -824,7 +911,7 @@ function retainFinalist(
   );
   finalistsByStrategy.set(
     result.strategyId,
-    finalists.slice(0, COMBINATION_FINALISTS_PER_STRATEGY),
+    finalists.slice(0, limit),
   );
 }
 
@@ -837,17 +924,21 @@ function compactBacktestResult(result: BacktestResult): BacktestResult {
 }
 
 function retainEntryFilterCandidate(
-  candidatesByStrategy: Map<StrategyId, BacktestResult[]>,
-  result: BacktestResult,
+  candidatesByStrategy: Map<StrategyId, EntryFilterCandidate[]>,
+  candidate: EntryFilterCandidate,
   objective: ScreeningObjective,
 ) {
-  const candidates = candidatesByStrategy.get(result.strategyId) ?? [];
-  candidates.push(compactBacktestResult(result));
+  const strategyId = candidate.result.strategyId;
+  const candidates = candidatesByStrategy.get(strategyId) ?? [];
+  candidates.push({
+    ...candidate,
+    result: compactBacktestResult(candidate.result),
+  });
   candidates.sort((left, right) =>
-    compareScreeningResults(left, right, objective),
+    compareScreeningResults(left.result, right.result, objective),
   );
   candidatesByStrategy.set(
-    result.strategyId,
+    strategyId,
     candidates.slice(0, SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY),
   );
 }
@@ -969,13 +1060,12 @@ function runCombinationCandidate(
     strategyAAllocation: allocation.strategyAAllocation,
     strategyBAllocation: allocation.strategyBAllocation,
     relativeLongStrategy: timeline.relativeLongStrategy,
-    ...(settings.entryFilter
-      ? {
-          entryFilter: cloneMovingAverageSlopeFilter(
-            settings.entryFilter,
-          ),
-        }
-      : {}),
+    strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+      strategyAFinalist.result.entryFilter,
+    ),
+    strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+      strategyBFinalist.result.entryFilter,
+    ),
   };
 }
 
@@ -1038,6 +1128,13 @@ export async function optimizeStrategyCombinations(
   const pairFinalistLimit = Number.isFinite(requestedPairFinalistLimit)
     ? Math.max(Math.floor(requestedPairFinalistLimit), 1)
     : MAX_COMBINATION_PAIR_FINALISTS;
+  const retainedSinglesPerStrategy = Math.max(
+    Math.floor(
+      options.retainedSinglesPerStrategy ??
+        COMBINATION_FINALISTS_PER_STRATEGY,
+    ),
+    1,
+  );
   const yieldEvery = Math.max(
     Math.floor(options.yieldEvery ?? DEFAULT_SCREENING_YIELD_EVERY),
     1,
@@ -1048,7 +1145,7 @@ export async function optimizeStrategyCombinations(
   >();
   const entryFilterCandidatesByStrategy = new Map<
     StrategyId,
-    BacktestResult[]
+    EntryFilterCandidate[]
   >();
   const pairFinalists: StrategyPairFinalist[] = [];
   const results: StrategyCombinationResult[] = [];
@@ -1077,11 +1174,20 @@ export async function optimizeStrategyCombinations(
         parameters: candidate.parameters,
       };
       const strategy = getStrategy(candidate.strategyId);
+      const rawTarget = strategy.buildTarget(
+        bars,
+        candidate.parameters,
+      );
+      const rawOrders = strategy.buildOrders?.(
+        bars,
+        candidate.parameters,
+      );
       const execution = buildStrategyExecutionSeries(
         bars,
         selection,
-        strategy.buildTarget(bars, candidate.parameters),
+        rawTarget,
         baseEntryAllowed,
+        rawOrders,
       );
       const target = execution.target ?? [];
       const result = runBacktestFromTarget(
@@ -1100,6 +1206,7 @@ export async function optimizeStrategyCombinations(
           orderFills: execution.orderFills,
         },
         objective,
+        retainedSinglesPerStrategy,
       );
       if (
         requestedEntryFilters.length > 0 &&
@@ -1107,7 +1214,11 @@ export async function optimizeStrategyCombinations(
       ) {
         retainEntryFilterCandidate(
           entryFilterCandidatesByStrategy,
-          result,
+          {
+            result,
+            rawTarget,
+            rawOrders,
+          },
           objective,
         );
       }
@@ -1176,14 +1287,14 @@ export async function optimizeStrategyCombinations(
           try {
             const selection = {
               strategyId,
-              parameters: candidate.parameters,
+              parameters: candidate.result.parameters,
             };
-            const strategy = getStrategy(strategyId);
             const execution = buildStrategyExecutionSeries(
               bars,
               selection,
-              strategy.buildTarget(bars, candidate.parameters),
+              candidate.rawTarget,
               entryAllowed,
+              candidate.rawOrders,
             );
             const target = execution.target ?? [];
             retainFinalist(
@@ -1192,7 +1303,7 @@ export async function optimizeStrategyCombinations(
                 result: runBacktestFromTarget(
                   bars,
                   strategyId,
-                  candidate.parameters,
+                  candidate.result.parameters,
                   target,
                   filterSettings,
                   execution.orders,
@@ -1201,6 +1312,7 @@ export async function optimizeStrategyCombinations(
                 orderFills: execution.orderFills,
               },
               objective,
+              retainedSinglesPerStrategy,
             );
           } catch {
             failedCount += 1;
@@ -1275,65 +1387,10 @@ export async function optimizeStrategyCombinations(
     });
     await yieldForScreening();
     let evaluatedPairCount = 0;
-    const entryAllowedByFilter = new Map<string, boolean[] | null>();
-    const executionCache = new Map<string, StrategyFinalist>();
-    const resolvePairSettings = (
-      entryFilter: MovingAverageSlopeFilter | null,
-    ): StrategyCombinationBacktestSettings => {
-      const key = entryFilterKey(entryFilter);
-      let entryAllowed = entryAllowedByFilter.get(key);
-      if (entryAllowed === undefined) {
-        entryAllowed = resolveMovingAverageEntryAllowedSeries(
-          bars,
-          entryFilter,
-        );
-        entryAllowedByFilter.set(key, entryAllowed);
-      }
-      return {
-        ...settings,
-        entryFilter,
-        entryFilterAllowed: entryAllowed ?? undefined,
-      };
-    };
-    const resolvePairFinalist = (
-      finalist: StrategyFinalist,
-      entryFilter: MovingAverageSlopeFilter | null,
-    ): StrategyFinalist => {
-      if (
-        movingAverageSlopeFiltersEqual(
-          finalist.result.entryFilter,
-          entryFilter,
-        )
-      ) {
-        return finalist;
-      }
-      const key = `${finalist.result.strategyId}:${JSON.stringify(
-        finalist.result.parameters,
-      )}:${entryFilterKey(entryFilter)}`;
-      const cached = executionCache.get(key);
-      if (cached) return cached;
-      const entryAllowed = resolvePairSettings(entryFilter)
-        .entryFilterAllowed;
-      const selection = {
-        strategyId: finalist.result.strategyId,
-        parameters: finalist.result.parameters,
-      };
-      const execution = buildStrategyExecutionSeries(
-        bars,
-        selection,
-        getStrategy(selection.strategyId).buildTarget(
-          bars,
-          selection.parameters,
-        ),
-        entryAllowed ?? null,
-      );
-      const resolved = {
-        result: finalist.result,
-        target: execution.target ?? [],
-        orderFills: execution.orderFills,
-      };
-      executionCache.set(key, resolved);
-      return resolved;
+    const pairSettings: StrategyCombinationBacktestSettings = {
+      ...settings,
+      entryFilter: null,
+      entryFilterAllowed: undefined,
     };
 
     pairLoop: for (
@@ -1353,36 +1410,18 @@ export async function optimizeStrategyCombinations(
         if (areStrategiesEquivalent(strategyAId, strategyBId)) continue;
         if (options.signal?.aborted || !referenceAllocation) break pairLoop;
         try {
-          const sharedEntryFilter =
-            movingAverageSlopeFiltersEqual(
-              strategyAFinalist.result.entryFilter,
-              strategyBFinalist.result.entryFilter,
-            )
-              ? cloneMovingAverageSlopeFilter(
-                  strategyAFinalist.result.entryFilter,
-                )
-              : null;
-          const pairSettings = resolvePairSettings(sharedEntryFilter);
-          const resolvedStrategyA = resolvePairFinalist(
-            strategyAFinalist,
-            sharedEntryFilter,
-          );
-          const resolvedStrategyB = resolvePairFinalist(
-            strategyBFinalist,
-            sharedEntryFilter,
-          );
           const referenceResult = runCombinationCandidate(
             bars,
-            resolvedStrategyA,
-            resolvedStrategyB,
+            strategyAFinalist,
+            strategyBFinalist,
             referenceAllocation,
             pairSettings,
           );
           retainPairFinalist(
             pairFinalists,
             {
-              strategyA: resolvedStrategyA,
-              strategyB: resolvedStrategyB,
+              strategyA: strategyAFinalist,
+              strategyB: strategyBFinalist,
               referenceResult,
               settings: pairSettings,
             },
@@ -1480,6 +1519,12 @@ export async function optimizeStrategyCombinations(
 
   return {
     singleResults: singleFinalists
+      .map((finalist) => finalist.result)
+      .sort((left, right) =>
+        compareScreeningResults(left, right, objective),
+      ),
+    singleCandidatePool: [...finalistsByStrategy.values()]
+      .flat()
       .map((finalist) => finalist.result)
       .sort((left, right) =>
         compareScreeningResults(left, right, objective),

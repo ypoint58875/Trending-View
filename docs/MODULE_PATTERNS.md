@@ -142,12 +142,14 @@ be present in its default parameters, UI labels, saved-parameter merge, and
 screening domain. Older saved snapshots are merged over current defaults before
 use.
 
-Screening executes in shared eight-candidate interruptible chunks. It yields
-once before the heavy loop, at each stage transition, and after each chunk.
-Every yield may use the browser cooperative scheduler but must still cross a
-zero-delay timer-task boundary so prioritized continuations cannot starve React
-commits or browser paint. It retains only the best result per strategy under
-one explicit scalar objective. The current registry must produce exactly
+Production screening executes inside `screening.worker.ts`, reached only
+through the typed protocol and `screening-worker-client.ts`. The main thread
+sends serializable bars/settings/configuration, receives progress and result
+messages, and terminates the worker after result, error, or cancellation. The
+core optimizer keeps cooperative yields for non-Worker/test callers. Run-local
+indicator, target, and order caches belong inside the worker lifetime; never
+persist or reload a completed result as an optimization cache. The current
+registry must produce exactly
 37,131 candidates; changing a domain requires updating the explicit coverage
 test and documentation.
 Objective comparison and tie-breaking belong in the shared screening module,
@@ -158,9 +160,10 @@ completion, cancellation, and exact screening-card/application equality.
 Generate each target from the complete loaded history so persistent state is
 not reset by an arbitrary warm-up boundary, then restrict only performance
 calculation to the selected range. If the complete target is already active
-before the boundary, initialize exposure at the first selected open. Cache
-complete targets only for retained finalists; do not retain every candidate
-array.
+before the boundary, inherit exposure at the first selected open without a
+transaction or cost. At the range end, mark open units to the close without a
+forced trade. Cache complete targets only for retained finalists inside the
+current run; do not retain every candidate array.
 
 Strategy plans use optional Strategy A and Strategy B selections. Both
 selectors accept the complete registry, but a dual plan must contain two
@@ -180,20 +183,22 @@ Unified screening must reuse one selected objective, candidate domain, and
 tie-breaking contract for both result groups. First evaluate the complete
 unfiltered parameter grid. Only strategies listed in the explicit
 trend/breakout/momentum EMA family continue to the filter stage, and only their
-top 30 compact unfiltered results are compared under EMA(5), EMA(6), EMA(7),
+top 60 compact unfiltered results are compared under EMA(5), EMA(6), EMA(7),
 and EMA(8) at a fixed 0% threshold. Channel BreakOut and Price Channel belong
 to this family; reversal and candlestick strategies do not. Retain exactly one
-unique final winner per strategy. Combination screening is always enabled:
-enumerate every unordered pair of non-equivalent strategy winners without
-catalog-horizon filtering. Rank once at reference A=60% and B=40%, retain every
-pair up to the 4,096 safety bound, and replay A=40%/B=60%. With 34 strategies
+unique final winner per strategy for standard display and pairing. Rolling
+screening may retain the best ten per strategy for window aggregation before
+collapsing the displayed list to one per strategy. Combination screening is
+always enabled: enumerate every unordered pair of non-equivalent retained
+single results without catalog-horizon filtering. Retain every pair up to the
+4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With 34 strategies
 and two equivalent ID pairs excluded, the current catalog creates
-`choose(34, 2) - 2 = 559` pairs. If both winners have the same EMA, retain that
-shared plan filter; otherwise replay the pair without a shared filter because
-the plan schema has one filter field. Final presentation is a separate
+`choose(34, 2) - 2 = 559` unique-winner pairs. Store and replay
+`strategyAEntryFilter` and `strategyBEntryFilter` independently, including
+mixed filtered/unfiltered and different-EMA legs. Final presentation is a separate
 bounded view: keep one best result per unordered strategy-ID pair, then sort
-and truncate globally. Allowed dual targets must produce only 0%, 40%, 60%,
-or 100% holdings, and each result must disclose the derived relative-long
+and truncate globally. Allowed dual targets must produce only 0%, 30%, 40%,
+50%, 60%, 70%, or 100% holdings, and each result must disclose the derived relative-long
 slot.
 
 Windowed screening belongs in
@@ -206,8 +211,8 @@ one custom start/end interval. A rolling selector must form its retained pool
 over one configured total interval, replay that pool in every fixed-width
 calendar window, convert each window to tied percentile ranks, and average the
 window ranks equally. Generate signals from complete earlier history for causal
-indicator and opening-position continuity, but count no performance before the
-active boundary. The balanced score uses only current-window return, Sharpe,
+indicator and opening-position continuity, but count no performance or
+synthetic boundary transaction before the active boundary. The balanced score uses only current-window return, Sharpe,
 and drawdown; trade count is presentation evidence only. None of these modes
 uses training/test terminology or claims an independent holdout. Period and
 rolling shortlist order may use their explicit aggregate score; range order
@@ -239,7 +244,8 @@ win statistics.
 It must not generate maintenance trades merely because market movement drifts
 the actual weight away from the planned percentage. Tests cover role validation,
 target alignment, prefix invariance, staged four-phase progress, cancellation,
-costs, unchanged-state behavior, and range-end liquidation.
+costs, unchanged-state behavior, inherited opening state, and range-end
+mark-to-market without liquidation.
 
 Trade annotations are derived from completed `BacktestTrade` or
 `AllocationRebalance` records by pure mapping helpers. Every entry/increase is
@@ -250,8 +256,9 @@ infer trades from indicator lines. Combination timelines attach explicit
 relative-long/short entry and exit events to actual rebalances. When the
 relative-long gate closes an active short layer, retain both exit events on the
 single final fill but show one close action.
-Range-end valuation exits remain part of backtest metrics but use a separate
-neutral marker so they cannot be mistaken for strategy-generated sells.
+There is no synthetic range-end exit. An ending open position affects final
+equity through mark-to-market only and creates no trade, rebalance, marker, or
+cost.
 
 Current-bar guidance is a pure projection over the shared strategy
 registry. Target strategies compare the newest desired position with the prior
@@ -339,9 +346,12 @@ boundary. The optional validated moving-average-slope filter is stored inside
 the existing plan JSON, so missing legacy values mean disabled and require no
 table migration. A nullable indicator-configuration JSON column stores only the
 ordered indicators visible at save time and their exact validated parameters;
-legacy null values become an empty collection. Each POST inserts a new
-snapshot; the owner/provider/provider-symbol
-index is non-unique so one instrument can keep multiple strategies. UI
+legacy null values become an empty collection. Before insert, POST compares the
+owner's existing records by canonical instrument, interval, complete plan,
+range, initial cash, and costs. A match is updated in place (so
+indicator-only changes replace); otherwise a new snapshot is inserted. The
+owner/provider/provider-symbol index is non-unique so one instrument can keep
+multiple materially different strategies. UI
 components consume API records and do not access D1
 bindings directly. Shortcut labels use the stored interval for provenance. A
 legacy non-daily record remains non-mutating metadata: opening it keeps the
@@ -351,6 +361,15 @@ workspace does not use them as a second active range. Opening a shortcut keeps
 the shared range, and the active instrument's shortcut returns are derived
 from saved plans and costs over that range. Do not display a stale numeric
 return for an inactive instrument whose history is not loaded.
+
+Screening audit records use a parallel shared boundary in
+`screening-runs.ts`, `/api/screening-runs`, and the `screening_runs` D1 table.
+All route handlers must resolve the owner through `app/api/owner.ts`; do not
+duplicate host/email fallback logic. Archive rows are compact provenance:
+market source, adjustment, fetched time, last bar, bar count, SHA-256
+fingerprint, mode/configuration, objective, settings, retained ranking, and
+validation summary. Never store full equity/trade/rebalance arrays, and never
+use archived rankings as calculation input.
 
 ## UI copy
 

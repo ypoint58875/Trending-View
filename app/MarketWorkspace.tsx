@@ -62,7 +62,6 @@ import {
   isIntegerStrategyParameterKey,
   normalizeStrategyParameterInput,
   screeningObjectiveValue,
-  yieldForScreening,
   type ScreeningObjective,
 } from "@/lib/analysis/screening";
 import {
@@ -91,7 +90,6 @@ import {
   ScreeningValidationError,
   resolveTradingSessionRange,
   resolveTrailingTradingSessionRange,
-  runScreeningWithValidation,
   type ScreeningCandidateReference,
   type ScreeningCombinationResult,
   type ScreeningRangeValidationConfig,
@@ -103,6 +101,14 @@ import {
   type ScreeningValidationProgress,
   type ScreeningValidationReport,
 } from "@/lib/analysis/screening-validation";
+import { runScreeningInWorker } from "@/lib/analysis/screening-worker-client";
+import {
+  compareScreeningRuns,
+  createSaveScreeningRunInput,
+  fingerprintMarketSeries,
+  type ScreeningRunCandidate,
+  type ScreeningRunRecord,
+} from "@/lib/analysis/screening-runs";
 import {
   DEFAULT_STRATEGY_SHORTLIST_DEPUTY_COUNT,
   selectStrategyShortlist,
@@ -221,7 +227,12 @@ function cloneStrategyPlan(
       : null,
     strategyAAllocation: plan.strategyAAllocation,
     strategyBAllocation: plan.strategyBAllocation,
-    entryFilter: cloneMovingAverageSlopeFilter(plan.entryFilter),
+    strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+      plan.strategyAEntryFilter ?? plan.entryFilter,
+    ),
+    strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+      plan.strategyBEntryFilter ?? plan.entryFilter,
+    ),
   };
 }
 
@@ -234,8 +245,20 @@ function defaultAppliedStrategyPlan(): StrategyAllocationPlan {
     strategyB: null,
     strategyAAllocation: 1,
     strategyBAllocation: 0,
-    entryFilter: null,
+    strategyAEntryFilter: null,
+    strategyBEntryFilter: null,
   };
+}
+
+function strategyPlanEntryFilter(
+  plan: StrategyAllocationPlan,
+  slot: "strategyA" | "strategyB",
+): MovingAverageSlopeFilter | null {
+  return cloneMovingAverageSlopeFilter(
+    slot === "strategyA"
+      ? plan.strategyAEntryFilter ?? plan.entryFilter
+      : plan.strategyBEntryFilter ?? plan.entryFilter,
+  );
 }
 
 function nearestDualAllocation(
@@ -311,18 +334,29 @@ function runStrategyPlanRangeBacktest(
       ? plan.strategyAAllocation === 1
       : plan.strategyBAllocation === 1);
   if (usesSingleFullAllocation && singleSelection) {
+    const entryFilter = plan.strategyA
+      ? plan.strategyAEntryFilter ?? plan.entryFilter
+      : plan.strategyBEntryFilter ?? plan.entryFilter;
     return runBacktest(
       bars,
       singleSelection.strategyId,
       singleSelection.parameters,
-      settings,
+      {
+        ...settings,
+        entryFilter,
+        entryFilterAllowed: undefined,
+      },
     );
   }
   const timeline = buildStrategyPlanTimeline(bars, plan, settings);
   return runAllocationBacktest(
     bars,
     timeline.target,
-    settings,
+    {
+      ...settings,
+      entryFilter: null,
+      entryFilterAllowed: undefined,
+    },
     timeline.signalEvents,
     timeline.intrabarExecutions,
   );
@@ -537,6 +571,12 @@ function formatMovingAverageSlopeFilter(
   return `${filter.movingAverageType.toUpperCase()}(${filter.period}) ${copy.entryFilter.slopeAtLeast} ${formatNumber(filter.minimumSlopePercent)}%`;
 }
 
+function screeningRunCandidateName(candidate: ScreeningRunCandidate) {
+  const strategyAName = copy.strategies[candidate.strategyAId].name;
+  if (!candidate.strategyBId) return strategyAName;
+  return `${strategyAName} + ${copy.strategies[candidate.strategyBId].name}`;
+}
+
 function MovingAverageSlopeFilterFields({
   draft,
   namePrefix,
@@ -704,7 +744,10 @@ export function MarketWorkspace() {
     useState<StrategyParameters>({});
   const [appliedStrategyPlan, setAppliedStrategyPlan] =
     useState<StrategyAllocationPlan | null>(defaultAppliedStrategyPlan);
-  const [strategyEntryFilterDraft, setStrategyEntryFilterDraft] = useState(
+  const [strategyAEntryFilterDraft, setStrategyAEntryFilterDraft] = useState(
+    () => createMovingAverageSlopeFilterDraft(),
+  );
+  const [strategyBEntryFilterDraft, setStrategyBEntryFilterDraft] = useState(
     () => createMovingAverageSlopeFilterDraft(),
   );
   const [startDate, setStartDate] = useState("");
@@ -758,6 +801,11 @@ export function MarketWorkspace() {
   const [combinationResults, setCombinationResults] = useState<
     ScreeningCombinationResult[]
   >([]);
+  const [screeningRuns, setScreeningRuns] = useState<
+    ScreeningRunRecord[]
+  >([]);
+  const [screeningRunsLoading, setScreeningRunsLoading] = useState(false);
+  const [screeningRunsError, setScreeningRunsError] = useState(false);
   const [strategyAAllocationPercent, setStrategyAAllocationPercent] = useState(
     DEFAULT_STRATEGY_A_ALLOCATION * 100,
   );
@@ -805,6 +853,9 @@ export function MarketWorkspace() {
   const savedBacktestGroups = useMemo(
     () => groupSavedBacktests(savedBacktests),
     [savedBacktests],
+  );
+  const activeScreeningRunInstrumentKey = savedBacktestInstrumentKey(
+    series?.instrument ?? instrument,
   );
 
   const fetchMarket = useCallback(
@@ -1152,6 +1203,47 @@ export function MarketWorkspace() {
     };
   }, [loadSavedBacktests]);
 
+  const loadScreeningRuns = useCallback(
+    async (instrumentKey: string, signal?: AbortSignal) => {
+      setScreeningRunsLoading(true);
+      setScreeningRunsError(false);
+      try {
+        const response = await fetch(
+          `/api/screening-runs?instrumentKey=${encodeURIComponent(
+            instrumentKey,
+          )}&limit=12`,
+          { signal, cache: "no-store" },
+        );
+        const payload = (await response.json()) as {
+          screeningRuns?: ScreeningRunRecord[];
+        };
+        if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+        setScreeningRuns(payload.screeningRuns ?? []);
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          setScreeningRunsError(true);
+        }
+      } finally {
+        if (!signal?.aborted) setScreeningRunsLoading(false);
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void loadScreeningRuns(
+        activeScreeningRunInstrumentKey,
+        controller.signal,
+      );
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activeScreeningRunInstrumentKey, loadScreeningRuns]);
+
   const latest = series?.bars.at(-1);
   const previous = series?.bars.at(-2);
   const comparisonPrice =
@@ -1190,8 +1282,11 @@ export function MarketWorkspace() {
         : null,
       strategyAAllocation,
       strategyBAllocation,
-      entryFilter: activeMovingAverageSlopeFilter(
-        strategyEntryFilterDraft,
+      strategyAEntryFilter: activeMovingAverageSlopeFilter(
+        strategyAEntryFilterDraft,
+      ),
+      strategyBEntryFilter: activeMovingAverageSlopeFilter(
+        strategyBEntryFilterDraft,
       ),
     };
   }, [
@@ -1201,7 +1296,8 @@ export function MarketWorkspace() {
     strategyBParameters,
     strategyBAllocationPercent,
     strategyBId,
-    strategyEntryFilterDraft,
+    strategyAEntryFilterDraft,
+    strategyBEntryFilterDraft,
   ]);
   const singleSelection =
     strategyPlan &&
@@ -1268,7 +1364,12 @@ export function MarketWorkspace() {
               appliedSingleSelection.strategyId,
               appliedSingleSelection.parameters,
               series.latestBarStatus,
-              appliedStrategyPlan.entryFilter,
+              strategyPlanEntryFilter(
+                appliedStrategyPlan,
+                appliedStrategyPlan.strategyA
+                  ? "strategyA"
+                  : "strategyB",
+              ),
             )
           : null;
       const orderPrices = [
@@ -1291,7 +1392,10 @@ export function MarketWorkspace() {
           item.selection.strategyId,
           item.selection.parameters,
           series.latestBarStatus,
-          appliedStrategyPlan.entryFilter,
+          strategyPlanEntryFilter(
+            appliedStrategyPlan,
+            item.slot === "A" ? "strategyA" : "strategyB",
+          ),
         );
         if (
           !guidance ||
@@ -1383,7 +1487,9 @@ export function MarketWorkspace() {
         endTime: endDate,
         interval: DAILY_INTERVAL,
         executionPolicy: HISTORICAL_EXECUTION_POLICY,
-        entryFilter: strategyPlan.entryFilter,
+        entryFilter: strategyPlan.strategyA
+          ? strategyPlanEntryFilter(strategyPlan, "strategyA")
+          : strategyPlanEntryFilter(strategyPlan, "strategyB"),
       } as const;
       if (usesSingleFullAllocation && singleSelection) {
         return runBacktest(
@@ -1441,7 +1547,15 @@ export function MarketWorkspace() {
         endTime: endDate,
         interval: DAILY_INTERVAL,
         executionPolicy: HISTORICAL_EXECUTION_POLICY,
-        entryFilter: appliedStrategyPlan.entryFilter,
+        entryFilter: appliedStrategyPlan.strategyA
+          ? strategyPlanEntryFilter(
+              appliedStrategyPlan,
+              "strategyA",
+            )
+          : strategyPlanEntryFilter(
+              appliedStrategyPlan,
+              "strategyB",
+            ),
       } as const;
       if (appliedUsesSingleFullAllocation && appliedSingleSelection) {
         return runBacktest(
@@ -1504,7 +1618,9 @@ export function MarketWorkspace() {
           endTime: endDate,
           interval: DAILY_INTERVAL,
           executionPolicy: HISTORICAL_EXECUTION_POLICY,
-          entryFilter: strategyPlan.entryFilter,
+          entryFilter: strategyPlan.strategyA
+            ? strategyPlanEntryFilter(strategyPlan, "strategyA")
+            : strategyPlanEntryFilter(strategyPlan, "strategyB"),
         },
       );
       return analysis;
@@ -1599,8 +1715,11 @@ export function MarketWorkspace() {
     setStrategyBParameters({});
     setStrategyAAllocationPercent(100);
     setStrategyBAllocationPercent(0);
-    setStrategyEntryFilterDraft(
+    setStrategyAEntryFilterDraft(
       createMovingAverageSlopeFilterDraft(entryFilter),
+    );
+    setStrategyBEntryFilterDraft(
+      createMovingAverageSlopeFilterDraft(),
     );
     setAppliedStrategyPlan({
       strategyA: {
@@ -1610,7 +1729,8 @@ export function MarketWorkspace() {
       strategyB: null,
       strategyAAllocation: 1,
       strategyBAllocation: 0,
-      entryFilter: cloneMovingAverageSlopeFilter(entryFilter),
+      strategyAEntryFilter: cloneMovingAverageSlopeFilter(entryFilter),
+      strategyBEntryFilter: null,
     });
     scrollToStrategyChart();
   };
@@ -1721,8 +1841,15 @@ export function MarketWorkspace() {
     setStrategyBAllocationPercent(
       Math.round(result.strategyBAllocation * 100),
     );
-    setStrategyEntryFilterDraft(
-      createMovingAverageSlopeFilterDraft(result.entryFilter),
+    setStrategyAEntryFilterDraft(
+      createMovingAverageSlopeFilterDraft(
+        result.strategyAEntryFilter,
+      ),
+    );
+    setStrategyBEntryFilterDraft(
+      createMovingAverageSlopeFilterDraft(
+        result.strategyBEntryFilter,
+      ),
     );
     setAppliedStrategyPlan({
       strategyA: {
@@ -1735,7 +1862,12 @@ export function MarketWorkspace() {
       },
       strategyAAllocation: result.strategyAAllocation,
       strategyBAllocation: result.strategyBAllocation,
-      entryFilter: cloneMovingAverageSlopeFilter(result.entryFilter),
+      strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+        result.strategyAEntryFilter,
+      ),
+      strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+        result.strategyBEntryFilter,
+      ),
     });
     scrollToStrategyChart();
   };
@@ -1822,17 +1954,26 @@ export function MarketWorkspace() {
       });
       const payload = (await response.json()) as {
         savedBacktest?: SavedBacktestRecord;
+        replaced?: boolean;
       };
       if (!response.ok || !payload.savedBacktest) {
         throw new Error("PERSISTENCE_UNAVAILABLE");
       }
       const savedBacktest = payload.savedBacktest;
-      setSavedBacktests((current) =>
-        [
+      setSavedBacktests((current) => {
+        const existingIndex = current.findIndex(
+          (record) => record.id === savedBacktest.id,
+        );
+        if (payload.replaced && existingIndex >= 0) {
+          return current.map((record, index) =>
+            index === existingIndex ? savedBacktest : record,
+          );
+        }
+        return [
           savedBacktest,
           ...current.filter((record) => record.id !== savedBacktest.id),
-        ].slice(0, MAX_SAVED_BACKTEST_SCROLL_RECORDS),
-      );
+        ].slice(0, MAX_SAVED_BACKTEST_SCROLL_RECORDS);
+      });
       const savedGroupKey = savedBacktestInstrumentKey(
         savedBacktest.instrument,
       );
@@ -1915,8 +2056,15 @@ export function MarketWorkspace() {
     setStrategyBParameters(
       restoredStrategyB ? { ...restoredStrategyB.parameters } : {},
     );
-    setStrategyEntryFilterDraft(
-      createMovingAverageSlopeFilterDraft(saved.plan.entryFilter),
+    setStrategyAEntryFilterDraft(
+      createMovingAverageSlopeFilterDraft(
+        strategyPlanEntryFilter(saved.plan, "strategyA"),
+      ),
+    );
+    setStrategyBEntryFilterDraft(
+      createMovingAverageSlopeFilterDraft(
+        strategyPlanEntryFilter(saved.plan, "strategyB"),
+      ),
     );
     const savedStrategyAAllocation = Math.round(
       saved.plan.strategyAAllocation * 100,
@@ -1959,7 +2107,14 @@ export function MarketWorkspace() {
         : null,
       strategyAAllocation: restoredStrategyAAllocation / 100,
       strategyBAllocation: restoredStrategyBAllocation / 100,
-      entryFilter: cloneMovingAverageSlopeFilter(saved.plan.entryFilter),
+      strategyAEntryFilter: strategyPlanEntryFilter(
+        saved.plan,
+        "strategyA",
+      ),
+      strategyBEntryFilter: strategyPlanEntryFilter(
+        saved.plan,
+        "strategyB",
+      ),
     });
     setInitialCash(saved.initialCash);
     setCommissionPercent(saved.commissionPercent);
@@ -2166,10 +2321,8 @@ export function MarketWorkspace() {
     setValidationProgress(null);
     setValidationReport(null);
     setScreenProgress(emptyCombinationProgress());
-    await yieldForScreening();
-
     try {
-      const outcome = await runScreeningWithValidation(
+      const outcome = await runScreeningInWorker(
         series.bars,
         {
           initialCash,
@@ -2206,6 +2359,46 @@ export function MarketWorkspace() {
         total: outcome.totalCandidates,
         failed: outcome.failedCount,
       }));
+      try {
+        const dataFingerprint = await fingerprintMarketSeries(series);
+        if (controller.signal.aborted) return;
+        const archiveInput = createSaveScreeningRunInput(
+          series,
+          validationConfig,
+          runObjective,
+          {
+            initialCash,
+            commissionPercent,
+            slippagePercent,
+          },
+          outcome,
+          dataFingerprint,
+        );
+        const archiveResponse = await fetch("/api/screening-runs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(archiveInput),
+          signal: controller.signal,
+        });
+        const archivePayload = (await archiveResponse.json()) as {
+          screeningRun?: ScreeningRunRecord;
+          previousRun?: ScreeningRunRecord | null;
+        };
+        if (!archiveResponse.ok || !archivePayload.screeningRun) {
+          throw new Error("PERSISTENCE_UNAVAILABLE");
+        }
+        setScreeningRuns((current) => [
+          archivePayload.screeningRun!,
+          ...current.filter(
+            (run) => run.id !== archivePayload.screeningRun!.id,
+          ),
+        ].slice(0, 12));
+        setScreeningRunsError(false);
+      } catch (archiveError) {
+        if ((archiveError as Error).name !== "AbortError") {
+          setScreeningRunsError(true);
+        }
+      }
     } catch (error) {
       if (!controller.signal.aborted) {
         setScreeningError(
@@ -2337,7 +2530,7 @@ export function MarketWorkspace() {
             endTime: endDate,
             interval: DAILY_INTERVAL,
             executionPolicy: HISTORICAL_EXECUTION_POLICY,
-            entryFilter: saved.plan.entryFilter,
+            entryFilter: null,
           }),
         );
       } catch {
@@ -2353,6 +2546,16 @@ export function MarketWorkspace() {
     startDate,
   ]);
   const screeningBusy = screening;
+  const screeningRunComparison = useMemo(
+    () =>
+      screeningRuns[0]
+        ? compareScreeningRuns(
+            screeningRuns[0],
+            screeningRuns[1] ?? null,
+          )
+        : null,
+    [screeningRuns],
+  );
   const resultsValidationMode =
     screenResults[0]?.screeningValidation?.mode ??
     combinationResults[0]?.screeningValidation?.mode ??
@@ -2360,9 +2563,7 @@ export function MarketWorkspace() {
   const hasScreeningResults =
     screenResults.length > 0 || combinationResults.length > 0;
   const screeningResultEntryFilter =
-    screenResults[0]?.entryFilter ??
-    combinationResults[0]?.entryFilter ??
-    null;
+    screenResults[0]?.entryFilter ?? null;
   const strategyShortlist = useMemo(
     () =>
       selectStrategyShortlist(
@@ -3269,9 +3470,21 @@ export function MarketWorkspace() {
                                   </small>
                                   <small>
                                     {copy.entryFilter.savedPrefix}{" "}
+                                    A{" "}
                                     {formatMovingAverageSlopeFilter(
-                                      saved.plan.entryFilter,
+                                      strategyPlanEntryFilter(
+                                        saved.plan,
+                                        "strategyA",
+                                      ),
                                     )}
+                                    {saved.plan.strategyB
+                                      ? ` / B ${formatMovingAverageSlopeFilter(
+                                          strategyPlanEntryFilter(
+                                            saved.plan,
+                                            "strategyB",
+                                          ),
+                                        )}`
+                                      : ""}
                                   </small>
                                   {saved.interval !== DAILY_INTERVAL && (
                                     <span className="saved-shortcut-legacy">
@@ -3398,12 +3611,20 @@ export function MarketWorkspace() {
                 </small>
               </label>
               {strategyAId && (
-                <StrategyParameterFields
-                  heading={copy.lab.strategyAParameters}
-                  namePrefix="strategy-a"
-                  parameters={strategyAParameters}
-                  onChange={setStrategyAParameters}
-                />
+                <>
+                  <StrategyParameterFields
+                    heading={copy.lab.strategyAParameters}
+                    namePrefix="strategy-a"
+                    parameters={strategyAParameters}
+                    onChange={setStrategyAParameters}
+                  />
+                  <MovingAverageSlopeFilterFields
+                    context="lab"
+                    namePrefix="strategy-a-entry-filter"
+                    draft={strategyAEntryFilterDraft}
+                    onChange={setStrategyAEntryFilterDraft}
+                  />
+                </>
               )}
             </div>
             <div className="strategy-selector-card">
@@ -3440,12 +3661,20 @@ export function MarketWorkspace() {
                 </small>
               </label>
               {strategyBId && (
-                <StrategyParameterFields
-                  heading={copy.lab.strategyBParameters}
-                  namePrefix="strategy-b"
-                  parameters={strategyBParameters}
-                  onChange={setStrategyBParameters}
-                />
+                <>
+                  <StrategyParameterFields
+                    heading={copy.lab.strategyBParameters}
+                    namePrefix="strategy-b"
+                    parameters={strategyBParameters}
+                    onChange={setStrategyBParameters}
+                  />
+                  <MovingAverageSlopeFilterFields
+                    context="lab"
+                    namePrefix="strategy-b-entry-filter"
+                    draft={strategyBEntryFilterDraft}
+                    onChange={setStrategyBEntryFilterDraft}
+                  />
+                </>
               )}
             </div>
           </div>
@@ -3508,13 +3737,6 @@ export function MarketWorkspace() {
               <small>{copy.lab.strategyBAllocationHint}</small>
             </label>
           </div>
-
-          <MovingAverageSlopeFilterFields
-            context="lab"
-            namePrefix="strategy-entry-filter"
-            draft={strategyEntryFilterDraft}
-            onChange={setStrategyEntryFilterDraft}
-          />
 
           <div className="date-grid">
             <label className="field-label">
@@ -4389,6 +4611,164 @@ export function MarketWorkspace() {
           </section>
         )}
 
+        {(screeningRunsLoading ||
+          screeningRunsError ||
+          screeningRuns.length > 0) && (
+          <section className="screening-history">
+            <div className="screening-history-heading">
+              <div>
+                <Activity size={16} />
+                <strong>{copy.screeningHistory.title}</strong>
+              </div>
+              <span>
+                {screeningRunsLoading
+                  ? copy.screeningHistory.loading
+                  : `${screeningRuns.length} ${copy.screeningHistory.runs}`}
+              </span>
+            </div>
+            {screeningRunsError && (
+              <p className="screening-history-error">
+                <ShieldAlert size={14} />
+                {copy.screeningHistory.loadError}
+              </p>
+            )}
+            {screeningRuns[0] && (
+              <>
+                <div className="screening-history-latest">
+                  <div>
+                    <span>{copy.screeningHistory.latestWinner}</span>
+                    <strong>
+                      {screeningRuns[0].candidates[0]
+                        ? screeningRunCandidateName(
+                            screeningRuns[0].candidates[0],
+                          )
+                        : copy.common.unavailable}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>{copy.screeningHistory.marketSnapshot}</span>
+                    <strong>
+                      {copy.sources[screeningRuns[0].source]}{" "}
+                      {copy.common.separator}{" "}
+                      {screeningRuns[0].lastBarDate}
+                    </strong>
+                    <small>
+                      {screeningRuns[0].dataFingerprint.slice(0, 12)}
+                    </small>
+                  </div>
+                  <div>
+                    <span>{copy.screeningHistory.runTime}</span>
+                    <strong>
+                      {cacheTimeFormatter.format(
+                        new Date(screeningRuns[0].createdAt),
+                      )}
+                    </strong>
+                  </div>
+                </div>
+                {screeningRunComparison && (
+                  <div className="screening-history-comparison">
+                    <div>
+                      <span>{copy.screeningHistory.winnerChange}</span>
+                      <strong>
+                        {screeningRunComparison.winnerChanged
+                          ? copy.screeningHistory.changed
+                          : copy.screeningHistory.unchanged}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>{copy.screeningHistory.topTenOverlap}</span>
+                      <strong>
+                        {screeningRunComparison.topTenOverlap} / 10
+                      </strong>
+                    </div>
+                    <div>
+                      <span>
+                        {copy.screeningHistory.previousRank}
+                      </span>
+                      <strong>
+                        {screeningRunComparison.currentWinnerPreviousRank ??
+                          copy.common.unavailable}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>{copy.screeningHistory.returnDelta}</span>
+                      <strong>
+                        {screeningRunComparison.totalReturnDelta === null
+                          ? copy.common.unavailable
+                          : formatPercent(
+                              screeningRunComparison.totalReturnDelta,
+                              true,
+                            )}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+                <details className="screening-history-details">
+                  <summary>{copy.screeningHistory.viewHistory}</summary>
+                  <div className="results-table-wrap">
+                    <table className="results-table">
+                      <thead>
+                        <tr>
+                          <th>{copy.screeningHistory.runTime}</th>
+                          <th>{copy.screeningHistory.mode}</th>
+                          <th>{copy.screeningHistory.latestWinner}</th>
+                          <th>{copy.screening.return}</th>
+                          <th>{copy.screening.sharpe}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {screeningRuns.map((run) => {
+                          const winner = run.candidates[0];
+                          return (
+                            <tr key={run.id}>
+                              <td>
+                                {cacheTimeFormatter.format(
+                                  new Date(run.createdAt),
+                                )}
+                              </td>
+                              <td>
+                                {
+                                  copy.screening.validationModes[
+                                    run.validationMode
+                                  ]
+                                }
+                              </td>
+                              <td>
+                                {winner
+                                  ? screeningRunCandidateName(winner)
+                                  : copy.common.unavailable}
+                              </td>
+                              <td
+                                className={
+                                  (winner?.metrics.totalReturn ?? 0) >= 0
+                                    ? "positive"
+                                    : "negative"
+                                }
+                              >
+                                {winner
+                                  ? formatPercent(
+                                      winner.metrics.totalReturn,
+                                      true,
+                                    )
+                                  : copy.common.unavailable}
+                              </td>
+                              <td>
+                                {winner
+                                  ? formatNumber(winner.metrics.sharpe)
+                                  : copy.common.unavailable}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </>
+            )}
+          </section>
+        )}
+
         {strategyShortlist.length > 0 && (
           <section
             className="strategy-shortlist"
@@ -4770,6 +5150,13 @@ export function MarketWorkspace() {
                                   )
                                   .join(` ${copy.common.separator} `)}
                               </small>
+                              {result.strategyAEntryFilter && (
+                                <small className="result-entry-filter">
+                                  {formatMovingAverageSlopeFilter(
+                                    result.strategyAEntryFilter,
+                                  )}
+                                </small>
+                              )}
                             </div>
                           </td>
                           <td>
@@ -4797,6 +5184,13 @@ export function MarketWorkspace() {
                                   )
                                   .join(` ${copy.common.separator} `)}
                               </small>
+                              {result.strategyBEntryFilter && (
+                                <small className="result-entry-filter">
+                                  {formatMovingAverageSlopeFilter(
+                                    result.strategyBEntryFilter,
+                                  )}
+                                </small>
+                              )}
                             </div>
                           </td>
                           <td>
@@ -4822,13 +5216,6 @@ export function MarketWorkspace() {
                                     100,
                                 )}%
                               </small>
-                              {result.entryFilter && (
-                                <small className="result-entry-filter">
-                                  {formatMovingAverageSlopeFilter(
-                                    result.entryFilter,
-                                  )}
-                                </small>
-                              )}
                             </div>
                           </td>
                           <td

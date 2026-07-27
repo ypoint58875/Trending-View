@@ -214,16 +214,19 @@
   passes `executionPolicy: "hybrid"`.
 - `runBacktestFromTarget(...)`: reuses a caller-built complete-history target
   while retaining the same price-order and performance engine. If the prior
-  complete-history target is active, the selected-range simulation opens at
-  its first bar rather than waiting for a new transition. Screening uses it so
-  a candidate target is not rebuilt before pair retention.
+  complete-history target is active, the selected-range simulation inherits
+  units and cash at its first open without recording an entry or cost. An open
+  ending position is marked to the final close without a forced exit.
+  Screening uses it so a candidate target is not rebuilt before pair retention.
 - `runAllocationBacktest(...)`: executes an aligned `[0, 1]` allocation target
   from the prior completed bar at the next open, with optional aligned causal
   intrabar execution sequences for same-bar price-order changes. Complete-
-  history prior state initializes exposure at the first selected open. It
+  history prior state initializes exposure at the first selected open without a
+  rebalance or cost. It
   trades only when the planned state changes, so ordinary price drift does not
   create daily recentering fills. It applies costs and reports common
-  performance plus rebalance records. An optional aligned signal-event stream
+  performance plus rebalance records. Final equity marks open units to the last
+  close without a forced rebalance. An optional aligned signal-event stream
   attributes fills to relative long/short entries and exits.
 - `resolveStrategyOrderFills(...)`: resolves one bar's open and stop orders
   against the current long-only position. It returns an ordered fill list so a
@@ -255,10 +258,10 @@
   into the applied chart plan and moves the viewport to the trend chart.
   Draft selector/parameter edits do not alter chart lines, markers, or latest
   guidance until this boundary is invoked.
-- `buildTradeMarkers(trades)`: maps every long entry to an open marker and every
-  strategy exit to a close marker while separating range-end valuation exits.
+- `buildTradeMarkers(trades)`: maps every real long entry to an open marker and
+  every real strategy exit to a close marker.
 - `buildAllocationTradeMarkers(rebalances)`: maps allocation increases,
-  reductions, and range-end liquidations to the same chart-marker contract.
+  and reductions to the same chart-marker contract.
   Strategy fills receive one semantic action: open, short buy, short sell, or
   close. A simultaneous long/short exit is one close marker while retaining
   both source events for audit.
@@ -283,20 +286,30 @@
   workspace uses the unified combination optimizer below.
 - `optimizeStrategyCombinations(...)`: evaluates every supplied standalone
   candidate unfiltered. For each eligible strategy it keeps compact metrics for
-  the top 30 and evaluates those sets under EMA5-8. It then keeps one unique
-  final winner per strategy, automatically ranks every unordered
-  non-equivalent winner pair at A=60%/B=40%, retains up to 4,096 pairs, and
-  backtests A=40%/B=60%. It reports strategy, entry-filter, pair, and allocation
+  the top 60 and evaluates those sets under EMA5-8. It normally keeps one
+  unique final winner per strategy; rolling callers can request a Top-10
+  per-strategy pool. It automatically ranks every unordered non-equivalent
+  retained pair, retains up to 4,096 pairs, and compares 50/50, 60/40, 40/60,
+  70/30, and 30/70. It reports strategy, entry-filter, pair, and allocation
   stages and retains up to 32 ranked combinations, with one best result per
   unordered strategy-ID pair. The current registry creates 559 winner pairs,
-  so every pair reaches allocation comparison. If both winners selected the
-  same EMA, the combination retains it as the shared filter; otherwise the
-  pair is replayed without a shared EMA because `StrategyAllocationPlan`
-  currently has one filter field. Targets are built from complete loaded
-  history and retained only for the unique winners. The default optimizers yield before
+  so every pair reaches allocation comparison. Each pair stores and replays
+  independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
+  are built from complete loaded history and retained only for finalists. The default optimizers yield before
   their first evaluation, at every stage transition, and after every eight
   evaluations. Browser cooperative yields are followed by a timer-task
   boundary so progress state is committed and painted before work resumes.
+- `runScreeningInWorker(...)`: creates a module Worker for one complete
+  validation run, forwards typed optimization/validation progress, sends
+  cancellation, and always terminates the worker. It falls back to the core
+  function only when `Worker` is unavailable.
+- `fingerprintMarketSeries(series)`: SHA-256 hashes interval, source,
+  adjustment, and normalized OHLCV bars for screening provenance.
+- `createSaveScreeningRunInput(...)`: converts a validation outcome into a
+  compact ranked archive without equity, trade, rebalance, or ranking-replay
+  arrays.
+- `compareScreeningRuns(current, previous)`: reports winner change, Top-10
+  overlap, cross-run ranks, and metric deltas for the same current winner.
 - `runStrategyCombinationBacktest(...)`: replays one fixed combination over a
   requested performance window. Callers may freeze the previously selected
   relative-long slot so a later sample cannot redefine the plan.

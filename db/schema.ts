@@ -53,3 +53,44 @@ export const savedBacktests = sqliteTable(
     ),
   ],
 );
+
+export const screeningRuns = sqliteTable(
+  "screening_runs",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ownerEmail: text("owner_email").notNull(),
+    instrumentKey: text("instrument_key").notNull(),
+    secid: text("secid").notNull(),
+    code: text("code").notNull(),
+    name: text("name").notNull(),
+    exchange: text("exchange").notNull(),
+    assetType: text("asset_type").notNull(),
+    provider: text("provider").notNull(),
+    source: text("source").notNull(),
+    interval: text("interval").notNull(),
+    priceAdjustment: text("price_adjustment").notNull(),
+    fetchedAt: text("fetched_at").notNull(),
+    lastBarDate: text("last_bar_date").notNull(),
+    barCount: integer("bar_count").notNull(),
+    dataFingerprint: text("data_fingerprint").notNull(),
+    validationMode: text("validation_mode").notNull(),
+    validationConfigJson: text("validation_config_json").notNull(),
+    objective: text("objective").notNull(),
+    settingsJson: text("settings_json").notNull(),
+    candidatesJson: text("candidates_json").notNull(),
+    selectedCandidateKey: text("selected_candidate_key"),
+    validationReportJson: text("validation_report_json"),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    index("screening_runs_owner_instrument_created_idx").on(
+      table.ownerEmail,
+      table.instrumentKey,
+      table.createdAt,
+    ),
+    index("screening_runs_owner_created_idx").on(
+      table.ownerEmail,
+      table.createdAt,
+    ),
+  ],
+);
