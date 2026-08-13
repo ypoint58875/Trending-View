@@ -764,6 +764,10 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.doesNotMatch(workspace, /saved\.rankHistory\.map/);
   assert.match(workspace, /savedBacktestRecentReviews/);
   assert.match(workspace, /saved-shortcut-validation/);
+  assert.match(
+    styles,
+    /\.saved-shortcut-main \.saved-shortcut-validation\s*\{[^}]*max-width:\s*100%;[^}]*white-space:\s*normal;/s,
+  );
   assert.match(locale, /removeGroup: "删除该股指全部回测"/);
   assert.doesNotMatch(locale, /rankHistory: "近 5 次排名"/);
   const savedShortcutButtonStart = workspace.indexOf(

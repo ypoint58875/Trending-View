@@ -1451,9 +1451,14 @@ button {
 
 .saved-shortcut-main .saved-shortcut-validation {
   width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 3px 6px;
   border-radius: 999px;
   font-weight: 700;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .saved-shortcut-legacy {
