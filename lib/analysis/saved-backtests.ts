@@ -4,9 +4,13 @@ import {
   type IndicatorConfiguration,
 } from "./indicator-registry";
 import { isValidStrategyParameters } from "./screening";
-import type {
-  StrategyAllocationPlan,
-  StrategySelection,
+import {
+  DEFAULT_TACTICAL_ALLOCATION_MODE,
+  TACTICAL_ALLOCATION_MODES,
+  resolveTacticalAllocationMode,
+  type TacticalAllocationMode,
+  type StrategyAllocationPlan,
+  type StrategySelection,
 } from "./strategy-combinations";
 import {
   STRATEGIES,
@@ -15,6 +19,7 @@ import {
   type StrategyParameters,
 } from "./strategies";
 import {
+  MARKET_DATA_PROVIDERS,
   MAX_MARKET_INSTRUMENT_NAME_LENGTH,
   type MarketAssetType,
   type MarketDataProvider,
@@ -23,6 +28,8 @@ import {
   type MarketInterval,
   type MarketSeries,
 } from "@/lib/market/types";
+import { canonicalMarketInstrumentKey } from "@/lib/market/canonical";
+import { MARKET_EXCHANGES } from "@/lib/market/exchanges";
 import {
   cloneMovingAverageSlopeFilter,
   movingAverageSlopeFiltersEqual,
@@ -31,6 +38,51 @@ import {
 } from "./entry-filter";
 
 export const MAX_SAVED_BACKTEST_SCROLL_RECORDS = 200;
+export const SAVED_BACKTEST_ROLLING_SESSIONS = 128;
+export const MAX_SAVED_BACKTEST_FOLDERS = 100;
+export const MAX_SAVED_BACKTEST_FOLDER_NAME_LENGTH = 64;
+export const SAVED_BACKTEST_INSTRUMENT_FOLDER_CONTEXT = "root";
+
+export type SavedBacktestFolderScope = "instrument" | "strategy";
+
+export interface SavedBacktestFolder {
+  id: number;
+  scope: SavedBacktestFolderScope;
+  contextKey: string;
+  name: string;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSavedBacktestFolderInput {
+  scope: SavedBacktestFolderScope;
+  contextKey: string;
+  name: string;
+}
+
+export interface RenameSavedBacktestFolderInput {
+  id: number;
+  name: string;
+}
+
+export interface SavedBacktestFolderOrderInput {
+  scope: SavedBacktestFolderScope;
+  contextKey: string;
+  orderedIds: number[];
+}
+
+export type AssignSavedBacktestFolderInput =
+  | {
+      scope: "instrument";
+      folderId: number | null;
+      instrumentKey: string;
+    }
+  | {
+      scope: "strategy";
+      folderId: number | null;
+      savedBacktestId: number;
+    };
 
 export interface SavedBacktestMetrics {
   totalReturn: number;
@@ -38,6 +90,22 @@ export interface SavedBacktestMetrics {
   sharpe: number;
   tradeCount: number;
   score: number;
+}
+
+export interface SavedBacktestReturnDisplay {
+  totalReturn: number;
+  range: "current" | "rolling" | "saved";
+}
+
+export interface SavedBacktestRollingEvaluation {
+  id: number;
+  totalReturn: number;
+}
+
+export interface SavedBacktestRollingUpdateInput {
+  instrumentKey: string;
+  marketFingerprint: string;
+  evaluations: SavedBacktestRollingEvaluation[];
 }
 
 export interface SaveBacktestInput {
@@ -57,6 +125,9 @@ export interface SaveBacktestInput {
 
 export interface SavedBacktestRecord extends SaveBacktestInput {
   id: number;
+  instrumentFolderId?: number | null;
+  strategyFolderId?: number | null;
+  rollingTotalReturn: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,6 +135,7 @@ export interface SavedBacktestRecord extends SaveBacktestInput {
 export interface SavedBacktestGroup {
   key: string;
   instrument: MarketInstrument;
+  instrumentFolderId: number | null;
   records: SavedBacktestRecord[];
 }
 
@@ -74,11 +146,36 @@ export interface SavedBacktestOrderInput {
 export function savedBacktestInstrumentKey(
   instrument: MarketInstrument,
 ): string {
-  const normalizedCode = instrument.code
-    .replace(/^\^/, "")
-    .replace(/\.(SS|SZ|HK)$/i, "")
-    .toUpperCase();
-  return `${instrument.assetType}:${normalizedCode}`;
+  return canonicalMarketInstrumentKey(instrument);
+}
+
+export function resolveSavedBacktestReturnDisplay(
+  currentRangeMetrics: Pick<BacktestPerformance, "totalReturn"> | null | undefined,
+  savedMetrics: SavedBacktestMetrics,
+  rollingTotalReturn: number | null = null,
+): SavedBacktestReturnDisplay {
+  if (
+    currentRangeMetrics &&
+    Number.isFinite(currentRangeMetrics.totalReturn)
+  ) {
+    return {
+      totalReturn: currentRangeMetrics.totalReturn,
+      range: "current",
+    };
+  }
+  if (
+    rollingTotalReturn !== null &&
+    Number.isFinite(rollingTotalReturn)
+  ) {
+    return {
+      totalReturn: rollingTotalReturn,
+      range: "rolling",
+    };
+  }
+  return {
+    totalReturn: savedMetrics.totalReturn,
+    range: "saved",
+  };
 }
 
 export function canReuseSavedBacktestMarketSeries(
@@ -114,6 +211,7 @@ export function groupSavedBacktests(
       groups.set(key, {
         key,
         instrument: record.instrument,
+        instrumentFolderId: record.instrumentFolderId ?? null,
         records: [record],
       });
     }
@@ -173,27 +271,38 @@ export function reorderSavedBacktestsWithinGroup(
   return groups.flatMap((candidate) => candidate.records);
 }
 
+export function reorderSavedBacktestFolders(
+  folders: readonly SavedBacktestFolder[],
+  scope: SavedBacktestFolderScope,
+  contextKey: string,
+  sourceId: number,
+  targetId: number,
+): SavedBacktestFolder[] {
+  const siblings = folders.filter(
+    (folder) => folder.scope === scope && folder.contextKey === contextKey,
+  );
+  const sourceIndex = siblings.findIndex((folder) => folder.id === sourceId);
+  const targetIndex = siblings.findIndex((folder) => folder.id === targetId);
+  const reorderedSiblings = moveArrayEntry(
+    siblings,
+    sourceIndex,
+    targetIndex,
+  );
+  let siblingIndex = 0;
+  return folders.map((folder) =>
+    folder.scope === scope && folder.contextKey === contextKey
+      ? reorderedSiblings[siblingIndex++]!
+      : folder,
+  );
+}
+
 const assetTypes = new Set<MarketAssetType>([
   "index",
   "etf",
   "commodity",
 ]);
-const providers = new Set<MarketDataProvider>([
-  "eastmoney",
-  "yahoo",
-  "nasdaq",
-  "eodhd",
-]);
-const exchanges = new Set<MarketExchange>([
-  "SSE",
-  "SZSE",
-  "JPX",
-  "PHLX",
-  "NYSE_ARCA",
-  "NASDAQ",
-  "HKEX",
-  "OTHER",
-]);
+const providers = new Set<MarketDataProvider>(MARKET_DATA_PROVIDERS);
+const exchanges = new Set<MarketExchange>(MARKET_EXCHANGES);
 const intervals = new Set<MarketInterval>([
   "1m",
   "5m",
@@ -225,6 +334,60 @@ export function parseSavedBacktestOrderInput(
   return { orderedIds: [...orderedIds] };
 }
 
+export function savedBacktestEvaluationsCoverIds(
+  expectedIds: readonly number[],
+  evaluations: readonly SavedBacktestRollingEvaluation[],
+): boolean {
+  if (expectedIds.length !== evaluations.length) return false;
+  const expectedIdSet = new Set(expectedIds);
+  const evaluatedIdSet = new Set(evaluations.map((evaluation) => evaluation.id));
+  return (
+    expectedIdSet.size === expectedIds.length &&
+    evaluatedIdSet.size === evaluations.length &&
+    evaluations.every((evaluation) => expectedIdSet.has(evaluation.id))
+  );
+}
+
+export function parseSavedBacktestRollingUpdateInput(
+  value: unknown,
+): SavedBacktestRollingUpdateInput | null {
+  if (!isRecord(value) || !Array.isArray(value.evaluations)) return null;
+  const instrumentKey = readString(value.instrumentKey, 128);
+  const marketFingerprint = readString(value.marketFingerprint, 64);
+  if (
+    !instrumentKey ||
+    !marketFingerprint ||
+    !/^[a-f0-9]{64}$/.test(marketFingerprint) ||
+    value.evaluations.length < 1 ||
+    value.evaluations.length > MAX_SAVED_BACKTEST_SCROLL_RECORDS
+  ) {
+    return null;
+  }
+  const evaluations: SavedBacktestRollingEvaluation[] = [];
+  for (const evaluation of value.evaluations) {
+    if (!isRecord(evaluation)) return null;
+    const id = evaluation.id;
+    const totalReturn = evaluation.totalReturn;
+    if (
+      typeof id !== "number" ||
+      !Number.isInteger(id) ||
+      id < 1 ||
+      typeof totalReturn !== "number" ||
+      !Number.isFinite(totalReturn)
+    ) {
+      return null;
+    }
+    evaluations.push({ id: id as number, totalReturn });
+  }
+  if (
+    new Set(evaluations.map((evaluation) => evaluation.id)).size !==
+    evaluations.length
+  ) {
+    return null;
+  }
+  return { instrumentKey, marketFingerprint, evaluations };
+}
+
 function readString(
   value: unknown,
   maximumLength: number,
@@ -234,6 +397,96 @@ function readString(
   return normalized.length > 0 && normalized.length <= maximumLength
     ? normalized
     : null;
+}
+
+function readPositiveInteger(value: unknown): number | null {
+  return typeof value === "number" && Number.isInteger(value) && value > 0
+    ? value
+    : null;
+}
+
+function readFolderId(value: unknown): number | null | undefined {
+  if (value === null) return null;
+  return readPositiveInteger(value) ?? undefined;
+}
+
+export function parseCreateSavedBacktestFolderInput(
+  value: unknown,
+): CreateSavedBacktestFolderInput | null {
+  if (!isRecord(value)) return null;
+  const scope = value.scope;
+  const name = readString(
+    value.name,
+    MAX_SAVED_BACKTEST_FOLDER_NAME_LENGTH,
+  );
+  if ((scope !== "instrument" && scope !== "strategy") || !name) {
+    return null;
+  }
+  const contextKey =
+    scope === "instrument"
+      ? SAVED_BACKTEST_INSTRUMENT_FOLDER_CONTEXT
+      : readString(value.contextKey, 128);
+  return contextKey ? { scope, contextKey, name } : null;
+}
+
+export function parseRenameSavedBacktestFolderInput(
+  value: unknown,
+): RenameSavedBacktestFolderInput | null {
+  if (!isRecord(value)) return null;
+  const id = readPositiveInteger(value.id);
+  const name = readString(
+    value.name,
+    MAX_SAVED_BACKTEST_FOLDER_NAME_LENGTH,
+  );
+  return id && name ? { id, name } : null;
+}
+
+export function parseSavedBacktestFolderOrderInput(
+  value: unknown,
+): SavedBacktestFolderOrderInput | null {
+  if (!isRecord(value) || !Array.isArray(value.orderedIds)) return null;
+  const scope = value.scope;
+  if (scope !== "instrument" && scope !== "strategy") return null;
+  const contextKey =
+    scope === "instrument"
+      ? SAVED_BACKTEST_INSTRUMENT_FOLDER_CONTEXT
+      : readString(value.contextKey, 128);
+  const orderedIds = value.orderedIds.map(readPositiveInteger);
+  if (
+    !contextKey ||
+    orderedIds.length < 1 ||
+    orderedIds.length > MAX_SAVED_BACKTEST_FOLDERS ||
+    orderedIds.some((id) => id === null) ||
+    new Set(orderedIds).size !== orderedIds.length
+  ) {
+    return null;
+  }
+  return {
+    scope,
+    contextKey,
+    orderedIds: orderedIds as number[],
+  };
+}
+
+export function parseAssignSavedBacktestFolderInput(
+  value: unknown,
+): AssignSavedBacktestFolderInput | null {
+  if (!isRecord(value)) return null;
+  const folderId = readFolderId(value.folderId);
+  if (folderId === undefined) return null;
+  if (value.scope === "instrument") {
+    const instrumentKey = readString(value.instrumentKey, 128);
+    return instrumentKey
+      ? { scope: "instrument", folderId, instrumentKey }
+      : null;
+  }
+  if (value.scope === "strategy") {
+    const savedBacktestId = readPositiveInteger(value.savedBacktestId);
+    return savedBacktestId
+      ? { scope: "strategy", folderId, savedBacktestId }
+      : null;
+  }
+  return null;
 }
 
 function readFiniteNumber(
@@ -309,6 +562,7 @@ function validatePlan(
   strategyBAllocation: number | null,
   strategyAEntryFilter: MovingAverageSlopeFilter | null = null,
   strategyBEntryFilter: MovingAverageSlopeFilter | null = null,
+  tacticalMode: TacticalAllocationMode = DEFAULT_TACTICAL_ALLOCATION_MODE,
 ): StrategyAllocationPlan | null {
   if (
     strategyA === undefined ||
@@ -339,6 +593,7 @@ function validatePlan(
         ? 1
         : 0
       : strategyBAllocation,
+    tacticalMode,
     ...(strategyA && strategyAEntryFilter
       ? {
           strategyAEntryFilter: cloneMovingAverageSlopeFilter(
@@ -388,6 +643,8 @@ export function strategyPlansEqual(
     strategySelectionsEqual(left.strategyB, right.strategyB) &&
     Math.abs(left.strategyAAllocation - right.strategyAAllocation) < 1e-10 &&
     Math.abs(left.strategyBAllocation - right.strategyBAllocation) < 1e-10 &&
+    resolveTacticalAllocationMode(left.tacticalMode) ===
+      resolveTacticalAllocationMode(right.tacticalMode) &&
     movingAverageSlopeFiltersEqual(
       left.strategyAEntryFilter ?? left.entryFilter,
       right.strategyAEntryFilter ?? right.entryFilter,
@@ -396,6 +653,130 @@ export function strategyPlansEqual(
       left.strategyBEntryFilter ?? left.entryFilter,
       right.strategyBEntryFilter ?? right.entryFilter,
     )
+  );
+}
+
+export interface StrategyShortcutParameterDifference {
+  strategyId: StrategyId;
+  key: string;
+  savedValue: number | null;
+  candidateValue: number | null;
+}
+
+export interface StrategyShortcutMatch {
+  kind: "exact" | "same-type";
+  savedBacktestId: number;
+  sharedStrategyIds: StrategyId[];
+  parameterDifferences: StrategyShortcutParameterDifference[];
+  allocationDifferent: boolean;
+  entryFilterDifferent: boolean;
+  tacticalModeDifferent: boolean;
+}
+
+function planSelections(plan: StrategyAllocationPlan): StrategySelection[] {
+  return [plan.strategyA, plan.strategyB].filter(
+    (selection): selection is StrategySelection => selection !== null,
+  );
+}
+
+function shortcutMatchForRecord(
+  candidate: StrategyAllocationPlan,
+  saved: SavedBacktestRecord,
+): StrategyShortcutMatch | null {
+  if (strategyPlansEqual(candidate, saved.plan)) {
+    return {
+      kind: "exact",
+      savedBacktestId: saved.id,
+      sharedStrategyIds: planSelections(candidate).map(
+        (selection) => selection.strategyId,
+      ),
+      parameterDifferences: [],
+      allocationDifferent: false,
+      entryFilterDifferent: false,
+      tacticalModeDifferent: false,
+    };
+  }
+
+  const candidateSelections = planSelections(candidate);
+  const savedSelections = planSelections(saved.plan);
+  const sharedStrategyIds = candidateSelections
+    .map((selection) => selection.strategyId)
+    .filter(
+      (strategyId, index, values) =>
+        values.indexOf(strategyId) === index &&
+        savedSelections.some((selection) => selection.strategyId === strategyId),
+    );
+  if (sharedStrategyIds.length === 0) return null;
+
+  const parameterDifferences: StrategyShortcutParameterDifference[] = [];
+  for (const strategyId of sharedStrategyIds) {
+    const candidateSelection = candidateSelections.find(
+      (selection) => selection.strategyId === strategyId,
+    )!;
+    const savedSelection = savedSelections.find(
+      (selection) => selection.strategyId === strategyId,
+    )!;
+    const keys = new Set([
+      ...Object.keys(candidateSelection.parameters),
+      ...Object.keys(savedSelection.parameters),
+    ]);
+    for (const key of [...keys].sort()) {
+      const savedValue = savedSelection.parameters[key] ?? null;
+      const candidateValue = candidateSelection.parameters[key] ?? null;
+      if (savedValue !== candidateValue) {
+        parameterDifferences.push({
+          strategyId,
+          key,
+          savedValue,
+          candidateValue,
+        });
+      }
+    }
+  }
+
+  return {
+    kind: "same-type",
+    savedBacktestId: saved.id,
+    sharedStrategyIds,
+    parameterDifferences,
+    allocationDifferent:
+      Math.abs(candidate.strategyAAllocation - saved.plan.strategyAAllocation) >=
+        1e-10 ||
+      Math.abs(candidate.strategyBAllocation - saved.plan.strategyBAllocation) >=
+        1e-10,
+    entryFilterDifferent:
+      !movingAverageSlopeFiltersEqual(
+        candidate.strategyAEntryFilter ?? candidate.entryFilter,
+        saved.plan.strategyAEntryFilter ?? saved.plan.entryFilter,
+      ) ||
+      !movingAverageSlopeFiltersEqual(
+        candidate.strategyBEntryFilter ?? candidate.entryFilter,
+        saved.plan.strategyBEntryFilter ?? saved.plan.entryFilter,
+      ),
+    tacticalModeDifferent:
+      resolveTacticalAllocationMode(candidate.tacticalMode) !==
+      resolveTacticalAllocationMode(saved.plan.tacticalMode),
+  };
+}
+
+export function findStrategyShortcutMatch(
+  candidate: StrategyAllocationPlan,
+  savedBacktests: readonly SavedBacktestRecord[],
+): StrategyShortcutMatch | null {
+  const matches = savedBacktests
+    .map((saved) => shortcutMatchForRecord(candidate, saved))
+    .filter((match): match is StrategyShortcutMatch => match !== null);
+  return (
+    matches.find((match) => match.kind === "exact") ??
+    matches.sort((left, right) => {
+      if (left.sharedStrategyIds.length !== right.sharedStrategyIds.length) {
+        return right.sharedStrategyIds.length - left.sharedStrategyIds.length;
+      }
+      return (
+        left.parameterDifferences.length - right.parameterDifferences.length
+      );
+    })[0] ??
+    null
   );
 }
 
@@ -482,6 +863,15 @@ export function parseStrategyAllocationPlan(
   ) {
     return null;
   }
+  const tacticalMode =
+    value.tacticalMode === undefined
+      ? DEFAULT_TACTICAL_ALLOCATION_MODE
+      : TACTICAL_ALLOCATION_MODES.includes(
+          value.tacticalMode as TacticalAllocationMode,
+        )
+        ? (value.tacticalMode as TacticalAllocationMode)
+        : null;
+  if (!tacticalMode) return null;
 
   return validatePlan(
     readStrategySelection(value.strategyA),
@@ -490,6 +880,7 @@ export function parseStrategyAllocationPlan(
     readFiniteNumber(value.strategyBAllocation, 0, 1),
     strategyAEntryFilter ?? legacyEntryFilter,
     strategyBEntryFilter ?? legacyEntryFilter,
+    tacticalMode,
   );
 }
 
@@ -534,6 +925,7 @@ export function createSaveBacktestInput(
         : null,
       strategyAAllocation: plan.strategyAAllocation,
       strategyBAllocation: plan.strategyBAllocation,
+      tacticalMode: resolveTacticalAllocationMode(plan.tacticalMode),
       ...((plan.strategyAEntryFilter ?? plan.entryFilter)
         ? {
             strategyAEntryFilter: cloneMovingAverageSlopeFilter(
@@ -578,8 +970,6 @@ export function shouldReplaceSavedBacktest(
     savedBacktestInstrumentKey(existing.instrument) ===
       savedBacktestInstrumentKey(input.instrument) &&
     existing.interval === input.interval &&
-    existing.startDate === input.startDate &&
-    existing.endDate === input.endDate &&
     sameNumber(existing.initialCash, input.initialCash) &&
     sameNumber(existing.commissionPercent, input.commissionPercent) &&
     sameNumber(existing.slippagePercent, input.slippagePercent) &&

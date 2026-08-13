@@ -12,6 +12,9 @@ import {
   buildStrategyLineSeries,
   buildTradeMarkerSeries,
   buildTradeMarkerSeriesFromMarkers,
+  buildVisiblePriceAxisRange,
+  formatPriceAxisValue,
+  formatPriceChartTooltipValue,
 } from "../app/components/PriceChart";
 import type { MarketBar } from "../lib/market/types";
 import type {
@@ -79,12 +82,16 @@ type IndicatorSeries = {
 };
 
 const indicatorLabels = {
+  sma: "SMA",
   smaFast: "SMA fast",
   smaSlow: "SMA slow",
+  ema: "EMA",
   emaFast: "EMA fast",
   emaSlow: "EMA slow",
+  wma: "WMA",
   wmaFast: "WMA fast",
   wmaSlow: "WMA slow",
+  dema: "DEMA",
   demaFast: "DEMA fast",
   demaSlow: "DEMA slow",
   bollMiddle: "BOLL middle",
@@ -115,6 +122,10 @@ const indicatorLabels = {
   cmf: "CMF",
   atr: "ATR",
   obv: "OBV",
+  supportLevel: "Support",
+  resistanceLevel: "Resistance",
+  bullishBreak: "Bullish break",
+  bearishBreak: "Bearish break",
 };
 
 const chartBars: MarketBar[] = [1, 2, 3, 4].map((close, index) => ({
@@ -155,6 +166,22 @@ test("builds SMA lines from display parameters", () => {
   assert.equal(slow.name, "SMA slow (3)");
   assert.equal(fast.xAxisIndex, 0);
   assert.equal(fast.yAxisIndex, 0);
+});
+
+test("collapses equal moving-average periods into one chart series", () => {
+  for (const indicator of ["sma", "ema", "wma", "dema"] as const) {
+    const series = buildIndicatorSeries(
+      chartBars,
+      indicator,
+      { fast: 2, slow: 2 },
+      indicatorLabels,
+      0,
+      0,
+    ) as unknown as IndicatorSeries[];
+
+    assert.equal(series.length, 1, indicator);
+    assert.equal(series[0].name, `${indicator.toUpperCase()} (2)`);
+  }
 });
 
 test("names every configurable indicator from its actual parameters", () => {
@@ -207,10 +234,10 @@ test("names every configurable indicator from its actual parameters", () => {
     ],
   );
   assert.deepEqual(names("rsi", { period: 2 }), ["RSI (2)"]);
-  assert.deepEqual(names("kdj", { period: 3 }), [
-    "KDJ K (3)",
-    "KDJ D (3)",
-    "KDJ J (3)",
+  assert.deepEqual(names("kdj", { period: 3, smoothK: 2, smoothD: 4 }), [
+    "KDJ K (3/2/4)",
+    "KDJ D (3/2/4)",
+    "KDJ J (3/2/4)",
   ]);
   assert.deepEqual(names("cci", { period: 3 }), ["CCI (3)"]);
   assert.deepEqual(names("williamsR", { period: 3 }), [
@@ -487,7 +514,68 @@ test("uses a scrolling legend above the reserved price-plot area", () => {
   assert.ok(Number(layout.grids[0].top) - Number(legend.top) >= 44);
 });
 
-test("renders strategy price lines on the main axes with semantic dashed styles", () => {
+test("renders confirmed support, resistance, and break markers without backpainting", () => {
+  const bars = [
+    { high: 10, low: 8, close: 9 },
+    { high: 12, low: 9, close: 11 },
+    { high: 11, low: 7, close: 8 },
+    { high: 10, low: 6, close: 7 },
+    { high: 11, low: 7, close: 10 },
+    { high: 13, low: 9, close: 13 },
+    { high: 10, low: 5, close: 5 },
+    { high: 11, low: 7, close: 9 },
+    { high: 12, low: 8, close: 10 },
+  ].map((value, index) => ({
+    ...chartBars[0],
+    ...value,
+    open: value.close,
+    time: `2026-02-0${index + 1}`,
+    timestamp: Date.UTC(2026, 1, index + 1),
+  }));
+  const [support, resistance, bullishBreak, bearishBreak] =
+    buildIndicatorSeries(
+      bars,
+      "supportResistanceBreaks",
+      { leftBars: 1, rightBars: 1 },
+      indicatorLabels,
+      2,
+      2,
+    ) as unknown as IndicatorSeries[];
+
+  assert.deepEqual(support.data, [null, null, null, null, 6, 6, 6, null, 5]);
+  assert.deepEqual(resistance.data, [null, null, 12, 12, 12, 12, null, 13, 13]);
+  assert.deepEqual(bullishBreak.data, [
+    null,
+    null,
+    null,
+    null,
+    null,
+    13,
+    null,
+    null,
+    null,
+  ]);
+  assert.deepEqual(bearishBreak.data, [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    5,
+    null,
+    null,
+  ]);
+  assert.equal(support.name, "Support (1/1)");
+  assert.equal(support.connectNulls, false);
+  assert.equal(support.lineStyle?.color, "#233dee");
+  assert.equal(resistance.connectNulls, false);
+  assert.equal(bullishBreak.type, "scatter");
+  assert.equal(bearishBreak.xAxisIndex, 2);
+  assert.equal(bearishBreak.yAxisIndex, 2);
+});
+
+test("renders only useful strategy price lines with matching thin dashed legend styles", () => {
   const roles = Object.fromEntries(
     [
       "entry",
@@ -506,8 +594,7 @@ test("renders strategy price lines on the main axes with semantic dashed styles"
     ].map((role) => [role, `Localized ${role}`]),
   ) as Record<StrategyPriceLineRole, string>;
 
-  const [entry, exit, fast, slow, upper, lower] =
-    buildStrategyLineSeries(
+  const rendered = buildStrategyLineSeries(
       [
         { id: "test:entry", role: "entry", data: [null, 10] },
         { id: "test:exit", role: "exit", data: [null, 8] },
@@ -515,13 +602,21 @@ test("renders strategy price lines on the main axes with semantic dashed styles"
         { id: "test:slow", role: "slow", data: [8, 9] },
         { id: "test:upper", role: "upper", data: [11, 12] },
         { id: "test:lower", role: "lower", data: [7, 8] },
+        { id: "test:unused", role: "reference", data: [null, null] },
       ] satisfies StrategyPriceLine[],
-      { prefix: "Localized strategy", roles },
+      {
+        prefix: "Localized strategy",
+        roles,
+        actionRoles: { entry: "Open", exit: "Light" },
+      },
     ) as unknown as IndicatorSeries[];
+  const [entry, exit, fast, slow, upper, lower] = rendered;
 
+  assert.equal(rendered.length, 6);
+  assert.equal(entry.name, "Open");
+  assert.equal(exit.name, "Light");
   for (const item of [entry, exit, fast, slow, upper, lower]) {
     assert.equal(item.type, "line");
-    assert.match(item.name ?? "", /^Localized strategy · Localized /);
     assert.equal(item.xAxisIndex, 0);
     assert.equal(item.yAxisIndex, 0);
     assert.equal(item.showSymbol, false);
@@ -530,11 +625,38 @@ test("renders strategy price lines on the main axes with semantic dashed styles"
     assert.equal(item.smooth, false);
     assert.equal(item.areaStyle, undefined);
     assert.equal(item.lineStyle?.type, "dashed");
-    assert.ok((item.lineStyle?.width ?? 0) > 1.5);
+    assert.equal(item.lineStyle?.width, 1.5);
+  }
+  for (const item of [fast, slow, upper, lower]) {
+    assert.match(item.name ?? "", /^Localized strategy · Localized /);
   }
   assert.notEqual(entry.lineStyle?.color, exit.lineStyle?.color);
   assert.notEqual(fast.lineStyle?.color, slow.lineStyle?.color);
   assert.notEqual(upper.lineStyle?.color, lower.lineStyle?.color);
+});
+
+test("formats K-line tooltip values with one decimal place", () => {
+  assert.equal(formatPriceChartTooltipValue(12.345), "12.3");
+  assert.equal(
+    formatPriceChartTooltipValue([12.345, 9.94]),
+    "12.3 / 9.9",
+  );
+  assert.equal(formatPriceChartTooltipValue(null), "—");
+
+  const priceAxis = buildPriceChartLayout(["2026-01-01"], 0).yAxes[0];
+  const formatter = priceAxis.axisPointer?.label?.formatter;
+  assert.equal(typeof formatter, "function");
+  if (typeof formatter === "function") {
+    assert.equal(
+      formatter({
+        value: 66_254.87,
+        axisDimension: "y",
+        axisIndex: 0,
+        seriesData: [],
+      }),
+      "66,254.9",
+    );
+  }
 });
 
 test("restores a dragged zoom window after chart options change", () => {
@@ -557,6 +679,80 @@ test("restores a dragged zoom window after chart options change", () => {
   for (const entry of original.dataZoom as ZoomEntry[]) {
     assert.equal(entry.start, 88);
     assert.equal(entry.end, 100);
+  }
+});
+
+test("derives the price axis only from the visible OHLC window", () => {
+  const bars: MarketBar[] = Array.from({ length: 10 }, (_, index) => ({
+    time: `2026-01-${String(index + 1).padStart(2, "0")}`,
+    timestamp: Date.UTC(2026, 0, index + 1),
+    open: index + 10,
+    high: index + 12,
+    low: index + 8,
+    close: index + 11,
+    volume: 1_000,
+    amount: 1_000,
+    amplitude: 0,
+    changePercent: 0,
+    change: 0,
+    turnoverRate: 0,
+  }));
+  const range = buildVisiblePriceAxisRange(bars, {
+    start: 50,
+    end: 100,
+  });
+
+  assert.ok(range);
+  assert.ok(range.minimum < 13);
+  assert.ok(range.maximum > 21);
+  assert.ok(range.minimum > 8);
+  assert.equal(Number.isInteger(range.minimum), true);
+  assert.equal(Number.isInteger(range.maximum), true);
+  assert.equal(range.precision, 0);
+  assert.equal(buildVisiblePriceAxisRange([], { start: 0, end: 100 }), null);
+});
+
+test("uses at most two decimals on the price axis for low-priced instruments", () => {
+  const bars: MarketBar[] = [
+    {
+      time: "2026-01-01",
+      timestamp: Date.UTC(2026, 0, 1),
+      open: 9.81,
+      high: 10.03,
+      low: 9.72,
+      close: 9.98,
+      volume: 1_000,
+      amount: 10_000,
+      amplitude: 0,
+      changePercent: 0,
+      change: 0,
+      turnoverRate: 0,
+    },
+  ];
+  const range = buildVisiblePriceAxisRange(bars, { start: 0, end: 100 });
+  assert.ok(range);
+  assert.equal(range.precision, 2);
+  assert.ok(
+    Math.abs(range.minimum * 100 - Math.round(range.minimum * 100)) < 1e-9,
+  );
+  assert.ok(
+    Math.abs(range.maximum * 100 - Math.round(range.maximum * 100)) < 1e-9,
+  );
+  assert.equal(formatPriceAxisValue(9.876, 2), "9.88");
+  assert.equal(formatPriceAxisValue(9.8, 2), "9.8");
+
+  const axis = buildPriceChartLayout(["2026-01-01"], 0, 2).yAxes[0];
+  const formatter = axis.axisLabel?.formatter;
+  assert.equal(typeof formatter, "function");
+  if (typeof formatter === "function") {
+    assert.equal(
+      (formatter as (value: number, index: number, extra: unknown) => string)(
+        9.876,
+        0,
+        null,
+      ),
+      "9.88",
+    );
   }
 });
 

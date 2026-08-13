@@ -1,5 +1,6 @@
 import type { MarketBar } from "@/lib/market/types";
 import type {
+  AllocationBacktestResult,
   BacktestPerformance,
   BacktestResult,
   EquityPoint,
@@ -12,6 +13,10 @@ import {
 import type {
   StrategyCombinationResult,
   StrategyAllocationPlan,
+} from "./strategy-combinations";
+import {
+  DEFAULT_TACTICAL_ALLOCATION_MODE,
+  resolveTacticalAllocationMode,
 } from "./strategy-combinations";
 import type { StrategyId } from "./strategies";
 
@@ -169,6 +174,10 @@ function combinationCandidate(
       stableParameterKey(result.strategyBParameters),
       result.strategyAAllocation,
       result.strategyBAllocation,
+      ...(resolveTacticalAllocationMode(result.tacticalMode) ===
+      DEFAULT_TACTICAL_ALLOCATION_MODE
+        ? []
+        : [resolveTacticalAllocationMode(result.tacticalMode)]),
       ...(strategyAEntryFilterKey || strategyBEntryFilterKey
         ? [
             strategyAEntryFilterKey ?? "none",
@@ -189,6 +198,7 @@ function combinationCandidate(
       },
       strategyAAllocation: result.strategyAAllocation,
       strategyBAllocation: result.strategyBAllocation,
+      tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
       strategyAEntryFilter: result.strategyAEntryFilter ?? null,
       strategyBEntryFilter: result.strategyBEntryFilter ?? null,
     },
@@ -292,7 +302,7 @@ function maximumDrawdown(values: readonly number[]): number | null {
 }
 
 function strategyExecutionTimes(
-  result: BacktestResult | StrategyCombinationResult,
+  result: BacktestResult | AllocationBacktestResult,
 ): string[] {
   if ("trades" in result) {
     return result.trades.flatMap((trade) => [
@@ -306,7 +316,7 @@ function strategyExecutionTimes(
 }
 
 export function evaluateRecentStrategyEffectiveness(
-  result: BacktestResult | StrategyCombinationResult,
+  result: BacktestResult | AllocationBacktestResult,
   bars: readonly MarketBar[],
 ): RecentEffectivenessReview {
   const barByTime = new Map(bars.map((bar) => [bar.time, bar]));

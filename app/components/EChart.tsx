@@ -10,6 +10,7 @@ interface EChartProps {
   ariaLabel: string;
   preserveDataZoom?: boolean;
   dataZoomResetKey?: string;
+  onDataZoomChange?: (window: DataZoomWindow) => void;
 }
 
 export interface DataZoomWindow {
@@ -42,12 +43,13 @@ export function applyDataZoomWindow(
   const dataZoom = Array.isArray(option.dataZoom)
     ? option.dataZoom
     : [option.dataZoom];
+  const end = window.end >= 99 ? 100 : window.end;
   return {
     ...option,
     dataZoom: dataZoom.map((component) => ({
       ...component,
       start: window.start,
-      end: window.end,
+      end,
     })),
   };
 }
@@ -66,11 +68,17 @@ export function EChart({
   ariaLabel,
   preserveDataZoom = false,
   dataZoomResetKey,
+  onDataZoomChange,
 }: EChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<echarts.ECharts | null>(null);
   const dataZoomWindowRef = useRef<DataZoomWindow | null>(null);
   const dataZoomResetKeyRef = useRef<string | undefined>(undefined);
+  const onDataZoomChangeRef = useRef(onDataZoomChange);
+
+  useEffect(() => {
+    onDataZoomChangeRef.current = onDataZoomChange;
+  }, [onDataZoomChange]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -80,9 +88,11 @@ export function EChart({
     });
     chartRef.current = chart;
     const handleDataZoom = (...args: unknown[]) => {
-      dataZoomWindowRef.current = readDataZoomWindow(
+      const window = readDataZoomWindow(
         (args[0] ?? {}) as DataZoomEvent,
       );
+      dataZoomWindowRef.current = window;
+      if (window) onDataZoomChangeRef.current?.(window);
     };
     chart.on("datazoom", handleDataZoom);
 

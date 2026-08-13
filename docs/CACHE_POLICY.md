@@ -1,16 +1,15 @@
 # Cache Policy
 
-This file documents the caching that exists now and separates it from future
-recommendations. QuantScope uses HTTP caching, a page-memory history/latest
-merge, and a bounded device-local IndexedDB cache of normalized daily series.
-It has no server-side market-data disk cache or scheduled cleanup job.
+QuantScope uses HTTP caching, one page-memory canonical series, and
+device-local IndexedDB stores for canonical history, provider snapshots,
+references, fingerprints, and source health. It has no server-side market-data
+disk cache or scheduled cleanup job.
 
-## Current HTTP behavior
+## HTTP behavior
 
-### Market history
+### History
 
-`/api/market?mode=history` uses the default request cache mode for provider
-requests and returns all three response directives:
+`/api/market?mode=history` uses the default upstream request cache and returns:
 
 ```text
 Cache-Control: public, max-age=3600, stale-while-revalidate=86400
@@ -18,127 +17,134 @@ CDN-Cache-Control: public, max-age=3600, stale-while-revalidate=86400
 Cloudflare-CDN-Cache-Control: public, max-age=3600, stale-while-revalidate=86400
 ```
 
-These headers permit HTTP/browser/CDN caches to treat a successful history
-response as fresh for one hour and stale-while-revalidate for one day. The
-application does not maintain a separate history file cache or explicitly
-delete cached responses. Commodity quote-proxy history uses the same policy
-and a cache key containing its Yahoo provider symbol and `commodity` type.
-The current daily history response begins at 2000-01-01 when the provider has
-coverage and is capped at 10,000 normalized bars.
+`strictProvider=1` controls provider routing but does not disable history
+caching. The route key includes provider, provider symbol, asset type, interval,
+and mode. Daily history begins at 2000-01-01 when the provider has coverage and
+is capped at 10,000 normalized bars. Native one-minute history uses the
+provider-supported recent range and is capped at 1,500 bars; it is never
+resampled from another interval.
 
 ### Latest bars
 
-`/api/market?mode=latest` passes `cache: no-store` to supported upstream
-requests and returns:
+`/api/market?mode=latest` passes `cache: no-store` upstream and returns
+`no-store` response directives. Latest limits are clamped to 2-10 bars; the
+workspace requests five. A provider may still publish a delayed or incomplete
+bar even though QuantScope does not cache the response.
 
-```text
-Cache-Control: no-store, no-cache, must-revalidate, max-age=0
-CDN-Cache-Control: no-store
-Cloudflare-CDN-Cache-Control: no-store
-```
+The caller schedules these requests only while the page is visible. Known
+regular venues use five minutes until 30 minutes after close and then stop.
+The visible one-minute workspace uses a one-minute minimum during the same
+session boundary and refreshes only the current instrument; daily shortcut
+refresh and backup/reference audits do not run from that mode.
+COMEX/NYMEX proxies follow the Sunday-Friday Globex session and skip their
+daily maintenance break and weekend closure; unknown venues use 15 minutes.
+Focus and visibility events cannot bypass that interval. A primary
+failure immediately tries backups, and only a complete-chain failure invokes
+15/30/60-minute backoff. This scheduling is request control, not HTTP caching.
 
-For finite numeric `limit` requests, the API clamps latest windows to between
-2 and 10 bars; the current daily UI explicitly requests five.
-The newest provider bar may still be delayed or unfinished even though
-QuantScope does not cache the response.
+### Search and audits
 
-### Search
+`/api/search` is fresh for 30 seconds and stale-while-revalidate for 120
+seconds. Backup audits use strict provider routing. An expected upstream audit
+failure is returned as an error payload without a browser resource error, then
+recorded in source health; primary requests retain normal failure status.
 
-`/api/search` currently returns
-`Cache-Control: public, max-age=30, stale-while-revalidate=120`. Search caching
-does not cache market history or analysis output.
+## Canonical IndexedDB
 
-## Current device-local history cache
+`lib/market/canonical-cache.ts` owns
+`quantscope-canonical-market` with separate stores:
 
-`lib/market/client-cache.ts` stores successful normalized histories in the
-browser's IndexedDB database `quantscope-market-cache`. The key contains the
-provider, provider symbol (`secid`), and interval. A shortcut open first reads
-this cache so its chart can appear before the network history request
-completes; the normal history and latest requests still run and replace the
-cached view after source/adjustment validation. The cached-first view displays
-an explicit provisional warning until that compatible network refresh
-completes.
+- `canonicalSeries`: canonical key, interval, series, fingerprint, write time;
+- `sourceSnapshots`: provider/mode/date-isolated normalized source snapshots;
+- `referenceSnapshots`: close-only reference observations;
+- `sourceHealth`: lifetime attempts/success/failure, bounded 31-day individual
+  attempts, rolling 7/30-day availability inputs, latency, safe error,
+  persistent demotion time, and quality.
 
-The shortcut restore boundary first checks the non-empty successful active
-series. If its canonical instrument and interval match the saved shortcut,
-that exact in-memory series is preserved and no cache lookup or market reload
-is started merely because the saved provider alias differs. Only a different
-canonical instrument or missing active series enters the cached-first flow.
+Daily source health uses the canonical instrument key. One-minute source
+health uses a separate `canonical-key:1m` namespace so a short-lived minute
+endpoint failure cannot demote the daily source. The health error value is a safe classification rather than an upstream
+response body. Credential-invalid/expired, access-denied, quota-limited,
+not-configured, and generic upstream states remain distinct.
 
-When provider fallback resolves a request to another provider symbol, the
-successful series is stored under both the requested key and the resolved
-key. This preserves cache hits for older shortcuts that still carry the
-original provider identity without mixing unrelated instruments. New fallback
-responses persist the resolved provider symbol inside the series itself.
-Legacy cache or shortcut records that already combine `provider: yahoo` with
-an Eastmoney-shaped identifier remain readable because the Yahoo adapter
-translates that identifier before the network request.
+Automatic effective-source selection requires enough recent observations.
+Configured-primary degradation is triggered by three latest consecutive
+failures or at least five 7-day attempts below 80%. A candidate backup needs at
+least three 7-day and five 30-day attempts, at least 95% and 90% availability,
+and a passing price-quality snapshot. A demoted configured primary is probed no
+more often than hourly and is restored only after seven elapsed days plus a
+95%-healthy 7-day window. Recent samples retain 31 days (maximum 2,048);
+lifetime counters remain for diagnostics.
 
-The same module keeps a bounded in-memory copy for the current application
-session. This fallback covers privacy settings, embedded browsers, and storage
-policies that disable IndexedDB. It still accelerates repeated shortcut
-switches within that session, while IndexedDB provides cross-restart
-persistence when available.
+Canonical writes require an exact profile key and current-primary source
+match. Reads key by canonical instrument and interval, so a locked record from
+a deliberately superseded primary may render before the new-primary refresh
+completes. Completed OHLC cannot be overwritten. A refresh from the same source
+may enrich a cached zero-volume date with a newly published positive value
+without changing any locked price field. One recent isolated gap triggers at
+most one full-history repair attempt per browser session. Provider audits write
+only their provider-specific store. Every stored series or reference carries a
+SHA-256 fingerprint.
 
-The cache stores at most 32 series and has no time-based expiry. The oldest
-surplus entries are deleted after a successful write. Cache reads preserve the
-last successful write timestamp for display and recalculate the latest daily
-bar's complete/in-progress/unknown status against the current time. IndexedDB
-failure is non-fatal: the in-memory fallback and network pipeline remain
-available.
+The source snapshots are exact normalized provider series, not literal wire
+payloads. They are same-origin device state and can be removed through browser
+site-data controls. They are not D1 user records.
 
-The cache contains processed `MarketSeries` objects, not provider raw
-responses. It is same-origin browser state, not D1 user data, and can be
-removed through browser site-data controls. A cache hit never suppresses the
-background full-history refresh, so gaps longer than the five-bar latest
-window are repaired.
+## Legacy migration
 
-## Current page-memory merge
+`lib/market/client-cache.ts` remains for older browser profiles. It previously
+stored at most 32 provider/symbol/interval series. The canonical workspace may
+migrate one legacy entry only when:
 
-The browser keeps the current normalized history in React/ref memory. A latest
-window with the same source, interval, and `priceAdjustment` replaces matching
-`time` keys, appends new keys, sorts by timestamp, and retains the configured
-newest-bar limit (10,000 in the current workspace). Reapplying the same
-compatible latest response is idempotent.
+- it has at least 120 bars;
+- its canonical instrument key matches.
 
-The UI does not merge bars from different sources or price-adjustment modes.
-On either mismatch it retains the complete existing/history series until a
-complete compatible refresh succeeds. On an initial latest failure it
-continues with history; on a later latest failure it leaves the displayed
-series intact and shows a warning. Switching instruments clears page memory
-before reading the requested instrument's isolated persistent cache.
+A same-instrument legacy entry from a deliberately superseded primary may seed
+the locked display history. It is not written as a new-primary canonical record
+until a successful current-primary response is merged.
 
-`MarketSeries.priceAdjustment` remains the series-level authority. The merge
-requires identical modes and never downgrades or combines adjusted/raw bars.
-It does not independently recalculate adjustment factors or rescale volume.
+## Page-memory merge
 
-## Current retention and cleanup
+`mergeCanonicalMarketSeries` accepts new data only from the configured primary
+with matching canonical identity and interval. Existing locked history may
+have been created under a prior deliberate primary assignment.
 
-- HTTP response retention is governed by the response directives above and the
-  behavior of the browser/CDN runtime.
-- The active merged series lasts only in the page session and is replaced when
-  the instrument changes or the page reloads.
-- IndexedDB processed history is bounded to 32 series without an age limit.
-  Cleanup removes only the oldest surplus processed entries.
-- Committed `data/raw/` fixtures are source samples, not runtime cache entries.
-- D1 saved backtests are durable user records, not cache.
-- D1 screening-run rows are compact provenance and comparison records, not a
-  calculation cache. They never restore candidate arrays or seed screening.
-- Worker target, indicator, and order caches exist only for one active
-  screening run and disappear when that Worker terminates.
-- No scheduled server cache cleanup or raw-archive deletion exists in
-  application code.
+- Completed existing dates are immutable.
+- The existing final date may be replaced only when its stored status was not
+  `complete`.
+- Newer preferred-source dates may be appended.
+- A declared identity-verified or overlap-validated backup may add missing or
+  newer dates and replace only an unconfirmed final date. It never rewrites a
+  confirmed date.
+- Rejected backups and incompatible adjustment modes never enter chart OHLC.
+- Reapplying the same primary response is idempotent.
 
-## Future recommendations
+On preferred-primary failure, the page retains the canonical series and tries
+configured backups sequentially. The first promotable backup may extend the
+locked series; otherwise a same-key, non-stale, price-plausible temporary quote
+may be shown. A validated current-session quote is merged only into the active
+in-memory view as an unconfirmed bar. It is never written to canonical storage;
+the retained canonical base is used again on the next refresh. The current
+session also retains the newest accepted temporary quote and reapplies it when
+a later refresh yields no valid replacement; a newer accepted quote or a
+completed canonical bar supersedes it. Inactive shortcut refreshes use the same
+separate canonical/display result and keep temporary quotes only in page
+memory. Switching instruments reads a different canonical key and never
+aliases unrelated data.
 
-The following items are not implemented:
+## Retention
 
-- Measure provider correction frequency and user freshness needs before
-  changing the one-hour history policy.
-- Add an explicit response-schema version and adjustment mode to the cache key
-  before a future adapter can return multiple schemas or adjustment modes for
-  the same provider symbol.
-- Add metrics for cache hit rate, stale serves, latest-fetch failures, source
-  changes, and corrected-bar replacements.
-- Consider a user-visible cache inspection/clear action only if the shortcut
-  collection becomes large enough to justify it.
+- HTTP response retention follows the directives above.
+- IndexedDB canonical/source/reference/health records currently have no
+  time-based cleanup job.
+- Committed `data/raw/` files are parser and incident fixtures, not runtime
+  cache.
+- D1 saved backtests, their latest 128-session return and bounded five-event
+  rank/not-ranked history, and screening archives are durable user/provenance
+  data, not market caches. History is capped in application code rather than
+  expired by a cleanup job.
+- Screening target, indicator, and order caches exist only for one Worker run
+  and are discarded with that Worker.
+
+Future retention limits must be based on measured browser storage use and must
+not silently delete the only canonical copy.

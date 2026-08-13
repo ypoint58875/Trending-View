@@ -5,7 +5,36 @@ import {
   real,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+
+export const savedBacktestFolders = sqliteTable(
+  "saved_backtest_folders",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    ownerEmail: text("owner_email").notNull(),
+    scope: text("scope").notNull(),
+    contextKey: text("context_key").notNull(),
+    name: text("name").notNull(),
+    displayOrder: integer("display_order").notNull().default(0),
+    createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+    updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  },
+  (table) => [
+    uniqueIndex("saved_backtest_folders_owner_context_name_idx").on(
+      table.ownerEmail,
+      table.scope,
+      table.contextKey,
+      table.name,
+    ),
+    index("saved_backtest_folders_owner_display_order_idx").on(
+      table.ownerEmail,
+      table.scope,
+      table.contextKey,
+      table.displayOrder,
+    ),
+  ],
+);
 
 export const savedBacktests = sqliteTable(
   "saved_backtests",
@@ -33,7 +62,19 @@ export const savedBacktests = sqliteTable(
     sharpe: real("sharpe").notNull(),
     tradeCount: integer("trade_count").notNull(),
     score: real("score").notNull(),
+    rollingTotalReturn: real("rolling_total_return"),
+    rankHistoryJson: text("rank_history_json").notNull().default("[]"),
+    lastRankSnapshotKey: text("last_rank_snapshot_key"),
+    rollingUpdatedAt: text("rolling_updated_at"),
     displayOrder: integer("display_order").notNull().default(0),
+    instrumentFolderId: integer("instrument_folder_id").references(
+      () => savedBacktestFolders.id,
+      { onDelete: "set null" },
+    ),
+    strategyFolderId: integer("strategy_folder_id").references(
+      () => savedBacktestFolders.id,
+      { onDelete: "set null" },
+    ),
     createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
     updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   },
@@ -50,6 +91,14 @@ export const savedBacktests = sqliteTable(
     index("saved_backtests_owner_display_order_idx").on(
       table.ownerEmail,
       table.displayOrder,
+    ),
+    index("saved_backtests_owner_instrument_folder_idx").on(
+      table.ownerEmail,
+      table.instrumentFolderId,
+    ),
+    index("saved_backtests_owner_strategy_folder_idx").on(
+      table.ownerEmail,
+      table.strategyFolderId,
     ),
   ],
 );
@@ -73,6 +122,9 @@ export const screeningRuns = sqliteTable(
     lastBarDate: text("last_bar_date").notNull(),
     barCount: integer("bar_count").notNull(),
     dataFingerprint: text("data_fingerprint").notNull(),
+    temporaryQuoteProvider: text("temporary_quote_provider"),
+    temporaryQuoteDate: text("temporary_quote_date"),
+    temporaryQuoteFetchedAt: text("temporary_quote_fetched_at"),
     validationMode: text("validation_mode").notNull(),
     validationConfigJson: text("validation_config_json").notNull(),
     objective: text("objective").notNull(),

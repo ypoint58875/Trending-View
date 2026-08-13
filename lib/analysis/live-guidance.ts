@@ -28,6 +28,7 @@ export interface LiveStrategyGuidance {
   todayExitPrice: number | null;
   executionMode: LiveGuidanceExecutionMode;
   pendingNextOpenAction: "buy" | "sell" | null;
+  entryBlockedByFilter: boolean;
 }
 
 function guidance(
@@ -39,6 +40,7 @@ function guidance(
   todayExitPrice: number | null,
   executionMode: LiveGuidanceExecutionMode,
   pendingNextOpenAction: "buy" | "sell" | null = null,
+  entryBlockedByFilter = false,
 ): LiveStrategyGuidance {
   return {
     action,
@@ -50,6 +52,7 @@ function guidance(
     todayExitPrice,
     executionMode,
     pendingNextOpenAction,
+    entryBlockedByFilter,
   };
 }
 
@@ -77,6 +80,7 @@ export function buildLiveStrategyGuidance(
     let position: LiveGuidancePosition = "flat";
     let latestAction: LiveGuidanceAction = "wait";
     let latestTriggerPrice: number | null = null;
+    let latestEntryBlockedByFilter = false;
 
     for (let index = 0; index < bars.length; index += 1) {
       const bar = bars[index];
@@ -87,6 +91,12 @@ export function buildLiveStrategyGuidance(
 
       const allowEntry =
         !entryAllowed || (index > 0 && entryAllowed[index - 1]);
+      const entryBlockedByFilter =
+        position === "flat" &&
+        !allowEntry &&
+        resolveStrategyOrderFills(bar, order, position, true).some(
+          (fill) => fill.action === "buy",
+        );
       const fills = resolveStrategyOrderFills(
         bar,
         order,
@@ -103,6 +113,7 @@ export function buildLiveStrategyGuidance(
       if (index === bars.length - 1) {
         latestAction = action;
         latestTriggerPrice = triggerPrice;
+        latestEntryBlockedByFilter = entryBlockedByFilter;
       }
     }
     const pendingAction =
@@ -116,22 +127,16 @@ export function buildLiveStrategyGuidance(
       (pendingAction === "sell" && position === "long")
         ? pendingAction
         : null;
-    const latestEntryAllowed =
-      !entryAllowed ||
-      (entryAllowed.length > 1 && entryAllowed[entryAllowed.length - 2]);
-
     return guidance(
       latestAction,
       position,
       latestBar,
       latestTriggerPrice,
-      latestEntryAllowed
-        ? Number.isFinite(orders.at(-1)?.entryStop)
-          ? (orders.at(-1)?.entryStop ?? null)
-          : orders.at(-1)?.entryAtOpen
-            ? latestBar.open
-            : null
-        : null,
+      Number.isFinite(orders.at(-1)?.entryStop)
+        ? (orders.at(-1)?.entryStop ?? null)
+        : orders.at(-1)?.entryAtOpen
+          ? latestBar.open
+          : null,
       Number.isFinite(orders.at(-1)?.exitStop)
         ? (orders.at(-1)?.exitStop ?? null)
         : orders.at(-1)?.exitAtOpen
@@ -139,6 +144,7 @@ export function buildLiveStrategyGuidance(
           : null,
       "intrabar-order",
       actionablePendingAction,
+      latestEntryBlockedByFilter,
     );
   }
 
@@ -154,6 +160,10 @@ export function buildLiveStrategyGuidance(
   const latestTarget = (target.at(-1) ?? 0) > 0 ? 1 : 0;
   const previousTarget =
     target.length > 1 && (target[target.length - 2] ?? 0) > 0 ? 1 : 0;
+  const entryBlockedByFilter =
+    latestTarget === 0 &&
+    (rawTarget.at(-1) ?? 0) > 0 &&
+    entryAllowed?.at(-1) === false;
 
   if (latestTarget === 1 && previousTarget === 0) {
     return guidance(
@@ -196,5 +206,7 @@ export function buildLiveStrategyGuidance(
     null,
     null,
     "next-open",
+    null,
+    entryBlockedByFilter,
   );
 }

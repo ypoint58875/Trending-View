@@ -43,6 +43,13 @@ import {
 
 export const DEFAULT_STRATEGY_A_ALLOCATION = 0.6;
 export const DEFAULT_STRATEGY_B_ALLOCATION = 0.4;
+export const DEFAULT_TACTICAL_ALLOCATION_MODE = "add-on-short-entry" as const;
+export const TACTICAL_ALLOCATION_MODES = [
+  DEFAULT_TACTICAL_ALLOCATION_MODE,
+  "reduce-on-short-exit",
+] as const;
+export type TacticalAllocationMode =
+  (typeof TACTICAL_ALLOCATION_MODES)[number];
 export const ALLOWED_POSITION_LEVELS = [
   0,
   0.3,
@@ -68,31 +75,37 @@ export const MAX_COMBINATION_RESULTS = 32;
 export interface TwoStrategyAllocation {
   strategyAAllocation: number;
   strategyBAllocation: number;
+  tacticalMode?: TacticalAllocationMode;
 }
 
 export const TWO_STRATEGY_ALLOCATION_CANDIDATES: readonly TwoStrategyAllocation[] =
-  [
+  TACTICAL_ALLOCATION_MODES.flatMap((tacticalMode) => [
     {
       strategyAAllocation: DEFAULT_STRATEGY_A_ALLOCATION,
       strategyBAllocation: DEFAULT_STRATEGY_B_ALLOCATION,
+      tacticalMode,
     },
     {
       strategyAAllocation: DEFAULT_STRATEGY_B_ALLOCATION,
       strategyBAllocation: DEFAULT_STRATEGY_A_ALLOCATION,
+      tacticalMode,
     },
     {
       strategyAAllocation: 0.5,
       strategyBAllocation: 0.5,
+      tacticalMode,
     },
     {
       strategyAAllocation: 0.7,
       strategyBAllocation: 0.3,
+      tacticalMode,
     },
     {
       strategyAAllocation: 0.3,
       strategyBAllocation: 0.7,
+      tacticalMode,
     },
-  ];
+  ]);
 
 export interface StrategySelection {
   strategyId: StrategyId;
@@ -104,6 +117,7 @@ export interface StrategyAllocationPlan {
   strategyB: StrategySelection | null;
   strategyAAllocation: number;
   strategyBAllocation: number;
+  tacticalMode?: TacticalAllocationMode;
   strategyAEntryFilter?: MovingAverageSlopeFilter | null;
   strategyBEntryFilter?: MovingAverageSlopeFilter | null;
   /** Legacy shared filter, read only for backward compatibility. */
@@ -117,6 +131,7 @@ export interface StrategyCombination {
   strategyBParameters: StrategyParameters;
   strategyAAllocation: number;
   strategyBAllocation: number;
+  tacticalMode?: TacticalAllocationMode;
   strategyAEntryFilter?: MovingAverageSlopeFilter | null;
   strategyBEntryFilter?: MovingAverageSlopeFilter | null;
   /** Legacy shared filter, read only for backward compatibility. */
@@ -130,6 +145,7 @@ export interface StrategyCombinationResult extends AllocationBacktestResult {
   strategyBParameters: StrategyParameters;
   strategyAAllocation: number;
   strategyBAllocation: number;
+  tacticalMode?: TacticalAllocationMode;
   relativeLongStrategy: StrategySlot;
   strategyAEntryFilter?: MovingAverageSlopeFilter | null;
   strategyBEntryFilter?: MovingAverageSlopeFilter | null;
@@ -168,6 +184,7 @@ export interface CombinationOptimizationResult {
 
 export interface OptimizeStrategyCombinationsOptions {
   candidates?: readonly ScreeningCandidate[];
+  excludedStrategyIds?: readonly StrategyId[];
   objective?: ScreeningObjective;
   entryFilters?: readonly MovingAverageSlopeFilter[];
   allocationCandidates?: readonly TwoStrategyAllocation[];
@@ -186,7 +203,7 @@ interface StrategyFinalist {
 
 interface EntryFilterCandidate {
   result: BacktestResult;
-  rawTarget: number[];
+  rawTarget: number[] | null;
   rawOrders?: StrategyOrderSeries;
 }
 
@@ -228,6 +245,14 @@ function assertAllocationPlanBounds(
   }
 }
 
+export function resolveTacticalAllocationMode(
+  value: TacticalAllocationMode | null | undefined,
+): TacticalAllocationMode {
+  return value === "reduce-on-short-exit"
+    ? value
+    : DEFAULT_TACTICAL_ALLOCATION_MODE;
+}
+
 function assertAlignedTargets(
   strategyATarget: readonly number[] | null,
   strategyBTarget: readonly number[] | null,
@@ -249,12 +274,16 @@ export function buildStrategyPlanAllocationTarget(
   strategyBTarget: readonly number[] | null,
   strategyAAllocation: number,
   strategyBAllocation: number,
+  tacticalMode: TacticalAllocationMode = DEFAULT_TACTICAL_ALLOCATION_MODE,
 ): number[] {
   return buildStrategyPlanTimelineFromTargets(
     strategyATarget,
     strategyBTarget,
     strategyAAllocation,
     strategyBAllocation,
+    undefined,
+    undefined,
+    tacticalMode,
   ).target;
 }
 
@@ -333,6 +362,7 @@ function buildHierarchicalStrategyTimeline(
   longAllocation: number,
   shortAllocation: number,
   relativeLongStrategy: StrategySlot,
+  tacticalMode: TacticalAllocationMode,
 ): StrategyPlanTimeline {
   let longWasActive = false;
   let shortSignalWasActive = false;
@@ -354,19 +384,39 @@ function buildHierarchicalStrategyTimeline(
       target.push(0);
     } else if (!longWasActive) {
       events.push("long-entry");
-      shortLayerActive = false;
-      target.push(longAllocation);
+      shortLayerActive = tacticalMode === "reduce-on-short-exit";
+      target.push(
+        longAllocation + (shortLayerActive ? shortAllocation : 0),
+      );
     } else {
-      if (shortLayerActive && !shortSignalActive) {
-        shortLayerActive = false;
-        events.push("short-exit");
-      } else if (
-        !shortLayerActive &&
-        !shortSignalWasActive &&
-        shortSignalActive
-      ) {
-        shortLayerActive = true;
-        events.push("short-entry");
+      if (tacticalMode === "reduce-on-short-exit") {
+        if (
+          shortLayerActive &&
+          shortSignalWasActive &&
+          !shortSignalActive
+        ) {
+          shortLayerActive = false;
+          events.push("short-exit");
+        } else if (
+          !shortLayerActive &&
+          !shortSignalWasActive &&
+          shortSignalActive
+        ) {
+          shortLayerActive = true;
+          events.push("short-entry");
+        }
+      } else {
+        if (shortLayerActive && !shortSignalActive) {
+          shortLayerActive = false;
+          events.push("short-exit");
+        } else if (
+          !shortLayerActive &&
+          !shortSignalWasActive &&
+          shortSignalActive
+        ) {
+          shortLayerActive = true;
+          events.push("short-entry");
+        }
       }
       target.push(
         longAllocation + (shortLayerActive ? shortAllocation : 0),
@@ -415,6 +465,7 @@ export function buildStrategyPlanTimelineFromTargets(
   strategyBAllocation: number,
   roleTargets?: StrategyRoleTargets,
   fixedRelativeLongStrategy?: StrategySlot,
+  tacticalMode: TacticalAllocationMode = DEFAULT_TACTICAL_ALLOCATION_MODE,
 ): StrategyPlanTimeline {
   assertAlignedTargets(strategyATarget, strategyBTarget);
   assertAllocationPlanBounds(strategyAAllocation, strategyBAllocation);
@@ -433,6 +484,7 @@ export function buildStrategyPlanTimelineFromTargets(
           strategyAAllocation,
           strategyBAllocation,
           relativeLongStrategy,
+          tacticalMode,
         )
       : buildHierarchicalStrategyTimeline(
           strategyBTarget,
@@ -440,6 +492,7 @@ export function buildStrategyPlanTimelineFromTargets(
           strategyBAllocation,
           strategyAAllocation,
           relativeLongStrategy,
+          tacticalMode,
         );
   }
 
@@ -470,7 +523,7 @@ function buildStrategyExecutionSeries(
   entryAllowed: readonly boolean[] | null = null,
   cachedOrders?: StrategyOrderSeries,
 ): StrategyExecutionSeries {
-  if (!selection || !fallbackTarget) {
+  if (!selection) {
     return {
       target: null,
       orderFills: Array.from({ length: bars.length }, () => []),
@@ -480,6 +533,9 @@ function buildStrategyExecutionSeries(
   const orders =
     cachedOrders ?? strategy.buildOrders?.(bars, selection.parameters);
   if (!orders) {
+    if (!fallbackTarget) {
+      throw new Error("A target strategy requires an aligned target");
+    }
     return {
       target: applyMovingAverageSlopeEntryFilter(
         fallbackTarget,
@@ -488,7 +544,7 @@ function buildStrategyExecutionSeries(
       orderFills: Array.from({ length: bars.length }, () => []),
     };
   }
-  if (orders.length !== bars.length || fallbackTarget.length !== bars.length) {
+  if (orders.length !== bars.length) {
     throw new Error("Strategy execution plan must align with market bars");
   }
 
@@ -523,6 +579,7 @@ function buildPlanIntrabarExecutions(
   strategyBFills: readonly (readonly StrategyOrderFill[])[],
   hasStrategyA: boolean,
   hasStrategyB: boolean,
+  tacticalMode: TacticalAllocationMode,
 ): AllocationIntrabarExecution[][] {
   if (!hasStrategyA || !hasStrategyB) {
     const selectedFills = hasStrategyA ? strategyAFills : strategyBFills;
@@ -566,7 +623,10 @@ function buildPlanIntrabarExecutions(
         let targetAllocation = currentAllocation;
         let signals: AllocationSignalEvent[] = [];
         if (role === "long" && fill.action === "buy" && currentAllocation === 0) {
-          targetAllocation = longAllocation;
+          targetAllocation =
+            tacticalMode === "reduce-on-short-exit"
+              ? longAllocation + shortAllocation
+              : longAllocation;
           signals = ["long-entry"];
         } else if (
           role === "long" &&
@@ -697,6 +757,7 @@ export function buildStrategyPlanTimeline(
     plan.strategyBAllocation,
     roleTargets,
     fixedRelativeLongStrategy,
+    resolveTacticalAllocationMode(plan.tacticalMode),
   );
   const intrabarExecutions = buildPlanIntrabarExecutions(
     timeline,
@@ -706,6 +767,7 @@ export function buildStrategyPlanTimeline(
     strategyBExecution.orderFills,
     Boolean(plan.strategyA),
     Boolean(plan.strategyB),
+    resolveTacticalAllocationMode(plan.tacticalMode),
   );
   return {
     ...timeline,
@@ -790,6 +852,8 @@ export function buildLiveAllocationGuidance(
     plan.strategyAAllocation,
     plan.strategyBAllocation,
     roleTargets,
+    undefined,
+    resolveTacticalAllocationMode(plan.tacticalMode),
   ).target;
   const targetAllocation = target.at(-1) ?? 0;
   const previousAllocation = target.at(-2) ?? 0;
@@ -825,6 +889,7 @@ export function buildStrategyCombinationTarget(
       combination.strategyBAllocation,
       DEFAULT_STRATEGY_B_ALLOCATION,
     ),
+    tacticalMode: resolveTacticalAllocationMode(combination.tacticalMode),
     strategyAEntryFilter: cloneMovingAverageSlopeFilter(
       combination.strategyAEntryFilter ?? combination.entryFilter,
     ),
@@ -853,6 +918,7 @@ export function runStrategyCombinationBacktest(
     },
     strategyAAllocation: combination.strategyAAllocation,
     strategyBAllocation: combination.strategyBAllocation,
+    tacticalMode: resolveTacticalAllocationMode(combination.tacticalMode),
     strategyAEntryFilter: cloneMovingAverageSlopeFilter(
       combination.strategyAEntryFilter ??
         combination.entryFilter ??
@@ -887,6 +953,7 @@ export function runStrategyCombinationBacktest(
     strategyBParameters: { ...combination.strategyBParameters },
     strategyAAllocation: combination.strategyAAllocation,
     strategyBAllocation: combination.strategyBAllocation,
+    tacticalMode: resolveTacticalAllocationMode(combination.tacticalMode),
     relativeLongStrategy: timeline.relativeLongStrategy,
     strategyAEntryFilter: cloneMovingAverageSlopeFilter(
       plan.strategyAEntryFilter,
@@ -995,7 +1062,9 @@ function sameAllocation(
 ): boolean {
   return (
     Math.abs(left.strategyAAllocation - right.strategyAAllocation) < 1e-10 &&
-    Math.abs(left.strategyBAllocation - right.strategyBAllocation) < 1e-10
+    Math.abs(left.strategyBAllocation - right.strategyBAllocation) < 1e-10 &&
+    resolveTacticalAllocationMode(left.tacticalMode) ===
+      resolveTacticalAllocationMode(right.tacticalMode)
   );
 }
 
@@ -1032,6 +1101,8 @@ function runCombinationCandidate(
     allocation.strategyAAllocation,
     allocation.strategyBAllocation,
     roleTargets,
+    undefined,
+    resolveTacticalAllocationMode(allocation.tacticalMode),
   );
   const performance = runAllocationBacktest(
     bars,
@@ -1046,6 +1117,7 @@ function runCombinationCandidate(
       strategyBFinalist.orderFills,
       true,
       true,
+      resolveTacticalAllocationMode(allocation.tacticalMode),
     ),
   );
   if (!timeline.relativeLongStrategy) {
@@ -1059,6 +1131,7 @@ function runCombinationCandidate(
     strategyBParameters: strategyBFinalist.result.parameters,
     strategyAAllocation: allocation.strategyAAllocation,
     strategyBAllocation: allocation.strategyBAllocation,
+    tacticalMode: resolveTacticalAllocationMode(allocation.tacticalMode),
     relativeLongStrategy: timeline.relativeLongStrategy,
     strategyAEntryFilter: cloneMovingAverageSlopeFilter(
       strategyAFinalist.result.entryFilter,
@@ -1078,7 +1151,10 @@ export async function optimizeStrategyCombinations(
 ): Promise<CombinationOptimizationResult> {
   const candidates = options.candidates
     ? [...options.candidates]
-    : buildScreeningCandidates();
+    : buildScreeningCandidates(
+        ["long", "short"],
+        options.excludedStrategyIds,
+      );
   const requestedEntryFilters = [
     ...new Map(
       (options.entryFilters ?? []).map((filter) => [
@@ -1116,7 +1192,9 @@ export async function optimizeStrategyCombinations(
         Math.abs(
           allocation.strategyBAllocation - DEFAULT_STRATEGY_B_ALLOCATION,
         ) <
-          1e-10,
+          1e-10 &&
+        resolveTacticalAllocationMode(allocation.tacticalMode) ===
+          DEFAULT_TACTICAL_ALLOCATION_MODE,
     ) ?? allocationCandidates[0];
   const remainingAllocations = referenceAllocation
     ? allocationCandidates.filter(
@@ -1174,14 +1252,13 @@ export async function optimizeStrategyCombinations(
         parameters: candidate.parameters,
       };
       const strategy = getStrategy(candidate.strategyId);
-      const rawTarget = strategy.buildTarget(
-        bars,
-        candidate.parameters,
-      );
       const rawOrders = strategy.buildOrders?.(
         bars,
         candidate.parameters,
       );
+      const rawTarget = rawOrders
+        ? null
+        : strategy.buildTarget(bars, candidate.parameters);
       const execution = buildStrategyExecutionSeries(
         bars,
         selection,

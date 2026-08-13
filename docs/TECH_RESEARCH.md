@@ -1386,3 +1386,858 @@ objective, costs, ranking, and report. It is audit-only: it is never loaded
 into the current result tables and is never an input to calculation. The UI
 compares the new run with the immediately previous run for the same canonical
 instrument, exposing winner changes and top-ranking overlap.
+
+## 2026-07-27 automatic market-source reconciliation
+
+The previous latest-bar guard correctly refused to splice different providers
+or adjustment modes, but it left the chart on old data after a fallback source
+successfully returned a newer bar. Two recovery approaches were compared:
+
+1. Estimate a scale ratio from overlapping closes and rescale the latest
+   window into the active history. This is inexpensive, but a short overlap
+   cannot prove equal index methodology, closing timestamps, corrections, or
+   corporate-action treatment. It would also make the series-level source
+   label inaccurate because the resulting bars came from multiple providers.
+2. Pin the provider that produced the valid latest response, disable fallback
+   for one complete-history request, and atomically replace the active series.
+   Merge the latest window only when the strict history reports the same
+   adjustment mode. This costs one full request only during a source change,
+   but preserves one provider and one declared adjustment mode per series.
+
+TradingView documents that dividend-adjusted charts change historical prices,
+and that split handling recalculates historical prices for timeline
+consistency. Polygon's official split documentation similarly distinguishes
+adjusted and unadjusted aggregate views:
+
+- https://www.tradingview.com/support/solutions/43000590597-how-to-adjust-data-for-dividends/
+- https://www.tradingview.com/support/solutions/43000765406-what-are-stock-splits/
+- https://polygon.io/docs/rest/stocks/corporate-actions/splits
+
+Decision: use option 2. Keep direct latest merging strict on interval, source,
+and `priceAdjustment`. On mismatch, request complete history with
+`strictProvider=1` and `no-store` for the latest winner. If that request
+succeeds, replace the whole series and cache the unified result locally; if it
+fails, retain the prior complete history and show a recovery warning. Never
+infer or persist a cross-provider OHLC multiplier.
+
+## 2026-07-27 canonical market data and global coverage
+
+This section supersedes the automatic source-replacement decision immediately
+above. Replacing a whole chart when the available source changes is internally
+consistent for one response, but it still lets the same saved instrument show
+different historical OHLC, adjustment, close boundary, and index methodology
+on different days.
+
+Three runtime models were compared:
+
+1. Continue selecting the currently successful provider and atomically replace
+   the full chart. This maximizes immediate availability but does not provide a
+   stable historical identity.
+2. Estimate cross-provider scale factors and merge bars. This is fast but
+   cannot reconcile methodology, sessions, corrections, or corporate actions.
+3. Assign one canonical primary per instrument, lock confirmed primary bars,
+   store every source independently, and limit backups to audit plus a
+   temporary quote. This can show an explicit unavailable state before the
+   first successful primary load, but it makes every later chart reproducible.
+
+Decision: use option 3. N225 is pinned to Eastmoney, SOX to Nasdaq, and the
+built-in continuous commodity proxies to Yahoo after the verified relay
+coverage described below. Eastmoney commodity identifiers remain independent
+backups. Other search-selected
+instruments keep their selected provider. Backup history never overwrites
+canonical OHLC. The browser persists canonical, source, reference, health, and
+fingerprint records in separate IndexedDB stores.
+
+### Source candidates
+
+The credential-free direct path was compared with proxy-friendly and licensed
+paths:
+
+- Eastmoney returned deep daily history for tested Asian, European, US, Indian,
+  Brazilian, Swiss, Taiwanese, and Singaporean indexes, US ETFs, and four
+  continuous commodity proxies. Its website endpoints have no SLA and can
+  close TLS connections or rate-limit burst traffic. The adapter therefore
+  prefers HTTPS, retries the same host over HTTP only after transport failure,
+  and relies on cache/canonical persistence rather than high request volume.
+- Nasdaq returned 6,828 SOX and NDX daily rows and 2,514 rows for each tested
+  US ETF. It is a strong direct SOX primary and ETF audit source, but not a
+  general commodity-futures source.
+- Yahoo offers broad symbols and explicit adjusted-close arrays, but direct
+  requests returned regional HTTP 403 during this test. It remains a
+  proxy-friendly audit definition.
+- EODHD is a licensed token-based index/ETF source already integrated as an
+  optional path.
+- FRED `NIKKEI225` is a close-only reference. FRED does not provide OHLC and
+  must never be expanded into synthetic candles.
+- Sina's public global-futures history was tested but rejected as canonical
+  OHLC: multiple rows used the prior close in the `open` field, causing open
+  values outside the published high/low range.
+- Stooq's CSV path returned a JavaScript verification page in this network and
+  was not integrated.
+
+Licensed future candidates were compared through official documentation:
+
+- Twelve Data documents exchange-local daily time zones and explicit
+  adjustment choices:
+  https://twelvedata.com/docs
+- EODHD documents broad exchange/index/ETF coverage and token authentication:
+  https://eodhd.com/financial-apis/quick-start-with-our-financial-data-apis
+- Financial Modeling Prep documents full historical index endpoints:
+  https://site.financialmodelingprep.com/developer/docs/stable/index-historical-price-eod-full
+- Polygon documents a dedicated indices REST product:
+  https://polygon.io/docs/rest/indices/overview
+- FRED documents series observations and NIKKEI225:
+  https://fred.stlouisfed.org/docs/api/fred/series_observations.html
+  and https://fred.stlouisfed.org/series/NIKKEI225
+
+Recommendation: retain the credential-free canonical paths for the local
+edition, keep EODHD optional, and use a reviewed licensed provider before
+claiming an external availability SLA or redistributing provider history.
+
+### Global exchange normalization
+
+Eastmoney market `100` is an overseas-index bucket, not JPX. Two approaches
+were compared:
+
+1. Keep one venue for the whole bucket and classify same-day completion
+   approximately.
+2. Map known global index codes to their real venue/time zone and leave unknown
+   codes as `OTHER`.
+
+Decision: use option 2 through one shared exchange module consumed by
+Eastmoney, Yahoo, EODHD, API validation, and saved-record validation. This
+prevents DAX, FTSE, CAC, SPX, KOSPI, and other indexes from inheriting the JPX
+close boundary.
+
+### Local Worker proxy routing
+
+Live diagnosis found that Python and Node 24 with environment-proxy support
+could reach Yahoo while the local Worker runtime still received HTTP 403.
+Three approaches were compared:
+
+1. Pass proxy addresses into Worker bindings and implement proxy tunneling in
+   Worker code. This expands secret exposure and couples production code to a
+   local network route.
+2. Disable the Worker-compatible local runtime and run API routes under Node.
+   This would diverge from the deployment runtime and local D1 architecture.
+3. Keep the Worker runtime and add a loopback-only relay process with a strict
+   provider host/path allowlist. The relay owns proxy routing; Worker code sees
+   only a fixed localhost endpoint.
+
+Decision: use option 3 only when `HTTP_PROXY` or `HTTPS_PROXY` is configured.
+The relay forwards only Accept, language, referer, and user-agent headers. It
+rejects non-HTTPS targets, non-allowlisted hosts or paths, oversized requests,
+and non-loopback binding. Proxy values are never passed into Worker bindings.
+Direct source requests remain unchanged without a configured proxy.
+
+Cloudflare documents proxy environment support for Wrangler and explains that
+local Worker code runs under the local workerd runtime:
+
+- https://developers.cloudflare.com/workers/wrangler/configuration/#proxy-support
+- https://developers.cloudflare.com/workers/local-development/
+
+The 2026-07-27 live relay matrix returned valid OHLC history for 16 Yahoo
+indexes, 11 Yahoo ETFs, and four Yahoo commodity aliases. Independent Nasdaq
+checks returned 11 of 11 US ETFs. Eastmoney had already passed the direct
+global matrix earlier in the session, then rate-limited the burst test; this is
+why canonical persistence and primary-request backoff remain mandatory.
+
+## 2026-07-27 Yahoo-first canonical policy
+
+The previous fixed assignments split global history across Eastmoney for N225,
+Nasdaq for SOX, and Yahoo for commodities. Two source policies were compared:
+
+1. Keep provider-specific primaries. This preserves the original assignment
+   but leaves the same global workflow dependent on three symbol conventions,
+   close-publication paths, and outage modes.
+2. Prefer Yahoo only where an exact Yahoo-discovered symbol or deterministic
+   reviewed mapping exists. Keep unsupported instruments on their selected
+   provider and retain Eastmoney, Nasdaq, EODHD, and FRED as isolated
+   backups/references.
+
+Option 2 gives supported indexes, ETFs, and commodity proxies one symbol and
+normalization path without guessing unsupported exchange suffixes. It also
+keeps direct and credentialed alternatives available for audit. A blanket
+conversion of every code was rejected because a code such as a JPX-listed ETF
+requires an exchange suffix that cannot be inferred safely from an arbitrary
+non-Yahoo record.
+
+Availability still requires multiple network routes. During the research
+check, Yahoo's official N225 and SPY history pages returned HTTP 429 to the web
+client, while Nasdaq's official SOX historical page displayed that data was
+temporarily unavailable. The local adapter's reviewed loopback relay,
+query1/query2 hosts, and direct fallback therefore remain necessary.
+
+Official pages:
+
+- https://finance.yahoo.com/quote/%5EN225/history/
+- https://finance.yahoo.com/quote/%5ESOX/history/
+- https://finance.yahoo.com/quote/SPY/history/
+- https://www.nasdaq.com/market-activity/index/sox/historical
+
+The local strict-provider matrix then validated the actual application route.
+All 31 cases passed: 16 Yahoo indexes, 11 Yahoo ETFs, and four Yahoo commodity
+proxies. N225 returned 6,506 bars from 2000-01-04 through 2026-07-27; SOX
+returned 6,679 bars from 2000-01-03 through 2026-07-24. The default N225 API
+request returned Yahoo `^N225`, and Yahoo-first search returned the same exact
+identity.
+
+Decision: adopt option 2. Search de-duplication prefers Yahoo exact symbols.
+N225, SOX, verified global mappings, Yahoo-discovered instruments, and the
+existing commodity proxies use Yahoo as primary. Unsupported mappings retain
+their selected provider. A deliberate source-policy change reuses locked
+same-instrument canonical history, while current-primary writes remain strict
+and confirmed dates remain immutable.
+
+## 2026-07-28 Global index fallback promotion
+
+Repeated refresh failures for both N225 and the SSE-listed 513310 ETF exposed a
+policy gap rather than only a provider-coverage gap. QuantScope already had
+Yahoo, Eastmoney, Nasdaq, optional EODHD, and FRED adapters, but the workspace
+used only the configured primary for canonical OHLC. Backups were audited and
+could supply a temporary quote, yet they could not restore an empty chart or
+append a verified new daily bar. Repeated refreshes therefore retried the same
+failed primary.
+
+The following approaches were compared:
+
+1. Add one hard-coded source per reported symbol. This is quick for N225 but
+   does not improve other indexes or ETFs and duplicates failover rules.
+2. Replace the primary globally with another free provider. This only moves the
+   single point of failure and loses the reviewed Yahoo mappings that passed the
+   31-instrument coverage matrix.
+3. Keep one preferred primary per canonical profile and permit a declared
+   backup to become the active canonical source when it passes explicit
+   promotion rules. A trusted deterministic mapping may recover an empty chart;
+   a candidate mapping requires overlap with retained canonical bars and a
+   bounded OHLC error. Completed cached dates remain immutable, provider
+   snapshots remain isolated, and the preferred primary is tried again later.
+
+Decision: use option 3. This makes the existing multi-provider registry useful
+for every canonical index and ETF instead of only N225. A fallback is selected
+by freshness and profile order. It may fill missing dates or replace only an
+unconfirmed last bar; it never rewrites confirmed history. The UI reports that
+the preferred source is unavailable and identifies the active verified backup.
+
+Additional provider research:
+
+- Nikkei Indexes publishes an official no-key CSV containing three years of
+  daily N225 OHLC. It is suitable as a trusted N225-specific backup, not as the
+  general solution. Nikkei states that wider display or non-display business
+  use can require a license.
+- EODHD already supports global index and ETF end-of-day OHLC through a
+  server-only key. Its free plan is limited, so it remains an optional
+  credentialed backup.
+- Twelve Data exposes a general `/time_series` OHLC endpoint and a global index
+  catalog, but production use requires an API key and plan-dependent credits.
+- Alpha Vantage documents daily OHLC for more than 200 major indexes through
+  `INDEX_DATA`, but classifies the index endpoint as premium.
+- Financial Modeling Prep exposes stable symbol search and historical EOD
+  endpoints. The configured account returned N225 daily OHLC but did not resolve
+  SSE ETF `513310`.
+- Marketstack's configured plan returned adjusted SPY ETF EOD rows, while index
+  listing was forbidden and `513310` was unsupported. It is suitable only as an
+  exchange-verified ETF backup.
+- Zhitu's free certificate returned recent CSI 300 daily bars through its
+  documented SSE/SZSE index path. Its fund API does not document historical ETF
+  OHLC and the `513310` probe failed, so it is index-only.
+- The reviewed ClawHub Tencent Finance skill wraps
+  `https://qt.gtimg.cn/q={symbol}`. It is fast, no-key, and resolved
+  `sh513310`, but exposes only a current quote rather than historical daily
+  bars. It is useful as a final temporary-quote source, not as a backtest or
+  canonical-history provider.
+- Polygon documents more than 10,000 indexes and aggregate bars, but is
+  credentialed and its strongest coverage is US index families.
+- Stooq's no-key download endpoint returned a browser-verification page during
+  the live server-side check, so it is not suitable for unattended canonical
+  recovery.
+
+Implementation uses the official Nikkei CSV for N225 and adds credentialed
+EODHD, Twelve Data, Financial Modeling Prep, Alpha Vantage, Marketstack, and
+Zhitu adapters behind the shared canonical registry. Deterministic mappings use
+`verified-identity`; Alpha Vantage and Nasdaq use overlap gating where the
+mapping or methodology is not strong enough to recover an empty chart.
+Credentialed sources are called sequentially only after the preferred source
+fails.
+
+The `513310` probes were decisive: EODHD returned valid SSE daily bars; Twelve
+Data search found the ETF but daily series returned 404; Alpha Vantage was
+sparse and ambiguous; FMP did not resolve it; Marketstack returned 422; Zhitu
+returned 404. EODHD is therefore the first proven credentialed recovery source
+for that ETF rather than treating every configured key as interchangeable.
+
+Other evaluated candidates:
+
+- Finnhub resolved `513310.SS`, but historical stock candles returned 403 under
+  the supplied entitlement and the official API labels that capability premium.
+- EIA is authoritative for US energy statistics but is not exchange OHLC.
+- iTick offers a time-limited free personal tier with REST history and a
+  five-calls-per-minute limit. It requires an account key that is not yet
+  configured.
+- AKShare API starts an AKTools Python service and largely wraps the same public
+  Chinese websites already represented. It adds useful breadth but also a
+  sidecar, dependency, and duplicated-source failure mode.
+- TuShare Pro requires a token and points; relevant index/ETF endpoints have
+  feature-specific point thresholds, so it is not a zero-configuration source.
+- Sina Finance ZYHub publishes a global daily-K tool covering China, Hong Kong,
+  US, and global indexes, authenticated by `X-Auth-Token`. The configured
+  account returned an insufficient-balance response, so the key is retained
+  locally but the runtime adapter is intentionally not enabled.
+
+Primary references:
+
+- https://indexes.nikkei.co.jp/en/nkave/index?type=download
+- https://indexes.nikkei.co.jp/nkave/data/index.en.html
+- https://indexes.nikkei.co.jp/nkave/license/index.en.html
+- https://eodhd.com/financial-apis/api-for-historical-data-and-volumes
+- https://twelvedata.com/docs/introduction/overview
+- https://twelvedata.com/indices
+- https://www.alphavantage.co/documentation/
+- https://site.financialmodelingprep.com/developer/docs/stable/index-historical-price-eod-full
+- https://marketstack.com/pricing/
+- https://www.zhituapi.com/hsindexapi.html
+- https://clawhub.ai/ezio-xiang/skills/tencent-finance
+- https://www.cnblogs.com/doseoer/p/20048143
+- https://www.itick.org/en
+- https://docs.itick.org/en/getting-started
+- https://pypi.org/project/akshare-api/
+- https://tushare.pro/document/1?doc_id=13
+- https://zyhub.finance.sina.cn/help/api
+- https://polygon.io/docs/rest/indices/overview
+
+## 2026-07-28 Session-aware refresh and credential-state handling
+
+The fixed one-minute visible-page refresh was compared with two mainstream
+approaches:
+
+1. A browser-side session policy using the Page Visibility API, venue-local
+   clocks, one shared last-attempt timestamp, and exponential backoff. This is
+   simple, reversible, and matches QuantScope's local single-user/manual
+   product boundary, but it stops when the page is closed and needs explicit
+   exchange schedules.
+2. A durable server scheduler or push stream. This can continue with no open
+   page and centralize quota allocation across devices, but it adds background
+   infrastructure, durable job state, authentication, and operating cost that
+   the current manual workspace does not need.
+
+Decision: use option 1. Known regular venues refresh every five minutes while
+open and for 30 minutes after close. The current COMEX/NYMEX proxies follow the
+Sunday-Friday Globex session and skip the daily maintenance break and weekend
+closure; unknown venues use 15 minutes. The page must be visible. Focus and
+visibility reuse the same minimum interval. A primary failure immediately tries
+backups; 15/30/60-minute backoff begins only after every source fails. Manual
+all-shortcut refresh is sequential, progress-reporting, and cooldown-protected.
+
+The Page Visibility API is the standard browser signal for avoiding background
+work in hidden documents:
+
+- https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API
+- https://html.spec.whatwg.org/dev/interaction.html
+- https://www.cmegroup.com/trading/metals/files/fact-card-gold-futures-options.pdf
+
+For credential state, two approaches were compared:
+
+1. Periodically probe every stored key. This can produce an early status but
+   consumes quota, can trigger rate controls, and may incorrectly classify a
+   symbol, entitlement, or regional 403 as an expired key.
+2. Classify failures only when an implemented provider is used, retain a safe
+   status code, and keep credentials and response bodies server-side.
+
+Decision: use option 2. HTTP 401 and explicit invalid/expired-key messages map
+to a credential warning; 403 access denial, 429 quota/rate limitation, missing
+configuration, and generic transport/upstream failure remain separate. This
+cannot validate an unintegrated provider merely because its key exists.
+
+Additional candidate review:
+
+- Tiingo's official symbology documents supported US equities, mutual funds,
+  ETFs, and China equities. It does not establish the required global-index or
+  commodity-futures coverage, so it is not added to the current fallback
+  registry.
+- AllTick's official K-line specification defines commodity endpoint
+  `quote.alltick.co/quote-b-api/kline`, daily type `8`, and a 500-row maximum;
+  its commodity list maps gold to `GOLD`. This is sufficient for an adapter,
+  but not for assuming identity with Yahoo continuous futures. The supplied
+  token returned HTTP 401. A replacement seven-day trial token then returned
+  nine current daily bars through 2026-07-28. Its nine-date Yahoo overlap
+  passed the 2%/3% price gate, so AllTick is formally integrated as a currently
+  usable overlap-required gold backup with explicit local expiry.
+- FMP's official commodity EOD endpoint accepts `GCUSD`. A live read-only probe
+  returned 1,330 daily rows through 2026-07-28, so FMP is the first
+  overlap-required credentialed gold backup.
+
+For automatic source selection, two approaches were compared:
+
+1. A lifetime cumulative success rate is simple, but old successes hide a new
+   outage and a recovered source can oscillate with a backup.
+2. Bounded 7/30-day attempt windows react to current behavior. Minimum sample
+   counts, price-quality gates, asymmetric demotion/restoration thresholds, and
+   periodic configured-primary probes add state but make decisions auditable.
+
+Decision: use option 2. Demote after three consecutive failures or a sub-80%
+7-day rate with at least five attempts. Require a backup to reach 95% over
+seven days, 90% over 30 days, minimum observations, and passing quality. Probe
+the configured primary hourly and require seven elapsed stable days before
+restoration.
+
+Primary references:
+
+- https://www.tiingo.com/documentation/general/overview
+- https://www.tiingo.com/documentation/end-of-day
+- https://www.tiingo.com/documentation/appendix/symbology
+- https://all-tick-official-website.vercel.app/en/docs
+- https://github.com/alltick/realtime-forex-crypto-stock-tick-finance-websocket-api
+- https://github.com/alltick/alltick-realtime-forex-crypto-stock-tick-finance-websocket-api/blob/main/http_interface/kline_query.md
+- https://github.com/alltick/alltick-realtime-forex-crypto-stock-tick-finance-websocket-api/blob/main/product_code_list_commodities_gold.md
+- https://site.financialmodelingprep.com/developer/docs/stable/commodities-historical-price-eod-full
+
+## 2026-07-28 API allowances and final Chinese quote fallback
+
+The stored credentials were reviewed against current official provider pages.
+Two quota-recording approaches were compared:
+
+1. Encode every published free-tier number as a hard runtime limit. This is
+   simple to inspect, but it can incorrectly constrain a paid, promotional, or
+   grandfathered account and becomes stale when a provider changes pricing.
+2. Keep a dated documentation register for every provider and add a runtime
+   gate only where QuantScope actually consumes a small known account bucket.
+   The account dashboard remains authoritative, while low-quota integrations
+   can still fail closed before wasting requests.
+
+Decision: use option 2. `.env.example`, `SECRETS.md`, and `DATA_SOURCES.md`
+record the current free/starter baselines, reset periods, and integration
+status. Exact account allowances that are not publicly visible are labeled
+dashboard-dependent. QuantScope does not probe dormant keys merely to discover
+their plan because those probes consume quota and can misclassify entitlement
+errors.
+
+Officially confirmed baselines:
+
+- EODHD Free: 20 calls/day and 20 requests/minute.
+- Twelve Data Basic: 8 API credits/minute and 800/day, with the daily bucket
+  reset at 00:00 UTC. Endpoint weight and symbol count determine actual credit
+  use.
+- Alpha Vantage Free: 25 requests/day.
+- Financial Modeling Prep Basic: 250 calls/day, reset at 15:00 US Eastern, plus
+  a 500 MB trailing-30-day bandwidth limit.
+- Finnhub documents a 30 requests/second hard ceiling on top of plan limits,
+  but its current public pages do not state one fixed free-account minute
+  allowance. The account dashboard must decide the usable plan limit.
+- U.S. EIA does not publish a fixed daily bucket. Its FAQ recommends a
+  sustained rate below about 9,000/hour and bursts below 5/second, while
+  warning that complex routes can throttle earlier.
+- Marketstack Free: 100 requests/month; each requested symbol consumes one
+  request.
+- Zhitu Free: 200 requests/day and 300 requests/minute.
+- Tiingo Starter: 50 requests/hour, 1,000/day, 500 unique symbols/month, and
+  1 GB/month.
+- AllTick Free is a seven-day trial with 10 API calls/minute.
+- Juhe's current stock-product account allowance is 50 calls/day, while its
+  product page states a five-minute data update frequency and product-specific
+  request-limit errors.
+- Sina Finance ZYHub exposes balance and product entitlement through the
+  account service, but no fixed public free allowance was found. The supplied
+  account returned insufficient balance.
+
+For the Juhe integration, three recovery positions were compared:
+
+1. Use Juhe as a regular credentialed history source. The product returns
+   current quotes, not a reproducible historical daily series, and its small
+   allowance makes routine audit unsuitable.
+2. Place Juhe before Tencent. This spends a limited credentialed call even when
+   the no-key website quote is healthy.
+3. Keep Tencent first and Juhe last, skip Juhe after a valid Tencent quote, and
+   prevent quote-only providers from becoming effective primaries.
+
+Decision: use option 3. The adapter is restricted to SSE/SZSE indexes and ETFs,
+returns one raw bar, preserves canonical identity, and never recovers an empty
+chart or persists history. A Shanghai-day in-process counter is capped at 50.
+Optional date/offset environment variables account for same-day calls made
+outside QuantScope, but the upstream provider remains authoritative after a
+server restart. A live strict `513310` request returned a complete
+2026-07-28 quote.
+
+Primary references:
+
+- https://eodhd.com/financial-apis/quick-start-with-our-financial-data-apis
+- https://twelvedata.com/pricing
+- https://support.twelvedata.com/en/articles/5615854-credits
+- https://www.alphavantage.co/support/
+- https://site.financialmodelingprep.com/pricing-plans
+- https://www.finnhub.io/docs/api/country
+- https://www.eia.gov/opendata/faqs.php
+- https://marketstack.com/contact
+- https://zhituapi.com/gettoken.html
+- https://www.tiingo.com/about/pricing
+- https://blog.alltick.co/how-to-obtain-a-free-alltick-api-key-for-testing/
+- https://www.juhe.cn/docs/api/id/21
+- https://www.juhe.cn/vip
+
+## 2026-07-28 Windows runtime-port lifecycle
+
+The local launcher has two persistent loopback listeners: the vinext
+application on port 3000 and the market relay on port 3001. Three startup
+approaches were compared:
+
+1. Stop every process that owns a registered port. This is simple but can
+   terminate an unrelated application or another checkout.
+2. Select a different free port automatically. This avoids termination but
+   changes the browser origin, device-local storage boundary, documented URLs,
+   and fixed relay binding.
+3. Keep fixed ports, probe each role's health, map the listener to its owning
+   PID, verify the exact current-checkout command and role arguments, and stop
+   only a verified unhealthy owner.
+
+Decision: use option 3 through one PowerShell runtime-port registry. Healthy
+application and relay services are reused. An unhealthy current-checkout
+listener is released before restart even when its launcher parent still
+exists. Another checkout, a mismatched command, and an unrelated owner remain
+untouched; the launcher reports the unresolved PID. The application probe
+allows ten seconds because an initial development render can exceed the former
+two-second request window. This extends the existing relay identity pattern to
+every persistent runtime port while retaining the fixed localhost origin.
+
+Microsoft documents `Get-NetTCPConnection` as exposing local ports and owning
+process IDs. `Win32_Process` exposes `CommandLine` and `ParentProcessId`, with
+the warning that process IDs can be reused, so PID lookup alone is not treated
+as identity. `Stop-Process` supports stopping one exact local PID after those
+checks.
+
+Primary references:
+
+- https://learn.microsoft.com/en-us/powershell/module/nettcpip/get-nettcpconnection
+- https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-process
+- https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.management/stop-process
+
+## 2026-08-02 saved-shortcut rank history and stable price axes
+
+### Problem
+
+Saved shortcut strategies need comparable latest-128-session returns, the newest
+five ranks for each canonical instrument, and a K-line axis that does not change
+only because a different strategy overlay is visible. A rank event must represent
+one completed one-click screening, cover every saved strategy in that generic
+canonical instrument group, remain owner-scoped and bounded, and work for future
+instrument groups without symbol-specific branches.
+
+### Persistence approaches
+
+1. Store the bounded rank array on each `saved_backtests` row as JSON, together
+   with the latest rolling return and a deduplication snapshot key.
+2. Create a normalized child table with one row per rank event and prune it to
+   five records per saved strategy.
+
+Both approaches support durable history and owner-scoped writes. A child table
+is preferable for unbounded audit queries, event timestamps, and cross-run SQL
+analytics, but adds joins, pruning statements, foreign-key lifecycle work, and
+more D1 statements. The UI always reads the whole history and the requirement is
+strictly bounded to five integers, so row-local JSON is the smaller schema and
+request contract. D1 prepared statements and bound parameters remain the normal
+safe query boundary; D1's documented per-query bound-parameter and statement
+limits are far above this bounded cohort, but the existing 200-row product cap
+still constrains payload size.
+
+Decision: use additive nullable/defaulted columns on `saved_backtests`. Rank by
+latest-128-session total return descending with saved ID as a deterministic
+tie-breaker. Market refresh updates the durable rolling return but does not create
+a rank event. A successful screening-run archive request must submit exactly the
+complete saved-ID cohort for its canonical instrument; it appends one rank under
+the inserted run ID and retains five entries in application code. Old rows are
+backfilled from exact archived candidate matches when available, with a current
+rolling-cohort baseline for unmatched rows, so all existing shortcut groups gain
+an initial numeric rank without inventing repeated screening events.
+
+### Price-axis approaches
+
+1. Let ECharts autoscale the main value axis across candles, indicator overlays,
+   strategy reference lines, and marker coordinates.
+2. Calculate explicit axis bounds from visible OHLC lows/highs and update them
+   from the shared data-zoom window.
+
+Both preserve ECharts' value-axis rendering and linked data zoom. Autoscaling is
+simpler but makes the same candles appear at different vertical scales when a
+strategy emits an outlying reference. Explicit visible-OHLC bounds keep candle
+comparisons stable while retaining zoom-dependent detail; overlays outside the
+range remain presentation data rather than scale inputs.
+
+Decision: use option 2 with four-percent padding and retain the current zoom
+window in `PriceChart`. ECharts continues to own rendering and zoom interaction,
+while the application owns the financial comparison rule for the price axis.
+Floor/ceiling bounds and an integer label formatter prevent decimal values from
+appearing on the K-line vertical axis.
+
+Primary references accessed 2026-08-02:
+
+- https://developers.cloudflare.com/d1/worker-api/prepared-statements/
+- https://developers.cloudflare.com/d1/worker-api/
+- https://developers.cloudflare.com/d1/platform/limits/
+- https://echarts.apache.org/handbook/en/concepts/axis/
+
+## 2026-08-02 Nasdaq 100 alias and volume recovery
+
+### Evidence
+
+The local search endpoint returns the Eastmoney Nasdaq-100 identity as
+`100.NDX100`, while Yahoo returns `^NDX`. A strict local Yahoo request for
+`^NDX` succeeded through 2026-07-31 and its recent daily bars carried positive
+volume. Nasdaq's strict `NDX` website history returned valid prices but zero
+volume. Both tested SOX sources returned zero volume, so missing index volume is
+also an upstream capability boundary and must not be fabricated.
+
+The failure occurred before source-quality selection: Yahoo parsed its response
+symbol into code `NDX`, but canonical validation still compared it with the
+selected code `NDX100`. The correct primary was rejected as a different
+instrument. The same structural risk exists for SPX/GSPC, DJIA/DJI,
+SENSEX/BSESN, and SX5E/STOXX50E.
+
+Nasdaq's official NDX overview confirms `NDX` as the index symbol. Its official
+historical page reported data unavailable during the 2026-08-02 check, which
+reinforces keeping Yahoo as the configured primary rather than promoting the
+website history merely because it is official.
+
+### Approaches compared
+
+1. Add an NDX-only exception inside the market route or Yahoo parser.
+2. Normalize all known global-index aliases at the canonical identity boundary,
+   use that key for search/cache/profile validation, and pass canonical provider
+   symbols through each backup definition.
+
+The first option is smaller but repeats provider knowledge and allows the same
+bug to recur for every alias pair. The second uses the existing Yahoo mapping as
+the shared identity registry, prevents duplicate search groups, and lets a
+provider response change its display code without changing canonical ownership.
+
+Decision: use option 2. Nasdaq requests honor their definition's `secid`. A
+same-session merge also retains an already published positive volume when a
+later response reports zero, while never carrying volume from another date.
+
+Primary references accessed 2026-08-02:
+
+- https://indexes.nasdaq.com/Index/Overview/NDX
+- https://www.nasdaq.com/market-activity/index/ndx/historical
+
+## 2026-08-09 saved-shortcut folders and disclosure interaction
+
+The shortcut bar needs organization at two known boundaries: canonical
+instrument groups at the root and saved strategy rows within one instrument.
+It does not need arbitrary recursive nesting.
+
+### Approaches compared
+
+1. Store a generic recursive tree with `parent_id`, attach any saved object to
+   any node, and expose treeview keyboard interaction. This is flexible, but it
+   adds cycle prevention, cross-level validation, recursive ordering, and the
+   complete WAI-ARIA treeview keyboard contract for only two required levels.
+2. Store normalized folders with a fixed `instrument` or `strategy` scope and
+   a context key. Saved rows retain nullable instrument-folder and
+   strategy-folder IDs. Existing instrument disclosures remain disclosures,
+   while simple selectors move groups or rows between folders.
+
+Both approaches provide rename, ordering, and durable owner-scoped grouping.
+The fixed-scope model is smaller, makes invalid cross-instrument strategy moves
+easy to reject, and retains the established disclosure interaction. D1 enforces
+foreign keys and supports `ON DELETE SET NULL`; D1 batch statements execute as
+transactions, so the delete route also clears both nullable affiliations in
+the same batch before deleting the folder.
+
+Decision: use option 2. Folder deletion means unfile, never delete content.
+Group and row reordering remains within the current folder section. Empty
+folders remain visible so users can rename, delete, or populate them.
+
+Primary references accessed 2026-08-09:
+
+- https://developers.cloudflare.com/d1/sql-api/foreign-keys/
+- https://developers.cloudflare.com/d1/worker-api/d1-database/
+- https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/
+- https://www.w3.org/WAI/ARIA/apg/patterns/treeview/
+
+## 2026-08-09 long-only tactical allocation modes
+
+The requested sequence is not short selling. The position target always stays
+inside `[0, 1]`: a relative-long signal opens exposure, while the
+relative-short signal only adjusts a tactical sleeve inside that long
+position.
+
+Two implementation shapes were compared:
+
+1. A general event/allocation sequence editor. This can express arbitrary
+   pyramiding, but greatly expands invalid states, screening candidates,
+   persistence validation, and same-bar execution ambiguity.
+2. Two explicit causal modes over the existing long/base/full state machine:
+   `add-on-short-entry` starts at the long-cycle base allocation and adds the
+   tactical sleeve on a fresh short-cycle entry; `reduce-on-short-exit` starts
+   at full allocation, removes the sleeve on a short-cycle exit, and restores
+   it on the next entry.
+
+Decision: implement option 2. Both modes use the same five A/B splits and are
+screened automatically. The new mode can raise return when the long-cycle entry
+is early and valid, but it also increases initial market exposure and may
+increase drawdown. Therefore it is ranked by the existing return/Sharpe/drawdown
+objective instead of being assumed superior. Single-strategy behavior remains
+100% long or flat.
+
+Primary reference accessed 2026-08-09:
+
+- https://www.tradingview.com/pine-script-docs/concepts/strategies/
+
+## 2026-08-09 TradingView community catalog review and indicator menus
+
+TradingView's signed-out chart catalog was inspected on 2026-08-09. The
+application exposed separate `Editors' picks`, `Top`, and `Trending` community
+sections plus Indicator/Strategy tabs. These rankings are mutable discovery
+feeds, not evidence that a script is causal, robust, or suitable for daily
+long-only index research.
+
+The current Top 20 were: Smart Money Concepts; Squeeze Momentum; MacD Custom
+MTF; SuperTrend; Williams Vix Fix; Support and Resistance Levels with Breaks;
+WaveTrend Oscillator; Market Structure Break & Order Block; UT Bot Alerts; ICT
+Killzones + Pivots; Trendlines with Breaks; Bollinger + RSI Double Strategy;
+GainzAlgo Suite; Support Resistance Channels; ADX and DI; Swing high/low
+support and resistance; LuxAlgo Signals & Overlays; Support/Resistance High
+Volume Boxes; Ultimate MA MTF; and Sessions.
+
+The Trending view currently rendered 19 entries: Adaptive Regression Breakout
+Map; XG Boost Lite Reversals; Probabilistic ICT Order Blocks; HalfTrend Signal
+Engine; Reversal Trap Probability Bands; Universal Signal Backtester; Smart
+Ichimoku; RSI Divergence Entry Engine; Luxy UT God Mode; Elliott Impulse
+Engine; HTF Power of 3; Reactive Trail System; two Liquidity Sweep Hunter
+variants; Nadaraya-Watson Trend; Liquidity Rejection Auto Target; Strong
+Liquidity Outlook; Auto-ATR Volatility Spike & Trend Tracker; and Order Flow 3D
+Delta Profile.
+
+The current Editors' picks Top 20 were: Regression Toolkit; Time-of-Day/Session
+Performance Stats; Universal Signal Backtester; Smart Trader Isotropic Trend
+Lines; MACD with HTF Panels; Chess; Directional Volume Shapes; IQ Trend Beams;
+TASC agricultural selling model; Machine Learning Neural Network Engine;
+Intrabar Profile; Kinetic Slippage Index; Session Edge Profiler; Supertrend
+Parameter Sensitivity 3D; ExprLib; Chart Patterns Screener; Machine Learning
+RSI; Polynomial/Linear Regression Volume Profile; Whale Liquidity and
+Absorption Profile; and Fractional EMA Kalman Filter.
+
+Suitability for this product:
+
+- Strong candidates are confirmed support/resistance breaks, Supertrend,
+  ADX/DI, moving-average families, Bollinger/RSI confluence, ATR volatility
+  tracking, and causal trendline/channel breaks. They fit daily OHLC and the
+  existing long-only, next-open execution contract.
+- Useful after intraday mode exists are session performance, killzones,
+  intrabar profiles, and slippage diagnostics. Daily bars cannot evaluate their
+  intended behavior.
+- Regression, divergence, WaveTrend/Squeeze, and Nadaraya-Watson concepts need
+  separate causal/stability review before inclusion. Centered smoothing or
+  retrospective pivots must not repaint.
+- Invite-only suites, opaque machine-learning scores, order-flow/delta studies,
+  and volume-box/liquidity scripts are deferred. They are not reproducible from
+  this app's daily OHLCV contract, and index volume is often unavailable.
+
+Copying a community Pine implementation was rejected. The selected pilot is an
+independent, price-only confirmed-pivot implementation inspired by the public
+concept: support/resistance becomes visible only after the configured right
+confirmation bars have closed, and break markers require a later close through
+the known level. It is added to the default favorites list but remains hidden
+until the user enables it. The registry now categorizes moving averages, trend,
+volatility/channel, momentum, volume, and structure/breakout studies; favorites
+remain device-local.
+
+Primary references accessed 2026-08-09:
+
+- https://www.tradingview.com/chart/
+- https://www.tradingview.com/scripts/editors-picks/
+- https://www.tradingview.com/script/JDFoWQbL-Support-and-Resistance-Levels-with-Breaks-LuxAlgo/
+- https://www.tradingview.com/support/solutions/43000761245-tradingview-social-network/
+- https://www.tradingview.com/support/solutions/43000555216-how-to-try-indicators-and-strategies-from-the-community-on-your-chart/
+
+## 2026-08-09 native one-minute research mode
+
+The accepted product scope is exactly daily and one minute; 5/15/30/60-minute
+bars are out of scope. Two viable approaches were compared:
+
+1. Use the current providers' native one-minute endpoint. This reuses the
+   normalized `MarketSeries`, has no new credential or redistribution boundary,
+   and is immediately testable, but recent-history depth and volume coverage
+   remain provider-dependent.
+2. Add a credentialed one-minute vendor. FMP documents one-minute stock,
+   index, and commodity chart endpoints, Twelve Data documents `1min` time
+   series in exchange-local time, Alpha Vantage documents premium `1min`
+   equity intraday data, and EODHD documents one-minute intraday data with
+   request-unit costs. These services can improve contractual coverage but add
+   credentials, quotas, symbol mapping, plan restrictions, and display or
+   redistribution review.
+
+The implemented choice is approach 1 for the local research product. The UI
+has `日线` and `1 分钟` tabs only. One-minute requests are provider-native,
+bounded to 1,500 bars, raw-priced, and never resampled. A tab switch aborts an
+active screening run, clears the current market/range state, and loads the
+interval-keyed cache. Cache, source health, fingerprint, saved plan, screening
+archive, Worker request, chart reset key, latest-bar completion state, and
+exact start/end time all retain the interval. Indicators and strategies keep
+their selections but recalculate on the selected bars.
+
+Minute mode refreshes the visible instrument once per minute during the venue
+session and does not start daily shortcut refresh or daily multi-source audits.
+Close-derived signals remain frozen until the latest minute completes; the
+existing next-open/hybrid execution contract then applies to the following
+minute bar. Period and custom-range screening operate on exact K-line counts.
+Year-based rolling validation is disabled because the current bounded native
+history cannot support a credible yearly fold. Missing provider volume is not
+synthesized; volume-dependent studies are disabled when coverage is unreliable.
+
+A live strict Yahoo N225 check on 2026-08-09 returned 1,500 native bars from
+2026-08-03 12:39 through 2026-08-07 15:30. Yahoo published zero volume for this
+index minute series, which the UI correctly reports as unavailable. A strict
+Eastmoney N225 one-minute attempt returned an upstream 502 and was not adopted
+as a fallback.
+
+Primary references accessed 2026-08-09:
+
+- https://site.financialmodelingprep.com/developer/docs
+- https://site.financialmodelingprep.com/developer/docs/pricing
+- https://twelvedata.com/docs/introduction/quickstart
+- https://twelvedata.com/docs/analysis
+- https://support.twelvedata.com/en/articles/5656039-how-to-get-historical-prices
+- https://www.alphavantage.co/documentation/
+- https://eodhd.com/financial-apis-blog/intraday-api-1-minute-intervals-for-the-past-year
+- https://eodhd.com/financial-apis/api-limits
+
+## 2026-08-11 reusable TradingView community-script intake
+
+Twelve downloaded Pine files were reviewed: nine declare `indicator()` and
+three declare `strategy()`. Two implementation approaches were compared:
+
+1. Embed or execute Pine directly. This would promise closer source parity but
+   TradingView's Advanced Charts documentation states that Pine Script is not
+   supported and that custom studies must be written in JavaScript. It would
+   also couple QuantScope to TradingView-only visual objects, strategy settings,
+   and script licensing constraints.
+2. Maintain independent TypeScript formula ports behind a typed community
+   catalog. This reuses normalized `MarketBar[]`, existing indicator/strategy
+   registries, finite parameter spaces, and the host execution engine. It
+   requires explicit compatibility notes but is testable, causal, and suitable
+   for future downloaded-file or page-referenced additions.
+
+Approach 2 was selected. Each item now records kind, filename, license header,
+compatibility level, causality, and omissions. Confirmed pivots publish on the
+confirmation bar. MTF support/resistance is explicitly chart-timeframe-only
+until a normalized aggregation adapter exists. Close-derived strategy targets
+use the existing following-open execution contract even when a downloaded Pine
+strategy requested same-close processing; TradingView documents the following
+bar open as the default strategy fill and warns that same-close fills can be
+misleading in some contexts.
+
+The visible ranking UX was separately compared with a validation-first design.
+Ordinal position is unstable when the strategy catalog or parameter grid grows,
+whereas the existing 30-session excess-return/drawdown check plus 63-session
+confirmation directly answers whether a selected strategy is still behaving as
+expected. QuantScope therefore keeps objective ordering only as an internal
+search mechanism. Result tables and shortcuts show four explicit statuses:
+favorable, short/mid-term disagreement, review required, or insufficient
+executions. Saved-rank reads/writes/backfills were removed; legacy database
+columns remain inert for a reversible storage migration.
+
+Primary references accessed 2026-08-11:
+
+- https://www.tradingview.com/charting-library-docs/latest/resources/Frequently-Asked-Questions/
+- https://www.tradingview.com/pine-script-docs/concepts/strategies/
+- https://www.tradingview.com/pine-script-docs/language/execution-model/
+- https://www.tradingview.com/pine-script-docs/concepts/repainting/
+- https://www.tradingview.com/pine-script-docs/concepts/other-timeframes-and-data/

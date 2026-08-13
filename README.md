@@ -1,7 +1,7 @@
 # QuantScope
 
-QuantScope is a daily-only workspace for researching one global index, ETF, or
-commodity futures quote proxy at a time and making manual swing decisions. It
+QuantScope is a daily and native one-minute workspace for researching one
+global index, ETF, or commodity futures quote proxy at a time. It
 combines filtered asset search,
 dividend/split-adjusted price charts when the selected source supports them,
 technical indicators, strategy backtests, parameter sensitivity diagnostics,
@@ -14,38 +14,78 @@ trades or run unattended jobs.
   proxies; individual equities are excluded from results. A deterministic
   catalog includes gold (`GC=F`), silver (`SI=F`), crude oil (`CL=F`), and
   copper (`HG=F`).
-- One fixed daily interval in the user interface. Provider adapters and API
-  types retain interval support for internal compatibility.
+- Two explicit research tabs: daily and provider-native one minute. There is no
+  5/15/30/60-minute UI and no synthetic resampling. Data, latest-bar state,
+  ranges, indicators, strategies, backtests, screening requests, fingerprints,
+  source health, saved plans, and chart reset keys retain the selected interval.
+  One-minute history is bounded to 1,500 bars and uses precise minute ranges.
 - Daily history requests start at 2000-01-01 with a 10,000-bar safety cap.
   Instruments launched later begin at their first provider-available bar.
 - Candlestick and line chart modes with volume and synchronized zoom.
-- Cached history plus an uncached latest-bar overlay on open, every
-  60 seconds while visible, and on focus/visibility, with current-bar strategy
-  guidance recalculated after each compatible overlay. Source or
-  price-adjustment mismatches retain the complete existing history.
-- Saved-shortcut histories also use a bounded device-local IndexedDB fast path:
-  a hit renders immediately with its cache timestamp, while the complete
-  network history refresh continues in the background. Cached histories do
-  not expire by age; the oldest entry is evicted only when the 32-series
-  capacity is exceeded.
+- One preferred primary per instrument, cacheable history, and an
+  uncached latest-primary overlay on open and on a session-aware visible-page
+  schedule. Known regular venues refresh every five minutes from the open
+  through 30 minutes after the close, then stop. COMEX/NYMEX commodity proxies
+  use the same cadence during their Sunday-Friday Globex session, including
+  the close grace period but excluding the daily maintenance break and weekend
+  closure. Unknown venues use a conservative 15-minute cadence.
+  Focus/visibility refreshes share the same minimum interval. A primary
+  failure immediately tries ordered backups; only a
+  complete chain failure starts 15-, 30-, then 60-minute backoff. Completed
+  OHLC bars are locked; a same-source refresh may fill a cached zero volume for
+  the same date without changing its prices. Chinese index/ETF recovery tries
+  the no-key Tencent current
+  quote first and reserves the 50-call/day Juhe product for the final
+  quote-only attempt; neither quote source becomes canonical history.
+  One-minute mode refreshes the visible instrument once per minute during the
+  venue session, uses only its configured primary provider, and does not run
+  daily backup/reference audits. If that provider publishes no intraday volume,
+  volume-dependent indicators and strategies are explicitly unavailable.
+  Initial history, latest refreshes, fallbacks, and temporary quotes are
+  deduplicated and ordered by canonical trading date rather than provider
+  timestamp, preventing adjacent daily bars from swapping across sources.
+- A device-local canonical IndexedDB fast path stores canonical series,
+  provider-specific snapshots, reference snapshots, fingerprints, and source
+  health. Health retains bounded request samples and reports rolling 7-day and
+  30-day availability. Three consecutive failures or a sub-80% 7-day rate can
+  demote the configured primary; a backup must meet 95%/90% rolling thresholds
+  and the existing price-quality gate before it becomes the effective source.
+  The configured primary receives hourly recovery probes and must remain
+  healthy for seven days before automatic restoration. A hit renders
+  immediately while refresh continues.
 - Explicit price-adjustment metadata from the selected `MarketSeries`.
-  Eastmoney, EODHD, and valid Yahoo daily series are marked
-  `corporate-action-adjusted`; Nasdaq is a raw daily fallback.
+  Eastmoney, EODHD, Marketstack, and valid Yahoo daily series are marked
+  `corporate-action-adjusted` when their payload supports it. Other adapters
+  declare their actual raw or adjusted scale.
 - Explicit green-up/red-down chart legend. A selected-range boundary inherits
   an already-open position without a synthetic fill or cost and marks the
   ending position to the last close without forcing a sale.
-- Twenty independently configurable indicators, including moving-average
+- Thirty independently configurable indicators, including moving-average
   variants, Bollinger Bands, Ichimoku, Supertrend, momentum, volatility, and
-  volume studies. One indicator is focused for editing while an ordered
-  collection can remain visible. Indicators are hidden by default, each toolbar
-  button toggles its own visibility, and parameter changes are saved as a
-  device-local preference for later sessions.
+  volume studies. Six category menus replace the flat indicator list, while a
+  separate star-managed shortcut strip keeps favorites immediately available.
+  The independent, non-backpainting confirmed support/resistance-break overlay
+  is the initial favorite. One indicator is focused for editing while an
+  ordered collection can remain visible. Indicators are hidden by default,
+  each favorite/menu button toggles its own visibility, and parameter changes
+  are saved as a device-local preference for later sessions. KDJ exposes its period plus the
+  independent K and D smoothing inputs (default `9 / 3 / 3`); older saved
+  settings that contain only the period inherit the new smoothing defaults.
 - Overlay indicators share the price axis; each lower-pane indicator receives
   its own pane. Price, volume, and all indicator panes share the same zoom.
-  Series names show their actual parameters in a scrolling legend.
+  Series names show their actual parameters in a scrolling legend. The visible
+  price-axis range is derived from candle highs and lows only, so switching
+  strategies on the same instrument and zoom window does not rescale the K-line
+  chart because of a strategy reference overlay.
 - Indicator visibility is independent from strategy selection. The active
+  applied strategy also projects any declared lower-pane study, such as KDJ,
+  RSI, MACD, MFI, ROC, ATR, or ADX, without changing the user's manually saved
+  indicator collection. Exact duplicate configurations render only once. The
   strategy contributes actual buy/sell fills and, where the rule has
-  continuous price references, dashed strategy lines on the main price axis.
+  continuous price references, solid strategy lines that match their legend
+  samples on the main price axis. Empty reference series are omitted. Long
+  entry/exit and short entry/exit actions use the four localized action labels
+  rather than abstract reference-event names.
   Technical Ratings shows the same EMA-20 and SMA-50 references used by its
   price votes.
 - Fourteen extended strategy families plus independent equivalents of all 20
@@ -54,6 +94,9 @@ trades or run unattended jobs.
   strategy. Standalone results can expose that intended style, but it no
   longer restricts which two strategies can be combined.
 - Date-range backtests with initial cash, commission, and slippage settings.
+- Numeric fields select their current text on focus, allow temporary blank
+  editing, and validate/clamp only on blur or Enter, so replacing `3` with
+  `128` does not first produce `3128`.
 - Long-only manual-history execution. Close-confirmed target changes trade at
   the following daily open; causal stop levels calculated from completed bars
   can fill inside the active bar and use its open after a gap.
@@ -68,26 +111,50 @@ trades or run unattended jobs.
   threshold, only for the top 60 unfiltered parameter sets in the explicit
   trend, breakout, and momentum family. Other families remain unfiltered.
   Each result stores its winning filter state; the strategy lab remains
-  editable for manual replay.
+  editable for manual replay. If a causal entry price is touched while the
+  filter rejects the buy, latest guidance keeps the price visible and
+  explicitly reports the filter block.
 - Chart-level fill markers derived from the active backtest and limited to four
   strategy actions: open (long buy), short buy, short sell, and close.
 - Per-user saved backtests with a right-side shortcut bar that restores the
   instrument, complete optional Strategy A/B plan, both parameter sets,
-  allocations, date range, cost settings, and the indicators that were visible
-  at save time with their exact parameters.
+  allocations, cost settings, and the indicators that were visible at save time
+  with their exact parameters. The saved date range remains creation-time
+  provenance and does not replace the workspace range when opened.
   The shortcut bar contains the Save current strategy action. A save replaces
   the existing record when instrument, plan, range, cash, and costs are
   identical—even when only visible indicators changed; a materially different
-  setup creates a new snapshot. The
+  setup creates a new snapshot. Every saved strategy row displays its original
+  added date and time in enlarged metadata text. Default daily, single-strategy
+  allocation, disabled-indicator, and disabled-entry-filter labels stay hidden;
+  dual allocations and enabled optional settings remain visible. The
   scrollable list shows one collapsed row per instrument; expanding it reveals
   the saved strategy/indicator snapshots. Instrument groups and snapshots can
   be reordered by drag and drop or keyboard arrows, and that order persists.
+  Owner-scoped, renameable folders organize instrument groups at the first
+  level and strategy snapshots inside each instrument. Moving a row uses a
+  folder selector; deleting a folder only returns its contents to the unfiled
+  section.
+  Each first-level instrument group also has an owner-scoped delete action that
+  removes all of its saved strategy rows in one request.
   The workspace interval remains daily. Legacy non-daily records keep their
   stored interval label and disclose that opening them recalculates on daily
   bars. Opening a shortcut for the same canonical instrument preserves the
   already loaded successful price series and restores only the plan,
   parameters, indicators, and trade markers. A genuinely different canonical
-  instrument triggers a market reload.
+  instrument triggers a market reload. The header refresh action updates the
+  active chart and then refreshes every other unique shortcut instrument
+  sequentially in the background. Whenever an active or background shortcut
+  series changes, all daily saved plans for that canonical instrument are
+  replayed over its latest 128 trading sessions and their rolling returns are
+  persisted. Each shortcut now shows a recent-effectiveness prompt calculated
+  from its latest available market series instead of a screening-rank history.
+  The refreshed canonical series is ready
+  when that shortcut is opened. The all-shortcut pass runs after both the
+  header refresh and each scheduled active-market refresh cycle, reports
+  progress and updated/retained counts, and retains the 60-second cooldown.
+  Screening-run archives remain durable for reproducibility, but the
+  redundant screening-history/weekly-comparison panel is not rendered.
 - A nearby-parameter stability diagnostic that changes one parameter at a time
   to the immediately lower or higher configured value, reruns valid variants,
   and reports return-sign agreement, return/drawdown/trade-count ranges, and
@@ -95,15 +162,15 @@ trades or run unattended jobs.
   parameter shape and requires 120 in-range daily observations, two completed
   base trades, and a nearby variant before showing stable/sensitive. It never
   selects or applies a replacement parameter.
-- One-click exhaustive strategy screening across all 34 strategies. It
-  traverses all 37,131 finite registered parameter combinations; there is no
+- One-click exhaustive strategy screening across all 37 strategies. It
+  traverses all 37,182 finite registered parameter combinations; there is no
   per-strategy sampling control or hidden cap. One shared objective drives the
   complete single-and-combination workflow.
 - Three focused screening targets: balanced score, maximum return, and maximum
   Sharpe. Balanced score is `0.45 * current-window total return +
   8 * clamp(current-window Sharpe, -5, 5) + 0.35 * current-window maximum
   drawdown`; trade count is displayed and still controls the candidate versus
-  observe-only badge, but does not affect rank.
+  recent-effectiveness prompt, but does not affect optimization order.
 - Three recent-adaptive screening modes inside the same one-click workflow.
   `Period` is the default and selects parameters, EMA refinement, combinations,
   and allocations only from one adjustable trailing window. The default is 128
@@ -131,22 +198,29 @@ trades or run unattended jobs.
   execution arrays are reused only inside that run; completed results are not
   restored as a calculation cache after refresh.
 - Every completed run writes a compact audit archive containing source,
-  adjustment mode, last bar, data fingerprint, screening configuration,
-  retained ranking, and validation summary. The UI compares the newest run
-  with the prior run for the same canonical instrument; archives never feed
-  the next optimization.
+  optional temporary-quote provider/time provenance, adjustment mode, last
+  bar, data fingerprint, screening configuration, retained candidates, and
+  validation summary. Each user and canonical instrument retains only its
+  newest six archives; older rows are permanently removed.
+  The UI compares the newest run with the prior run for the same canonical
+  instrument; archives never feed the next optimization.
 - A two-selector strategy lab where Strategy A and Strategy B can each be any
   different registered strategy and either selector can be omitted. For a dual
   plan, the selected-range target with the longer average active run becomes
   the relative long-cycle gate; an exact duration tie prefers fewer target
   transitions and then Strategy A. A fresh relative-long entry establishes
   its allocation without inheriting an already-active relative-short signal.
-  A later relative-short entry adds the other allocation, its paired exit
-  removes that layer, and a relative-long exit clears both layers. The derived
+  The base-then-add mode uses a later relative-short entry to add the other
+  allocation and its paired exit to remove that layer. The full-then-reduce
+  mode opens at A+B, uses a relative-short exit to reduce to the base sleeve,
+  and uses the next entry to replenish full exposure. A relative-long exit
+  clears both layers in either mode, and allocation never becomes negative.
+  The derived
   roles are shown in the lab and recalculate when dates or parameters change.
   Each selector exposes its own parameter settings directly below it.
   Selecting only one strategy always backtests and saves it at 100% allocation;
-  dual plans compare 50/50, 60/40, 40/60, 70/30, and 30/70.
+  dual plans compare 50/50, 60/40, 40/60, 70/30, and 30/70 under both tactical
+  modes.
   Its Apply action clones the current draft plan to the trend chart and moves
   the view to that chart; selector/parameter edits do not change chart lines,
   markers, or live guidance before Apply. Durable saving remains a separate
@@ -156,14 +230,18 @@ trades or run unattended jobs.
   60%/40% allocation, without a separate combination checkbox.
   Equivalent implementations such as the paired MACD-cross and Supertrend
   close-confirmation entries are not combined with themselves. It keeps up to
-  4,096 pair finalists before replaying the alternate 40%/60% assignment. The
-  current 34-strategy catalog produces 559 unique non-equivalent winner pairs,
+  4,096 pair finalists before replaying all allocation/mode alternatives. The
+  current 37-strategy catalog produces 664 unique non-equivalent winner pairs,
   so no pair is discarded. Both columns render every retained best row. The
   second result column keeps only the best
   parameter/allocation result for each unique strategy-ID pair.
   Each result shows which member was classified as relative long or short.
   Dual targets remain limited to 0%, 40%, 60%, or 100%, and every ranked
-  result can be applied directly to the lab and trend chart.
+  result can be applied directly to the lab and trend chart. Result tables do
+  not display ordinal ranks or objective scores; they show whether the strategy
+  remains favorable, has conflicting short/mid-term evidence, needs review, or
+  lacks enough recent executions. Exact and same-type shortcut matches are
+  labelled with parameter/allocation/filter differences.
 - A post-screening primary/deputy shortlist combines the standalone and
   combination result pools. The highest eligible candidate under the selected
   objective becomes the primary strategy. Up to two deputies must share no
@@ -174,7 +252,7 @@ trades or run unattended jobs.
   duplicates. Each card applies directly to the chart. A separate recent-effectiveness
   review compares the last 30 sessions with same-period buy-and-hold and uses a
   63-session excess-return confirmation. It is a monitoring prompt, does not
-  change the historical ranking, and is not represented as out-of-sample proof.
+  change optimization order, and is not represented as out-of-sample proof.
 
 ## Run locally
 
@@ -183,6 +261,8 @@ Requirements: Windows and Node.js 22.13 or newer.
 For one-click local use, double-click `open-quantscope.bat`. The launcher:
 
 - runs QuantScope only at `http://127.0.0.1:3000`;
+- manages the application on port 3000 and the market relay on port 3001
+  through one runtime-port registry;
 - initializes the project-local saved-backtest database;
 - opens a new maximized Edge window when Edge is available; and
 - never requires a ChatGPT or other account.
@@ -190,6 +270,17 @@ For one-click local use, double-click `open-quantscope.bat`. The launcher:
 Keep the `QuantScope Local Server` window open while using the application.
 Closing that window stops the local server. Saved backtests remain under
 `.wrangler/state` after the server stops.
+
+The Windows launcher reconciles every persistent runtime listener on each
+start: the application on `127.0.0.1:3000` and the loopback-only,
+source-allowlisted relay on `127.0.0.1:3001`. A healthy QuantScope listener is
+reused. An unhealthy listener is stopped only when its Node command, fixed
+arguments, and absolute project path identify this exact checkout. An active
+unrelated listener is left untouched and reported with its PID. When
+`HTTP_PROXY` or `HTTPS_PROXY` is configured, only the relay process receives
+those values; proxy addresses never enter application bindings or logs.
+Development mode also defaults to the fixed loopback relay URL so an ordinary
+local dev command does not silently omit this route.
 
 For manual development:
 
@@ -210,12 +301,34 @@ npm run build
 
 ## Data and limitations
 
-The provider chain reads Eastmoney, Yahoo Finance, and Nasdaq website endpoints
-and can additionally use the licensed EODHD daily API for indexes and ETFs.
-Set the server-only `EODHD_API_TOKEN` environment variable to enable that
-fallback; leave it empty to retain the credential-free chain. The public
-website endpoints are convenient for a prototype but have no published
-stability or commercial-use SLA.
+QuantScope assigns one deterministic canonical source definition to every
+instrument. Yahoo is primary for N225, SOX, the built-in gold, silver,
+crude-oil, and copper continuous proxies, Yahoo-discovered instruments, and
+indexes or ETFs with a verified Yahoo symbol mapping. An instrument without a
+verified Yahoo mapping keeps its selected provider. Eastmoney, Nasdaq, the
+official Nikkei CSV, and optional credentialed EODHD, Twelve Data, Financial
+Modeling Prep, Alpha Vantage, Marketstack, and Zhitu definitions are ordered
+backups where supported. Tencent supplies a no-key Chinese index/ETF session
+quote: after validation it may add only an in-memory current-day bar while the
+locked historical series and persistent canonical cache remain unchanged. FRED
+is a close-only N225 reference. Secrets stay in
+`.env.local` or a hosted secret store. Public website endpoints have no
+published stability or commercial-use SLA.
+
+The browser stores canonical series, provider-isolated source snapshots,
+close-only references, SHA-256 fingerprints, lifetime counters, rolling
+7/30-day source-health samples, and demotion state in a separate IndexedDB
+database. A completed canonical bar is immutable. A
+preferred-primary refresh may update only the unconfirmed final bar or append a
+new date. When it fails, a declared backup may append missing dates or replace
+only an unconfirmed final bar after identity verification or bounded overlap
+validation; it never rewrites a confirmed date. The active fallback is labeled
+in the UI. History requests are cacheable, whereas latest-bar and manual
+refresh requests remain uncached. A configured-primary change may reuse the
+existing same-instrument canonical record as its locked history seed. If a
+validated in-memory temporary quote is followed by a transient all-source
+failure, the newest still-valid quote remains visible until a newer quote or a
+completed canonical bar supersedes it.
 
 Eastmoney requests forward-adjusted data with `fqt=1`. EODHD daily bars scale
 OHLC by the accepted `adjusted_close / close` factor only when every row is
@@ -243,10 +356,24 @@ provider session metadata or documented exchange closes. Close-derived live
 signals ignore an incomplete/unknown newest bar; resting stop orders derived
 from the prior completed bar remain active.
 
-Commodity symbols use Yahoo continuous futures quote pages as research proxies.
-QuantScope does not model a contract chain, roll method, multiplier, margin,
-expiry, delivery, or futures-account leverage. Nasdaq fallback is intentionally
-disabled for commodity instruments.
+Commodity search uses deterministic Eastmoney continuous-contract page
+identifiers, while the fixed canonical histories use the Yahoo aliases
+`GC=F`, `SI=F`, `CL=F`, and `HG=F`. Eastmoney remains an independently stored
+backup definition. Gold additionally uses FMP `GCUSD` and AllTick `GOLD`
+credentialed backups. All commodity backups require retained-history overlap
+and bounded price error because spot/CFD and continuous-contract methodologies
+are not assumed identical. QuantScope does not model a contract chain, roll
+method, multiplier, margin, expiry, delivery, or futures-account leverage.
+
+Run `npm run verify:market` while the local server is running to perform the
+live coverage matrix. It checks 16 global indexes, 11 ETFs, and four commodity
+proxies for source identity, exchange identity, minimum history, dates, and
+valid OHLC geometry. The live matrix is intentionally separate from
+`npm test`, because public-source reachability is network-dependent.
+Use `MARKET_VERIFY_GROUP=index|etf|commodity` to run one rate-limited group.
+For an independent ETF or commodity audit, set
+`MARKET_VERIFY_PROVIDER=nasdaq` or `MARKET_VERIFY_PROVIDER=yahoo` where that
+provider supports the asset type.
 
 Backtests are research simulations. They do not model every venue rule,
 tracking error, tax, suspension, lot constraint, corporate action, or real
@@ -313,7 +440,7 @@ allocation engine trades only when planned state changes and does not recenter
 a constant target after ordinary price drift. Every finalist holding choice is
 replayed through the allocation backtest, so exposure, costs, return,
 drawdown, and Sharpe affect its rank. The staged four-phase search is exhaustive
-across the full registered 37,131-parameter Cartesian product. EMA5-8 is a
+across the full registered 37,182-parameter Cartesian product. EMA5-8 is a
 second-stage comparison over only the top 60 unfiltered candidates for each
 eligible family, after which combination screening uses retained single
 results across all unordered non-equivalent pairs and compares 50/50, 60/40,

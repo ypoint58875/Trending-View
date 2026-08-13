@@ -97,15 +97,17 @@ function countInRangeObservations(
   bars: MarketBar[],
   settings: BacktestSettings,
 ): number {
-  const start = settings.startTime
-    ? Date.parse(`${settings.startTime}T00:00:00+08:00`)
-    : -Infinity;
+  const normalize = (value: string) => value.replace("T", " ");
+  const start = settings.startTime ? normalize(settings.startTime) : "";
   const end = settings.endTime
-    ? Date.parse(`${settings.endTime}T23:59:59+08:00`)
-    : Infinity;
-  return bars.filter(
-    (bar) => bar.timestamp >= start && bar.timestamp <= end,
-  ).length;
+    ? settings.endTime.length === 10
+      ? `${settings.endTime} 23:59`
+      : normalize(settings.endTime)
+    : "";
+  return bars.filter((bar) => {
+    const time = normalize(bar.time);
+    return (!start || time >= start) && (!end || time <= end);
+  }).length;
 }
 
 export function classifyMarketRegimes(

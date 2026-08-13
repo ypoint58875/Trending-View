@@ -1,4 +1,5 @@
 import type { MarketBar } from "@/lib/market/types";
+import type { IndicatorId } from "./indicator-registry";
 import {
   adx,
   atr,
@@ -6,6 +7,7 @@ import {
   ema,
   macd,
   parabolicSarState,
+  rollingHighLow,
   rsi,
   sma,
   stochasticSlow,
@@ -58,6 +60,7 @@ type StrategyParameters = Record<string, number>;
 export interface BuiltInStrategyDefinition {
   id: TradingViewBuiltInStrategyId;
   indicatorId: string;
+  paneIndicatorId?: IndicatorId;
   defaultParameters: StrategyParameters;
   buildTarget: (
     bars: MarketBar[],
@@ -224,14 +227,12 @@ function channelBreakout(
   const length = period(parameters, "length", 5);
   const tick = Math.max(value(parameters, "tick", 0.1), 0);
   const target = holdTarget(bars.length);
+  const range = rollingHighLow(bars, length);
 
   for (let index = length; index < bars.length; index += 1) {
     carry(target, index);
-    const previousWindow = bars.slice(index - length, index);
-    const upper =
-      Math.max(...previousWindow.map((bar) => bar.high)) + tick;
-    const lower =
-      Math.min(...previousWindow.map((bar) => bar.low)) - tick;
+    const upper = range.highest[index - 1]! + tick;
+    const lower = range.lowest[index - 1]! - tick;
     if (bars[index].high >= upper) target[index] = 1;
     if (bars[index].low <= lower) target[index] = 0;
   }
@@ -245,14 +246,12 @@ function channelBreakoutOrders(
   const length = period(parameters, "length", 5);
   const tick = Math.max(value(parameters, "tick", 0.1), 0);
   const orders = emptyOrderSeries(bars.length);
+  const range = rollingHighLow(bars, length);
 
   for (let index = length; index < bars.length; index += 1) {
-    const previousWindow = bars.slice(index - length, index);
     orders[index] = {
-      entryStop:
-        Math.max(...previousWindow.map((bar) => bar.high)) + tick,
-      exitStop:
-        Math.min(...previousWindow.map((bar) => bar.low)) - tick,
+      entryStop: range.highest[index - 1]! + tick,
+      exitStop: range.lowest[index - 1]! - tick,
     };
   }
   return orders;
@@ -663,11 +662,11 @@ function priceChannel(
 ): number[] {
   const length = period(parameters, "length", 20);
   const target = holdTarget(bars.length);
+  const range = rollingHighLow(bars, length);
   for (let index = length; index < bars.length; index += 1) {
     carry(target, index);
-    const previousWindow = bars.slice(index - length, index);
-    const upper = Math.max(...previousWindow.map((bar) => bar.high));
-    const lower = Math.min(...previousWindow.map((bar) => bar.low));
+    const upper = range.highest[index - 1]!;
+    const lower = range.lowest[index - 1]!;
     if (bars[index].high >= upper) target[index] = 1;
     if (bars[index].low <= lower) target[index] = 0;
   }
@@ -680,12 +679,12 @@ function priceChannelOrders(
 ): StrategyOrderSeries {
   const length = period(parameters, "length", 20);
   const orders = emptyOrderSeries(bars.length);
+  const range = rollingHighLow(bars, length);
 
   for (let index = length; index < bars.length; index += 1) {
-    const previousWindow = bars.slice(index - length, index);
     orders[index] = {
-      entryStop: Math.max(...previousWindow.map((bar) => bar.high)),
-      exitStop: Math.min(...previousWindow.map((bar) => bar.low)),
+      entryStop: range.highest[index - 1],
+      exitStop: range.lowest[index - 1],
     };
   }
   return orders;
@@ -905,12 +904,14 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-keltner-channels",
     indicatorId: "atr",
+    paneIndicatorId: "atr",
     defaultParameters: { period: 20, multiplier: 2 },
     buildTarget: keltnerChannels,
   },
   {
     id: "tv-macd",
     indicatorId: "macd",
+    paneIndicatorId: "macd",
     defaultParameters: { fast: 12, slow: 26, signal: 9 },
     buildTarget: macdStrategy,
   },
@@ -957,6 +958,7 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-rsi",
     indicatorId: "rsi",
+    paneIndicatorId: "rsi",
     defaultParameters: { period: 14, oversold: 30, overbought: 70 },
     buildTarget: rsiStrategy,
   },
@@ -975,12 +977,14 @@ const TRADINGVIEW_REFERENCE_STRATEGIES: BuiltInStrategyDefinition[] = [
   {
     id: "tv-technical-ratings",
     indicatorId: "adx",
+    paneIndicatorId: "adx",
     defaultParameters: { threshold: 4 },
     buildTarget: technicalRatings,
   },
   {
     id: "tv-volty-expan-close",
     indicatorId: "atr",
+    paneIndicatorId: "atr",
     defaultParameters: { period: 5, multiplier: 1.5 },
     buildTarget: voltyExpanClose,
     buildOrders: voltyExpanCloseOrders,

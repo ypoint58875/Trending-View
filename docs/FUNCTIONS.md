@@ -7,17 +7,24 @@
   `FUTURE` results to commodity quote proxies.
 - `searchEodhd(query)`: when `EODHD_API_TOKEN` is configured server-side,
   searches licensed EODHD metadata and retains only index/ETF results.
-- `searchCommodityCatalog(query)`: searches deterministic Yahoo-backed gold,
-  silver, crude-oil, and copper entries without waiting for remote discovery.
+- `searchCommodityCatalog(query)`: searches deterministic Eastmoney-backed
+  gold, silver, crude-oil, and copper continuous proxies without waiting for
+  remote discovery.
+- `searchIndexCatalog(query)`: resolves a deterministic local catalog of major
+  global and mainland index symbols without a provider request.
 - `searchMarketAssets(query)`: merges the commodity catalog and provider
-  results, then de-duplicates normalized instruments.
+  results with Yahoo exact-symbol results first, then de-duplicates normalized
+  instruments. Local catalog hits return immediately. Otherwise public
+  provider discovery runs before optional credentialed providers and is
+  bounded by a four-second deadline.
 - `clampMarketSeriesLimit(requestedLimit, interval)`: applies the shared
   10,000-bar daily cap while retaining the smaller internal intraday cap.
 - `requestsExtendedDailyHistory(interval, requestedLimit)`: identifies daily
   requests that must use the shared 2000-01-01 provider boundary.
 - `fetchEastmoneySeries(instrument, interval, limit)`: fetches and normalizes
   OHLCV bars with `fqt=1`, adds `beg=20000101` for extended daily history, and
-  marks the result corporate-action adjusted.
+  marks the result corporate-action adjusted. It prefers HTTPS and retries the
+  same official website host over HTTP only after a transport failure.
 - `fetchYahooSeries(instrument, interval, limit)`: fetches global chart history.
   Extended daily requests use explicit `period1`/`period2` dates beginning at
   2000-01-01. Daily bars scale all accepted OHLC rows only when every row has a
@@ -27,22 +34,115 @@
   the immediately preceding normalized bar. Intraday output is raw.
 - `fetchNasdaqDailySeries(instrument, limit)`: fetches supported daily index/ETF
   history from the shared start date when extended history is requested and
-  marks it raw.
+  marks it raw. Provider-specific definitions use `secid`, so a selected alias
+  such as `NDX100` correctly requests Nasdaq symbol `NDX`.
 - `fetchEodhdDailySeries(instrument, interval, limit)`: resolves and fetches
   licensed EODHD daily index/ETF bars, retries transient failures, and applies
   one all-or-nothing `adjusted_close / close` OHLC scale. It is disabled when
   the server token is absent and never handles commodity proxies.
-- `fetchMarketSeries(...)`: applies the ordered provider fallback and keeps the
-  longer valid daily result when extended coverage is needed. Optional EODHD
-  precedes the public Yahoo/Nasdaq fallback for daily indexes and ETFs.
+- `fetchNikkei225DailySeries(...)`: parses the official Nikkei Indexes CSV into
+  no-key N225 daily OHLC.
+- `fetchTwelveDataDailySeries(...)`, `fetchFmpDailySeries(...)`, and
+  `fetchAlphaVantageDailySeries(...)`: resolve provider symbols and normalize
+  credentialed global daily candidates. FMP maps canonical gold `GC=F` to
+  `GCUSD` while preserving the canonical code.
+- `fetchAllTickDailySeries(...)`: requests daily type `8` K-lines for AllTick
+  commodity code `GOLD`, caps one request at 500 bars, and preserves canonical
+  gold identity. Runtime HTTP 401 is classified as an invalid credential.
+- `fetchMarketstackDailySeries(...)`: fetches adjusted EOD rows only for ETFs.
+- `fetchZhituDailyIndexSeries(...)`: fetches SSE/SZSE index-only daily bars,
+  using an exchange-local symbol and a bounded 1,500-bar request.
+- `fetchTencentQuoteSeries(...)`: fetches one no-key SSE/SZSE index or ETF
+  session snapshot. It is quote-only in practice and cannot pass historical
+  promotion thresholds.
+- `parseJuheQuote(...)`: validates the stock-product response, normalizes both
+  special index and `gid` payload shapes, preserves the requested canonical
+  code, and returns one raw current quote bar.
+- `fetchJuheQuoteSeries(...)`: requests one SSE/SZSE index or ETF quote behind
+  the server-only key and a 50-call Shanghai-day gate. It is a final quote-only
+  fallback, not history.
+- `orderMarketRecoveryDefinitions(...)`: keeps no-key Tencent first, quota-
+  bearing Juhe last, and removes Juhe after an already accepted temporary quote.
+- `temporaryQuoteFromMarketSeries(...)`: validates backup quote identity, date,
+  OHLC shape, and relative price against the retained canonical series.
+- `mergeTemporaryQuoteIntoMarketSeries(...)`: appends a newer session or
+  replaces only an unconfirmed same-day bar in the active in-memory view. It
+  leaves the separately retained canonical base untouched for persistence.
+- `mergePreferredTemporaryQuote(...)`: de-duplicates new and retained quote
+  candidates, prefers the newest date/fetch time, and returns both the merged
+  view and the exact accepted quote. A completed canonical bar invalidates a
+  same-day temporary quote.
+- `refreshShortcutMarketInstrument(...)`: refreshes one inactive shortcut
+  instrument against its canonical profile without changing the visible
+  instrument. It uses the canonical cache, strict primary request, ordered
+  fallback recovery, temporary-quote retention, source snapshots, and health
+  records, and returns separate canonical/display series.
+- `fetchMarketSeriesStrict(...)`: fetches exactly the provider selected by a
+  canonical source definition. Recovery order belongs to the workspace profile,
+  not to an adapter.
 - `/api/market?mode=history`: returns cacheable normalized daily history from
   2000-01-01, capped at 10,000 bars.
 - `/api/market?mode=latest`: returns an uncached window of up to ten recent
   bars for current-bar replacement. The current UI requests five.
+- `resolveMarketAutoRefreshPolicy(instrument, currentTime)`: returns the
+  venue-local open/post-close/closed/continuous/unknown phase, enablement, and
+  minimum visible-page refresh interval.
+- `marketRefreshFailureBackoffMs(failures)`: clamps complete-chain retry
+  backoff to 15, 30, then 60 minutes.
+- `classifyMarketProviderError(error)`: converts provider failures to safe
+  credential-invalid, access-denied, quota-limited, not-configured, or generic
+  upstream codes without exposing credentials or response bodies.
+- `/api/market/reference`: returns the close-only FRED N225 reference without
+  manufacturing open, high, or low values.
 - `mergeLatestMarketSeries(...)`: idempotently retains history and replaces
   overlapping bars by `time`, then sorts and limits the result. It accepts only
-  identical interval, source, and `priceAdjustment`; the workspace retains the
-  complete existing/history series on any mismatch.
+  identical interval, source, and `priceAdjustment`.
+- `canonicalMarketInstrumentKey(...)` and
+  `resolveCanonicalMarketProfile(...)`: normalize provider aliases and select
+  one deterministic primary, independent backups, reference definitions,
+  network routes, and methodology. Verified Yahoo symbols become primary;
+  unsupported mappings retain the selected provider.
+- `yahooPrimarySymbolForInstrument(...)`: returns a Yahoo symbol only for an
+  exact Yahoo-discovered instrument or a deterministic supported index/ETF
+  mapping; it returns `null` instead of guessing unsupported exchange suffixes.
+- `mergeCanonicalMarketSeries(...)`: locks completed canonical OHLC, permits
+  same-primary replacement only for the unconfirmed final bar, appends later
+  primary dates, and fills a same-source cached zero volume for the same date
+  without changing locked OHLC.
+- `missingPublishedVolumeRepairKey(...)`: identifies recent isolated completed-
+  bar volume gaps only when the surrounding source coverage remains reliable,
+  allowing one full-history self-repair attempt without polling permanently
+  volume-less instruments.
+- `selectCanonicalFallbackSeries(...)`: walks fetched backup candidates in
+  profile order, accepts deterministic identity mappings directly, applies
+  overlap/error thresholds to uncertain mappings, and returns the first
+  promotable series without rewriting confirmed dates.
+- `assessMarketVolumeCoverage(...)`: reports positive-volume coverage and marks
+  it reliable only for at least 20 bars with at least 90% positive volume.
+- `temporaryQuoteFromMarketSeries(...)`: admits only a same-instrument,
+  non-stale, plausible backup price for temporary display; it never returns
+  chart OHLC.
+- `fingerprintMarketSeries(...)` and
+  `fingerprintMarketReferenceSeries(...)`: SHA-256 hash the normalized source
+  identity and observations.
+- `measureMarketSeriesQuality(...)` and
+  `measureMarketReferenceQuality(...)`: compute latency, date coverage, OHLC
+  or close errors, adjustment agreement, network route, and methodology.
+- `readCanonicalMarketSeriesEntry(...)`,
+  `writeCanonicalMarketSeries(...)`, `writeMarketSourceSnapshot(...)`,
+  `writeMarketReferenceSnapshot(...)`, `recordMarketSourceAttempt(...)`, and
+  `readMarketSourceHealth(...)`: persist canonical, provider-isolated,
+  fingerprinted browser data, lifetime counters, recent attempt samples, and
+  demotion state without cross-source
+  overwrite. Canonical reads remain keyed by instrument/interval across an
+  explicit configured-primary change, while writes still require the current
+  primary.
+- `summarizeMarketSourceHealth(...)` and
+  `selectMarketSourceByRollingHealth(...)`: calculate independent 7/30-day
+  windows, apply minimum-sample and quality gates, order recovery sources, and
+  enforce configured-primary demotion/probe/restoration hysteresis.
+- `knownIndexExchange(...)` and `exchangeFromProviderLabels(...)`: normalize
+  major global index and provider venue labels to documented market sessions.
 - `resolveLatestDailyBarStatus(...)`: classifies the newest daily bar as
   complete, in-progress, or unknown from provider session-end metadata or the
   documented exchange close.
@@ -58,55 +158,89 @@
   requested-instrument aliases keep older shortcuts cacheable after a provider
   fallback changes the resolved provider symbol.
 - `parseKlineRow(row)`: parses daily or intraday Eastmoney CSV rows.
-- `parseYahooChart(...)`, `parseEodhdDailyRows(...)`, and
-  `parseNasdaqRows(...)`: normalize provider payloads into `MarketBar[]`.
+- `parseYahooChart(...)`, `parseEodhdDailyRows(...)`,
+  `parseNikkei225DailyCsv(...)`, `parseTwelveDataValues(...)`,
+  `parseAlphaVantageDailyCsv(...)`, `parseFmpDailyRows(...)`,
+  `parseAllTickKlineRows(...)`,
+  `parseMarketstackEodRows(...)`, `parseZhituDailyRows(...)`,
+  `parseTencentQuote(...)`, and `parseNasdaqRows(...)`: normalize provider
+  payloads into `MarketBar[]`.
   Provider volume passes through without price-adjustment scaling.
 
 ## Indicators
 
+- `rollingHighLow(bars, period)`: calculates aligned rolling highs and lows
+  with monotonic index queues in linear time, preserving `null` warm-up values
+  for indicators and channel strategies that previously rescanned each window.
 - `sma`, `ema`, `wma`, `dema`, `bollingerBands`, `vwap`, `supertrend`,
   `ichimoku`, `rsi`, `macd`, `kdj`, `stochasticRsi`, `cci`, `williamsR`,
   `adx`, `roc`, `mfi`, `cmf`, `atr`, and `obv` return deterministic arrays
   aligned with source bars.
+- `kdj(bars, period, smoothK, smoothD)`: applies independent recursive K and D
+  smoothing. Registry defaults are `9 / 3 / 3`, and missing legacy smoothing
+  keys are filled from current defaults at the validation boundary.
 - `stochasticSlow`, `parabolicSar`, and `parabolicSarState` support the
   corresponding built-in strategy equivalents. `parabolicSarState` also
   exposes each bar's causal projected trigger and pre-trigger direction.
-- `getIndicator(id)`: resolves display placement and parameter metadata from
+- `getIndicator(id)`: resolves display placement, category, and parameter metadata from
   the shared indicator registry.
+- `getIndicatorsByCategory(category)`: returns the stable menu contents for one
+  indicator family.
 - `getDefaultIndicatorParameters(id)`: returns a fresh default parameter
   object for one indicator.
 - `createDefaultIndicatorSettings()`: creates independent session settings for
   every registered indicator.
 - `createDefaultIndicatorWorkspacePreferences()`: creates the all-hidden
-  default workspace with SMA focused only for editing.
+  default workspace with SMA focused for editing and the independent confirmed
+  support/resistance-break study in the favorites strip.
 - `parseIndicatorWorkspacePreferences(...)`: validates device-local focused,
-  visible, and per-indicator parameter state before restoration.
+  visible, favorite, and per-indicator parameter state before restoration;
+  legacy preferences inherit the default favorite.
 - `createIndicatorConfigurations(...)` and
   `parseIndicatorConfigurations(...)`: create and validate the ordered visible
   indicator snapshot shared by the chart and saved-backtest boundary.
 - `indicatorConfigurationsEqual(...)`: compares ordered visible IDs and exact
   parameters for shortcut active-state matching.
-- `MarketWorkspace` keeps one `focusedIndicator` for settings and an ordered
-  `visibleIndicatorIds` collection for chart output. The toolbar click focuses
-  and toggles that indicator, while hiding never discards its settings.
+- `buildStrategyLinkedPaneIndicators(...)`: maps only strategies that declare
+  an exact pane study to validated indicator configurations, using matching
+  strategy parameters where available.
+- `mergeChartIndicatorConfigurations(...)`: preserves manual display order and
+  appends non-duplicate strategy-linked pane configurations.
+- `supportResistanceBreaks(...)`: creates carried support/resistance levels
+  only after both left and right pivot windows are known, then emits later
+  close-through break markers without backpainting.
+- `MarketWorkspace` keeps one `focusedIndicator` for settings plus ordered
+  `visibleIndicatorIds` and `favoriteIndicatorIds` collections. A controlled
+  category state keeps one menu open at a time. Favorite-strip and categorized
+  label buttons focus and toggle indicators; adjacent category stars only add
+  or remove favorites, and hiding never discards settings.
 
 ## Chart configuration
 
 - `buildIndicatorSeries(bars, indicator, parameters, labels, xAxis, yAxis)`:
   calculates one configured indicator and returns its ECharts series without
   consulting strategy state. Every parameterized series name includes the
-  actual calculation parameters; VWAP and OBV remain parameter-free.
+  actual calculation parameters; VWAP and OBV remain parameter-free. Confirmed
+  support/resistance renders two carried price lines plus bullish/bearish break
+  markers.
 - `buildPriceChartLegend()`: returns a non-interactive scrolling legend above
   the reserved main-price plot area.
 - `buildPriceChartLayout(times, paneCount)`: keeps overlay indicators on the
   main price axes and allocates one lower grid for each visible pane indicator.
+  Main-axis ticks are integers and its crosshair label uses one decimal.
 - `buildPriceDataZoom(barsLength, xAxisIndexes)`: links price, volume, and all
   indicator axes to one inside zoom and one directly draggable timeline slider,
   showing the latest 120 bars initially.
+- `buildVisiblePriceAxisRange(bars, window)`: derives padded minimum and maximum
+  values only from visible candle lows and highs, independent of indicators,
+  strategy references, and trade markers.
 - `applyDataZoomWindow(option, window)`: reapplies the user's current zoom
   start/end percentages when chart series or indicators update.
 - `buildStrategyLineSeries(lines, labels)`: renders strategy price references
-  as semantic dashed lines on the main price axes.
+  as semantic solid lines matching the legend on the main price axes, removes
+  all-null lines, and maps long/short entry/exit references to action labels.
+- `formatPriceChartTooltipValue(value)`: formats K-line and price-reference
+  tooltip values with exactly one decimal place.
 
 ## Strategies
 
@@ -205,13 +339,16 @@
   the shared strategy registry and returns buy, sell, hold, or wait guidance.
   An optional entry filter suppresses only a new buy; close-confirmed entries
   use the latest completed slope and active-bar price/open orders use the prior
-  completed slope.
+  completed slope. A touched causal entry that is rejected by the filter keeps
+  its condition price and sets `entryBlockedByFilter`.
 - `runBacktest(...)`: executes prior-bar targets at the next bar open or fills
   predefined stop orders when the active bar touches them. A stop crossed by a
   gap fills at the bar open. The function applies costs to long entries and
   exits and calculates equity, drawdown, return, Sharpe, win rate, profit
-  factor, trade count, benchmark return, and a screening score. The workspace
-  passes `executionPolicy: "hybrid"`.
+  factor, trade count, benchmark return, and a screening score. It also returns
+  the entry time and fill price of an in-range position that remains open, so
+  chart markers do not depend on a later exit. Inherited opening exposure does
+  not create this record. The workspace passes `executionPolicy: "hybrid"`.
 - `runBacktestFromTarget(...)`: reuses a caller-built complete-history target
   while retaining the same price-order and performance engine. If the prior
   complete-history target is active, the selected-range simulation inherits
@@ -247,9 +384,10 @@
   strategy IDs, derives relative roles from the selected range, and builds both
   the allocation target and aligned long-entry, long-exit, short-entry, and
   short-exit events plus causal intrabar execution sequences. A
-  relative-long entry starts the base allocation without inheriting an
-  already-active relative-short signal. Each later short entry must be followed
-  by a short exit or the relative-long gate close.
+  relative-long entry either starts the base allocation or, in the explicit
+  full-then-reduce mode, starts at full A+B exposure. Later short-cycle events
+  add/remove or restore/reduce the tactical sleeve; the relative-long gate close
+  always clears exposure and targets remain inside `[0, 1]`.
 - `buildStrategyPlanTarget(...)`: returns the target portion of the same
   timeline contract.
 - `buildLiveAllocationGuidance(...)`: reports the newest previous/target
@@ -267,7 +405,7 @@
   both source events for audit.
 - `buildScreeningCandidates(horizons)`: expands every valid finite parameter
   combination for the requested strategy horizons. With the complete registry
-  it returns 37,131 unique strategy/parameter candidates and performs no
+  it returns 37,182 unique strategy/parameter candidates and performs no
   per-strategy sampling.
 - `screeningObjectiveValue(result, objective)`: maps a backtest to balanced,
   total-return, or Sharpe utility. The balanced score is
@@ -290,14 +428,17 @@
   unique final winner per strategy; rolling callers can request a Top-10
   per-strategy pool. It automatically ranks every unordered non-equivalent
   retained pair, retains up to 4,096 pairs, and compares 50/50, 60/40, 40/60,
-  70/30, and 30/70. It reports strategy, entry-filter, pair, and allocation
+  70/30, and 30/70 under both tactical modes. It reports strategy,
+  entry-filter, pair, and allocation
   stages and retains up to 32 ranked combinations, with one best result per
-  unordered strategy-ID pair. The current registry creates 559 winner pairs,
+  unordered strategy-ID pair. The current registry creates 664 winner pairs,
   so every pair reaches allocation comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
-  are built from complete loaded history and retained only for finalists. The default optimizers yield before
-  their first evaluation, at every stage transition, and after every eight
-  evaluations. Browser cooperative yields are followed by a timer-task
+  are built from complete loaded history and retained only for finalists.
+  Price-order candidates build their order plan once and derive their target
+  from that plan instead of also constructing an unused close target. The
+  default optimizers yield before their first evaluation, at every stage
+  transition, and after every 128 evaluations. Browser cooperative yields are followed by a timer-task
   boundary so progress state is committed and painted before work resumes.
 - `runScreeningInWorker(...)`: creates a module Worker for one complete
   validation run, forwards typed optimization/validation progress, sends
@@ -307,9 +448,15 @@
   adjustment, and normalized OHLCV bars for screening provenance.
 - `createSaveScreeningRunInput(...)`: converts a validation outcome into a
   compact ranked archive without equity, trade, rebalance, or ranking-replay
-  arrays.
+  arrays. When the scored display includes a temporary quote, the archive also
+  records its provider, quote date, and fetched time separately from the
+  canonical series source.
 - `compareScreeningRuns(current, previous)`: reports winner change, Top-10
   overlap, cross-run ranks, and metric deltas for the same current winner.
+- `pruneScreeningRunHistory(db, ownerEmail)`: permanently deletes screening
+  archive rows ranked after the newest six inside each canonical-instrument
+  group for one resolved owner. Both archive reads and successful writes invoke
+  this boundary.
 - `runStrategyCombinationBacktest(...)`: replays one fixed combination over a
   requested performance window. Callers may freeze the previously selected
   relative-long slot so a later sample cannot redefine the plan.
@@ -335,6 +482,10 @@
   ranks. Complete history remains available for causal indicators and opening
   state, but metrics before each active boundary never enter its score. No mode
   labels its configured windows as training, test, or out-of-sample.
+- `resolveScreeningProgressBarState(...)`: maps the four shared optimizer
+  stages and each rolling selection window onto one bounded progress scale.
+  Period and range runs end at four of four segments; rolling runs end at
+  `4 + foldCount` of the same maximum.
 - `equityReturnCorrelation(left, right)`: aligns daily equity returns by date
   and returns their Pearson correlation when at least three finite shared
   observations have non-zero variance.
@@ -355,6 +506,32 @@
 Historical price bars, indicators, strategy lines, live guidance, stability,
 and backtests all receive the same normalized `MarketBar[]` from the active
 `MarketSeries`.
+
+## Windows local runtime
+
+- `Test-QuantScopeReady()`: accepts port 3000 only when its HTTP response is
+  successful and contains the QuantScope document title. Its ten-second request
+  window allows a cold development render to complete before cleanup.
+- `Test-QuantScopeMarketRelayReady()`: accepts port 3001 only when its health
+  endpoint returns `ready: true`.
+- `Test-QuantScopeApplicationProcess(process, root, port)`: verifies that a
+  listener is the current checkout's Node/vinext development command with the
+  registered host and application port.
+- `Test-QuantScopeMarketRelayProcess(process, root, requireOrphan)`: verifies
+  the exact absolute `scripts/market-relay.mjs` command and optionally requires
+  its parent to be absent.
+- `Test-QuantScopeRuntimeProcess(process, runtime, root)`: dispatches
+  role-specific ownership checks for every registered runtime port.
+- `Remove-UnhealthyQuantScopeRuntimeListener(runtime, root)`: resolves
+  listener PIDs and stops only unhealthy owners that pass the exact
+  current-checkout role check.
+- `Confirm-QuantScopeRuntimePortAvailable(runtime, root)`: applies verified
+  cleanup and waits for the registered port to be released.
+- `Get-LocalPortOwnerDescription(runtime)`: returns the unresolved listener PID
+  for an actionable conflict without exposing command-line or secret values.
+- `New-QuantScopeServerCommand(root, useMarketRelay, startMarketRelay)`:
+  generates the visible server command, reusing a healthy relay or owning and
+  cleaning up a newly started relay as appropriate.
 
 ## Saved backtests
 
@@ -377,7 +554,15 @@ and backtests all receive the same normalized `MarketBar[]` from the active
   Missing legacy indicator state becomes empty.
 - `savedBacktestInstrumentKey(...)` and `groupSavedBacktests(...)`: normalize
   provider-specific instrument aliases and create one ordered disclosure group
-  per instrument.
+  per instrument, including its nullable instrument-folder affiliation.
+- `parseCreateSavedBacktestFolderInput(...)`,
+  `parseRenameSavedBacktestFolderInput(...)`, and
+  `parseAssignSavedBacktestFolderInput(...)`: validate the fixed instrument and
+  strategy folder scopes, bounded names, canonical contexts, and nullable
+  assignments.
+- `parseSavedBacktestFolderOrderInput(...)` and
+  `reorderSavedBacktestFolders(...)`: validate complete, unique sibling orders
+  and reorder only folders that share an exact scope and context.
 - `canReuseSavedBacktestMarketSeries(...)`: returns true only when the saved
   instrument, active instrument, and non-empty successful active series share
   the same canonical key and interval. Shortcut open then preserves that series
@@ -387,19 +572,52 @@ and backtests all receive the same normalized `MarketBar[]` from the active
   one snapshot inside its current group while preserving every other row.
 - `parseSavedBacktestOrderInput(...)`: validates a unique, positive,
   owner-order ID list bounded to 200 rows.
+- `parseSavedBacktestRollingUpdateInput(...)`: validates one canonical
+  instrument fingerprint and a unique bounded collection of 128-session return
+  evaluations.
 - `GET /api/saved-backtests`: returns up to 200 current-user shortcuts ordered
   by persisted display order, with updated time and ID as deterministic
-  fallback keys.
-- `POST /api/saved-backtests`: inserts a new current-user strategy snapshot;
-  repeated instruments are allowed and a new row begins at the top.
+  fallback keys. Legacy rank columns are not read into the API record.
+- `POST /api/saved-backtests`: inserts a new current-user strategy snapshot and
+  clears inert legacy rank fields. An exact
+  instrument/plan/filter/allocation/cost setup replaces its existing row even
+  when the rolling date range changed, preventing duplicate shortcuts.
 - `PATCH /api/saved-backtests`: verifies every submitted ID belongs to the
   current owner and persists the complete visible order in one update.
+- `PUT /api/saved-backtests`: verifies that every evaluated row belongs to the
+  current owner and canonical instrument and stores its latest 128-session
+  rolling return. Every row is updated in one conditional SQL statement.
 - `DELETE /api/saved-backtests?id=...`: removes only the current user's record.
+- `DELETE /api/saved-backtests?instrumentKey=...`: canonicalizes the owner's
+  stored aliases and removes every row in that first-level instrument group in
+  one atomic D1 batch.
+- `POST`, `PATCH`, `PUT`, and `DELETE /api/saved-backtest-folders`: create,
+  rename/reorder, assign/unassign, and safely delete owner-scoped shortcut
+  folders. Strategy folders are restricted to one canonical instrument
+  context; reorder updates only a complete sibling set, and deletion clears
+  affiliations before removing the folder.
 
-The persistence shape retains an interval field for compatibility. New UI
-saves use `1d`, and opening a shortcut does not change the daily-only workspace
-interval. Legacy shortcuts display their stored interval and disclose that
-opening recalculates the selected setup on daily bars. The active instrument's
-visible shortcut returns are derived client-side from each saved plan and saved
-cost assumptions over the current shared range; inactive instruments do not
-show a stale numeric return.
+`POST /api/screening-runs` stores the compact screening audit only. It does not
+read or update saved shortcuts, rank histories, or rolling returns.
+
+The persistence shape retains an interval field. New UI saves use the active
+`1d` or `1m` interval. Opening a supported shortcut selects that interval;
+unsupported legacy minute intervals remain labelled and fall back to daily.
+Active and successfully
+refreshed instruments replay every shortcut over their latest 128 trading
+sessions. The resulting return is durable, so an inactive instrument can show
+its last rolling return; a row without a rolling update falls back to its
+creation-time return. The client derives the same 30-session/63-session recent
+validation status used by screening results whenever the evaluated series is
+available.
+
+- `findStrategyShortcutMatch(...)`: compares a screening candidate plan with
+  current-instrument shortcuts. It returns an exact match or the closest shared
+  strategy type, including parameter, allocation, entry-filter, and tactical
+  mode differences.
+- `evaluateRecentStrategyEffectiveness(...)`: applies the 30-session return,
+  buy-and-hold excess, drawdown, two-execution, and optional 63-session
+  confirmation gates. `mixed` means the recent excess-return, relative-drawdown,
+  and medium-window confirmation evidence does not point in one direction.
+- Community formulas and registration functions are documented in
+  `COMMUNITY_IMPORTS.md` and implemented under `lib/analysis/community/`.

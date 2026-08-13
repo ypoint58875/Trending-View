@@ -46,6 +46,11 @@ export interface BacktestTrade {
   exitReason: "strategy" | "range-end";
 }
 
+export interface BacktestOpenPosition {
+  entryTime: string;
+  entryPrice: number;
+}
+
 export interface BacktestPerformance {
   totalReturn: number;
   annualizedReturn: number;
@@ -64,6 +69,7 @@ export interface BacktestResult extends BacktestPerformance {
   winRate: number;
   profitFactor: number;
   trades: BacktestTrade[];
+  openPosition?: BacktestOpenPosition | null;
   entryFilter?: MovingAverageSlopeFilter | null;
 }
 
@@ -111,11 +117,17 @@ function standardDeviation(values: number[]) {
 }
 
 function filterRange(bars: MarketBar[], startTime?: string, endTime?: string) {
-  const start = startTime ? Date.parse(`${startTime}T00:00:00+08:00`) : -Infinity;
+  const normalize = (value: string) => value.replace("T", " ");
+  const start = startTime ? normalize(startTime) : "";
   const end = endTime
-    ? Date.parse(`${endTime}T23:59:59+08:00`)
-    : Infinity;
-  return bars.filter((bar) => bar.timestamp >= start && bar.timestamp <= end);
+    ? endTime.length === 10
+      ? `${endTime} 23:59`
+      : normalize(endTime)
+    : "";
+  return bars.filter((bar) => {
+    const time = normalize(bar.time);
+    return (!start || time >= start) && (!end || time <= end);
+  });
 }
 
 function summarizePerformance(
@@ -161,12 +173,10 @@ function summarizePerformance(
   const lastBar = bars[bars.length - 1];
   const commissionRate = Math.max(settings.commissionRate, 0);
   const slippageRate = Math.max(settings.slippageRate, 0);
+  const benchmarkEntryUnitCost =
+    firstBar.open * (1 + slippageRate) * (1 + commissionRate);
   const benchmarkReturn =
-    ((lastBar.close * (1 - slippageRate) -
-      firstBar.open * (1 + slippageRate)) /
-      (firstBar.open * (1 + slippageRate))) *
-      100 -
-    commissionRate * 200;
+    (lastBar.close / benchmarkEntryUnitCost - 1) * 100;
   const score =
     totalReturn * 0.45 +
     Math.max(Math.min(sharpe, 5), -5) * 8 +
@@ -563,6 +573,13 @@ export function runBacktestFromTarget(
     profitFactor:
       grossLoss === 0 ? (grossProfit > 0 ? 99 : 0) : grossProfit / grossLoss,
     trades,
+    openPosition:
+      units > 0 && !inheritedPosition
+        ? {
+            entryTime,
+            entryPrice,
+          }
+        : null,
     ...(settings.entryFilter
       ? { entryFilter: cloneMovingAverageSlopeFilter(settings.entryFilter) }
       : {}),

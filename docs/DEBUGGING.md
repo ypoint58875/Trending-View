@@ -4,8 +4,8 @@
 
 1. Confirm `node --version` reports 22.13.0 or newer and `npm --version`
    succeeds.
-2. Confirm port 3000 is free. The launcher refuses to open a different
-   application that already owns the port.
+2. Read any reported port-owner PID. The launcher manages its own unhealthy
+   listeners on ports 3000 and 3001, but refuses to stop an unrelated owner.
 3. Read the visible `QuantScope Local Server` window for vinext errors.
 4. If a previous launcher is already serving QuantScope, launch again: the
    readiness check now reuses that server before touching the D1 migration
@@ -20,20 +20,51 @@ The launcher never falls back to the hosted site. The local UI and saved
 records do not require login, but live market-data providers still require
 internet access.
 
+## Port 3000 or 3001 is already used
+
+The runtime-port registry contains every persistent local listener:
+
+- port 3000: the vinext QuantScope application;
+- port 3001: the loopback market relay.
+
+On startup, the launcher reuses a healthy service. If a service is unhealthy,
+it resolves the listener PID and stops it only when the `node.exe` command line
+matches this checkout and the expected application or relay command. Another
+project checkout, a wrong role or port, and an unrelated listener are never
+stopped automatically. The conflict message includes the remaining owner PID
+so it can be inspected explicitly.
+
 ## Market route returns `UPSTREAM_UNAVAILABLE`
 
-1. Call the provider URL from the same network.
-2. Check whether Eastmoney changed `QuotationCodeTable.Data` or `data.klines`.
-3. Confirm daily rows use `YYYY-MM-DD` and minute rows use
+1. Read the chart's source label and call the preferred provider with
+   `strictProvider=1`; then call each configured backup strictly in profile
+   order. A promoted backup should display `VERIFIED_BACKUP_ACTIVE`.
+2. For a Yahoo primary, check the always-on loopback relay first, then query1,
+   query2, and direct routing. Yahoo may
+   return regional 403/429 responses even when another route succeeds.
+   Eastmoney may close a Node TLS socket during burst traffic; confirm the
+   same-host HTTP retry and avoid repeatedly bypassing history cache.
+3. Check whether Eastmoney changed `QuotationCodeTable.Data` or `data.klines`.
+4. Confirm daily rows use `YYYY-MM-DD` and minute rows use
    `YYYY-MM-DD HH:mm`.
-4. For global daily history, check configured EODHD status/token handling,
-   Yahoo query1/query2 status, and then Nasdaq `status.rCode`.
-5. Check for provider rate limiting before increasing timeouts.
-6. If history succeeds through Yahoo but every latest refresh fails, inspect
+5. For global daily history, check Yahoo query1/query2, the official Nikkei CSV
+   for N225, then configured EODHD, Twelve Data, Financial Modeling Prep,
+   Alpha Vantage, Marketstack, Zhitu, and Nasdaq status in profile order.
+6. Check source-health attempts, availability, latency, last error, latest
+   date, and quality before increasing timeouts.
+7. If history succeeds through Yahoo but every latest refresh fails, inspect
    `series.instrument.secid`: a resolved Yahoo series should carry a Yahoo
    symbol such as `^N225`, not an Eastmoney identifier such as `100.N225`.
    Legacy saved values are translated at request time; a fresh history response
    should normalize the stored identity.
+8. For gold, check strict providers in canonical order: Yahoo `GC=F`, FMP
+   `GCUSD`, AllTick `GOLD`, then Eastmoney `101.GC00Y`. FMP/AllTick/Eastmoney
+   are overlap-required and cannot recover an empty chart. An AllTick 401 is a
+   credential problem, not a price-quality failure.
+9. In the source-health tooltip, compare the independent 7-day and 30-day
+   rates. A temporary demotion is expected after three consecutive failures;
+   the configured primary is probed hourly and does not restore until the
+   seven-day hysteresis gate passes.
 
 ## Search returns an individual equity
 
@@ -45,12 +76,63 @@ the API boundary.
 
 1. Inspect `/api/market` and confirm `bars` is non-empty.
 2. Confirm every bar has finite OHLC values and a valid timestamp.
-3. Check the browser console for ECharts initialization errors.
-4. If the chart disappeared only after opening a saved strategy for the same
+3. Resolve the canonical profile. N225 must request Yahoo `^N225`, SOX must
+   request Yahoo `^SOX`, and gold must request Yahoo `GC=F`. FMP `GCUSD`,
+   AllTick `GOLD`, and Eastmoney/Nasdaq
+   identifiers are backup definitions and must not be mistaken for a successful
+   Yahoo primary response.
+4. If the preferred source is down, inspect
+   `quantscope-canonical-market`. A cached canonical series should remain
+   visible. A promoted backup may append missing dates but must not change any
+   confirmed cached OHLC date.
+5. For a Chinese index, verify Zhitu is ordered before broad credentialed
+   providers. For ETF `513310`, verify EODHD resolves the SSE listing; Twelve
+   Data, Alpha Vantage, Marketstack, and Zhitu are not accepted substitutes
+   unless their strict response and mapping pass the profile policy. For the
+   current-session overlay, verify Tencent is tried first and Juhe last. Juhe
+   should be skipped after a valid Tencent quote and can never recover empty
+   history or become the effective primary.
+6. Check the browser console for ECharts initialization errors.
+7. If the chart disappeared only after opening a saved strategy for the same
    index, inspect `canReuseSavedBacktestMarketSeries(...)`. The saved, active,
    and active-series canonical keys should match (for example, Eastmoney
    `100.N225` and Yahoo `^N225`) and the successful non-empty series should be
    preserved. Provider alias differences alone must not clear market state.
+
+If Juhe returns a quota warning, inspect only the safe error code and the local
+`JUHE_API_USAGE_DATE`/`JUHE_API_USAGE_OFFSET` metadata; never log the key or
+upstream body. The in-process counter resets on server restart, while the
+provider's 50-call account bucket does not, so the configured same-day offset
+must include any external or prior-process calls that need local accounting.
+
+## Global index uses the wrong close time
+
+1. Inspect `lib/market/exchanges.ts`.
+2. Eastmoney market `100` is only an overseas bucket; never map the whole
+   bucket to JPX.
+3. Add a known code mapping only when the index venue is verified. Unknown
+   symbols must remain `OTHER`.
+4. Update `MarketExchange`, session-close metadata, API validation, and saved
+   record validators together.
+
+## Live coverage regression
+
+Start the local server, then run:
+
+```bash
+npm run verify:market
+```
+
+The Windows launcher always ensures a loopback-only, source-allowlisted market
+relay. The relay lets proxy-preferred providers such as Yahoo use a configured
+route without exposing the proxy address or credential to the application
+runtime or logs. Development uses the fixed loopback URL even without a proxy.
+Port 3001 must be free or owned by a healthy QuantScope relay.
+
+The script checks 16 indexes, 11 ETFs, and four commodity proxies. A failure
+reports the source, exchange, bar count, and upstream error. It is intentionally
+outside `npm test` because public endpoint reachability and regional blocks are
+not deterministic.
 
 ## Indicator visibility or parameters do not restore
 
@@ -88,6 +170,10 @@ the API boundary.
    may still be delayed even when the application does not cache it.
 5. Confirm an end-of-range diamond is labeled as a valuation close, not a
    strategy sell.
+6. If the bar touched a displayed entry price but no buy appears, inspect the
+   strategy's entry-filter summary. The guidance card should report that the
+   entry condition was touched but the moving-average slope filter failed.
+   This is a blocked hypothetical entry, not a missing executed fill.
 
 ## Chart timeline cannot be dragged
 
@@ -100,7 +186,7 @@ the API boundary.
 4. Confirm the reset key changes only when the instrument or interval changes.
 5. Run the chart configuration test, apply a screening result, and repeat the
    drag in a real browser.
-6. If a visible price tooltip disappears during a 60-second refresh, confirm
+6. If a visible price tooltip disappears during a scheduled refresh, confirm
    chart updates use component `replaceMerge` and do not recreate tooltip or
    axis-pointer state with `notMerge: true`.
 
@@ -135,7 +221,7 @@ trade only to make a test pass.
 1. Signal targets intentionally scan complete loaded history so persistent
    strategy state is not reset at an arbitrary warm-up boundary. The selected
    range limits performance measurement, not signal construction.
-2. The first stage intentionally evaluates all 37,131 registered parameter
+2. The first stage intentionally evaluates all 37,182 registered parameter
    combinations. There is no production cap or sampling control.
 3. Confirm only compact metrics and reusable execution state for each eligible
    strategy's top 60 unfiltered
@@ -149,7 +235,7 @@ trade only to make a test pass.
    candlestick families must remain unfiltered.
 6. Confirm each pair uses the exact parameters and independent A/B entry
    filters of its retained standalone results. With 34 unique winners and two
-   equivalent ID pairs excluded, the current maximum is 559 strategy-ID pairs
+   equivalent ID pairs excluded, the current maximum is 664 strategy-ID pairs
    under the 4,096 safety bound. Compare 50/50, 60/40, 40/60, 70/30, and
    30/70.
 7. Use the stop action when a run is no longer useful.
@@ -244,8 +330,9 @@ trade only to make a test pass.
    Cache age does not suppress this preview; use the displayed cache time to
    judge how old it is.
 4. The full history request always continues after a hit. A source or
-   adjustment mismatch retains the existing compatible series and shows a
-   warning instead of merging.
+   adjustment mismatch triggers one `strictProvider=1` full-history request
+   for the latest successful source. The warning remains only if this recovery
+   fails; inspect that request before clearing cache.
 5. If IndexedDB is blocked or cleared, the application intentionally falls
    back to a bounded in-memory session cache and the network without changing
    backtest meaning.
@@ -257,6 +344,22 @@ If a development hot update reports `Cannot read properties of undefined
 for timestamped reads and retains `readCachedMarketSeries(...)` as the
 direct-series compatibility API. Current code also validates retained React
 state and refs before reading `bars`.
+
+## Nasdaq 100 is empty or shows stale volume
+
+1. Inspect the selected search result and the canonical profile. Eastmoney may
+   return code `NDX100`, while Yahoo and Nasdaq use `NDX`; all must resolve to
+   canonical key `index:NDX`.
+2. Confirm the primary Yahoo request uses `^NDX` and the Nasdaq backup uses
+   provider `secid` `NDX`, not the selected alias `NDX100`.
+3. Do not reject a parsed Yahoo series merely because its returned code is
+   `NDX`. Canonical profile validation must compare the shared alias key.
+4. Yahoo currently publishes nonzero NDX daily volume; Nasdaq's index-history
+   response may publish zero. Never synthesize volume or copy it across dates.
+   Same-session merge may retain an already accepted positive value. A full
+   same-source refresh may also repair an older cached zero for the same date
+   without changing OHLC. A recent isolated gap automatically requests that
+   history once before browser site data would need clearing.
 
 ## Commodity search or history is empty
 
@@ -288,9 +391,43 @@ state and refs before reading `bars`.
    instrument index and creates the non-unique lookup index.
 10. If a newly searched ETF loads through Yahoo but Save returns
    `INVALID_PAYLOAD`, inspect the provider-resolved instrument name. Market and
-   saved-record validation must both use
-   `MAX_MARKET_INSTRUMENT_NAME_LENGTH`; `159558.SZ` currently resolves to an
-   82-character English name.
+    saved-record validation must both use
+    `MAX_MARKET_INSTRUMENT_NAME_LENGTH`; `159558.SZ` currently resolves to an
+    82-character English name.
+11. If rolling returns are missing, apply `0007_bright_jackpot.sql` and inspect
+    `PUT /api/saved-backtests` for a complete set of current rolling evaluations.
+    The legacy rank columns from that migration are intentionally inert: current
+    screening archives never read, backfill, or append shortcut ranks.
+12. If only some shortcuts receive a rolling-return update, verify the update
+    includes every saved ID in the canonical instrument group. Validation prompts
+    are computed from the latest available 30-session and 63-session evidence and
+    do not depend on a screening archive write.
+13. If first-level group deletion fails, inspect
+    `DELETE /api/saved-backtests?instrumentKey=...`; the server resolves stored
+    provider aliases to the canonical key before deleting owner-scoped rows.
+14. If shortcut folders fail to load or rename, apply
+    `0008_sour_rage.sql`, then inspect `/api/saved-backtest-folders`. Folder
+    deletion should unfile records; it must not delete saved backtests.
+
+## Adjacent daily K-lines appear out of order
+
+1. Inspect `bar.time` and `bar.timestamp` separately. Daily ordering must use
+   the canonical `YYYY-MM-DD` trading key; timestamps are provider metadata and
+   may use different epochs or timezones.
+2. Confirm all initial/latest/fallback/temporary-quote paths call
+   `normalizeMarketBars(...)` after merging.
+3. Confirm duplicate trading dates retain one validated bar and that the last
+   item is selected only from the normalized array.
+4. Run the conflicting-provider-timestamp regression in `analysis.test.ts`.
+
+## Numeric input is hard to replace
+
+1. Confirm the field uses `CommittedNumberInput`, not an eager
+   `value={number}` plus `onChange={Number(...)}` binding.
+2. Focus should select the full current value. Empty draft text is valid until
+   blur or Enter; Escape restores the committed value.
+3. Validation, integer rounding, and min/max clamping belong in the commit
+   boundary, not each keystroke.
 
 ## Screening, lab, and shortcut ranges disagree
 
@@ -303,10 +440,11 @@ state and refs before reading `bars`.
    while the calendar dates are rebuilt from that instrument's bars.
 4. Confirm opening a saved shortcut does not restore `saved.startDate` or
    `saved.endDate`; creation-time dates remain persistence provenance only.
-5. For the active instrument, inspect `savedBacktestRangeMetrics` and verify
-   each saved plan uses the shared start/end dates plus its saved cost
-   assumptions. Inactive instruments intentionally show no numeric return
-   until their history is loaded.
+5. Shortcut comparison is intentionally separate from the lab/screening range.
+   Inspect `savedBacktestRollingGroups` and verify every daily saved plan uses
+   `SAVED_BACKTEST_ROLLING_SESSIONS` plus its saved cost assumptions. An inactive
+   instrument should show its last persisted rolling return, then its
+   creation-time fallback, until usable history is loaded again.
 6. Period result rows must use the synchronized N-session range. Range rows
    must use the custom interval. Rolling rows use the configured total interval
    while their selection score equals the arithmetic mean of all window rank

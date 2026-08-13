@@ -1,6 +1,7 @@
 import type {
   AllocationRebalance,
   AllocationSignalEvent,
+  BacktestOpenPosition,
   BacktestTrade,
 } from "./backtest";
 
@@ -18,7 +19,10 @@ export interface TradeMarkers {
   rangeExits: TradeMarker[];
 }
 
-export function buildTradeMarkers(trades: BacktestTrade[]): TradeMarkers {
+export function buildTradeMarkers(
+  trades: BacktestTrade[],
+  openPosition?: BacktestOpenPosition | null,
+): TradeMarkers {
   const markers: TradeMarkers = { buys: [], sells: [], rangeExits: [] };
 
   trades.forEach((trade) => {
@@ -42,6 +46,15 @@ export function buildTradeMarkers(trades: BacktestTrade[]): TradeMarkers {
       markers.sells.push(exit);
     }
   });
+
+  if (openPosition) {
+    markers.buys.push({
+      time: openPosition.entryTime,
+      price: openPosition.entryPrice,
+      event: "entry",
+      action: "open",
+    });
+  }
 
   return markers;
 }

@@ -1,3 +1,8 @@
+import {
+  COMMUNITY_INDICATOR_DEFINITIONS,
+  type CommunityIndicatorId,
+} from "./community/registry";
+
 export type IndicatorId =
   | "sma"
   | "ema"
@@ -18,7 +23,45 @@ export type IndicatorId =
   | "mfi"
   | "cmf"
   | "atr"
-  | "obv";
+  | "obv"
+  | "supportResistanceBreaks"
+  | CommunityIndicatorId;
+
+export type IndicatorCategoryId =
+  | "movingAverage"
+  | "trend"
+  | "volatility"
+  | "momentum"
+  | "volume"
+  | "structure";
+
+export const INDICATOR_CATEGORIES: readonly IndicatorCategoryId[] = [
+  "movingAverage",
+  "trend",
+  "volatility",
+  "momentum",
+  "volume",
+  "structure",
+];
+
+export const DEFAULT_FAVORITE_INDICATOR_IDS: readonly IndicatorId[] = [
+  "supportResistanceBreaks",
+];
+
+export const VOLUME_REQUIRED_INDICATOR_IDS = [
+  "vwap",
+  "mfi",
+  "cmf",
+  "obv",
+] as const satisfies readonly IndicatorId[];
+
+const volumeRequiredIndicatorIds = new Set<IndicatorId>(
+  VOLUME_REQUIRED_INDICATOR_IDS,
+);
+
+export function indicatorRequiresVolume(id: IndicatorId): boolean {
+  return volumeRequiredIndicatorIds.has(id);
+}
 
 export interface IndicatorParameters {
   [key: string]: number;
@@ -34,6 +77,7 @@ export interface IndicatorParameterDefinition {
 export interface IndicatorDefinition {
   id: IndicatorId;
   placement: "overlay" | "pane";
+  category: IndicatorCategoryId;
   parameters: readonly IndicatorParameterDefinition[];
 }
 
@@ -47,6 +91,7 @@ export interface IndicatorConfiguration {
 export interface IndicatorWorkspacePreferences {
   focusedIndicator: IndicatorId;
   visibleIndicatorIds: IndicatorId[];
+  favoriteIndicatorIds: IndicatorId[];
   settings: IndicatorSettings;
 }
 
@@ -81,61 +126,88 @@ function decimal(
 function definition(
   id: IndicatorId,
   placement: IndicatorDefinition["placement"],
+  category: IndicatorCategoryId,
   ...parameters: IndicatorParameterDefinition[]
 ): IndicatorDefinition {
-  return { id, placement, parameters };
+  return { id, placement, category, parameters };
 }
 
 export const INDICATORS: readonly IndicatorDefinition[] = [
-  definition("sma", "overlay", period("fast", 10), period("slow", 30)),
-  definition("ema", "overlay", period("fast", 12), period("slow", 26)),
-  definition("wma", "overlay", period("fast", 20), period("slow", 50)),
-  definition("dema", "overlay", period("fast", 20), period("slow", 50)),
+  definition("sma", "overlay", "movingAverage", period("fast", 10), period("slow", 30)),
+  definition("ema", "overlay", "movingAverage", period("fast", 12), period("slow", 26)),
+  definition("wma", "overlay", "movingAverage", period("fast", 20), period("slow", 50)),
+  definition("dema", "overlay", "movingAverage", period("fast", 20), period("slow", 50)),
   definition(
     "bollinger",
     "overlay",
+    "volatility",
     period("period", 20),
     decimal("width", 2, 0.1, 0.1),
   ),
-  definition("vwap", "overlay"),
+  definition("vwap", "overlay", "volume"),
   definition(
     "supertrend",
     "overlay",
+    "trend",
     period("period", 10),
     decimal("multiplier", 3, 0.1, 0.1),
   ),
   definition(
     "ichimoku",
     "overlay",
+    "trend",
     period("conversionPeriod", 9),
     period("basePeriod", 26),
     period("spanPeriod", 52),
   ),
-  definition("rsi", "pane", period("period", 14)),
+  definition("rsi", "pane", "momentum", period("period", 14)),
   definition(
     "macd",
     "pane",
+    "momentum",
     period("fast", 12),
     period("slow", 26),
     period("signal", 9),
   ),
-  definition("kdj", "pane", period("period", 9)),
+  definition(
+    "kdj",
+    "pane",
+    "momentum",
+    period("period", 9),
+    period("smoothK", 3),
+    period("smoothD", 3),
+  ),
   definition(
     "stochasticRsi",
     "pane",
+    "momentum",
     period("rsiPeriod", 14),
     period("stochasticPeriod", 14),
     period("smoothPeriod", 3),
   ),
-  definition("cci", "pane", period("period", 20)),
-  definition("williamsR", "pane", period("period", 14)),
-  definition("adx", "pane", period("period", 14)),
-  definition("roc", "pane", period("period", 12)),
-  definition("mfi", "pane", period("period", 14)),
-  definition("cmf", "pane", period("period", 20)),
-  definition("atr", "pane", period("period", 14)),
-  definition("obv", "pane"),
+  definition("cci", "pane", "momentum", period("period", 20)),
+  definition("williamsR", "pane", "momentum", period("period", 14)),
+  definition("adx", "pane", "trend", period("period", 14)),
+  definition("roc", "pane", "momentum", period("period", 12)),
+  definition("mfi", "pane", "volume", period("period", 14)),
+  definition("cmf", "pane", "volume", period("period", 20)),
+  definition("atr", "pane", "volatility", period("period", 14)),
+  definition("obv", "pane", "volume"),
+  definition(
+    "supportResistanceBreaks",
+    "overlay",
+    "structure",
+    period("leftBars", 15),
+    period("rightBars", 15),
+  ),
+  ...COMMUNITY_INDICATOR_DEFINITIONS,
 ];
+
+export function getIndicatorsByCategory(
+  category: IndicatorCategoryId,
+): readonly IndicatorDefinition[] {
+  return INDICATORS.filter((indicator) => indicator.category === category);
+}
 
 export function getIndicator(id: IndicatorId): IndicatorDefinition {
   const indicator = INDICATORS.find((candidate) => candidate.id === id);
@@ -167,6 +239,7 @@ export function createDefaultIndicatorWorkspacePreferences(): IndicatorWorkspace
   return {
     focusedIndicator: "sma",
     visibleIndicatorIds: [],
+    favoriteIndicatorIds: [...DEFAULT_FAVORITE_INDICATOR_IDS],
     settings: createDefaultIndicatorSettings(),
   };
 }
@@ -191,16 +264,17 @@ function parseIndicatorParameters(
   const parameterKeys = new Set(
     definition.parameters.map((parameter) => parameter.key),
   );
-  if (
-    Object.keys(value).length !== parameterKeys.size ||
-    Object.keys(value).some((key) => !parameterKeys.has(key))
-  ) {
+  if (Object.keys(value).some((key) => !parameterKeys.has(key))) {
     return null;
   }
 
-  const parameters: IndicatorParameters = {};
+  // Missing keys are filled from registry defaults so saved snapshots remain
+  // readable when an indicator gains a newly configurable formula input.
+  const parameters: IndicatorParameters = getDefaultIndicatorParameters(
+    indicatorId,
+  );
   for (const parameter of definition.parameters) {
-    const candidate = value[parameter.key];
+    const candidate = value[parameter.key] ?? parameter.defaultValue;
     if (
       typeof candidate !== "number" ||
       !Number.isFinite(candidate) ||
@@ -264,6 +338,19 @@ export function parseIndicatorWorkspacePreferences(
     visibleIndicatorIds.push(indicatorId);
   }
 
+  const favoriteSource = Array.isArray(value.favoriteIndicatorIds)
+    ? value.favoriteIndicatorIds
+    : DEFAULT_FAVORITE_INDICATOR_IDS;
+  const favoriteIndicatorIds: IndicatorId[] = [];
+  const favoriteSeen = new Set<IndicatorId>();
+  for (const indicatorId of favoriteSource) {
+    if (!isIndicatorId(indicatorId) || favoriteSeen.has(indicatorId)) {
+      return null;
+    }
+    favoriteSeen.add(indicatorId);
+    favoriteIndicatorIds.push(indicatorId);
+  }
+
   const settings = createDefaultIndicatorSettings();
   for (const indicator of INDICATORS) {
     if (!(indicator.id in value.settings)) continue;
@@ -278,6 +365,7 @@ export function parseIndicatorWorkspacePreferences(
   return {
     focusedIndicator: value.focusedIndicator,
     visibleIndicatorIds,
+    favoriteIndicatorIds,
     settings,
   };
 }

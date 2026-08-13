@@ -9,16 +9,21 @@ Worker-compatible bundle.
 Windows one-click local runtime
   -> open-quantscope.bat
   -> scripts/start-local.ps1
-  -> 127.0.0.1:3000
+  -> runtime-port registry
+     -> application at 127.0.0.1:3000
+     -> market relay at 127.0.0.1:3001
   -> local D1 under .wrangler/state
 
 Browser UI
   -> /api/search and /api/market
-  -> IndexedDB shortcut history plus background daily history/latest refresh
+  -> canonical IndexedDB plus background primary/latest refresh and source audits
   -> index/ETF/commodity search filter plus deterministic commodity catalog
-  -> Eastmoney, optional EODHD, Yahoo Finance, and Nasdaq adapters
-  -> ordered data-source fallback
-  -> normalized MarketSeries
+  -> canonical source profile per instrument
+  -> Eastmoney, optional EODHD, Yahoo Finance, Nasdaq, and FRED reference adapters
+  -> provider-isolated source snapshots and health measurements
+  -> one locked canonical MarketSeries
+  -> explicit daily or provider-native one-minute workspace interval
+  -> interval-exact range, latest-bar, source-health, and cache boundaries
   -> indicator registry
   -> independent indicator selection and device-local parameter preferences
   -> strategy registry
@@ -63,19 +68,46 @@ scroll region. The UI canonicalizes provider-specific aliases into one
 instrument group, renders each group as a disclosure, and mounts its saved
 strategy/indicator rows only while expanded. Native drag-and-drop or keyboard
 arrow moves update the ordered list optimistically and persist `display_order`
-through the same owner-scoped API.
+through the same owner-scoped API. A group-level delete resolves the canonical
+instrument key on the server and removes every matching owner-scoped row.
+Renameable `saved_backtest_folders` rows provide two fixed scopes: one root
+scope for canonical instrument groups and one canonical-instrument context for
+strategy rows. Saved rows keep nullable folder foreign keys. Assignment is
+owner- and context-validated; deleting a folder sets those references to null
+and never deletes saved backtests. Both folder scopes are collapsible, and
+sibling drag or keyboard ordering is optimistically persisted through each
+folder row's context-local `display_order`.
 
 `MarketWorkspace` owns separate indicator, draft strategy-plan, and applied
-strategy-plan state. Indicator controls read defaults and validation metadata from the indicator registry,
-start with every indicator hidden, persist one parameter set per indicator in
-device-local storage, and pass only the visible configurations to `PriceChart`.
-Each toolbar button both focuses and toggles its indicator. Draft strategy
+strategy-plan state. Indicator controls read defaults, category, and validation
+metadata from the indicator registry, start with every indicator hidden,
+persist one parameter set and a favorites list in device-local storage, and
+pass only the visible configurations to `PriceChart`. A controlled menu bar
+replaces the previous flat toolbar, keeps at most one category open, and closes
+on another category, an outside click, or Escape. Each categorized indicator
+has an independent outline-star favorite action. The favorites strip occupies
+its own row, remains directly clickable, and initially contains the confirmed
+support/resistance-break pilot.
+The applied plan is separately projected through
+`buildStrategyLinkedPaneIndicators(...)`; declared lower-pane studies are
+merged with manual configurations and exact duplicates are removed without
+altering saved manual indicator state.
+Each favorite or menu label both focuses and toggles its indicator, while the
+adjacent category-menu star only changes favorite membership. Draft strategy
 changes update the lab backtest without replacing the selected indicator.
 Only Apply, a screening row, or a saved shortcut updates chart references,
 live guidance, and trade markers. Save current strategy snapshots that applied
 chart plan and its matching metrics rather than unapplied lab edits.
 `PriceChart` renders the selected studies together with both selected
-strategies' qualified reference lines and actual trade/allocation markers.
+strategies' qualified reference lines and actual trade/allocation markers. It
+derives an explicit visible price-axis range from OHLC highs and lows whenever
+data zoom changes; strategy overlays cannot expand that range, so one
+instrument and zoom window retain the same K-line scale across saved plans.
+Useful references render as solid lines matching their legend symbols; empty
+reference series are omitted. Price detail tooltips and crosshair labels share
+a one-decimal formatter. Visible price-axis ticks remain integers when the
+visible candle high exceeds 20 and use at most two decimals when it is 20 or
+less; the same rule applies to daily and one-minute series.
 Saved-backtest snapshots store the ordered visible indicator configurations in
 a nullable JSON column. Opening a shortcut restores those visible indicators
 and parameters without replacing the workspace's shared backtest range. If the
@@ -83,13 +115,17 @@ shortcut and the successful active series resolve to the same canonical
 instrument, the workspace preserves that exact series and restores only plan,
 parameter, indicator, metric, and marker state. Only a different canonical
 instrument triggers a market reload; legacy rows restore no indicators. For
-the active instrument, shortcut returns are
-derived from each saved plan and costs over that shared range instead of
-displaying the creation-time metric. Inactive instrument groups show no numeric
-return until their history is active, avoiding a stale cross-range comparison.
+every active or successfully background-refreshed instrument, daily shortcut
+returns are derived from each saved plan and costs over the latest 128 trading
+sessions. The rolling-update API persists returns without changing legacy rank
+columns. Saved-plan ranks are no longer read, written, backfilled, or rendered.
+Each shortcut instead presents a current 30-session review with a 63-session
+confirmation; unavailable live calculations fall back to the last persisted
+rolling return and then to the creation-time metric. Completed screening runs
+remain a compact backend provenance archive and never mutate shortcuts.
 
 One strategy-screening action sends the complete market snapshot and settings
-to a dedicated module Web Worker, which generates all 37,131 finite parameter
+to a dedicated module Web Worker, which generates all 37,182 finite parameter
 combinations from the shared registry and applies one objective. For each
 explicitly eligible trend, breakout, or momentum strategy, it retains compact
 metrics and raw execution state for the top 60 unfiltered
@@ -98,8 +134,9 @@ Every strategy then contributes its final winner to normal pair screening;
 rolling screening retains the best ten candidates per strategy for window
 aggregation before collapsing back to one displayed winner per strategy. The
 optimizer ranks every unordered pair of non-equivalent retained single results
-and compares 50/50, 60/40, 40/60, 70/30, and 30/70 allocations. The current
-unique-winner catalog produces 559 strategy-ID pairs. Final
+and compares 50/50, 60/40, 40/60, 70/30, and 30/70 allocations under both
+base-then-add and full-then-reduce tactical modes. The current
+unique-winner catalog produces 664 strategy-ID pairs. Final
 combination output keeps only the best parameter/allocation result for each
 unique unordered strategy-ID pair. The UI renders standalone and combination
 outputs in equal fixed-layout columns beneath one horizontal control bar and
@@ -162,7 +199,10 @@ run becomes the relative long-cycle gate. A duration tie prefers fewer target
 transitions and then Strategy A. A new relative-long entry establishes its
 assigned allocation and deliberately ignores a relative-short signal already
 active. Only a later fresh relative-short entry adds its allocation; its paired
-exit removes that layer. The relative-long exit clears both layers. The
+exit removes that layer. The alternative full-then-reduce mode establishes
+A+B at the relative-long entry, removes the tactical sleeve at a short-cycle
+exit, and restores it at the next short-cycle entry. Neither mode can produce a
+negative target or short position. The relative-long exit clears both layers. The
 allocation plan uses 100% whenever exactly one strategy is selected; dual
 plans allow 50/50, 60/40, 40/60, 70/30, and 30/70. The allocation backtest applies
 close-confirmed changed states at the next open and causal price-order states
@@ -216,8 +256,9 @@ validation report, and hashes the normalized market snapshot with SHA-256.
 `/api/screening-runs` scopes every read and write by the shared owner resolver
 and canonical instrument key. D1 stores source, adjustment, fetch time, last
 bar, data fingerprint, retained compact ranking, settings, and validation
-configuration. The UI compares the newest two runs. This archive is provenance,
-not optimization input or a result cache.
+configuration. Read and write boundaries prune every owner's archive groups to
+the newest six rows per canonical instrument. The UI compares the newest two
+runs. This archive is provenance, not optimization input or a result cache.
 
 Live guidance reuses the same strategy registry. Target-state strategies
 compare the newest dynamic bar target with the preceding target. Price-order
@@ -229,30 +270,97 @@ open, with its documented opposite-gap override. The latest daily bar is
 explicitly complete, in-progress, or unknown. Close-derived guidance freezes
 at the preceding target until completion is known, while prior-completed-bar
 stop orders remain eligible.
+When a causal entry order is touched but the prior completed-bar entry filter
+rejects it, guidance preserves the entry condition price and exposes an
+`entryBlockedByFilter` state so the UI does not present an ordinary wait.
 
-Full history can be HTTP-cached for one hour; a separate
-uncached request retrieves up to five latest bars on open and every refresh.
-Only overlapping bar times are replaced, and series from different sources are
-never merged. A bounded same-origin IndexedDB cache (32 normalized series with
-no age expiry) lets shortcut histories render first with their cache timestamp,
-but the full network refresh always continues. Provider-side latency remains
-possible.
+Full history can be HTTP-cached for one hour; a separate uncached request
+retrieves up to five latest bars on open and every refresh. The browser
+resolves a canonical source profile before loading data. A completed canonical
+bar is locked; only an unconfirmed final bar may be replaced. Preferred-source
+dates may be appended. A declared fallback may append missing dates after
+identity or overlap validation, but provider changes never rewrite confirmed
+canonical bars.
+
+`lib/market/canonical-cache.ts` owns a separate
+`quantscope-canonical-market` IndexedDB database. It stores canonical series,
+provider-isolated history/latest snapshots, close-only reference snapshots,
+SHA-256 fingerprints, and source-health records. Source health stores lifetime
+counters, bounded 31-day attempts, rolling 7/30-day availability inputs,
+persistent demotion, latency, latest date, date gaps, OHLC error against the
+canonical series, adjustment agreement, network route, and methodology.
+`lib/market/source-health.ts` applies minimum-sample quality gates, hourly
+configured-primary probes, and seven-day restoration hysteresis. A
+verified backup may extend canonical OHLC without rewriting confirmed dates.
+Rejected candidates remain provider-isolated audit snapshots and may produce
+only a price-gated temporary quote. A validated current-session quote may be
+merged into the active in-memory series as an unconfirmed display bar, but the
+locked historical series is retained separately and only that canonical base
+is persisted. The legacy 32-series cache is
+read only through a controlled same-instrument migration path. A prior
+canonical-primary record may remain the locked seed after a deliberate source
+policy change; the new primary can update only an unconfirmed final date and
+append missing or newer dates.
 
 The daily workspace asks for provider history from 2000-01-01 and retains at
 most 10,000 normalized bars in page memory. `lib/market/history.ts` owns this
 shared boundary and the separate retained intraday safety cap. Eastmoney,
-EODHD, Yahoo, and Nasdaq translate the boundary into their provider-specific date
-parameters. A later-listed instrument begins at its first available bar.
+Yahoo, and each active daily backup translate the boundary into
+provider-specific date parameters or documented caps. A later-listed
+instrument begins at its first available bar.
 
 The live guidance presentation labels price orders as same-bar conditional
 fills and close-confirmed signals as following-open instructions. It does not
 use wall-clock time to change execution semantics.
 
-Eastmoney is the preferred source for Eastmoney instruments. When a server-only
-`EODHD_API_TOKEN` is configured, the licensed EODHD daily index/ETF adapter is
-inserted before the public Yahoo and Nasdaq fallbacks. Yahoo Finance extends
-global symbol discovery/history and remains the only history provider for
-commodity futures quote proxies. Nasdaq is a raw daily-history fallback for
-supported indexes and ETFs, never commodities. A shorter valid Eastmoney
-series is preserved as the final fallback instead of turning a partial
-upstream response into an empty chart.
+Community analysis is isolated under `lib/analysis/community/`. The catalog
+records provenance and compatibility; the community registry owns indicator
+IDs/defaults; pure formula modules own aligned calculations; and the main
+indicator/strategy registries import those collections. Pine source is never a
+runtime dependency. The import contract requires confirmation-bar pivots,
+input-prefix causality tests, explicit MTF limitations, and host-controlled
+following-open execution for close-derived strategy targets. See
+`docs/COMMUNITY_IMPORTS.md`.
+
+Yahoo is preferred for N225, SOX, the deterministic continuous-futures aliases,
+Yahoo-discovered instruments, and indexes or ETFs with a verified Yahoo symbol
+mapping. The official Nikkei CSV, Eastmoney, Nasdaq, and optional EODHD,
+Twelve Data, Financial Modeling Prep, AllTick, Alpha Vantage, Marketstack,
+Zhitu, Tencent, and Juhe definitions are tried when supported. During Chinese
+index/ETF outage
+recovery, the no-key Tencent session quote is probed before quota-bearing
+history services; Juhe is the last quote-only attempt and is skipped after a
+valid Tencent quote. The first validated history source remains canonical,
+while either accepted quote can update only the active current session.
+Neither Tencent nor Juhe is a history or effective-primary source. Juhe is
+protected by a 50-call Shanghai-day gate and excluded from routine audits.
+Gold FMP `GCUSD`, AllTick `GOLD`, and Eastmoney `101.GC00Y`
+backups are overlap-required and therefore cannot recover an empty chart or
+rewrite confirmed Yahoo history. FRED is a close-only N225 reference and never
+becomes OHLC.
+Eastmoney HTTPS is preferred, with a same-host HTTP retry only when the public
+site closes the TLS connection. Major global index codes are mapped to their
+real exchange sessions instead of interpreting Eastmoney market `100` as JPX.
+For local Windows use, `scripts/market-relay.mjs` is always ensured by the
+launcher. Development defaults to its fixed `127.0.0.1:3001` route, it
+restricts targets to reviewed provider endpoints, and it lets the local Worker
+runtime reach proxy-preferred sources without receiving proxy addresses or
+credentials. The launcher registers both persistent runtime listeners:
+application port 3000 and relay port 3001. It probes each service, reuses a
+healthy current instance, and removes an unhealthy listener only when the
+owning Node command matches the exact current-checkout executable path and
+role-specific arguments. A different checkout or unrelated listener is never
+stopped automatically.
+Provider-side latency, rate limits, regional blocks, and licensing constraints
+remain possible.
+
+The visible page schedules the active instrument by venue session: five
+minutes for an open regular venue through 30 minutes after close,
+Sunday-Friday Globex hours for COMEX/NYMEX proxies with their maintenance break,
+and 15 minutes for an unknown venue. Focus and visibility cannot bypass the
+minimum interval. Ordered backup
+recovery begins immediately after a primary failure; 15/30/60-minute backoff
+begins only after the full source chain fails. The complete shortcut collection
+is refreshed after the manual header action and after each scheduled
+active-instrument update. The inactive-instrument pass remains sequential,
+de-duplicated, cooldown-protected, and does not switch the visible chart.

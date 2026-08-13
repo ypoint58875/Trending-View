@@ -172,6 +172,85 @@ export interface ScreeningValidationProgress {
   optimizationProgress?: CombinationScreeningProgress;
 }
 
+const SCREENING_OPTIMIZATION_STAGES = [
+  "strategies",
+  "entryFilters",
+  "pairs",
+  "allocations",
+] as const satisfies readonly CombinationScreeningProgress["stage"][];
+
+export interface ScreeningProgressBarState {
+  value: number;
+  maximum: number;
+}
+
+function progressFraction(completed: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.min(Math.max(completed / total, 0), 1);
+}
+
+export function resolveScreeningProgressBarState(
+  progress: Pick<
+    CombinationScreeningProgress,
+    "stage" | "stageCompleted" | "stageTotal"
+  >,
+  validationProgress: ScreeningValidationProgress | null,
+): ScreeningProgressBarState {
+  const optimizationProgress =
+    validationProgress?.phase === "optimization"
+      ? (validationProgress.optimizationProgress ?? progress)
+      : progress;
+  const stageIndex = SCREENING_OPTIMIZATION_STAGES.indexOf(
+    optimizationProgress.stage,
+  );
+  const stageValue =
+    stageIndex +
+    (optimizationProgress.stageTotal > 0
+      ? progressFraction(
+          optimizationProgress.stageCompleted,
+          optimizationProgress.stageTotal,
+        )
+      : stageIndex > 0
+        ? 1
+        : 0);
+  const rollingFoldCount =
+    validationProgress?.mode === "rolling"
+      ? Math.max(validationProgress.foldCount, 0)
+      : 0;
+  const maximum = SCREENING_OPTIMIZATION_STAGES.length + rollingFoldCount;
+
+  if (!validationProgress || validationProgress.phase === "optimization") {
+    return {
+      value: Math.min(Math.max(stageValue, 0), maximum),
+      maximum,
+    };
+  }
+
+  if (validationProgress.mode !== "rolling" || rollingFoldCount === 0) {
+    return {
+      value: maximum,
+      maximum,
+    };
+  }
+
+  const foldIndex = Math.min(
+    Math.max(validationProgress.foldIndex, 0),
+    rollingFoldCount - 1,
+  );
+  const value =
+    SCREENING_OPTIMIZATION_STAGES.length +
+    foldIndex +
+    progressFraction(
+      validationProgress.completed,
+      validationProgress.total,
+    );
+
+  return {
+    value: Math.min(Math.max(value, 0), maximum),
+    maximum,
+  };
+}
+
 export interface ScreeningValidationOutcome
   extends Omit<
     CombinationOptimizationResult,
@@ -195,8 +274,16 @@ export interface ScreeningRollingValidationFold {
   partial: boolean;
 }
 
-function datePart(time: string): string {
-  return time.slice(0, 10);
+function normalizedTime(time: string): string {
+  return time.replace("T", " ");
+}
+
+function rangeStart(time: string): string {
+  return normalizedTime(time);
+}
+
+function rangeEnd(time: string): string {
+  return time.length === 10 ? `${time} 23:59` : normalizedTime(time);
 }
 
 export interface TradingSessionRange extends ScreeningDateWindow {
@@ -208,17 +295,17 @@ export function resolveTradingSessionRange(
   startTime: string,
   endTime: string,
 ): TradingSessionRange | null {
-  const startDate = datePart(startTime);
-  const endDate = datePart(endTime);
-  if (!startDate || !endDate || startDate > endDate) return null;
+  const start = rangeStart(startTime);
+  const end = rangeEnd(endTime);
+  if (!start || !end || start > end) return null;
   const selectedBars = bars.filter((bar) => {
-    const date = datePart(bar.time);
-    return date >= startDate && date <= endDate;
+    const time = normalizedTime(bar.time);
+    return time >= start && time <= end;
   });
   if (selectedBars.length === 0) return null;
   return {
-    startTime: datePart(selectedBars[0].time),
-    endTime: datePart(selectedBars.at(-1)!.time),
+    startTime: selectedBars[0].time,
+    endTime: selectedBars.at(-1)!.time,
     sessions: selectedBars.length,
   };
 }
@@ -229,23 +316,29 @@ export function resolveTrailingTradingSessionRange(
   endTime?: string,
 ): TradingSessionRange | null {
   const sessions = Math.max(1, Math.floor(requestedSessions));
-  const endDate = endTime ? datePart(endTime) : "";
-  const eligibleBars = endDate
-    ? bars.filter((bar) => datePart(bar.time) <= endDate)
+  const end = endTime ? rangeEnd(endTime) : "";
+  const eligibleBars = end
+    ? bars.filter((bar) => normalizedTime(bar.time) <= end)
     : [...bars];
   if (eligibleBars.length === 0) return null;
   const selectedBars = eligibleBars.slice(-sessions);
   return {
-    startTime: datePart(selectedBars[0].time),
-    endTime: datePart(selectedBars.at(-1)!.time),
+    startTime: selectedBars[0].time,
+    endTime: selectedBars.at(-1)!.time,
     sessions: selectedBars.length,
   };
 }
 
-function isValidDate(value: string): boolean {
+function isValidRangeTime(value: string): boolean {
   return (
-    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
-    Number.isFinite(Date.parse(`${value}T00:00:00Z`))
+    /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?$/.test(value) &&
+    Number.isFinite(
+      Date.parse(
+        value.length === 10
+          ? `${value}T00:00:00Z`
+          : `${normalizedTime(value).replace(" ", "T")}:00Z`,
+      ),
+    )
   );
 }
 
@@ -255,8 +348,8 @@ function validateRangeWindow(
 ): ScreeningDateWindow {
   const dates = [config.range.startTime, config.range.endTime];
   if (
-    dates.some((value) => !isValidDate(value)) ||
-    config.range.startTime > config.range.endTime
+    dates.some((value) => !isValidRangeTime(value)) ||
+    rangeStart(config.range.startTime) > rangeEnd(config.range.endTime)
   ) {
     throw new ScreeningValidationError("invalid-range-order");
   }
@@ -309,16 +402,16 @@ export function buildSampleValidationWindows(
     0,
   );
   const startTime = selectedRange.startTime
-    ? datePart(selectedRange.startTime)
+    ? rangeStart(selectedRange.startTime)
     : "";
   const endTime = selectedRange.endTime
-    ? datePart(selectedRange.endTime)
+    ? rangeEnd(selectedRange.endTime)
     : "";
   const selectedBars = bars.filter((bar) => {
-    const date = datePart(bar.time);
+    const time = normalizedTime(bar.time);
     return (
-      (!startTime || date >= startTime) &&
-      (!endTime || date <= endTime)
+      (!startTime || time >= startTime) &&
+      (!endTime || time <= endTime)
     );
   });
   const period = periods[0];
@@ -327,8 +420,8 @@ export function buildSampleValidationWindows(
   }
   const evaluationBars = selectedBars.slice(-period.sessions);
   const window = {
-    startTime: datePart(evaluationBars[0].time),
-    endTime: datePart(evaluationBars.at(-1)!.time),
+    startTime: evaluationBars[0].time,
+    endTime: evaluationBars.at(-1)!.time,
   };
 
   return {
@@ -350,9 +443,9 @@ export function buildRollingValidationFolds(
 ): ScreeningRollingValidationFold[] {
   if (bars.length < 3) return [];
   if (
-    !isValidDate(requestedRange.startTime) ||
-    !isValidDate(requestedRange.endTime) ||
-    requestedRange.startTime > requestedRange.endTime
+    !isValidRangeTime(requestedRange.startTime) ||
+    !isValidRangeTime(requestedRange.endTime) ||
+    rangeStart(requestedRange.startTime) > rangeEnd(requestedRange.endTime)
   ) {
     return [];
   }
@@ -910,9 +1003,9 @@ async function runRollingValidation(
   options: RunScreeningWithValidationOptions,
 ): Promise<ScreeningValidationOutcome> {
   if (
-    !isValidDate(config.range.startTime) ||
-    !isValidDate(config.range.endTime) ||
-    config.range.startTime > config.range.endTime
+    !isValidRangeTime(config.range.startTime) ||
+    !isValidRangeTime(config.range.endTime) ||
+    rangeStart(config.range.startTime) > rangeEnd(config.range.endTime)
   ) {
     throw new ScreeningValidationError("invalid-range-order");
   }
@@ -1101,6 +1194,8 @@ async function runRollingValidation(
       ? difference
       : compareScreeningResults(left, right, objective);
   };
+  singleResults.sort(compareRollingScores);
+  combinationResults.sort(compareRollingScores);
   const bestSingleByStrategy = new Map<
     BacktestResult["strategyId"],
     ScreeningSingleResult
@@ -1114,7 +1209,6 @@ async function runRollingValidation(
   const retainedSingleResults = [...bestSingleByStrategy.values()].sort(
     compareRollingScores,
   );
-  combinationResults.sort(compareRollingScores);
   const selected = [
     ...retainedSingleResults,
     ...combinationResults,

@@ -7,6 +7,10 @@ const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
 
 const { d1, r2 } = hostingConfig;
+const localMarketRelayUrl =
+  process.env.QUANTSCOPE_LOCAL_MARKET_RELAY_ENABLED === "1"
+    ? "http://127.0.0.1:3001/fetch"
+    : undefined;
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
@@ -14,6 +18,13 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  ...(localMarketRelayUrl
+    ? {
+        vars: {
+          QUANTSCOPE_LOCAL_MARKET_RELAY_URL: localMarketRelayUrl,
+        },
+      }
+    : {}),
   d1_databases: d1
     ? [
         {

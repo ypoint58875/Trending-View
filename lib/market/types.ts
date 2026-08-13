@@ -1,10 +1,29 @@
 export type MarketInterval = "1m" | "5m" | "15m" | "30m" | "60m" | "1d";
 export type MarketAssetType = "index" | "etf" | "commodity";
-export type MarketDataProvider =
-  | "eastmoney"
-  | "yahoo"
-  | "nasdaq"
-  | "eodhd";
+export const MARKET_DATA_PROVIDERS = [
+  "eastmoney",
+  "yahoo",
+  "nasdaq",
+  "eodhd",
+  "nikkei",
+  "twelve-data",
+  "alpha-vantage",
+  "fmp",
+  "alltick",
+  "marketstack",
+  "zhitu",
+  "tencent",
+  "juhe",
+] as const;
+export type MarketDataProvider = (typeof MARKET_DATA_PROVIDERS)[number];
+export type MarketReferenceProvider = "fred";
+export type MarketSourceProvider =
+  | MarketDataProvider
+  | MarketReferenceProvider;
+export type MarketNetworkRoute =
+  | "direct-preferred"
+  | "proxy-preferred"
+  | "credentialed";
 export type MarketPriceAdjustment = "raw" | "corporate-action-adjusted";
 export type MarketLatestBarStatus =
   | "complete"
@@ -16,9 +35,22 @@ export type MarketExchange =
   | "SZSE"
   | "JPX"
   | "PHLX"
+  | "NYSE"
   | "NYSE_ARCA"
   | "NASDAQ"
   | "HKEX"
+  | "XETRA"
+  | "LSE"
+  | "EURONEXT"
+  | "KRX"
+  | "BSE"
+  | "B3"
+  | "SIX"
+  | "TWSE"
+  | "SGX"
+  | "ASX"
+  | "COMEX"
+  | "NYMEX"
   | "OTHER";
 
 export interface MarketInstrument {
@@ -53,5 +85,31 @@ export interface MarketSeries {
   bars: MarketBar[];
   latestBarStatus: MarketLatestBarStatus;
   source: MarketDataProvider;
+  fetchedAt: string;
+}
+
+export interface MarketReferenceObservation {
+  time: string;
+  timestamp: number;
+  value: number;
+}
+
+export interface MarketReferenceSeries {
+  instrumentKey: string;
+  interval: "1d";
+  observations: MarketReferenceObservation[];
+  latestBarStatus: MarketLatestBarStatus;
+  source: MarketReferenceProvider;
+  fetchedAt: string;
+}
+
+export interface MarketTemporaryQuote {
+  instrumentKey: string;
+  provider: MarketDataProvider;
+  time: string;
+  price: number;
+  bar: MarketBar;
+  previousClose: number;
+  latestBarStatus: MarketLatestBarStatus;
   fetchedAt: string;
 }

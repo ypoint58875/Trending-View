@@ -20,6 +20,12 @@ import {
   type StrategyId,
   type StrategyParameters,
 } from "./strategies";
+import {
+  DEFAULT_TACTICAL_ALLOCATION_MODE,
+  resolveTacticalAllocationMode,
+  type StrategyAllocationPlan,
+  type TacticalAllocationMode,
+} from "./strategy-combinations";
 import type {
   MarketAssetType,
   MarketDataProvider,
@@ -28,11 +34,15 @@ import type {
   MarketInterval,
   MarketPriceAdjustment,
   MarketSeries,
+  MarketTemporaryQuote,
 } from "@/lib/market/types";
+import { MARKET_DATA_PROVIDERS } from "@/lib/market/types";
+import { fingerprintMarketSeries } from "@/lib/market/fingerprint";
+import { MARKET_EXCHANGES } from "@/lib/market/exchanges";
 import { savedBacktestInstrumentKey } from "./saved-backtests";
 
-export const MAX_SCREENING_RUN_HISTORY = 24;
-export const MAX_SCREENING_RUN_CANDIDATES = 200;
+export const MAX_SCREENING_RUN_HISTORY = 6;
+export const MAX_SCREENING_RUN_CANDIDATES = 400;
 
 export interface ScreeningRunMetrics {
   totalReturn: number;
@@ -54,6 +64,7 @@ export interface ScreeningRunCandidate {
   strategyBEntryFilter: MovingAverageSlopeFilter | null;
   strategyAAllocation: number;
   strategyBAllocation: number;
+  tacticalMode?: TacticalAllocationMode;
   relativeLongStrategy: "strategyA" | "strategyB" | null;
   selectionScore: number | null;
   metrics: ScreeningRunMetrics;
@@ -63,6 +74,12 @@ export interface ScreeningRunSettings {
   initialCash: number;
   commissionPercent: number;
   slippagePercent: number;
+}
+
+export interface ScreeningTemporaryQuoteProvenance {
+  provider: MarketDataProvider;
+  time: string;
+  fetchedAt: string;
 }
 
 export interface SaveScreeningRunInput {
@@ -75,6 +92,7 @@ export interface SaveScreeningRunInput {
   lastBarDate: string;
   barCount: number;
   dataFingerprint: string;
+  temporaryQuote: ScreeningTemporaryQuoteProvenance | null;
   validationMode: ScreeningValidationConfig["mode"];
   validationConfig: ScreeningValidationConfig;
   objective: ScreeningObjective;
@@ -131,6 +149,10 @@ export function screeningRunCandidateKey(
       stableFilter(result.strategyBEntryFilter),
       result.strategyAAllocation,
       result.strategyBAllocation,
+      ...(resolveTacticalAllocationMode(result.tacticalMode) ===
+      DEFAULT_TACTICAL_ALLOCATION_MODE
+        ? []
+        : [resolveTacticalAllocationMode(result.tacticalMode)]),
     ].join(":");
   }
   return [
@@ -139,6 +161,63 @@ export function screeningRunCandidateKey(
     stableParameters(result.parameters),
     stableFilter(result.entryFilter),
   ].join(":");
+}
+
+export function screeningRunCandidateKeyForPlan(
+  plan: StrategyAllocationPlan,
+): string | null {
+  const strategyA = plan.strategyA;
+  const strategyB = plan.strategyB;
+  if (!strategyA && !strategyB) return null;
+  if (!strategyA || !strategyB) {
+    const selection = strategyA ?? strategyB;
+    const entryFilter = strategyA
+      ? plan.strategyAEntryFilter ?? plan.entryFilter
+      : plan.strategyBEntryFilter ?? plan.entryFilter;
+    return [
+      "single",
+      selection!.strategyId,
+      stableParameters(selection!.parameters),
+      stableFilter(entryFilter),
+    ].join(":");
+  }
+  return [
+    "combination",
+    strategyA.strategyId,
+    stableParameters(strategyA.parameters),
+    stableFilter(plan.strategyAEntryFilter ?? plan.entryFilter),
+    strategyB.strategyId,
+    stableParameters(strategyB.parameters),
+    stableFilter(plan.strategyBEntryFilter ?? plan.entryFilter),
+    plan.strategyAAllocation,
+    plan.strategyBAllocation,
+    ...(resolveTacticalAllocationMode(plan.tacticalMode) ===
+    DEFAULT_TACTICAL_ALLOCATION_MODE
+      ? []
+      : [resolveTacticalAllocationMode(plan.tacticalMode)]),
+  ].join(":");
+}
+
+export function screeningRunCandidateRankByKey(
+  candidates: readonly ScreeningRunCandidate[],
+): Map<string, number> {
+  const observed = { single: 0, combination: 0 };
+  const storesNativeRanks = candidates.every((candidate) => {
+    observed[candidate.kind] += 1;
+    return candidate.rank === observed[candidate.kind];
+  });
+  if (storesNativeRanks) {
+    return new Map(
+      candidates.map((candidate) => [candidate.key, candidate.rank]),
+    );
+  }
+  const legacyRanks = { single: 0, combination: 0 };
+  return new Map(
+    candidates.map((candidate) => {
+      legacyRanks[candidate.kind] += 1;
+      return [candidate.key, legacyRanks[candidate.kind]];
+    }),
+  );
 }
 
 function metrics(
@@ -200,6 +279,7 @@ function compactCandidate(
       ),
       strategyAAllocation: result.strategyAAllocation,
       strategyBAllocation: result.strategyBAllocation,
+      tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
       relativeLongStrategy: result.relativeLongStrategy,
       selectionScore: candidateSelectionScore(result),
       metrics: metrics(result),
@@ -219,6 +299,7 @@ function compactCandidate(
     strategyBEntryFilter: null,
     strategyAAllocation: 1,
     strategyBAllocation: 0,
+    tacticalMode: DEFAULT_TACTICAL_ALLOCATION_MODE,
     relativeLongStrategy: null,
     selectionScore: candidateSelectionScore(result),
     metrics: metrics(result),
@@ -244,28 +325,7 @@ function compactPerformance(value: unknown): unknown {
   );
 }
 
-export async function fingerprintMarketSeries(
-  series: MarketSeries,
-): Promise<string> {
-  const payload = JSON.stringify({
-    interval: series.interval,
-    source: series.source,
-    priceAdjustment: series.priceAdjustment,
-    bars: series.bars.map((bar) => [
-      bar.time,
-      bar.open,
-      bar.high,
-      bar.low,
-      bar.close,
-      bar.volume,
-    ]),
-  });
-  const bytes = new TextEncoder().encode(payload);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((value) => value.toString(16).padStart(2, "0"))
-    .join("");
-}
+export { fingerprintMarketSeries };
 
 export function createSaveScreeningRunInput(
   series: MarketSeries,
@@ -274,10 +334,17 @@ export function createSaveScreeningRunInput(
   settings: ScreeningRunSettings,
   outcome: ScreeningValidationOutcome,
   dataFingerprint: string,
+  temporaryQuote: MarketTemporaryQuote | null = null,
 ): SaveScreeningRunInput {
-  const candidates = rankResults(outcome, objective).map((result, index) =>
-    compactCandidate(result, index + 1),
-  );
+  const candidates = [
+    ...outcome.singleResults.map((result, index) =>
+      compactCandidate(result, index + 1),
+    ),
+    ...outcome.results.map((result, index) =>
+      compactCandidate(result, index + 1),
+    ),
+  ];
+  const selectedResult = rankResults(outcome, objective)[0] ?? null;
   return {
     instrument: { ...series.instrument },
     instrumentKey: savedBacktestInstrumentKey(series.instrument),
@@ -288,12 +355,21 @@ export function createSaveScreeningRunInput(
     lastBarDate: series.bars.at(-1)?.time.slice(0, 10) ?? "",
     barCount: series.bars.length,
     dataFingerprint,
+    temporaryQuote: temporaryQuote
+      ? {
+          provider: temporaryQuote.provider,
+          time: temporaryQuote.time,
+          fetchedAt: temporaryQuote.fetchedAt,
+        }
+      : null,
     validationMode: validationConfig.mode,
     validationConfig,
     objective,
     settings,
     candidates,
-    selectedCandidateKey: candidates[0]?.key ?? null,
+    selectedCandidateKey: selectedResult
+      ? screeningRunCandidateKey(selectedResult)
+      : null,
     validationReport: compactPerformance(outcome.validationReport),
   };
 }
@@ -303,8 +379,14 @@ export function compareScreeningRuns(
   previous: ScreeningRunRecord | null,
 ): ScreeningRunComparison | null {
   if (!previous) return null;
-  const currentWinner = current.candidates[0] ?? null;
-  const previousWinner = previous.candidates[0] ?? null;
+  const currentWinner =
+    current.candidates.find(
+      (candidate) => candidate.key === current.selectedCandidateKey,
+    ) ?? null;
+  const previousWinner =
+    previous.candidates.find(
+      (candidate) => candidate.key === previous.selectedCandidateKey,
+    ) ?? null;
   const currentWinnerInPrevious = currentWinner
     ? previous.candidates.find(
         (candidate) => candidate.key === currentWinner.key,
@@ -355,22 +437,8 @@ const assetTypes = new Set<MarketAssetType>([
   "etf",
   "commodity",
 ]);
-const providers = new Set<MarketDataProvider>([
-  "eastmoney",
-  "yahoo",
-  "nasdaq",
-  "eodhd",
-]);
-const exchanges = new Set<MarketExchange>([
-  "SSE",
-  "SZSE",
-  "JPX",
-  "PHLX",
-  "NYSE_ARCA",
-  "NASDAQ",
-  "HKEX",
-  "OTHER",
-]);
+const providers = new Set<MarketDataProvider>(MARKET_DATA_PROVIDERS);
+const exchanges = new Set<MarketExchange>(MARKET_EXCHANGES);
 const intervals = new Set<MarketInterval>([
   "1m",
   "5m",
@@ -440,7 +508,6 @@ function parseMetrics(value: unknown): ScreeningRunMetrics | null {
 
 function parseCandidate(
   value: unknown,
-  expectedRank: number,
 ): ScreeningRunCandidate | null {
   if (!isRecord(value)) return null;
   const kind = value.kind;
@@ -461,9 +528,14 @@ function parseCandidate(
       ? null
       : parseMovingAverageSlopeFilter(value.strategyBEntryFilter);
   const metricsValue = parseMetrics(value.metrics);
+  const tacticalMode = resolveTacticalAllocationMode(
+    value.tacticalMode as TacticalAllocationMode | null | undefined,
+  );
   if (
     (kind !== "single" && kind !== "combination") ||
-    value.rank !== expectedRank ||
+    !Number.isInteger(value.rank) ||
+    (value.rank as number) < 1 ||
+    (value.rank as number) > MAX_SCREENING_RUN_CANDIDATES ||
     !validString(value.key, 1_000) ||
     !strategyIds.has(strategyAId) ||
     !strategyAParameters ||
@@ -478,6 +550,9 @@ function parseCandidate(
     value.strategyAAllocation < 0 ||
     value.strategyBAllocation < 0 ||
     value.strategyAAllocation + value.strategyBAllocation > 1 + 1e-10 ||
+    (value.tacticalMode !== undefined &&
+      value.tacticalMode !== DEFAULT_TACTICAL_ALLOCATION_MODE &&
+      value.tacticalMode !== "reduce-on-short-exit") ||
     (value.relativeLongStrategy !== null &&
       value.relativeLongStrategy !== "strategyA" &&
       value.relativeLongStrategy !== "strategyB") ||
@@ -490,7 +565,7 @@ function parseCandidate(
     return null;
   }
   return {
-    rank: expectedRank,
+    rank: value.rank as number,
     key: value.key,
     kind,
     strategyAId,
@@ -501,10 +576,27 @@ function parseCandidate(
     strategyBEntryFilter,
     strategyAAllocation: value.strategyAAllocation,
     strategyBAllocation: value.strategyBAllocation,
+    tacticalMode,
     relativeLongStrategy: value.relativeLongStrategy,
     selectionScore: value.selectionScore,
     metrics: metricsValue,
   };
+}
+
+export function parseScreeningRunCandidates(
+  value: unknown,
+): ScreeningRunCandidate[] | null {
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > MAX_SCREENING_RUN_CANDIDATES
+  ) {
+    return null;
+  }
+  const candidates = value.map((candidate) => parseCandidate(candidate));
+  return candidates.some((candidate) => !candidate)
+    ? null
+    : (candidates as ScreeningRunCandidate[]);
 }
 
 export function parseSaveScreeningRunInput(
@@ -519,12 +611,26 @@ export function parseSaveScreeningRunInput(
     assetType: value.instrument.assetType as MarketAssetType,
     provider: value.instrument.provider as MarketDataProvider,
   };
-  const candidates = Array.isArray(value.candidates)
-    ? value.candidates.map((candidate, index) =>
-        parseCandidate(candidate, index + 1),
-      )
-    : [];
+  const candidates = parseScreeningRunCandidates(value.candidates) ?? [];
   const settings = value.settings;
+  const temporaryQuote =
+    value.temporaryQuote === undefined || value.temporaryQuote === null
+      ? null
+      : isRecord(value.temporaryQuote) &&
+          providers.has(
+            value.temporaryQuote.provider as MarketDataProvider,
+          ) &&
+          /^\d{4}-\d{2}-\d{2}$/.test(
+            String(value.temporaryQuote.time),
+          ) &&
+          validString(value.temporaryQuote.fetchedAt, 64)
+        ? {
+            provider:
+              value.temporaryQuote.provider as MarketDataProvider,
+            time: value.temporaryQuote.time as string,
+            fetchedAt: value.temporaryQuote.fetchedAt as string,
+          }
+        : undefined;
   const serializedConfig = JSON.stringify(value.validationConfig);
   const serializedReport = JSON.stringify(value.validationReport);
   if (
@@ -546,6 +652,9 @@ export function parseSaveScreeningRunInput(
     !Number.isInteger(value.barCount) ||
     (value.barCount as number) < 3 ||
     !/^[a-f0-9]{64}$/.test(String(value.dataFingerprint)) ||
+    temporaryQuote === undefined ||
+    (temporaryQuote !== null &&
+      temporaryQuote.time !== value.lastBarDate) ||
     !validationModes.has(
       value.validationMode as ScreeningValidationConfig["mode"],
     ) ||
@@ -563,9 +672,10 @@ export function parseSaveScreeningRunInput(
     settings.slippagePercent < 0 ||
     candidates.length < 1 ||
     candidates.length > MAX_SCREENING_RUN_CANDIDATES ||
-    candidates.some((candidate) => !candidate) ||
     !validString(value.selectedCandidateKey, 1_000) ||
-    value.selectedCandidateKey !== candidates[0]?.key
+    !candidates.some(
+      (candidate) => candidate.key === value.selectedCandidateKey,
+    )
   ) {
     return null;
   }
@@ -579,6 +689,7 @@ export function parseSaveScreeningRunInput(
     lastBarDate: value.lastBarDate as string,
     barCount: value.barCount as number,
     dataFingerprint: value.dataFingerprint as string,
+    temporaryQuote,
     validationMode:
       value.validationMode as ScreeningValidationConfig["mode"],
     validationConfig:
@@ -589,7 +700,7 @@ export function parseSaveScreeningRunInput(
       commissionPercent: settings.commissionPercent,
       slippagePercent: settings.slippagePercent,
     },
-    candidates: candidates as ScreeningRunCandidate[],
+    candidates,
     selectedCandidateKey: value.selectedCandidateKey,
     validationReport: value.validationReport ?? null,
   };

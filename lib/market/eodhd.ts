@@ -9,6 +9,10 @@ import {
   clampMarketSeriesLimit,
   requestsExtendedDailyHistory,
 } from "./history";
+import {
+  exchangeFromProviderLabels,
+  normalizeMarketCode,
+} from "./exchanges";
 import { resolveLatestDailyBarStatus } from "./session";
 
 const EODHD_BASE_URL = "https://eodhd.com/api";
@@ -49,10 +53,7 @@ export function hasEodhdApiToken(): boolean {
 }
 
 function normalizeCode(value: string): string {
-  return value
-    .replace(/^\^/, "")
-    .replace(/\.(SS|SZ|HK|US|INDX)$/i, "")
-    .toUpperCase();
+  return normalizeMarketCode(value);
 }
 
 function exchangeFromEodhd(
@@ -60,22 +61,10 @@ function exchangeFromEodhd(
   country: string | undefined,
   code: string | undefined,
 ): MarketExchange {
-  const value = `${exchange ?? ""} ${country ?? ""}`.toUpperCase();
-  if (
-    value.includes("JP") ||
-    value.includes("TOKYO") ||
-    value.includes("JAPAN") ||
-    normalizeCode(code ?? "") === "N225"
-  ) {
-    return "JPX";
-  }
-  if (value.includes("NASDAQ")) return "NASDAQ";
-  if (value.includes("NYSE ARCA")) return "NYSE_ARCA";
-  if (value.includes("HONG KONG") || value.includes("HK")) return "HKEX";
-  if (value.includes("SHANGHAI") || value.includes("SHH")) return "SSE";
-  if (value.includes("SHENZHEN") || value.includes("SHZ")) return "SZSE";
-  if (value.includes("PHLX")) return "PHLX";
-  return "OTHER";
+  return exchangeFromProviderLabels(
+    `${exchange ?? ""} ${country ?? ""}`,
+    code,
+  );
 }
 
 function assetTypeFromEodhd(
@@ -208,10 +197,14 @@ async function resolveEodhdInstrument(
     matches.find(
       (candidate) =>
         candidate.assetType === instrument.assetType &&
-        normalizeCode(candidate.code) === normalizeCode(instrument.code),
+        normalizeCode(candidate.code) === normalizeCode(instrument.code) &&
+        (instrument.exchange === "OTHER" ||
+          candidate.exchange === instrument.exchange),
     ) ??
     matches.find(
-      (candidate) => candidate.assetType === instrument.assetType,
+      (candidate) =>
+        candidate.assetType === instrument.assetType &&
+        normalizeCode(candidate.code) === normalizeCode(instrument.code),
     );
   if (!exact) {
     throw new Error("EODHD could not resolve the requested instrument");

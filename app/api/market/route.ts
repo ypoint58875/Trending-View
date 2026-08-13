@@ -5,12 +5,15 @@ import {
   clampMarketSeriesLimit,
 } from "@/lib/market/history";
 import {
+  MARKET_DATA_PROVIDERS,
   MAX_MARKET_INSTRUMENT_NAME_LENGTH,
   type MarketAssetType,
   type MarketDataProvider,
   type MarketInstrument,
   type MarketInterval,
 } from "@/lib/market/types";
+import { MARKET_EXCHANGES } from "@/lib/market/exchanges";
+import { classifyMarketProviderError } from "@/lib/market/provider-errors";
 
 export const dynamic = "force-dynamic";
 
@@ -22,10 +25,13 @@ const allowedIntervals = new Set<MarketInterval>([
   "60m",
   "1d",
 ]);
+const allowedProviders = new Set<MarketDataProvider>(
+  MARKET_DATA_PROVIDERS,
+);
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const secid = (url.searchParams.get("secid") || "100.N225").slice(0, 40);
+  const secid = (url.searchParams.get("secid") || "^N225").slice(0, 40);
   const code = (url.searchParams.get("code") || "N225").slice(0, 24);
   const name = (url.searchParams.get("name") || code).slice(
     0,
@@ -34,7 +40,7 @@ export async function GET(request: Request) {
   const exchange = (url.searchParams.get("exchange") ||
     "JPX") as MarketInstrument["exchange"];
   const provider = (url.searchParams.get("provider") ||
-    "eastmoney") as MarketDataProvider;
+    "yahoo") as MarketDataProvider;
   const assetType = (url.searchParams.get("assetType") ||
     "index") as MarketAssetType;
   const requestedInterval = (url.searchParams.get("interval") ||
@@ -44,6 +50,9 @@ export async function GET(request: Request) {
     : "1d";
   const mode =
     url.searchParams.get("mode") === "latest" ? "latest" : "history";
+  const strictProvider = url.searchParams.get("strictProvider") === "1";
+  const audit = url.searchParams.get("audit") === "1";
+  const bypassCache = mode === "latest";
   const limit = Number(
     url.searchParams.get("limit") ||
       (mode === "latest" ? 5 : DAILY_HISTORY_LIMIT),
@@ -58,11 +67,7 @@ export async function GET(request: Request) {
       ? Math.min(Math.max(Math.trunc(finiteLimit), 2), 10)
       : clampMarketSeriesLimit(finiteLimit, interval);
 
-  const validProvider =
-    provider === "eastmoney" ||
-    provider === "yahoo" ||
-    provider === "nasdaq" ||
-    provider === "eodhd";
+  const validProvider = allowedProviders.has(provider);
   const validAssetType =
     assetType === "index" ||
     assetType === "etf" ||
@@ -82,16 +87,7 @@ export async function GET(request: Request) {
         secid,
         code,
         name,
-        exchange: [
-          "SSE",
-          "SZSE",
-          "JPX",
-          "PHLX",
-          "NYSE_ARCA",
-          "NASDAQ",
-          "HKEX",
-          "OTHER",
-        ].includes(exchange)
+        exchange: MARKET_EXCHANGES.includes(exchange)
           ? exchange
           : "OTHER",
         assetType,
@@ -101,35 +97,39 @@ export async function GET(request: Request) {
       effectiveLimit,
       {
         preferLongHistory: mode !== "latest",
-        requestCache: mode === "latest" ? "no-store" : "default",
+        requestCache: bypassCache ? "no-store" : "default",
+        strictProvider,
       },
     );
 
     return NextResponse.json(series, {
       headers: {
         "Cache-Control":
-          mode === "latest"
+          bypassCache
             ? "no-store, no-cache, must-revalidate, max-age=0"
-            : "public, max-age=3600, stale-while-revalidate=86400",
+            : "no-cache, must-revalidate, max-age=0",
         "CDN-Cache-Control":
-          mode === "latest"
+          bypassCache
             ? "no-store"
-            : "public, max-age=3600, stale-while-revalidate=86400",
+            : "no-cache, must-revalidate",
         "Cloudflare-CDN-Cache-Control":
-          mode === "latest"
+          bypassCache
             ? "no-store"
-            : "public, max-age=3600, stale-while-revalidate=86400",
+            : "no-cache, must-revalidate",
       },
     });
   } catch (error) {
+    const errorCode = classifyMarketProviderError(error);
     console.error("Market series request failed", {
       secid,
+      provider,
       interval,
+      errorCode,
       message: error instanceof Error ? error.message : "Unknown error",
     });
     return NextResponse.json(
-      { error: "UPSTREAM_UNAVAILABLE" },
-      { status: 502 },
+      { error: errorCode },
+      { status: audit ? 200 : 502 },
     );
   }
 }

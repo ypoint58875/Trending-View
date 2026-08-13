@@ -2,6 +2,52 @@ import type { MarketBar } from "@/lib/market/types";
 
 export type NumericSeries = Array<number | null>;
 
+export interface RollingHighLow {
+  highest: NumericSeries;
+  lowest: NumericSeries;
+}
+
+export function rollingHighLow(
+  bars: readonly MarketBar[],
+  period: number,
+): RollingHighLow {
+  const highest: NumericSeries = new Array(bars.length).fill(null);
+  const lowest: NumericSeries = new Array(bars.length).fill(null);
+  const windowLength = Math.max(Math.round(period), 1);
+  const highIndexes: number[] = [];
+  const lowIndexes: number[] = [];
+  let highStart = 0;
+  let lowStart = 0;
+
+  for (let index = 0; index < bars.length; index += 1) {
+    while (
+      highIndexes.length > highStart &&
+      bars[highIndexes.at(-1)!].high <= bars[index].high
+    ) {
+      highIndexes.pop();
+    }
+    while (
+      lowIndexes.length > lowStart &&
+      bars[lowIndexes.at(-1)!].low >= bars[index].low
+    ) {
+      lowIndexes.pop();
+    }
+    highIndexes.push(index);
+    lowIndexes.push(index);
+
+    const expiredIndex = index - windowLength;
+    if (highIndexes[highStart] <= expiredIndex) highStart += 1;
+    if (lowIndexes[lowStart] <= expiredIndex) lowStart += 1;
+
+    if (index >= windowLength - 1) {
+      highest[index] = bars[highIndexes[highStart]].high;
+      lowest[index] = bars[lowIndexes[lowStart]].low;
+    }
+  }
+
+  return { highest, lowest };
+}
+
 function average(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
@@ -179,21 +225,40 @@ export function vwap(bars: MarketBar[]): NumericSeries {
   return output;
 }
 
-export function kdj(bars: MarketBar[], period = 9) {
+export function kdj(
+  bars: MarketBar[],
+  period = 9,
+  smoothK = 3,
+  smoothD = 3,
+) {
   const k: NumericSeries = new Array(bars.length).fill(null);
   const d: NumericSeries = new Array(bars.length).fill(null);
   const j: NumericSeries = new Array(bars.length).fill(null);
   let currentK = 50;
   let currentD = 50;
+  const normalizedPeriod = Math.max(Math.round(period), 1);
+  const normalizedSmoothK = Math.max(Math.round(smoothK), 1);
+  const normalizedSmoothD = Math.max(Math.round(smoothD), 1);
+  const highLow = rollingHighLow(bars, normalizedPeriod);
 
-  for (let index = period - 1; index < bars.length; index += 1) {
-    const window = bars.slice(index - period + 1, index + 1);
-    const highest = Math.max(...window.map((bar) => bar.high));
-    const lowest = Math.min(...window.map((bar) => bar.low));
-    const range = highest - lowest;
-    const rsv = range === 0 ? 50 : ((bars[index].close - lowest) / range) * 100;
-    currentK = (2 * currentK + rsv) / 3;
-    currentD = (2 * currentD + currentK) / 3;
+  for (
+    let index = normalizedPeriod - 1;
+    index < bars.length;
+    index += 1
+  ) {
+    const highest = highLow.highest[index]!;
+    const lowest = highLow.lowest[index]!;
+    const priceRange = highest - lowest;
+    const rsv =
+      priceRange === 0
+        ? 50
+        : ((bars[index].close - lowest) / priceRange) * 100;
+    currentK =
+      ((normalizedSmoothK - 1) * currentK + rsv) /
+      normalizedSmoothK;
+    currentD =
+      ((normalizedSmoothD - 1) * currentD + currentK) /
+      normalizedSmoothD;
     k[index] = currentK;
     d[index] = currentD;
     j[index] = 3 * currentK - 2 * currentD;
@@ -203,6 +268,9 @@ export function kdj(bars: MarketBar[], period = 9) {
 }
 
 export function obv(bars: MarketBar[]): NumericSeries {
+  if (!bars.some((bar) => bar.volume > 0)) {
+    return new Array(bars.length).fill(null);
+  }
   const output: NumericSeries = new Array(bars.length).fill(0);
   let current = 0;
 
@@ -263,11 +331,11 @@ export function stochasticSlow(
   smoothD = 3,
 ) {
   const raw: NumericSeries = new Array(bars.length).fill(null);
+  const range = rollingHighLow(bars, period);
 
   for (let index = period - 1; index < bars.length; index += 1) {
-    const window = bars.slice(index - period + 1, index + 1);
-    const highest = Math.max(...window.map((bar) => bar.high));
-    const lowest = Math.min(...window.map((bar) => bar.low));
+    const highest = range.highest[index]!;
+    const lowest = range.lowest[index]!;
     raw[index] =
       highest === lowest
         ? 50
@@ -398,10 +466,10 @@ export function cci(bars: MarketBar[], period = 20): NumericSeries {
 
 export function williamsR(bars: MarketBar[], period = 14): NumericSeries {
   const output: NumericSeries = new Array(bars.length).fill(null);
+  const range = rollingHighLow(bars, period);
   for (let index = period - 1; index < bars.length; index += 1) {
-    const window = bars.slice(index - period + 1, index + 1);
-    const highest = Math.max(...window.map((bar) => bar.high));
-    const lowest = Math.min(...window.map((bar) => bar.low));
+    const highest = range.highest[index]!;
+    const lowest = range.lowest[index]!;
     output[index] =
       highest === lowest
         ? -50
@@ -440,7 +508,11 @@ export function mfi(bars: MarketBar[], period = 14): NumericSeries {
       .slice(index - period + 1, index + 1)
       .reduce((sum, value) => sum + value, 0);
     output[index] =
-      negativeFlow === 0 ? 100 : 100 - 100 / (1 + positiveFlow / negativeFlow);
+      positiveFlow === 0 && negativeFlow === 0
+        ? null
+        : negativeFlow === 0
+          ? 100
+          : 100 - 100 / (1 + positiveFlow / negativeFlow);
   }
   return output;
 }
@@ -461,7 +533,7 @@ export function cmf(bars: MarketBar[], period = 20): NumericSeries {
     const volume = bars
       .slice(index - period + 1, index + 1)
       .reduce((sum, bar) => sum + bar.volume, 0);
-    output[index] = volume === 0 ? 0 : flow / volume;
+    output[index] = volume === 0 ? null : flow / volume;
   }
   return output;
 }
@@ -574,24 +646,105 @@ export function ichimoku(
   const base: NumericSeries = new Array(bars.length).fill(null);
   const spanA: NumericSeries = new Array(bars.length).fill(null);
   const spanB: NumericSeries = new Array(bars.length).fill(null);
-
-  const midpoint = (endIndex: number, period: number) => {
-    if (endIndex < period - 1) return null;
-    const window = bars.slice(endIndex - period + 1, endIndex + 1);
-    return (
-      (Math.max(...window.map((bar) => bar.high)) +
-        Math.min(...window.map((bar) => bar.low))) /
-      2
-    );
-  };
+  const conversionRange = rollingHighLow(bars, conversionPeriod);
+  const baseRange = rollingHighLow(bars, basePeriod);
+  const spanRange = rollingHighLow(bars, spanPeriod);
 
   for (let index = 0; index < bars.length; index += 1) {
-    conversion[index] = midpoint(index, conversionPeriod);
-    base[index] = midpoint(index, basePeriod);
-    spanB[index] = midpoint(index, spanPeriod);
+    if (
+      conversionRange.highest[index] !== null &&
+      conversionRange.lowest[index] !== null
+    ) {
+      conversion[index] =
+        (conversionRange.highest[index]! +
+          conversionRange.lowest[index]!) /
+        2;
+    }
+    if (
+      baseRange.highest[index] !== null &&
+      baseRange.lowest[index] !== null
+    ) {
+      base[index] =
+        (baseRange.highest[index]! + baseRange.lowest[index]!) / 2;
+    }
+    if (
+      spanRange.highest[index] !== null &&
+      spanRange.lowest[index] !== null
+    ) {
+      spanB[index] =
+        (spanRange.highest[index]! + spanRange.lowest[index]!) / 2;
+    }
     if (conversion[index] !== null && base[index] !== null) {
       spanA[index] = (conversion[index]! + base[index]!) / 2;
     }
   }
   return { conversion, base, spanA, spanB };
+}
+
+export interface SupportResistanceBreakSeries {
+  support: NumericSeries;
+  resistance: NumericSeries;
+  bullishBreaks: NumericSeries;
+  bearishBreaks: NumericSeries;
+}
+
+/**
+ * Builds confirmed pivot levels without backpainting. A pivot becomes visible
+ * only after `rightBars` later bars have closed, so every plotted value was
+ * knowable at that point in time.
+ */
+export function supportResistanceBreaks(
+  bars: readonly MarketBar[],
+  leftBars = 15,
+  rightBars = 15,
+): SupportResistanceBreakSeries {
+  const normalizedLeftBars = Math.max(1, Math.floor(leftBars));
+  const normalizedRightBars = Math.max(1, Math.floor(rightBars));
+  const support: NumericSeries = new Array(bars.length).fill(null);
+  const resistance: NumericSeries = new Array(bars.length).fill(null);
+  const bullishBreaks: NumericSeries = new Array(bars.length).fill(null);
+  const bearishBreaks: NumericSeries = new Array(bars.length).fill(null);
+  const pivotRange = rollingHighLow(
+    bars,
+    normalizedLeftBars + normalizedRightBars + 1,
+  );
+  let currentSupport: number | null = null;
+  let currentResistance: number | null = null;
+
+  for (let confirmationIndex = 0; confirmationIndex < bars.length; confirmationIndex += 1) {
+    const bar = bars[confirmationIndex];
+    const previousClose = bars[confirmationIndex - 1]?.close;
+    if (
+      currentResistance !== null &&
+      previousClose !== undefined &&
+      previousClose <= currentResistance &&
+      bar.close > currentResistance
+    ) {
+      bullishBreaks[confirmationIndex] = bar.close;
+    }
+    if (
+      currentSupport !== null &&
+      previousClose !== undefined &&
+      previousClose >= currentSupport &&
+      bar.close < currentSupport
+    ) {
+      bearishBreaks[confirmationIndex] = bar.close;
+    }
+
+    const pivotIndex = confirmationIndex - normalizedRightBars;
+    if (pivotIndex >= normalizedLeftBars) {
+      const pivot = bars[pivotIndex];
+      if (pivot.high === pivotRange.highest[confirmationIndex]) {
+        currentResistance = pivot.high;
+      }
+      if (pivot.low === pivotRange.lowest[confirmationIndex]) {
+        currentSupport = pivot.low;
+      }
+    }
+
+    support[confirmationIndex] = currentSupport;
+    resistance[confirmationIndex] = currentResistance;
+  }
+
+  return { support, resistance, bullishBreaks, bearishBreaks };
 }

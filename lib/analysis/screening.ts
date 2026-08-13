@@ -18,7 +18,7 @@ import {
   resolveMovingAverageEntryAllowedSeries,
 } from "./entry-filter";
 
-export const DEFAULT_SCREENING_YIELD_EVERY = 8;
+export const DEFAULT_SCREENING_YIELD_EVERY = 128;
 
 const INTEGER_STRATEGY_PARAMETER_KEYS = new Set([
   "fast",
@@ -33,6 +33,7 @@ const INTEGER_STRATEGY_PARAMETER_KEYS = new Set([
   "smoothK",
   "smoothD",
   "threshold",
+  "keyValue",
 ]);
 
 export function isIntegerStrategyParameterKey(key: string): boolean {
@@ -305,6 +306,29 @@ const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
     domains: [{ key: "threshold", values: integerRange(1, 6) }],
   },
   "tv-volty-expan-close": volatilityChannelSpace,
+  "community-bollinger-rsi": {
+    domains: [
+      { key: "rsiPeriod", values: [6, 10, 14] },
+      { key: "bbPeriod", values: [100, 150, 200] },
+      { key: "bbWidth", values: [1.5, 2, 2.5] },
+    ],
+  },
+  "community-squeeze-momentum": {
+    domains: [
+      { key: "bbPeriod", values: [20] },
+      { key: "bbWidth", values: [2] },
+      { key: "kcPeriod", values: [20] },
+      { key: "kcWidth", values: [1.5, 2] },
+      { key: "trendPeriod", values: [50, 100, 200] },
+    ],
+  },
+  "community-ut-bot": {
+    domains: [
+      { key: "keyValue", values: [2, 3, 4] },
+      { key: "atrPeriod", values: [1, 5, 10] },
+      { key: "trendPeriod", values: [100, 200] },
+    ],
+  },
 };
 
 function buildParameterSets(space: ParameterSpace): StrategyParameters[] {
@@ -391,10 +415,12 @@ export function buildNearbyParameterSets(
 
 export function buildScreeningCandidates(
   horizons: readonly StrategyHorizon[] = ["long", "short"],
+  excludedStrategyIds: readonly StrategyId[] = [],
 ): ScreeningCandidate[] {
   const includedHorizons = new Set(horizons);
+  const excluded = new Set(excludedStrategyIds);
   return STRATEGIES.filter((strategy) =>
-    includedHorizons.has(strategy.horizon),
+    includedHorizons.has(strategy.horizon) && !excluded.has(strategy.id),
   ).flatMap((strategy) => {
     const parameterSets = buildParameterSets(
       PARAMETER_SPACES[strategy.id],

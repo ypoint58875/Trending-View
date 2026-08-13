@@ -1,7 +1,262 @@
 # Changelog
 
+## 2026-08-11
+
+- Added a reusable community-analysis catalog and intake contract, then ported
+  nine downloaded TradingView indicators and three long-only strategies through
+  the existing registries with alignment and prefix-causality tests.
+- Replaced visible/persisted shortcut and screening ranks with recent strategy
+  validation prompts. Removed saved-rank reads, writes, and archive backfills;
+  legacy database columns remain inert for reversible compatibility.
+- Added exact/same-type shortcut notices to screening results, including
+  parameter, allocation, entry-filter, and tactical-mode differences.
+- Preserved active/completed screening state when opening a same-instrument,
+  same-interval shortcut and removed the sample-period result report.
+- Added up-to-two-decimal price-axis bounds/ticks when the visible high is at
+  most 20, for both daily and one-minute charts.
+
+## 2026-08-09
+
+- Expanded KDJ to configurable period, K smoothing, and D smoothing inputs with
+  backward-compatible `9 / 3 / 3` defaults for older saved settings.
+- Added explicit strategy-linked lower-pane indicators for strategies whose
+  actual formula has a matching registered study, with exact deduplication
+  against manually visible indicators.
+- Added owner-scoped, renameable instrument and per-instrument strategy folders
+  to saved shortcuts. Folder deletion safely unfiles contents, and migration
+  `0008_sour_rage.sql` adds the normalized folder table and nullable links.
+- Added independent collapse controls plus drag and Up/Down keyboard ordering
+  to both instrument and strategy folder levels, with context-scoped persisted
+  folder order.
+- Distinguished a touched price-order entry that is rejected by the
+  moving-average slope filter from an ordinary wait; guidance now retains the
+  entry price and shows the blocked reason.
+- Added a second strictly long-only tactical allocation mode: enter at full
+  A+B exposure, reduce the tactical sleeve on the relative-short exit, restore
+  it on the next entry, and clear at the relative-long exit. Screening now
+  evaluates both modes across all five allocation splits and persists the mode
+  through shortcuts, archives, and shortlist identity.
+- Normalized every history/latest/fallback/temporary-quote merge by canonical
+  trading date so conflicting provider timestamp units cannot swap adjacent
+  daily K-lines.
+- Replaced eager controlled number inputs with editable draft/commit fields;
+  focus selects existing text, temporary blank input is allowed, and validation
+  occurs on blur or Enter.
+- Replaced the flat indicator toolbar with six category menus and a persistent
+  star-managed favorites strip. Added an independent non-backpainting confirmed
+  support/resistance-break overlay as the initial favorite after reviewing the
+  current TradingView Editors' picks, Top, and Trending catalogs.
+- Corrected the indicator toolbar to use one-open-at-a-time controlled menus,
+  moved quick indicators onto a dedicated row, and added an independent hollow
+  star beside every categorized indicator that turns amber when favorited.
+- Added exactly two research tabs, daily and provider-native one minute. The
+  one-minute path uses 1,500 raw bars, exact minute ranges, minute completion
+  and refresh state, interval-isolated cache/source health/saved plans and
+  screening, and no 5/15/30/60-minute resampling controls.
+- Added same-source missing-volume enrichment for locked completed bars plus a
+  one-shot recent-gap history repair, preserving every cached OHLC field.
+
+## 2026-08-02
+
+- Accelerated exhaustive screening without reducing the 37,131-parameter
+  domain: shared monotonic queues replace repeated rolling-window slices in
+  Ichimoku and channel calculations, price-order candidates no longer build an
+  unused close target, and cooperative Worker yields now occur every 128
+  evaluations. The 1,000-bar full-domain signal-build benchmark fell from
+  about 20.5 seconds to about 3.5 seconds while result-parity tests stayed
+  unchanged.
+- Unified shortcut ranking with the actual one-click result tables: standalone
+  and combination plans keep their native ranks, all optimization objectives
+  append to one shared newest-five history, and an exact plan absent from a run
+  records `未` instead of silently skipping the event. First saves and legacy
+  rows rebuild from the same archive events; 128-session return refreshes never
+  alter rank history.
+- Made exact saved-plan replacement independent of the rolling date window so
+  the same parameters, filters, allocations, costs, and canonical instrument
+  cannot create another shortcut as dates advance.
+- Fixed empty-chart backup recovery so the selected verified history is
+  actually promoted, and made equally fresh fallback selection prefer the
+  longer usable history.
+- Added a deterministic local major-index catalog and bounded remote search;
+  public providers are tried before credentialed discovery providers.
+- Added explicit volume-coverage eligibility. Volume-dependent indicators and
+  strategies are disabled when usable volume is missing, all-zero MFI/CMF/OBV
+  output remains unavailable instead of generating misleading values, and
+  complete saved-strategy cohorts are protected from partial screening ranks.
+- Made shortcut rolling-return updates, legacy rank backfill, group deletion,
+  and completed screening rank writes atomic D1 batches. Screening snapshots
+  now use independent UUID keys.
+- Aligned buy-and-hold comparison costs with open-position mark-to-market by
+  charging entry costs only and not inventing a final liquidation cost.
+- Added contextual commodity-proxy disclosure beside the selected instrument.
+- Hid the redundant screening-history/weekly-comparison panel while retaining
+  its backend archive, comparison, pruning, legacy backfill, and shortcut-rank
+  write paths.
+- Added an inclusive trading-session count beside range-screening dates.
+- Aligned useful strategy-reference line rendering with solid legend samples,
+  omitted empty lines, mapped long/short entry and exit references to the four
+  action labels, and limited K-line detail/crosshair prices to one decimal.
+- Extended automatic active-market refresh cycles to refresh every inactive
+  shortcut instrument through the existing sequential/cooldown path.
+- Fixed global-index canonical aliases such as Eastmoney `NDX100` versus Yahoo
+  and Nasdaq `NDX`, made Nasdaq honor provider `secid`, and retained a published
+  same-session volume when a later refresh omits it.
+- Fixed the latest-strategy guidance card at 126 pixels with contained vertical
+  overflow so changing guidance no longer shifts the header layout.
+- Added a confirmed first-level shortcut-group delete that removes every saved
+  strategy for the owner's canonical instrument in one request.
+- Added automatic latest-128-trading-session return recalculation for active and
+  background-refreshed shortcut instruments. Each completed one-click screening
+  now appends one result-rank or not-ranked event to every saved strategy in
+  that canonical instrument group, retains the newest five, and rejects partial
+  group updates. Existing rows backfill from screening archives, while ordinary
+  market refreshes update returns without adding rank events.
+- Made the visible K-line vertical scale depend only on candle highs and lows,
+  updating with data zoom so strategy overlays cannot rescale the same
+  instrument differently; axis bounds and displayed labels are integers.
+- Added migration `0007_bright_jackpot.sql`, validation and chart-range unit
+  coverage, rendered source contracts, and linked architecture/state docs.
+
+## 2026-07-28
+
+- Added Juhe Data as the final SSE/SZSE current-quote fallback. It is tried only
+  after the no-key Tencent quote fails, is skipped after a valid Tencent quote,
+  never becomes canonical history or an effective primary, and enforces the
+  current 50-call Shanghai-day allowance with an optional external-usage
+  offset.
+- Audited every locally recognized credential against current official
+  allowance pages. `.env.example`, `SECRETS.md`, and `DATA_SOURCES.md` now
+  distinguish documented free/starter limits from dashboard-specific account
+  entitlements and record reset/throttle behavior without probing dormant keys.
+- Added bounded request samples and independent 7/30-day source availability.
+  Three consecutive failures or a sub-80% 7-day configured-primary rate
+  triggers persistent demotion; qualified backups require 95%/90% rolling
+  availability plus price quality, while hourly probes and a seven-day stable
+  window prevent restoration oscillation.
+- Formally added FMP `GCUSD` and AllTick `GOLD` as gold backups. Both preserve
+  canonical `GC=F` identity and require overlap/price validation because their
+  methodology is not assumed identical to Yahoo continuous futures. Live FMP
+  gold history reached 2026-07-28. The initial AllTick token returned 401; its
+  replacement seven-day trial token returned current daily bars, passed Yahoo
+  overlap, and now stops locally at its explicit expiry before network access.
+- Made the loopback market relay a required local launcher service and the
+  default development route. Restart now reuses a healthy relay or removes only
+  a verified orphan, including when the application server was already ready.
+- Replaced the fixed one-minute market timer with visible-page session-aware
+  refresh: five minutes for active regular venues through 30 minutes after
+  close, Sunday-Friday Globex handling for COMEX/NYMEX proxies with maintenance
+  and weekend closure, 15 minutes for unknown venues, and no regular-venue
+  refresh after the grace period. Focus uses the same minimum interval.
+- Kept immediate ordered backup recovery after a primary failure and added
+  15/30/60-minute backoff only after every source fails. Credential-free audits
+  now run at most every 30 minutes.
+- Added progress, updated/retained counts, and a 60-second cooldown to the
+  manual all-shortcut refresh; automatic refresh continues to affect only the
+  active instrument.
+- Centralized supplied local keys in ignored `.env.local`, documented
+  placeholders only, and added safe on-use classification for invalid/expired
+  credentials, access denial, quota limits, missing configuration, and generic
+  upstream failures. Only credential failures receive the UI warning.
+- Clarified the guidance timestamp as the latest market-data fetch and displayed
+  its actual source, so a successful backup update does not appear to contradict
+  the separate preferred-source warning.
+- Raised functional microcopy to 12 pixels across the latest-guidance,
+  shortcut, chart-control, strategy-lab, screening, table, and status areas;
+  retained the refresh action below 900 pixels and labeled it for its complete
+  current-plus-shortcut scope.
+- Changed manual refresh to update the active chart and then serially refresh
+  every other unique shortcut instrument in the background. Refreshed shortcut
+  strategies now recalculate over the shared date range, and their canonical
+  series is warmed before the shortcut is opened.
+- Retained the newest validated temporary quote through a later transient
+  all-source failure until a newer quote or completed canonical bar supersedes
+  it. Screening archives now store optional temporary-quote provider/date/fetch
+  provenance through additive migration `0006_curved_fenris.sql`.
+- Centralized runtime provider validation on `MARKET_DATA_PROVIDERS` so market
+  routes and screening archives accept the same provider registry.
+- Added validated fallback promotion: deterministic identity mappings can
+  recover an empty chart, while uncertain candidates require bounded overlap.
+  Promoted sources may append dates or replace only an unconfirmed final bar;
+  confirmed cached OHLC remains immutable.
+- Added official Nikkei N225, Twelve Data, Alpha Vantage, Financial Modeling
+  Prep, Marketstack ETF, and Zhitu SSE/SZSE index adapters behind the shared
+  provider registry. Credentialed backups are tried sequentially only during
+  recovery to conserve quotas.
+- Ordered Zhitu immediately after the original source for Chinese indexes and
+  retained EODHD as the first proven fallback for SSE ETF `513310`.
+- Added Tencent Finance as a no-key Chinese index/ETF temporary-quote
+  source. Its single-session snapshot can never masquerade as daily history or
+  recover an empty chart.
+- Fixed primary-outage refreshes that reported a validated backup while leaving
+  the chart on the prior session. Chinese recovery now probes Tencent first,
+  retains the first validated history source as the canonical base, and adds a
+  validated current-session quote only to the in-memory chart. A live `513310`
+  refresh advanced from 242 to 243 bars without persisting the temporary bar.
+- Reflowed the strategy-lab heading into title, strategy-name, and control rows;
+  removed the automatic-backtest and screening-action helper labels; and sized
+  entry-filter columns by label length so all three labels stay on one line.
+- Changed the new strategy-lab one-way commission default from `0.03%` to
+  `0.05%` (five ten-thousandths). Existing saved shortcuts keep their stored
+  commission values.
+- Recorded Finnhub, EIA, iTick, AKShare/AKTools, TuShare, and Sina Finance
+  ZYHub as researched candidates rather than enabling them without a successful
+  entitled daily-bar probe. The supplied ZYHub account currently reports
+  insufficient balance.
+- Simplified explanatory UI copy, increased small functional text, widened the
+  latest-guidance card, aligned screening controls, added guidance update time
+  and saved-shortcut creation time, and collapsed equal fast/slow chart
+  indicators into one series.
+- Made the Windows launcher remove only a verified orphaned QuantScope relay
+  from port 3001 before restart while preserving active and unrelated listeners.
+
 ## 2026-07-27
 
+- Limited screening audit history to the newest six runs for each owner and
+  canonical instrument. Archive reads and writes now permanently prune older
+  rows instead of only hiding them from the interface.
+- Changed the canonical preference to Yahoo for N225, SOX,
+  Yahoo-discovered instruments, verified global index/ETF mappings, and the
+  existing commodity proxies. Eastmoney, Nasdaq, and optional EODHD remain
+  provider-isolated backups.
+- Preserved same-instrument locked canonical history across the deliberate
+  primary-policy change; current-primary writes remain strict and confirmed
+  dates remain immutable.
+- Changed market-search de-duplication to prefer Yahoo exact symbols and changed
+  the default 31-instrument coverage matrix to Yahoo. All 16 indexes, 11 ETFs,
+  and four commodities passed live strict-provider validation.
+- Replaced automatic whole-provider chart switching with canonical market
+  profiles. N225 uses Eastmoney, SOX uses Nasdaq, and the four built-in
+  continuous commodity proxies use Yahoo. The N225/SOX assignments were
+  superseded later the same day by the Yahoo-first preference above.
+- Added a separate canonical IndexedDB with immutable completed bars,
+  provider-isolated history/latest snapshots, close-only references, SHA-256
+  fingerprints, and cumulative availability/latency/gap/OHLC quality records.
+- Changed backups to audit and temporary-quote roles only. They never overwrite
+  canonical K-line OHLC; a primary outage retains the existing canonical chart.
+- Added FRED N225 close-only reference ingestion without synthetic OHLC.
+- Added real global exchange/session normalization for major Asian, European,
+  US, Indian, Brazilian, Swiss, Taiwanese, Singaporean, and Australian index
+  codes instead of treating every Eastmoney market-100 result as JPX.
+- Added deterministic Eastmoney continuous identifiers for gold, silver, WTI,
+  and copper, same-host HTTPS-to-HTTP transport retry, history caching under
+  strict routing, and a repeatable 31-instrument live coverage command.
+- Added a loopback-only, provider-allowlisted local relay so proxy-preferred
+  Yahoo requests work from the local Worker runtime without exposing proxy
+  configuration. Live checks passed 16 Yahoo indexes, 11 Yahoo ETFs, 11 Nasdaq
+  ETFs, and four Yahoo commodity aliases.
+- Changed the four commodity canonical profiles to their verified Yahoo
+  histories and retained Eastmoney continuous identifiers as isolated backups.
+  Canonical cache reads initially rejected rows from a superseded primary; that
+  read rule was superseded later the same day by same-instrument locked-history
+  preservation above.
+- Added automatic whole-series market-source reconciliation. When an uncached
+  latest request changes source or adjustment mode, QuantScope pins that
+  provider, reloads its complete history, and switches atomically instead of
+  mixing bars or leaving a warning indefinitely. This behavior was superseded
+  later the same day by canonical source locking above.
+- Enabled the one-click screening EMA5-8 slope-refinement checkbox by default
+  while keeping the manual Strategy A/B filter drafts independent and off by
+  default.
 - Changed selected-range accounting to inherit pre-existing positions without
   a synthetic fill or cost and to mark open ending positions to the final close
   without forced liquidation. Trade counts now contain only real in-range
@@ -31,9 +286,9 @@
   to control candidate/observe-only status.
 - Removed one-click parameter sampling and now traverses all 37,131 registered
   combinations. Eligible trend/breakout/momentum strategies refine only their
-  top 30 unfiltered parameter sets under EMA5-8; each strategy contributes one
-  final winner to automatically enabled pair screening, which compares 60/40
-  and 40/60 allocations.
+  Top 60 unfiltered parameter sets under EMA5-8; each strategy contributes one
+  final winner to automatically enabled pair screening, which compares 50/50,
+  60/40, 40/60, 70/30, and 30/70 allocations.
 - Preserved the current successful price series when a saved shortcut resolves
   to the same canonical instrument, even across provider aliases. Only a
   different instrument or missing series triggers a market reload.

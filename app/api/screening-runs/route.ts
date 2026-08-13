@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { resolveOwnerEmail } from "@/app/api/owner";
 import { screeningRuns } from "@/db/schema";
 import {
@@ -10,10 +10,33 @@ import {
 export const dynamic = "force-dynamic";
 
 type ScreeningRunRow = typeof screeningRuns.$inferSelect;
-
 async function getScreeningRunDb() {
   const { getDb } = await import("@/db");
   return getDb();
+}
+
+async function pruneScreeningRunHistory(
+  db: Awaited<ReturnType<typeof getScreeningRunDb>>,
+  ownerEmail: string,
+) {
+  await db.run(sql`
+    DELETE FROM ${screeningRuns}
+    WHERE ${screeningRuns.ownerEmail} = ${ownerEmail}
+      AND ${screeningRuns.id} IN (
+        SELECT run_id
+        FROM (
+          SELECT
+            ${screeningRuns.id} AS run_id,
+            ROW_NUMBER() OVER (
+              PARTITION BY ${screeningRuns.instrumentKey}
+              ORDER BY ${screeningRuns.createdAt} DESC, ${screeningRuns.id} DESC
+            ) AS history_rank
+          FROM ${screeningRuns}
+          WHERE ${screeningRuns.ownerEmail} = ${ownerEmail}
+        ) AS ranked_screening_runs
+        WHERE history_rank > ${MAX_SCREENING_RUN_HISTORY}
+      )
+  `);
 }
 
 function toRecord(row: ScreeningRunRow): ScreeningRunRecord {
@@ -34,6 +57,16 @@ function toRecord(row: ScreeningRunRow): ScreeningRunRecord {
     lastBarDate: row.lastBarDate,
     barCount: row.barCount,
     dataFingerprint: row.dataFingerprint,
+    temporaryQuote:
+      row.temporaryQuoteProvider &&
+      row.temporaryQuoteDate &&
+      row.temporaryQuoteFetchedAt
+        ? {
+            provider: row.temporaryQuoteProvider,
+            time: row.temporaryQuoteDate,
+            fetchedAt: row.temporaryQuoteFetchedAt,
+          }
+        : null,
     validationMode: row.validationMode,
     validationConfig: JSON.parse(row.validationConfigJson) as unknown,
     objective: row.objective,
@@ -69,10 +102,14 @@ export async function GET(request: Request) {
   }
   const url = new URL(request.url);
   const instrumentKey = url.searchParams.get("instrumentKey")?.trim() ?? "";
-  const requestedLimit = Number(url.searchParams.get("limit") ?? 12);
+  const requestedLimit = Number(
+    url.searchParams.get("limit") ?? MAX_SCREENING_RUN_HISTORY,
+  );
   const limit = Math.min(
     Math.max(
-      Number.isInteger(requestedLimit) ? requestedLimit : 12,
+      Number.isInteger(requestedLimit)
+        ? requestedLimit
+        : MAX_SCREENING_RUN_HISTORY,
       1,
     ),
     MAX_SCREENING_RUN_HISTORY,
@@ -83,6 +120,7 @@ export async function GET(request: Request) {
 
   try {
     const db = await getScreeningRunDb();
+    await pruneScreeningRunHistory(db, ownerEmail);
     const rows = await db
       .select()
       .from(screeningRuns)
@@ -122,7 +160,7 @@ export async function POST(request: Request) {
 
   try {
     const db = await getScreeningRunDb();
-    const [previousRow] = await db
+    const previousRows = await db
       .select()
       .from(screeningRuns)
       .where(
@@ -133,7 +171,8 @@ export async function POST(request: Request) {
       )
       .orderBy(desc(screeningRuns.createdAt), desc(screeningRuns.id))
       .limit(1);
-    const [row] = await db
+    const previousRow = previousRows[0];
+    const insertedRows = await db
       .insert(screeningRuns)
       .values({
         ownerEmail,
@@ -151,6 +190,11 @@ export async function POST(request: Request) {
         lastBarDate: input.lastBarDate,
         barCount: input.barCount,
         dataFingerprint: input.dataFingerprint,
+        temporaryQuoteProvider:
+          input.temporaryQuote?.provider ?? null,
+        temporaryQuoteDate: input.temporaryQuote?.time ?? null,
+        temporaryQuoteFetchedAt:
+          input.temporaryQuote?.fetchedAt ?? null,
         validationMode: input.validationMode,
         validationConfigJson: JSON.stringify(input.validationConfig),
         objective: input.objective,
@@ -162,6 +206,17 @@ export async function POST(request: Request) {
           : null,
       })
       .returning();
+    const row = insertedRows[0];
+    if (!row) {
+      throw new Error("Screening run insert returned no row");
+    }
+    try {
+      await pruneScreeningRunHistory(db, ownerEmail);
+    } catch (error) {
+      console.error("Screening run pruning failed", {
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
     return Response.json(
       {
         screeningRun: toRecord(row),

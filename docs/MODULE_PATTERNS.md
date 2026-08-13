@@ -13,13 +13,103 @@ Every provider must:
 Provider orchestration belongs in `lib/market/index.ts`, not in individual
 adapters. Search results must normalize to the shared index/ETF/commodity asset
 types and must not expose individual equities. Commodity catalog entries live
-in `lib/market/commodities.ts`, use Yahoo symbols, and never fall back to
-Nasdaq. Fallbacks preserve the last valid series,
-prefer longer daily history when available, and never merge bars from different
-sources into one series. History responses may be HTTP cached, while current
-refresh requests remain uncached and replace only overlapping recent bars from
-the same provider, interval, and price-adjustment mode. A mismatch retains the
-complete compatible history until a full compatible refresh succeeds.
+in `lib/market/commodities.ts` and use deterministic Eastmoney continuous
+identifiers with explicit exchange identities.
+
+Proxy-preferred local sources use `lib/market/local-relay.ts` and
+`scripts/market-relay.mjs`. The relay must bind only to loopback, accept only
+allowlisted HTTPS provider hosts and paths, forward only non-sensitive request
+headers, and never receive proxy configuration inside Worker code. The Windows
+launcher keeps one runtime-port registry for the application and relay and
+reconciles both on every path, including reuse of an already ready application.
+Development mode may use only the fixed loopback default; production requires
+an explicit binding. Runtime lifecycle checks must probe health first, map a
+listener to its owning process, verify the exact current-checkout command and
+role arguments before stopping it, wait for release, and never stop another
+checkout or unrelated listener.
+
+Canonical orchestration belongs in `lib/market/canonical.ts`,
+`series.ts`, `quality.ts`, `canonical-cache.ts`, `source-health.ts`, and
+`shortcut-refresh.ts`. Every instrument has one
+primary definition. Prefer Yahoo only when the instrument already carries an
+exact Yahoo symbol or the shared Yahoo mapping boundary can derive one
+deterministically; never guess an unsupported exchange suffix. Source snapshots
+and references remain isolated by provider and mode. A completed canonical bar
+is immutable. Only the unconfirmed final bar may be replaced, and only missing
+or later dates may be appended. Every backup definition declares either
+`verified-identity` or `overlap-required`. Identity-verified sources may recover
+an empty chart; overlap-required sources need sufficient matching dates and
+bounded OHLC error. Neither path may rewrite a confirmed date. Rejected
+candidates remain provider-isolated. Retain a bounded 31-day attempt sample
+list in addition to lifetime counters. Source choice uses 7/30-day windows,
+minimum observations, quality gates, persistent demotion, hourly configured-
+primary probes, and seven-day restoration hysteresis; it must never rank a
+provider from a key's presence alone. Credentialed sources are recovered
+sequentially and normally excluded from background audits. Explicitly approved
+commodity fallbacks may receive a 30-minute active-instrument audit; an invalid
+credential is cooled down for 24 hours in the current page session so a reload
+can validate a rotated key.
+History may be HTTP cached; current refresh remains uncached. A one-bar quote
+source may update only an unconfirmed same-day bar or append a newer bar in the
+active in-memory view after identity, date, OHLC, and relative-price validation.
+Keep the canonical base in a separate reference and never persist the temporary
+bar. Retain the newest accepted quote separately and revalidate it against the
+canonical base when a later request produces no replacement. Prefer a no-key
+quote probe before quota-bearing recovery sources when both are needed to
+render a current session. A credentialed quote-only fallback with a small
+allowance must be last, skipped after an earlier valid quote, excluded from
+routine audits and effective-primary selection, and protected by a provider-day
+quota gate. The Juhe implementation uses Shanghai calendar days, a hard maximum
+of 50, and optional same-day external-usage offset metadata. Its in-process
+counter is a conservative client guard; the upstream provider remains
+authoritative across server restarts.
+
+Refresh orchestration belongs at the workspace boundary, not in provider
+adapters. Use `resolveMarketAutoRefreshPolicy` for venue-local session timing,
+apply one shared minimum-attempt timestamp to timers, focus, and visibility,
+and require `document.visibilityState === "visible"`. Try ordered backups
+immediately after a primary failure. Increment the 15/30/60-minute global
+backoff only when the complete chain fails, and clear it after any accepted
+primary, promoted backup, or valid temporary quote. Whole-shortcut refresh is
+triggered by both the manual header action and automatic active-market refresh
+updates. It is sequential by unique canonical instrument, progress-reporting,
+cooldown-protected, and consumes each queued automatic request version once.
+
+Commodity providers must preserve the canonical instrument code even when the
+upstream symbol differs. Spot, CFD, and continuous-futures mappings are always
+`overlap-required`; they cannot recover an empty chart or rewrite confirmed
+history. Current gold mappings are Yahoo `GC=F`, FMP `GCUSD`, AllTick `GOLD`,
+and Eastmoney `101.GC00Y`.
+
+Normalize safe provider failure states through
+`lib/market/provider-errors.ts`. Never return upstream bodies, keys, request
+URLs containing keys, or authorization headers to the browser. Keep invalid or
+expired credentials, access/entitlement denial, quota limitation, missing
+configuration, and generic upstream failures distinct; only the first state is
+shown as a credential warning.
+
+`MARKET_DATA_PROVIDERS` in `lib/market/types.ts` is the runtime and compile-time
+provider registry. API validators and archive parsers must derive provider
+membership from that constant instead of maintaining parallel string lists.
+
+Published provider allowances belong in `.env.example`, `SECRETS.md`, and
+`DATA_SOURCES.md`, with the access date and official source. Treat those values
+as documented free/starter baselines, not inferred account entitlement. Never
+probe an unused key solely to discover its plan. Add a runtime quota counter
+only when the implemented path consumes a small known bucket; larger or
+dashboard-dependent plans continue to rely on ordered recovery, cooldown, and
+provider 429 classification.
+
+Canonical cache identity is instrument plus interval, not the current primary
+provider. A deliberate primary-policy change may reuse a same-instrument locked
+record or qualifying legacy cache as the existing seed. Current-primary writes
+remain strict, so an old-provider seed is never relabeled as a successful new
+primary before the new source actually responds.
+
+Exchange resolution is shared through `lib/market/exchanges.ts`. A provider
+market bucket is not necessarily an exchange: Eastmoney market `100`, for
+example, contains multiple global indexes and must be resolved by index code.
+Unknown codes stay `OTHER` rather than being assigned a false venue.
 
 Daily history boundaries and caps belong in `lib/market/history.ts`, not as
 provider-local magic numbers. The current workspace requests 2000-01-01
@@ -55,30 +145,52 @@ and the saved instrument have the same canonical key and interval, preserve the
 exact active series and restore only plan-derived state. Provider aliases alone
 must not blank or reload the chart. A different canonical instrument or an
 empty active series must use the normal market loading pipeline.
+All-shortcut refresh must de-duplicate canonical keys, process inactive
+instruments sequentially, update canonical storage and shortcut calculations,
+never switch the visible instrument, and preserve a pending automatic request
+until it can run after an active pass or cooldown.
 
 ## Indicator
 
 Indicators are pure, bar-aligned functions. Warm-up entries are `null`; values
 must never be shifted backward or use future bars.
 
+Repeated rolling high/low windows must use the shared monotonic-queue helper in
+`indicators.ts`. Channel and Ichimoku-style calculations must remain linear in
+bar count rather than allocating and rescanning a slice at every bar. Preserve
+the same inclusive window boundary and aligned `null` warm-up contract.
+
 Display metadata belongs in the shared indicator registry. The registry owns
-stable IDs, main-chart versus lower-pane placement, defaults, minimums, and
-input steps. It contains no localized text and no chart styling. UI controls
+stable IDs, categories, main-chart versus lower-pane placement, defaults,
+minimums, and input steps. It contains no localized text and no chart styling. UI controls
 and chart calculations consume the same registry entry so a displayed setting
 cannot drift from the formula input.
 
-The UI keeps focused state separate from ordered-visible state. Focus selects
+The UI keeps focused state separate from ordered-visible and favorite state. Focus selects
 which indicator's independent settings are edited; ordered visibility selects
-what the chart renders and preserves display order. All indicators are hidden
-by default. A toolbar click focuses and toggles the same indicator; the focused
+what the chart renders and preserves display order; favorites only control the
+shortcut strip. All indicators are hidden by default. A favorite or category
+menu click focuses and toggles the same indicator; the focused
 hidden style must remain visually distinct from the visible style. Hiding an
-indicator does not reset its settings. Validated per-indicator settings and
-visibility are device-local preferences. Overlay definitions render on the
+indicator does not reset its settings. Validated per-indicator settings,
+visibility, and favorites are device-local preferences. Overlay definitions render on the
 price axes. Every visible pane definition receives its own lower pane. Price,
 volume, and all indicator panes share the same zoom contract. Build legend
 names from each visible indicator's actual parameters, leave VWAP/OBV
 parameter-free, use a scrolling legend, and reserve top space so it cannot
 cover the price plot.
+
+When a formula gains a backward-compatible parameter, add it to the registry
+and fill absent stored keys from registry defaults while still rejecting
+unknown keys. Strategy-linked pane studies are explicit strategy metadata, not
+inferred from a generic catalog label. Merge those derived configurations at
+render time so they do not mutate manual visibility preferences or saved
+indicator snapshots.
+
+Pivot-derived studies must not backpaint. A pivot may be calculated only when
+its configured right-side confirmation bars exist, and its level begins at the
+confirmation index. Later break markers compare a completed close with the
+already-known carried level.
 
 ## Strategy
 
@@ -150,7 +262,7 @@ core optimizer keeps cooperative yields for non-Worker/test callers. Run-local
 indicator, target, and order caches belong inside the worker lifetime; never
 persist or reload a completed result as an optimization cache. The current
 registry must produce exactly
-37,131 candidates; changing a domain requires updating the explicit coverage
+37,182 candidates; changing a domain requires updating the explicit coverage
 test and documentation.
 Objective comparison and tie-breaking belong in the shared screening module,
 not the UI. A candidate/observe-only presentation label may explain evidence
@@ -163,7 +275,10 @@ calculation to the selected range. If the complete target is already active
 before the boundary, inherit exposure at the first selected open without a
 transaction or cost. At the range end, mark open units to the close without a
 forced trade. Cache complete targets only for retained finalists inside the
-current run; do not retain every candidate array.
+current run; do not retain every candidate array. When a strategy exposes
+`buildOrders`, screening must build that order series once and derive the
+executed target from it; do not also build a close target that the hybrid
+execution path will discard.
 
 Strategy plans use optional Strategy A and Strategy B selections. Both
 selectors accept the complete registry, but a dual plan must contain two
@@ -174,9 +289,11 @@ dual plan, summarize each selected-range target
 by average active-run length. The longer average becomes the relative
 long-cycle gate; ties prefer fewer target transitions and then Strategy A.
 Use an event-driven state machine: a relative-long entry establishes its
-allocation, an already-active relative-short signal is not inherited, a later
-fresh relative-short entry adds its allocation, its exit removes that layer,
-and a relative-long exit clears every active layer. Validate both allocations
+allocation. In base-then-add mode, an already-active relative-short signal is
+not inherited, a later fresh entry adds its allocation, and its exit removes
+that layer. In full-then-reduce mode, the gate entry establishes both sleeves,
+a relative-short exit removes its sleeve, and a later entry restores it. A
+relative-long exit clears every active layer. Validate both allocations
 in `[0, 1]` and require their sum not to exceed one.
 
 Unified screening must reuse one selected objective, candidate domain, and
@@ -191,9 +308,9 @@ screening may retain the best ten per strategy for window aggregation before
 collapsing the displayed list to one per strategy. Combination screening is
 always enabled: enumerate every unordered pair of non-equivalent retained
 single results without catalog-horizon filtering. Retain every pair up to the
-4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With 34 strategies
+4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With 37 strategies
 and two equivalent ID pairs excluded, the current catalog creates
-`choose(34, 2) - 2 = 559` unique-winner pairs. Store and replay
+`choose(37, 2) - 2 = 664` unique-winner pairs. Store and replay
 `strategyAEntryFilter` and `strategyBEntryFilter` independently, including
 mixed filtered/unfiltered and different-EMA legs. Final presentation is a separate
 bounded view: keep one best result per unordered strategy-ID pair, then sort
@@ -217,6 +334,12 @@ and drawdown; trade count is presentation evidence only. None of these modes
 uses training/test terminology or claims an independent holdout. Period and
 rolling shortlist order may use their explicit aggregate score; range order
 uses its custom-interval objective.
+
+Screening progress presentation must use
+`resolveScreeningProgressBarState(...)` rather than reconstructing validation
+phases in the component. The shared scale contains four optimizer segments and
+one additional segment for each rolling selection window. Period, range, and
+rolling completion must always resolve to equal value and maximum.
 
 Post-screening recommendation logic belongs in `strategy-shortlist.ts`, not in
 the UI and not inside either optimizer. Merge the already-ranked standalone and
@@ -270,6 +393,10 @@ untouched condition must not be presented as a fill. Wall-clock time must not
 change the strategy's execution contract. Mixed-timing definitions may also
 publish a pending next-open action; Greedy documents that the next open's gap
 branch can override the completed-candle direction.
+If a flat price-order strategy touches its causal entry while the entry filter
+is false, replay the order once without the filter only to identify the blocked
+condition. Keep the actual action and position unchanged, expose a separate
+blocked flag, and never report the hypothetical fill as an executed trade.
 
 Daily completion is provider-normalized metadata, not a component clock check.
 Adapters set `MarketSeries.latestBarStatus` through the shared session resolver.
@@ -278,10 +405,14 @@ in-progress or unknown; price-order replay remains active because its levels
 were derived from prior completed data.
 
 Device-local market history uses one shared IndexedDB adapter. Keys include
-provider, provider symbol, and interval. Components may display a validated hit
-immediately, but must continue the authoritative network refresh and may merge
-only identical source/interval/adjustment series. Cache failures are a
-documented network fallback, not a data-source fallback.
+canonical instrument or provider snapshot identity plus interval and mode.
+Components may display a validated canonical hit immediately, but must
+continue the primary refresh. Canonical series, source snapshots, reference
+snapshots, fingerprints, and health records use separate stores. The legacy
+provider/symbol cache is accepted only for controlled same-instrument
+migration, including an explicit configured-primary policy change. Cache
+failures are a documented storage fallback, not permission to change the
+canonical source.
 
 Strategy price visuals are also a separate pure projection. The visual helper
 must return aligned finite-or-null series, reuse the exact `buildOrders` plan
@@ -323,10 +454,13 @@ completed screening result is a last-run snapshot and retains the filter used
 for that run. Applying a result copies that filter into both lab and applied
 plans; subsequent lab edits must not mutate or clear the screening snapshot.
 
-The browser workspace is daily-only and holds one index, ETF, or commodity
-quote proxy at a time.
-Provider/API types may keep intraday support, but adding an interval back to
-the UI is a product-contract change, not an incidental adapter change.
+The browser workspace holds one index, ETF, or commodity quote proxy at a time
+and exposes only daily and provider-native one-minute research tabs. An
+interval change is a market-state boundary: abort screening, clear the active
+series and exact range, then load the interval-keyed cache. Keep indicator and
+applied-strategy selections so they can be recalculated on the selected bars.
+Do not add resampled or additional minute controls incidentally through an
+adapter change.
 
 ## Saved record
 
@@ -354,22 +488,50 @@ owner/provider/provider-symbol index is non-unique so one instrument can keep
 multiple materially different strategies. UI
 components consume API records and do not access D1
 bindings directly. Shortcut labels use the stored interval for provenance. A
-legacy non-daily record remains non-mutating metadata: opening it keeps the
-workspace daily and shows that the selected setup is recalculated on daily
-bars. Stored dates and metrics remain creation-time provenance, but the
-workspace does not use them as a second active range. Opening a shortcut keeps
-the shared range, and the active instrument's shortcut returns are derived
-from saved plans and costs over that range. Do not display a stale numeric
-return for an inactive instrument whose history is not loaded.
+stored one-minute record switches the workspace to one-minute mode;
+unsupported legacy intervals fall back to daily. Stored dates and metrics
+remain creation-time provenance, but the
+workspace does not use them as a second active range. Active or successfully
+background-refreshed shortcut instruments instead replay every daily saved
+plan over the latest 128 trading sessions. Persist the resulting return, but
+do not derive, append, or backfill shortcut ranks during refresh or screening.
+The shortcut return display uses the current
+calculation when available, then the stored rolling return, and finally the
+creation-time return. Chart
+indicator focus and visibility never participate in this selection. This keeps
+inactive-instrument shortcuts informative while keeping all strategies in one
+canonical instrument comparable over the same fixed window.
+
+Shortcut folders use a normalized owner-scoped table with fixed `instrument`
+and `strategy` scopes. Instrument folders use the root context; strategy
+folders use one canonical instrument key. Saved rows hold nullable foreign
+keys. Every assignment validates owner, scope, and context. Deleting a folder
+unfiles its contents with `SET NULL`; it never cascades into saved records.
+Reordering stays inside the current folder section.
 
 Screening audit records use a parallel shared boundary in
 `screening-runs.ts`, `/api/screening-runs`, and the `screening_runs` D1 table.
 All route handlers must resolve the owner through `app/api/owner.ts`; do not
 duplicate host/email fallback logic. Archive rows are compact provenance:
-market source, adjustment, fetched time, last bar, bar count, SHA-256
-fingerprint, mode/configuration, objective, settings, retained ranking, and
-validation summary. Never store full equity/trade/rebalance arrays, and never
-use archived rankings as calculation input.
+canonical market source, optional temporary-quote provider/date/fetched time,
+adjustment, fetched time, last bar, bar count, SHA-256 fingerprint,
+mode/configuration, objective, settings, retained candidates, and validation
+summary. Never store full equity/trade/rebalance arrays, and never
+use archived candidates as calculation input. Retention is owner-isolated and
+canonical-instrument scoped: order by creation time and ID, keep the newest six,
+and permanently prune every older row on both read and write boundaries.
+
+## Community analysis intake
+
+Community Pine inputs use one catalog-plus-port pattern. Provenance and known
+differences belong in `community/catalog.ts`; indicator IDs/defaults belong in
+`community/registry.ts`; pure indicator formulas belong in
+`community/indicators.ts`; strategy targets/defaults belong in
+`community/strategies.ts`; finite screening domains remain in `screening.ts`.
+Main registries only spread the community collections. Never add a community
+formula directly to a React component or duplicate its ID list in the main
+registry. Tests must prove catalog/registry agreement, bar alignment, and input
+prefix invariance. See `COMMUNITY_IMPORTS.md` for the complete intake contract.
 
 ## UI copy
 

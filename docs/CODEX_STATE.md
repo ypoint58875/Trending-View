@@ -2,25 +2,81 @@
 
 ## Current status
 
-The daily manual-swing index, ETF, and commodity-proxy QuantScope version is
-implemented and buildable.
+The daily and provider-native one-minute index, ETF, and commodity-proxy
+QuantScope version is implemented and buildable.
 
 Implemented:
 
-- Index/ETF/commodity-proxy search with individual-equity filtering. Yahoo
-  `FUTURE` results and deterministic gold, silver, crude-oil, and copper
-  catalog entries normalize to `commodity`.
-- Eastmoney, optional licensed EODHD, Yahoo Finance, and Nasdaq market adapters
-  with ordered fallback. EODHD is enabled only by server-side
-  `EODHD_API_TOKEN`, accepts daily indexes/ETFs, retries one transient failure,
-  and never handles commodity proxies.
-  A successful fallback adopts the winning provider's real symbol so later
-  five-bar refreshes do not send an Eastmoney `secid` to Yahoo. Legacy saved or
-  cached Yahoo rows that still contain an Eastmoney-shaped `secid` are
-  translated before the request. Yahoo also continues to its query2 backup
-  host after primary-host network exceptions, not only non-success statuses.
-- A daily-only, one-instrument user interface. Provider adapters, API
-  validation, and saved-record types retain interval support internally.
+- Index/ETF/commodity-proxy search with individual-equity filtering. A local
+  major-index catalog resolves common exact symbols before network discovery;
+  public remote discovery is time-bounded and credentialed providers are used
+  only when public discovery returns nothing.
+  Deterministic Eastmoney entries expose gold, silver, WTI crude, and copper.
+  Yahoo exact-symbol results are preferred during de-duplication.
+- Canonical market profiles prefer Yahoo for N225, SOX, the four continuous
+  commodity proxies, Yahoo-discovered instruments, and verified Yahoo
+  index/ETF mappings. Unsupported mappings retain their selected provider.
+  The official Nikkei CSV, Eastmoney, Nasdaq, optional server-token EODHD,
+  Twelve Data, Financial Modeling Prep, AllTick, Alpha Vantage, Marketstack,
+  Zhitu, Tencent, Juhe, and FRED are stored independently where supported. Gold adds
+  FMP `GCUSD` and AllTick `GOLD` behind mandatory overlap/error validation.
+  The supplied FMP credential returned current daily gold OHLC through
+  2026-07-28. The initial AllTick token returned HTTP 401; its replacement
+  seven-day trial token returned current `GOLD` daily bars through 2026-07-28
+  and carries an explicit 2026-08-04 15:04:45+08:00 expiry. Expiry is checked
+  before network access.
+  During a
+  preferred-source
+  outage, identity-verified or overlap-validated backups may recover an empty
+  chart or append missing dates without rewriting confirmed canonical bars.
+  Empty-chart recovery promotes the selected verified backup, while equally
+  fresh candidates prefer the longer history. Backup source-health promotion
+  requires at least 500 observed historical bars.
+  For SSE/SZSE indexes and ETFs, a validated Tencent session quote may append
+  one in-memory current-day bar while the separately retained canonical base
+  remains the only persisted history. If Tencent fails, the credentialed Juhe
+  stock product is the final quote-only candidate and is protected by a
+  50-call Shanghai-day gate. A live strict `513310` request returned a complete
+  2026-07-28 Juhe bar. Juhe is skipped after a valid Tencent quote, is excluded
+  from routine audits, cannot recover an empty chart, and cannot become the
+  effective primary. The newest valid temporary quote is
+  retained across a later transient all-source failure and is cleared only by
+  a newer accepted quote, a completed canonical bar, or an instrument switch.
+- A canonical browser database stores canonical series, provider-isolated
+  history/latest snapshots, close-only references, SHA-256 fingerprints, and
+  lifetime counters plus bounded recent attempt samples, rolling 7/30-day
+  availability, and persistent demotion state. Three consecutive failures or
+  a 7-day rate below 80% can demote a source. A backup needs at least 95% over
+  seven days, 90% over 30 days, enough observations, and valid source quality;
+  the configured primary is probed hourly and needs seven stable days before
+  restoration. Completed canonical dates are immutable; only an
+  unconfirmed final primary bar may be replaced, and newer primary dates may be
+  appended. A same-instrument locked record remains readable across a deliberate
+  configured-primary change instead of being discarded.
+- Shared global exchange resolution maps major overseas index codes to their
+  actual venue and close session. Eastmoney market `100` is no longer
+  interpreted as JPX for every overseas index.
+- The Windows local launcher always ensures a loopback-only,
+  provider-allowlisted relay. Development mode defaults to its fixed localhost
+  endpoint even when the launcher did not inject a binding. Proxy addresses and
+  credentials remain outside application bindings and logs. One runtime-port
+  registry covers the application on 3000 and relay on 3001. On every start,
+  the launcher reuses healthy services and stops an unhealthy listener only
+  after its Node command, current-checkout path, and role arguments are
+  verified; unrelated listeners remain untouched.
+- A one-instrument workspace with exactly `日线` and `1 分钟` research tabs.
+  The one-minute path uses 1,500 provider-native bars without resampling,
+  precise minute ranges, one-minute session refresh, close-state classification,
+  and interval-isolated cache/source-health/fingerprint/saved-plan/screening
+  identity. It keeps the current indicator and applied-strategy selections but
+  aborts old screening results and reloads market state on a tab switch.
+  Daily multi-source recovery/reference audits remain daily-only; minute mode
+  uses the configured primary and exposes missing provider volume rather than
+  synthesizing it. Yearly rolling validation is disabled for bounded minute
+  history; period and custom-range screening remain available in K-line units.
+- New strategy-lab sessions default to a one-way commission of `0.05%`
+  (five ten-thousandths). Saved shortcuts retain and restore their explicitly
+  stored commission instead of being migrated to the new default.
 - Authoritative adjustment metadata on every `MarketSeries`: Eastmoney
   `fqt=1` is adjusted, valid EODHD daily OHLC is scaled by
   `adjusted_close / close`, valid Yahoo daily OHLC is scaled by
@@ -29,17 +85,46 @@ Implemented:
   distribution/split price gaps; index price-versus-total-return methodology
   remains provider-defined. Yahoo normalizes provider `previousClose` to the
   returned scale and resets it to the preceding normalized bar after slicing.
+- Every initial, latest, fallback, and temporary-quote merge deduplicates and
+  orders bars by canonical trading `bar.time`; provider timestamp epoch/unit
+  differences can no longer reorder adjacent daily sessions.
 - Candlestick/line switching, provider volume, shared zoom, and an ordered
-  visible collection drawn from 20 indicators.
+  visible collection drawn from 30 indicators.
+- Volume coverage is measured independently from price validity. When fewer
+  than 90% of at least 20 bars have positive volume, VWAP/MFI/CMF/OBV and their
+  dependent strategies are unavailable; missing volume is never synthesized
+  or spliced across sources or dates. A same-source refresh repairs an older
+  cached zero for the same date without changing locked OHLC. One recent
+  isolated gap can trigger one full-history repair attempt per browser session.
 - Metadata-driven settings for every parameterized indicator, including SMA,
-  with a separate focused indicator, device-local per-indicator parameter
-  memory, independent toggleable visibility, all-hidden defaults, and
-  one-click default restoration.
+  with six controlled category menus that keep only one open, per-item outline
+  stars, a separate-row device-local favorites strip, separate
+  focused/visible/favorite state, per-indicator parameter memory, all-hidden
+  defaults, and one-click default restoration. The default favorite
+  is an independent confirmed-pivot support/resistance-break overlay; it becomes
+  visible only after right-side confirmation, never backpaints, and breaks each
+  plotted level at a pivot-value change so separate horizontal levels are never
+  joined by diagonal or vertical connectors.
+- Controlled numeric fields keep an editable text draft, select all on focus,
+  allow a temporary blank value, and commit a finite clamped value only on blur
+  or Enter. Escape restores the last committed value.
+- KDJ exposes period, K smoothing, and D smoothing with `9 / 3 / 3` defaults.
+  Legacy stored configurations that contain only period inherit the two new
+  defaults without losing their saved period.
+- A reusable community-analysis intake layer under `lib/analysis/community/`
+  records provenance/compatibility, owns community IDs and parameter defaults,
+  and merges them into the main registries. The first batch adds nine
+  indicators and three long-only strategy ports from user-provided TradingView
+  files. Catalog coverage, aligned output, and input-prefix causality are
+  tested; the MTF support/resistance port currently uses the chart timeframe.
 - Overlay indicators on the price axis and one lower pane per visible pane
   indicator, with price, volume, and all panes sharing zoom. Every configured
   series name reports its actual parameters in a scrolling legend.
 - Independent indicator and strategy state so strategy changes preserve the
   visible studies while actual strategy buy/sell fills remain overlaid.
+  Applied strategies may explicitly declare an exact lower-pane study; those
+  derived studies are merged into chart output without mutating manual
+  indicator preferences or shortcut snapshots.
 - Buy markers anchor below the matching candle low, while strategy and
   range-exit markers anchor above the matching candle high; all receive
   outward pixel clearance and never cover the candle body or wick. Marker and
@@ -47,27 +132,43 @@ Implemented:
   drag settings keep single- and dual-strategy price charts equally pannable.
 - Pure, bar-aligned strategy price references for 21 price-based strategies.
   Price-order references reuse their exact order plans; all returned references
-  render dashed on the main price axis, and strategies without a continuous
-  price reference return no lines. Technical Ratings exposes the EMA-20 and
-  SMA-50 references used by its price votes.
-- Cached full history plus uncached five-bar overlays on page open, manual
-  refresh, 60-second visible-page refresh, and page focus/visibility. Only
-  identical source, interval, and price-adjustment modes merge; otherwise the
-  complete existing history remains active.
-- A bounded IndexedDB cache of normalized daily histories for fast shortcut
-  opens. It displays a provider/symbol/interval hit immediately, refreshes the
-  full history in the background, retains at most 32 series without an age
-  expiry, displays the last successful cache-write time, and never substitutes
-  one instrument's stale series while another instrument is selected. A
-  bounded in-memory fallback covers embedded browsers and storage policies
-  that disable IndexedDB for the current application session.
-  Requested/resolved provider-key aliases keep legacy shortcut identities
-  cacheable after fallback. Cached-first display is visibly marked provisional
-  until a compatible network refresh succeeds.
+  render as thin 1.5-pixel dashed lines matching the ECharts legend, all-null
+  references are omitted, and strategies without a continuous price reference
+  return no lines. Long/short entry and exit references use four localized
+  action labels. Technical Ratings exposes the EMA-20 and SMA-50 references
+  used by its price votes.
+- Cacheable full preferred history plus uncached five-bar refresh on page open,
+  manual refresh, and a visible-page session policy: known regular venues use a
+  five-minute cadence until 30 minutes after close, COMEX/NYMEX proxies follow
+  their Sunday-Friday Globex session plus daily maintenance break, and unknown
+  venues use 15 minutes. Focus and visibility obey the same minimum interval.
+  A primary failure immediately
+  tries ordered backups; only an all-source failure starts 15-, 30-, then
+  60-minute backoff. Credential-free audits run every 30 minutes, and
+  credentialed backups remain recovery-only.
+- The all-shortcut refresh runs after the manual header action and after an
+  scheduled active-market refresh cycle. It de-duplicates unique inactive
+  instruments, processes them sequentially, reports progress plus
+  updated/retained counts, and enforces a 60-second cooldown.
+- Provider failures are classified without exposing response bodies or
+  credentials. A 401 or explicit invalid/expired-key response is recorded as a
+  credential issue; 403 access denial, 429 quota limitation, missing
+  configuration, and generic upstream failure remain distinct states.
+- Every stored credential now has a dated allowance note in `.env.example`,
+  `SECRETS.md`, and `DATA_SOURCES.md`. Officially published free/starter
+  baselines are kept separate from dashboard-specific entitlements. Small
+  runtime gates are applied only where QuantScope consumes the known bucket;
+  unused keys are not probed merely to discover a plan.
+- The guidance card labels its timestamp as a market-data fetch and includes
+  the actual series source, keeping successful backup freshness separate from
+  preferred-source health.
+- Controlled migration from the legacy 32-series provider cache requires at
+  least 120 bars, the same canonical key, and the exact configured primary;
+  fallback-provider legacy rows cannot seed the canonical chart.
 - Shared daily history beginning at 2000-01-01 with a 10,000-bar safety cap.
-  Eastmoney, EODHD, Yahoo, and Nasdaq translate the boundary to provider-specific
-  date parameters; later-listed instruments begin at their first available
-  bar. Internal intraday requests retain their smaller caps.
+  Every active daily adapter translates the boundary to provider-specific date
+  parameters or documented provider limits; later-listed instruments begin at
+  their first available bar. Internal intraday requests retain smaller caps.
 - A current-bar long-only strategy guidance card that reports the target
   allocation plus increase, reduce, hold, or remain-flat state from the newest
   available provider bar.
@@ -81,10 +182,10 @@ Implemented:
   zoom window for the current instrument and interval. Periodic market option
   updates replace only variable axes, grids, zoom, and series components, so
   an active crosshair price tooltip is preserved across a refresh.
-- Fourteen extended strategies plus independent equivalents of all 20 official
-  TradingView built-in strategy templates.
-- Explicit horizon metadata for all 34 strategies: 17 long-horizon trend,
-  breakout, channel, and persistent-momentum rules plus 17 short-horizon
+- Fourteen extended strategies, independent equivalents of all 20 official
+  TradingView built-in strategy templates, and three community-script ports.
+- Explicit horizon metadata for all 37 strategies: 19 long-horizon trend,
+  breakout, channel, and persistent-momentum rules plus 18 short-horizon
   reversal, candle, pivot, oscillator, and volatility rules. Standalone
   results expose this descriptive metadata; Strategy A/B selectors and
   combination eligibility do not use it as a filter.
@@ -101,14 +202,21 @@ Implemented:
   strategies is derived from the full executed order timeline rather than a
   separate close-target approximation.
 - Long-only positions, costs, metrics, equity, drawdown, and chart-level
-  buy/sell markers derived from actual fills.
+  buy/sell markers derived from actual fills. A single-strategy entry executed
+  inside the selected range remains visible while the final position is still
+  open; inherited opening exposure still has no synthetic entry marker.
+- Recent-effectiveness badges show the exact latest-30-session execution count
+  against the two-execution minimum instead of a context-free insufficient
+  label.
 - An optional cross-strategy SMA/EMA/WMA slope entry-filter subsystem shared by
   the strategy lab, stability diagnostics, one-click standalone/combination
-  screening, applied metrics, live guidance, and saved shortcuts. It is off by
-  default with an EMA(7), 0%/session preset, uses normalized causal slopes,
-  delays only new buys, and never forces a sell. Lab and screening drafts are
-  independent; Strategy A and Strategy B retain and replay independent filter
-  states. One-click screening first ranks the complete unfiltered grid. It then
+  screening, applied metrics, live guidance, and saved shortcuts. Manual
+  Strategy A/B drafts remain off by default with an EMA(7), 0%/session preset;
+  the one-click screening draft starts enabled so its eligible families compare
+  EMA(5-8). The filter uses normalized causal slopes, delays only new buys, and
+  never forces a sell. Lab and screening drafts are independent; Strategy A and
+  Strategy B retain and replay independent filter states. One-click screening
+  first ranks the complete unfiltered grid. It then
   compares EMA(5), EMA(6), EMA(7), and EMA(8), at a 0% slope, only for each
   explicit trend/breakout/momentum strategy family's top 60 unfiltered
   parameter sets. Channel BreakOut and Price Channel are included; reversal
@@ -124,11 +232,15 @@ Implemented:
   observations, two completed base trades, and a valid nearby variant before
   applying the inclusive 75% return-sign, 15-point return-range, and 10-point
   drawdown-deterioration thresholds. Regimes retain causal pre-range warm-up.
-- Exhaustive parameter-grid optimization across all 34 strategies, with all
-  37,131 valid finite strategy-parameter combinations, no sampling control,
+- Exhaustive parameter-grid optimization across all 37 strategies, with all
+  37,182 valid finite strategy-parameter combinations, no sampling control,
   cancellation, and best-per-strategy result retention. A dedicated module Web
   Worker owns the full optimizer and its run-local target/indicator caches, so
   progress and cancellation messages do not depend on main-thread calculation.
+  Rolling channel and Ichimoku extrema use shared linear-time monotonic queues,
+  price-order candidates build only their authoritative order-derived target,
+  and the Worker yields every 128 evaluations instead of paying a timer-task
+  boundary after every eight.
   Screening
   builds targets from complete loaded history and restricts only performance
   metrics to the selected range. The EMA phase retains compact Top-60 metrics;
@@ -147,17 +259,23 @@ Implemented:
   below its own selector.
   For a dual plan, selected-range average active-run length determines the
   relative long-cycle gate; duration ties prefer fewer target transitions and
-  then Strategy A. The relative-long entry establishes its allocation, a later
-  fresh relative-short entry adds the other allocation, its exit removes that
-  layer, and the relative-long exit clears both.
+  then Strategy A. In base-then-add mode, the relative-long entry establishes
+  its allocation, a later fresh relative-short entry adds the other allocation,
+  its exit removes that layer, and the relative-long exit clears both. In
+  full-then-reduce mode, the relative-long entry establishes A+B, a short-cycle
+  exit removes the tactical sleeve, a later entry restores it, and the gate exit
+  clears all exposure. Both modes remain strictly long-only inside `[0, 1]`.
 - One unified one-click strategy screen with one objective, one progress
-  stream, and one stop action. Its left result
+  stream, and one stop action. The progress bar maps the four optimizer stages
+  plus one segment per rolling selection window; period, range, and rolling
+  completion all resolve exactly to 100%. Its left result
   column returns exactly one best parameter set per standalone strategy. The
   same four-stage run retains one unique final winner per strategy and
   automatically ranks every unordered pair of non-equivalent winners, keeps up
   to 4,096 pair finalists, then compares 50/50, 60/40, 40/60, 70/30, and
-  30/70. Holdings remain 0%, 30%, 40%, 50%, 60%, 70%, or 100%. The current
-  maximum is 559 winner pairs, so every retained pair reaches the
+  30/70 under both tactical modes. Holdings remain 0%, 30%, 40%, 50%, 60%,
+  70%, or 100%. The current
+  maximum is 664 winner pairs, so every retained pair reaches the
   allocation stage. Its right result column keeps one best result per unique
   unordered strategy-ID pair, ranks up to 32 pairs, displays A/B plus the
   derived relative roles, and applies a complete result to the lab and chart.
@@ -174,9 +292,11 @@ Implemented:
   calculation cache.
 - Each completed screen persists a compact owner/instrument-scoped run archive
   with market source, adjustment, fetch time, last bar, bar count, SHA-256 data
-  fingerprint, validation configuration, objective, settings, retained ranking,
+  fingerprint, validation configuration, objective, settings, retained candidates,
   and compact validation report. The UI shows prior-run and Top-10 overlap
-  comparisons. Archives are audit records and never seed a later screen.
+  comparisons. Each owner and canonical instrument retains only its newest six
+  runs; read and write boundaries permanently delete older rows. Archives are
+  audit records and never seed a later screen.
 - Saving an identical instrument/plan/range/cash/cost setup replaces its
   existing record, including visible-indicator changes, while preserving record
   identity and order. A materially different setup still inserts a new record.
@@ -228,7 +348,11 @@ Implemented:
   not recorded as fills. Every provider series carries complete,
   in-progress, or unknown latest-daily-bar status. Close-confirmed live changes
   ignore an incomplete/unknown latest bar, while prior-day resting price orders
-  remain active.
+  remain active. A touched entry rejected by the moving-average slope filter
+  keeps its displayed condition price and reports a distinct blocked state
+  instead of looking like an ordinary wait. The latest-guidance card has a fixed 126-pixel height and keeps
+  excess details inside its own scroll area, so neighboring header content does
+  not shift as guidance length changes.
 - Per-user D1-backed saved backtests with a dedicated upper-right shortcut bar
   that contains the Save current strategy action and restores
   index/ETF/commodity identity plus the complete A/B strategy plan. New JSON
@@ -245,6 +369,12 @@ Implemented:
   shared 256-character boundary; Yahoo's 82-character name for `159558.SZ`
   therefore remains a valid new ETF shortcut instead of failing the complete
   payload at the older 80-character saved-record boundary.
+  Each saved strategy row displays its original `createdAt` value as a
+  localized added date and time; replacement updates do not relabel
+  `updatedAt` as the initial join time. Shortcut metadata uses a higher-contrast
+  12-pixel functional-text size and omits default daily, single-strategy 100% allocation,
+  disabled-indicator, and disabled-entry-filter rows. Dual allocations and
+  enabled optional settings remain visible.
   Each new snapshot also stores the ordered indicators visible at save time and
   their exact parameters; legacy rows restore an empty indicator collection.
   The shortcut bar has no separate saved-count row or pagination. It reads a
@@ -252,15 +382,39 @@ Implemented:
   aliases into one collapsed disclosure per instrument, and reveals concrete
   strategy/indicator snapshots on expansion. Group and within-group drag or
   keyboard ordering is persisted in the owner-scoped `display_order` column.
+  Renameable owner-scoped folders organize canonical instrument groups at the
+  root and strategy snapshots inside one instrument. Assignments are nullable;
+  deleting a folder unfiles its contents without deleting saved records. Both
+  folder levels expand/collapse independently, and sibling folder drag or
+  Up/Down keyboard ordering persists context-local `display_order` values.
+  Each first-level group has a confirmed delete action that removes all
+  canonical aliases for that owner in one API operation.
   Opening a shortcut preserves the shared date range. When its canonical
   instrument matches the successful non-empty active series, the workspace
   also preserves that exact price series across provider aliases and restores
   only plan-derived state; only a different instrument or unusable active
-  series reloads market data. Active-instrument shortcut returns are
-  recalculated from each saved plan and cost assumptions
-  over that range; inactive instruments show no stale numeric return until
-  their history becomes active. Creation-time dates and metrics remain durable
-  record provenance but are not a second live display interval.
+  series reloads market data. The header refresh action updates the active
+  chart and then serially refreshes every other unique shortcut instrument
+  without changing the visible chart. Scheduled active-instrument updates also
+  queue the same inactive-shortcut pass. Active and successfully refreshed daily
+  shortcuts are recalculated from each saved plan and cost assumptions over the
+  latest 128 trading sessions. The owner-scoped rolling API persists each
+  return without changing history. Screening archives no longer read, write,
+  or backfill saved-plan ranks. Each shortcut instead shows a validation prompt
+  from its latest available 30-session/63-session evaluation. If a current calculation is
+  unavailable, the UI uses the last durable
+  rolling return and then the creation-time return. Indicator
+  focus and visibility do not affect either return source. Creation-time dates
+  and metrics remain durable record provenance rather than a second active
+  workspace interval.
+- The main chart derives its explicit visible price-axis bounds from OHLC candle
+  highs and lows only and updates them on data zoom. Strategy reference lines
+  and markers do not change those bounds, so the same instrument and zoom window
+  keep one K-line vertical scale while users switch saved strategies. Axis
+  bounds and ticks use integers when the visible high exceeds 20. When the
+  visible high is at most 20, daily and minute charts use no more than two
+  decimals. K-line detail tooltips and the price-axis crosshair label display
+  one decimal place.
 - A lower research area that places the strategy lab and automated screening
   together. The lab edits a draft plan and its backtest; the trend chart,
   markers, and latest guidance retain a separate applied plan until the user
@@ -272,16 +426,185 @@ Implemented:
   use horizontal scrollbars, built-in strategy names omit a redundant prefix,
   combination Strategy A/B use separate compact columns with inline
   name/horizon labels, and combination results do not repeat the equity preview
-  already available under the strategy lab.
+  already available under the strategy lab. The strategy-lab eyebrow and
+  selected strategy name occupy separate rows, horizon badges and actions use a
+  third row, entry-filter columns follow label length, and redundant parameter
+  and screening-action helper labels are omitted. Range mode shows the
+  inclusive count of available trading sessions beside its start and end dates.
+  Result tables omit visible ordinal ranks/objective scores and show explicit
+  recent validation plus exact/same-type shortcut differences. Opening a
+  same-canonical, same-interval shortcut preserves active and completed screen
+  state. The sample-period result report is not rendered; range and rolling
+  summaries remain. Screening archives stay backend-only for reproducibility.
 - Chinese responsive UI with centralized locale copy.
 - A one-click Windows local launcher that applies project-local D1 migrations,
   binds vinext to `127.0.0.1:3000`, requires no account, reuses an
   already-running QuantScope server before attempting D1 migration, and opens
-  a new maximized Edge window when Edge is available. This ordering prevents a
-  second launch from waiting on the live `.wrangler/state`.
+  a new maximized Edge window when Edge is available. If the registered
+  application or relay process is present but unhealthy, the same identity-
+  verified port reconciliation releases it before restart. This ordering
+  prevents a second launch from waiting on the live `.wrangler/state`.
 
 ## Verification status
 
+- Community catalog/registry integration, all nine indicator and three strategy
+  ports, validation-first result/shortcut presentation, exact and same-type
+  shortcut matching, conditional screening preservation, sample-report removal,
+  and low-price axis precision passed strict TypeScript, all 213 TypeScript
+  tests, the production build, both rendered/source tests, warning-free ESLint,
+  and `git diff --check` on 2026-08-11.
+- Controlled one-open indicator menus, the dedicated quick-indicator row,
+  per-item favorite stars, and collapsible/reorderable shortcut folders passed
+  strict TypeScript, all 203 TypeScript tests, the production build, both
+  rendered/source tests, scoped warning-free ESLint, and `git diff --check` on
+  2026-08-09. The in-app browser confirmed category switching closes the prior
+  menu, a hollow SMA star turns amber and adds/removes SMA without selecting
+  it, the quick row sits below the menu row, and the existing `风控` strategy
+  folder collapses while exposing a draggable handle; no console warnings or
+  errors were recorded.
+- Linear-time rolling extrema, single-build price-order screening, and
+  128-evaluation cooperative chunks passed strict TypeScript, all 196
+  TypeScript tests, the production build, both rendered/source tests, and
+  `git diff --check` on 2026-08-02. On 1,000 deterministic synthetic daily
+  bars, full-domain signal construction across all 37,131 parameter sets fell
+  from about 20.5 seconds to about 3.5 seconds (about 83%) without changing
+  the exhaustive domain or tested signal, execution, cancellation, and ranking
+  behavior.
+- Native standalone/combination shortcut ranking, shared cross-objective
+  histories, not-ranked events, date-independent duplicate replacement, and
+  first-save/archive backfill passed strict TypeScript, all 195 TypeScript
+  tests, the production build, both rendered/source tests, warning-free ESLint,
+  and `git diff --check` on 2026-08-02. The live API migrated all existing rows
+  to rank-history v5. The in-app browser confirmed six N225 shortcuts, one
+  retained BarUpDn + Stochastic Slow row, visible `未` entries for exact plans
+  absent from four archived runs, and no console errors.
+- Complete fallback promotion, long-history selection, local major-index
+  search, volume eligibility, atomic shortcut cohorts, and benchmark cost
+  parity passed strict TypeScript, all 195 TypeScript tests, the production
+  build, both rendered/source tests, warning-free ESLint, and
+  `git diff --check` on 2026-08-02. Live search returned CSI 300, NDX, and SOX
+  catalog hits in 9-23 ms. Strict Yahoo history returned 128 bars through
+  2026-07-31 for NDX, SOX, and N225: NDX and N225 had 128 positive-volume bars,
+  while SOX had none. The in-app browser kept N225 volume tools available and
+  explicitly disabled VWAP/MFI/CMF/OBV plus their two strategies for SOX, with
+  no console errors. It also confirmed the contextual commodity-
+  proxy disclosure. The saved-backtest API returned non-empty rank history for
+  all 12 current rows: six N225, three gold, and three SOX.
+- Fixed guidance height, canonical shortcut-group deletion, complete
+  one-click rank capture, latest-128-session return refresh, and integer
+  OHLC-only chart scaling passed strict TypeScript, all 186 TypeScript tests,
+  the production build, both rendered/source tests, and `git diff --check` on
+  2026-08-02. ESLint reported no errors and retained one unrelated existing
+  unused-variable warning in `MarketWorkspace.tsx`. A live in-app browser
+  confirmed a 126-pixel guidance card, no shortcut horizontal overflow,
+  integer price-axis labels, and visible rank histories for all 12 saved rows:
+  six N225, three gold, and three SOX strategies.
+- Unified runtime-port reconciliation for application port 3000 and relay port
+  3001 passed PowerShell parser validation, all 12 focused launcher tests, all
+  184 TypeScript tests, the production build, both rendered tests,
+  warning-free ESLint, and `git diff --check` on 2026-07-28. A live regression
+  began with the current checkout's vinext PID 20140 returning HTTP 500 on port
+  3000: the launcher identified and stopped only that process, preserved the
+  migrated local D1 state, restarted QuantScope, and returned HTTP 200 with the
+  expected title while the relay health endpoint remained ready. A subsequent
+  launch reused the running application without migration or a duplicate
+  server.
+- Rolling source health, the FMP/AllTick gold integration, Juhe final-quote
+  recovery, and the provider allowance register passed strict TypeScript, all
+  181 TypeScript tests, the production build, two rendered tests,
+  warning-free ESLint, registry JSON validation, and `git diff --check` on
+  2026-07-28. Strict local API requests
+  returned ten FMP `GCUSD` bars under canonical `GC=F` through 2026-07-28 and
+  safely returned `PROVIDER_CREDENTIAL_INVALID` for the initial AllTick token.
+  The replacement trial token returned nine AllTick daily bars through
+  2026-07-28. A strict Juhe request returned one complete `513310` bar through
+  2026-07-28 while provider ordering tests kept Tencent first and Juhe last.
+  Ten real
+  Yahoo/FMP common dates had 0.113% mean close error and 0.262% mean OHLC
+  error; nine Yahoo/AllTick dates had 0.164% and 0.268% error. Both passed the
+  2%/3% promotion gate.
+- Always-on local relay, session-aware active-market refresh, immediate ordered
+  recovery, 15/30/60-minute all-source backoff, manual shortcut progress and
+  cooldown, and safe provider credential/access/quota classification passed
+  strict TypeScript, all 175 TypeScript tests, the production build, two
+  rendered/source tests, warning-free ESLint, and `git diff --check` on
+  2026-07-28. The live local relay health endpoint returned ready, the
+  application and persistence endpoints returned HTTP 200, strict latest
+  requests for `513310.SS` and `GC=F` returned five bars through 2026-07-28,
+  and the full live Yahoo matrix passed all 31 indexes, ETFs, and commodity
+  proxies. `.env.local` remains ignored and untracked.
+- The readable-functional-text, mobile-refresh, all-shortcut refresh, and
+  temporary-quote retention/provenance changes passed strict TypeScript,
+  all 172 TypeScript tests, the production build, two rendered/source tests,
+  and ESLint with the one pre-existing `lib/market/series.ts` unused-parameter
+  warning on 2026-07-28.
+  A real local browser confirmed 12-pixel latest-guidance and shortcut text,
+  no desktop overflow, a visible refresh action labeled for current plus all
+  shortcuts, active-update advancement, background spinning through five
+  shortcut groups, completion, and no console errors. Local migration
+  `0006_curved_fenris.sql` applied successfully, and the migrated screening-run
+  GET endpoint returned HTTP 200.
+- The new-session `0.05%` one-way commission default passed strict TypeScript,
+  all 170 TypeScript tests, the production build, two rendered/source tests,
+  `git diff --check`, and a live in-app browser reload on 2026-07-28. Existing
+  saved shortcuts still restore their own stored commission values.
+- Temporary current-session chart merging and the compact strategy-lab layout
+  passed strict TypeScript, all 170 TypeScript tests, the production build, two
+  rendered/source tests, and a live in-app browser check on 2026-07-28. A
+  `513310` refresh changed the active series from 242 completed bars through
+  2026-07-27 to 243 bars with a 2026-07-28 Tencent quote, current OHLC, updated
+  guidance, and recalculated shortcut returns. The 372-pixel strategy panel
+  kept all three entry-filter labels on one line with zero page overflow; the
+  redundant parameter and screening helper labels were absent.
+- Saved-shortcut readability cleanup passed strict TypeScript, all 167
+  TypeScript tests, the production build, two rendered/source tests, and a
+  real-browser 372-pixel panel check on 2026-07-28. The browser confirmed
+  11-pixel strategy titles, 10-pixel higher-contrast metadata, conditional
+  display of only meaningful optional settings, and no horizontal metadata
+  overflow in the inspected saved records.
+- Saved-shortcut added-time display passed strict TypeScript, all 167
+  TypeScript tests, the production build, two rendered/source tests, and
+  `git diff --check` on 2026-07-28. Source assertions link each row's
+  localized `createdAt` display to the existing API field and semantic
+  `<time>` element without a schema or migration change.
+- Current-project orphan relay cleanup passed PowerShell parser validation,
+  nine dedicated launcher tests, strict TypeScript, all 167 TypeScript tests,
+  the production build, two rendered/source tests, and a live Windows check on
+  2026-07-28. The live check launched the relay with its absolute script path,
+  let its parent exit, verified the orphan identity, stopped only that relay,
+  and released port 3001. The obsolete manual port-cleanup scripts and legacy
+  relative-command compatibility were removed.
+- Proxy-relay command generation now keeps `Start-Process` and its required
+  `-FilePath` argument in one parsed command. The regression passed the
+  generated-command AST check, the Windows launcher tests, all 166 TypeScript
+  tests, strict TypeScript, the production build, two rendered/source tests,
+  and `git diff --check` on 2026-07-27.
+- Yahoo-first canonical selection passed all 162 TypeScript tests, strict
+  TypeScript, the production build, two rendered/source tests,
+  repository-wide ESLint, and `git diff --check` on 2026-07-27. Live
+  strict-provider coverage passed all 31 configured cases: 16 global indexes,
+  11 ETFs, and four commodity proxies. The default market route returned 6,506
+  Yahoo `^N225` bars through 2026-07-27, and Yahoo-first search returned the
+  same exact identity. Cross-primary tests confirmed that locked historical
+  closes remain unchanged while Yahoo owns the new primary refresh.
+- Saved-shortcut return fallback passed all 160 TypeScript tests, strict
+  TypeScript, the production build, two rendered/source tests, and
+  repository-wide ESLint on 2026-07-27. A real local Edge run
+  expanded the four N225 shortcuts, confirmed their stored +30.51%, +31.02%,
+  +32.75%, and +28.87% returns while no N225 history was active, then enabled
+  EMA and confirmed every value and saved-range label remained unchanged.
+- Canonical market locking, provider-isolated backups, global exchange mapping,
+  proxy-capable loopback relay, and source-health/backoff behavior passed 159
+  TypeScript tests, strict TypeScript, the production build, two
+  rendered/source tests, repository-wide ESLint, and `git diff --check` on
+  2026-07-27. Live read-only coverage passed 16 Yahoo global indexes, 11 Yahoo
+  ETFs, 11 Nasdaq ETFs, four Yahoo commodity aliases, and the 6,828-bar Nasdaq
+  SOX canonical history. A real local browser loaded Gold through its Yahoo
+  canonical profile with 6,499 bars, a current quote, chart, strategy guidance,
+  and backtest metrics. The Eastmoney direct matrix passed earlier in the
+  session, then its public endpoint rate-limited the burst run; cached
+  Eastmoney-primary bars remained unchanged and primary retries entered bounded
+  backoff.
 - Continuous range-boundary accounting, independent A/B filters, EMA Top-60,
   rolling Top-10 pools, five dual allocations, Worker execution, compact
   screening archives, and indicator-only saved-record replacement passed all
@@ -599,6 +922,91 @@ Implemented:
 - Completed-history/recent-bar merge coverage increased the local suite to 27
   passing tests on 2026-07-24; the production build, rendered worker test, and
   ESLint also passed.
+  rendered/source tests, ESLint, and `git diff --check` on 2026-07-25. A real
+  local N225 page loaded 6,505 valid adjusted Yahoo bars, displayed the
+  6,505-bar chart metadata, and exposed 2000-01-04 through 2026-07-24 as the
+  available date bounds with no console errors.
+- Strategy-lab Apply/save separation passed the full 82-test TypeScript suite,
+  production build, two rendered/source tests, ESLint, and
+  `git diff --check` on 2026-07-25. A real local browser click moved the view
+  from the lab to the trend chart while the shortcut count remained zero; the
+  Apply and Save actions resolved to the strategy and shortcut panels
+  respectively. The 375-pixel layout had no document-level horizontal
+  overflow and the console had no errors.
+- Two-layer position sizing and common following-open historical execution
+  passed 82 TypeScript tests, the production build, two rendered/source worker
+  tests, ESLint, and `git diff --check` on 2026-07-25.
+- A real local browser run loaded 1,000 N225 bars, completed 2,582 standalone,
+  pair, and A/B allocation evaluations with one parameter set per strategy,
+  retained 32 combinations, and displayed eight ranked results with Apply
+  actions. Applying the first result restored both strategy configurations
+  plus A 20% and B 80%; saving it created a shortcut with the same complete
+  plan, and deleting it restored the clean local test state. The 760-pixel
+  layout had no document-level horizontal overflow and the console had no
+  errors.
+- A clean local D1 migration and a create/list/delete strategy-plan round trip
+  passed on 2026-07-25. A live Yahoo `SI=F` request returned 20 adjusted daily
+  commodity bars.
+- Hierarchical horizon/combination coverage passed 75 TypeScript tests, the
+  production build, two rendered/source worker tests, ESLint, and
+  `git diff --check` on 2026-07-25.
+- A real local browser run on N225 used one parameter set per strategy,
+  completed 287 standalone-and-pair evaluations, retained 32 combinations,
+  rendered eight ranked long/short rows and one equity/drawdown preview, and
+  reported no console errors on 2026-07-25. The 1,265-pixel desktop and
+  760-pixel responsive layouts had no document-level horizontal overflow.
+- Task 8 final-review coverage passed 67 TypeScript tests, the production
+  build, two rendered/source worker tests, and ESLint on 2026-07-24.
+- Full 57-test TypeScript suite, production build, and one rendered-worker
+  test: passed after daily-workflow documentation verification on 2026-07-24.
+- Indicator registry and custom-period chart tests, the full 38-test TypeScript
+  suite, production build, rendered-worker test, and ESLint: passed on
+  2026-07-24.
+- A real Edge workflow configured SMA 5/20, changed the strategy to MACD,
+  confirmed the SMA selection and parameters remained intact, switched
+  indicators and back, restored SMA 10/30 defaults, and visually confirmed
+  simultaneous SMA lines plus strategy buy/sell markers at desktop and
+  760-pixel widths on 2026-07-24.
+- Local launcher contract tests and PowerShell parser validation: passed on
+  2026-07-24.
+- PowerShell behavior tests for missing, damaged, and ready dependencies plus
+  ready and early-exit server states: passed on 2026-07-24.
+- Clean temporary D1 migration, local HTTP readiness, launcher reuse, and a
+  create/list/delete saved-backtest round trip without authentication: passed
+  on 2026-07-24.
+- Full 34-test TypeScript suite, production build, rendered-worker test, and
+  ESLint: passed after the local launcher reliability review on 2026-07-24.
+- Dedicated blue/orange trade-marker palette test, full test/build suite,
+  ESLint, and dark-chart browser inspection: passed on 2026-07-24.
+- Live filtered searches for `N225`, `SOX`, and `SPY`: passed on 2026-07-24.
+- Live daily series for N225, SOX, and SPY passed on 2026-07-24; the broader
+  daily/5-minute N225, SOX, SPY, and 510300 matrix last passed on 2026-07-23.
+- Analysis, adapter, screening-objective, and chart-configuration unit tests:
+  23 passed on 2026-07-24.
+- Built-worker rendering test: 1 passed on 2026-07-24.
+- Production build: passed on 2026-07-24.
+- ESLint: passed on 2026-07-24.
+- Browser workflow for Channel BreakOut, 74/74 screening, Apply, and visible
+  buy/sell markers on N225: passed on 2026-07-24.
+- Parameter-grid coverage, cap, uniqueness, best-per-strategy ordering,
+  progress, and cancellation tests: passed on 2026-07-24.
+- Saved-backtest payload validation, migration generation, and production
+  build: passed on 2026-07-24.
+- Long-only catalog, execution, and marker rules: passed on 2026-07-24.
+- Chart zoom configuration tests and a real Edge
+  drag-screen-apply-drag interaction: passed on 2026-07-24.
+- A real Edge run selected the return/drawdown target, completed 32 parameter
+  evaluations, applied the first-ranked result, retained the zoom window, and
+  remained draggable on 2026-07-24.
+- A 1,920-pixel Edge viewport reported matching 1,920-pixel document, body, and
+  workspace widths on 2026-07-24.
+- Synthetic intrabar-stop, gap-fill, range-boundary, no-future-data, and
+  five-strategy order-plan tests passed on 2026-07-24.
+- Live-guidance transition, price-order guidance, and range-end marker tests
+  passed on 2026-07-24.
+- Completed-history/recent-bar merge coverage increased the local suite to 27
+  passing tests on 2026-07-24; the production build, rendered worker test, and
+  ESLint also passed.
 - Live N225 browser verification on 2026-07-24 returned 1,000 cacheable history
   bars and a separate five-bar `no-store` update, advanced the displayed update
   time after manual refresh, recalculated the latest strategy guidance, kept
@@ -611,6 +1019,16 @@ Implemented:
   two-candidate-per-strategy screen, applied the Channel BreakOut result,
   preserved the prior zoom window, and successfully dragged it again on
   2026-07-24.
+- Fixed K-line display timeliness after data source updates: updated
+  `mergeCanonicalMarketSeries` to allow same-provider latest bar updates even if
+  previously marked complete; set `/api/market` Cache-Control headers to
+  `no-cache, must-revalidate`; updated `fetchMarket` client cache options;
+  allowed window-focus/visibility refreshes when latest bar status is not
+  complete; updated ECharts dataZoom percentage clamping so newly appended
+  bars at the right edge remain visible; and updated backup source recovery in
+  `MarketWorkspace.tsx` and `shortcut-refresh.ts` to collect candidates and
+  prioritize backups with newer intraday bar dates (e.g. Eastmoney live bars over
+  Nikkei EOD CSV) on 2026-07-30.
 
 ## Next priorities
 

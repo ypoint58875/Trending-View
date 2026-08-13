@@ -9,7 +9,12 @@ import {
   clampMarketSeriesLimit,
   requestsExtendedDailyHistory,
 } from "./history";
-import { resolveLatestDailyBarStatus } from "./session";
+import { knownIndexExchange } from "./exchanges";
+import { createLocalMarketRelayRequest } from "./local-relay";
+import {
+  resolveLatestDailyBarStatus,
+  resolveLatestIntradayBarStatus,
+} from "./session";
 
 const SEARCH_ENDPOINT = "https://searchapi.eastmoney.com/api/suggest/get";
 const KLINE_ENDPOINT =
@@ -58,13 +63,20 @@ interface EastmoneyKlineResponse {
   data?: EastmoneyKlineData | null;
 }
 
-function exchangeFromMarket(market: string | number | undefined) {
+function exchangeFromMarket(
+  market: string | number | undefined,
+  code?: string,
+) {
+  const known = knownIndexExchange(code);
+  if (known) return known;
   if (String(market) === "1") return "SSE" as const;
   if (String(market) === "0") return "SZSE" as const;
-  if (String(market) === "100") return "JPX" as const;
+  if (String(market) === "100") return "OTHER" as const;
   if (String(market) === "251") return "PHLX" as const;
   if (String(market) === "107") return "NYSE_ARCA" as const;
   if (String(market) === "105") return "NASDAQ" as const;
+  if (String(market) === "101") return "COMEX" as const;
+  if (String(market) === "102") return "NYMEX" as const;
   return "OTHER" as const;
 }
 
@@ -132,17 +144,42 @@ async function fetchJson<T>(
   fetchImpl: typeof fetch = fetch,
   requestCache: RequestCache = "default",
 ): Promise<T> {
-  const response = await fetchImpl(url, {
-    headers: DEFAULT_HEADERS,
-    signal: AbortSignal.timeout(12_000),
-    ...(requestCache === "no-store" ? { cache: requestCache } : {}),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Eastmoney request failed with status ${response.status}`);
+  const candidates: Array<URL | Request> = [url];
+  if (
+    url.protocol === "https:" &&
+    url.hostname === "push2his.eastmoney.com"
+  ) {
+    const directFallback = new URL(url);
+    directFallback.protocol = "http:";
+    candidates.push(directFallback);
   }
+  const relayRequest = createLocalMarketRelayRequest(url, DEFAULT_HEADERS);
+  if (relayRequest) candidates.push(relayRequest);
 
-  return (await response.json()) as T;
+  let lastError: unknown = null;
+  for (const candidate of candidates) {
+    try {
+      const response = await fetchImpl(candidate, {
+        ...(candidate instanceof Request
+          ? {}
+          : { headers: DEFAULT_HEADERS }),
+        signal: AbortSignal.timeout(12_000),
+        ...(requestCache === "no-store" ? { cache: requestCache } : {}),
+      });
+      if (!response.ok) {
+        lastError = new Error(
+          `Eastmoney request failed with status ${response.status}`,
+        );
+        continue;
+      }
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Eastmoney request failed");
 }
 
 export async function searchEastmoney(
@@ -185,7 +222,7 @@ export async function searchEastmoney(
       secid: item.QuoteID,
       code: item.Code,
       name: item.Name,
-      exchange: exchangeFromMarket(item.MktNum),
+      exchange: exchangeFromMarket(item.MktNum, item.Code),
       assetType,
       provider: "eastmoney" as const,
     }))
@@ -235,7 +272,10 @@ export async function fetchEastmoneySeries(
   }
 
   const fetchedAt = new Date();
-  const exchange = exchangeFromMarket(data.market);
+  const exchange = exchangeFromMarket(
+    data.market,
+    instrument.code || data.code,
+  );
   return {
     instrument: {
       ...instrument,
@@ -254,7 +294,11 @@ export async function fetchEastmoneySeries(
             exchange,
             fetchedAt,
           )
-        : "unknown",
+        : resolveLatestIntradayBarStatus(
+            bars.at(-1)!.timestamp,
+            fetchedAt,
+            interval === "1m" ? 1 : Number(interval.slice(0, -1)),
+          ),
     source: "eastmoney",
     fetchedAt: fetchedAt.toISOString(),
   };

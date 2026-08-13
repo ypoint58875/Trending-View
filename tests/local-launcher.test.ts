@@ -53,6 +53,141 @@ test("Windows launcher delegates only to the local PowerShell launcher", () => {
   assert.match(launcher, /powershell\.exe/i);
 });
 
+test("proxy relay command preserves the Start-Process parameters", () => {
+  const generated = runLauncherFunction(
+    `$command = New-QuantScopeServerCommand -Root ${quotePowerShell(fileURLToPath(projectRoot))} -UseMarketRelay $true; $tokens = $null; $errors = $null; $ast = [System.Management.Automation.Language.Parser]::ParseInput($command, [ref]$tokens, [ref]$errors); if ($errors.Count -gt 0) { throw $errors[0].Message }; $commands = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Start-Process' }, $true)); if ($commands.Count -ne 1 -or $commands[0].CommandElements.Count -lt 2) { throw 'Generated Start-Process is missing parameters.' }; Write-Output $command`,
+  );
+
+  assert.equal(generated.status, 0, generated.stderr);
+  assert.match(
+    generated.stdout,
+    /\$relayProcess = Start-Process -FilePath 'node\.exe'/,
+  );
+  assert.match(
+    generated.stdout,
+    /\$relayScriptPath = Join-Path .*'scripts\\market-relay\.mjs'/,
+  );
+  assert.match(
+    generated.stdout,
+    /-ArgumentList @\(\$relayArgument\)/,
+  );
+  assert.doesNotMatch(
+    generated.stdout,
+    /\$relayProcess = Start-Process\s*\r?\n\s*-FilePath/,
+  );
+});
+
+test("runtime port registry contains every persistent loopback listener", () => {
+  const result = runLauncherFunction(
+    `Write-Output "$($runtimePorts.Application.Role):$($runtimePorts.Application.Port)"; Write-Output "$($runtimePorts.MarketRelay.Role):$($runtimePorts.MarketRelay.Port)"; Write-Output $localUrl; Write-Output $marketRelayHealthUrl`,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.trim().split(/\r?\n/), [
+    "Application:3000",
+    "MarketRelay:3001",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001/health",
+  ]);
+});
+
+test("application identity requires this checkout and its fixed runtime arguments", () => {
+  const rootPath = fileURLToPath(projectRoot);
+  const root = quotePowerShell(rootPath);
+  const vinextPath = join(
+    rootPath,
+    "node_modules",
+    ".bin",
+    "..",
+    "vinext",
+    "dist",
+    "cli.js",
+  );
+  const currentCommand = quotePowerShell(
+    `node.exe "${vinextPath}" dev -p 3000 -H 127.0.0.1`,
+  );
+  const wrongPortCommand = quotePowerShell(
+    `node.exe "${vinextPath}" dev -p 3010 -H 127.0.0.1`,
+  );
+  const unrelatedCommand = quotePowerShell(
+    "node.exe C:\\other\\node_modules\\vinext\\dist\\cli.js dev -p 3000 -H 127.0.0.1",
+  );
+  const result = runLauncherFunction(
+    `$current = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${currentCommand}; ParentProcessId = 7001 }; $wrongPort = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${wrongPortCommand}; ParentProcessId = 7001 }; $unrelated = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${unrelatedCommand}; ParentProcessId = 7001 }; Write-Output (Test-QuantScopeApplicationProcess -Process $current -Root ${root} -Port 3000); Write-Output (Test-QuantScopeApplicationProcess -Process $wrongPort -Root ${root} -Port 3000); Write-Output (Test-QuantScopeApplicationProcess -Process $unrelated -Root ${root} -Port 3000)`,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.trim().split(/\r?\n/), [
+    "True",
+    "False",
+    "False",
+  ]);
+});
+
+test("unhealthy application cleanup preserves an unrelated port owner", () => {
+  const rootPath = fileURLToPath(projectRoot);
+  const root = quotePowerShell(rootPath);
+  const vinextPath = join(
+    rootPath,
+    "node_modules",
+    ".bin",
+    "..",
+    "vinext",
+    "dist",
+    "cli.js",
+  );
+  const currentCommand = quotePowerShell(
+    `node.exe "${vinextPath}" dev -p 3000 -H 127.0.0.1`,
+  );
+  const unrelatedCommand = quotePowerShell(
+    "node.exe C:\\other\\server.js --port 3000",
+  );
+  const result = runLauncherFunction(
+    `$candidates = @{ 201 = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${currentCommand}; ParentProcessId = 801 }; 202 = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${unrelatedCommand}; ParentProcessId = 802 } }; $script:stopped = @(); $listeners = { param($port) @(201, 202) }; $lookup = { param($processId) $candidates[[int]$processId] }.GetNewClosure(); $stopper = { param($processId) $script:stopped += [int]$processId }; Remove-UnhealthyQuantScopeRuntimeListener -Runtime $runtimePorts.Application -Root ${root} -ListeningProcessIds $listeners -ProcessLookup $lookup -ProcessStopper $stopper; Write-Output ($script:stopped -join ',')`,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim().split(/\r?\n/).at(-1), "201");
+});
+
+test("stale relay identity requires the QuantScope Node command and no live parent", () => {
+  const relayPath = join(
+    fileURLToPath(projectRoot),
+    "scripts",
+    "market-relay.mjs",
+  );
+  const root = quotePowerShell(fileURLToPath(projectRoot));
+  const currentCommand = quotePowerShell(`node.exe "${relayPath}"`);
+  const unrelatedCommand = quotePowerShell("node.exe other-relay.mjs");
+  const result = runLauncherFunction(
+    `$current = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${currentCommand}; ParentProcessId = 7001 }; $unrelated = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${unrelatedCommand}; ParentProcessId = 7001 }; Write-Output (Test-QuantScopeMarketRelayProcess -Process $current -Root ${root} -ParentProcessExists { $false }); Write-Output (Test-QuantScopeMarketRelayProcess -Process $current -Root ${root} -ParentProcessExists { $true }); Write-Output (Test-QuantScopeMarketRelayProcess -Process $unrelated -Root ${root} -ParentProcessExists { $false })`,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(result.stdout.trim().split(/\r?\n/), [
+    "True",
+    "False",
+    "False",
+  ]);
+});
+
+test("unhealthy runtime cleanup stops only identified current-checkout listeners", () => {
+  const relayPath = join(
+    fileURLToPath(projectRoot),
+    "scripts",
+    "market-relay.mjs",
+  );
+  const root = quotePowerShell(fileURLToPath(projectRoot));
+  const currentCommand = quotePowerShell(`node.exe "${relayPath}"`);
+  const unrelatedCommand = quotePowerShell("node.exe other-relay.mjs");
+  const result = runLauncherFunction(
+    `$candidates = @{ 101 = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${currentCommand}; ParentProcessId = 901 }; 102 = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${unrelatedCommand}; ParentProcessId = 901 }; 103 = [pscustomobject]@{ Name = 'node.exe'; CommandLine = ${currentCommand}; ParentProcessId = 900 } }; $script:stopped = @(); $listeners = { param($port) @(101, 102, 103) }; $lookup = { param($processId) $candidates[[int]$processId] }.GetNewClosure(); $parentExists = { param($processId) $processId -eq 900 }; $stopper = { param($processId) $script:stopped += [int]$processId }; Remove-UnhealthyQuantScopeRuntimeListener -Runtime $runtimePorts.MarketRelay -Root ${root} -ListeningProcessIds $listeners -ProcessLookup $lookup -ParentProcessExists $parentExists -ProcessStopper $stopper; Write-Output ($script:stopped -join ',')`,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim().split(/\r?\n/).at(-1), "101,103");
+});
+
 test("local package commands pin loopback and persistent D1 state", () => {
   const packageJson = JSON.parse(readProjectFile("package.json")) as {
     scripts: Record<string, string>;
@@ -97,8 +232,47 @@ test("PowerShell launcher validates, migrates, verifies, and opens localhost", (
   assert.match(launcher, /\[version\]"22\.13\.0"/);
   assert.match(launcher, /npm\.cmd ci/);
   assert.match(launcher, /npm\.cmd run local:db:migrate/);
-  assert.match(launcher, /http:\/\/127\.0\.0\.1:3000/);
+  assert.match(launcher, /-Uri \$localUrl `\r?\n\s+-TimeoutSec 10/);
+  assert.match(launcher, /\$runtimeHost = "127\.0\.0\.1"/);
+  assert.match(launcher, /Application = \[pscustomobject\]@\{/);
+  assert.match(launcher, /MarketRelay = \[pscustomobject\]@\{/);
+  assert.match(
+    launcher,
+    /\$localUrl = "http:\/\/\$\{runtimeHost\}:\$\(\$applicationRuntime\.Port\)"/,
+  );
   assert.match(launcher, /GetActiveTcpListeners/);
+  assert.match(launcher, /NODE_USE_ENV_PROXY = "1"/);
+  assert.match(launcher, /\$env:HTTPS_PROXY -or \$env:HTTP_PROXY/);
+  assert.match(launcher, /\$useMarketRelay = \$true/);
+  assert.match(launcher, /scripts[\\/]market-relay\.mjs/);
+  assert.match(launcher, /function Ensure-QuantScopeMarketRelay/);
+  assert.match(
+    launcher,
+    /if \(-not \(Ensure-QuantScopeMarketRelay -Root \$projectRoot\)\)/,
+  );
+  assert.match(launcher, /function Test-QuantScopeApplicationProcess/);
+  assert.match(launcher, /function Test-QuantScopeRuntimeProcess/);
+  assert.match(launcher, /function Remove-UnhealthyQuantScopeRuntimeListener/);
+  assert.match(launcher, /function Confirm-QuantScopeRuntimePortAvailable/);
+  assert.match(
+    launcher,
+    /Confirm-QuantScopeRuntimePortAvailable `\r?\n\s+-Runtime \$applicationRuntime/g,
+  );
+  assert.ok(
+    (
+      launcher.match(
+        /Confirm-QuantScopeRuntimePortAvailable `\r?\n\s+-Runtime \$applicationRuntime/g,
+      ) ?? []
+    ).length >= 2,
+  );
+  assert.match(
+    launcher,
+    /Confirm-QuantScopeRuntimePortAvailable `\r?\n\s+-Runtime \$marketRelayRuntime/,
+  );
+  assert.match(
+    launcher,
+    /QUANTSCOPE_LOCAL_MARKET_RELAY_ENABLED = '1'/,
+  );
   assert.match(launcher, /npm\.cmd run local:dev/);
   assert.match(launcher, /TimeoutMilliseconds = 60000/);
   assert.match(launcher, /QuantScope/);

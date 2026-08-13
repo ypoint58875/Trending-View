@@ -18,11 +18,100 @@ import {
   ScreeningValidationError,
   buildRollingValidationFolds,
   buildSampleValidationWindows,
+  resolveScreeningProgressBarState,
   resolveTradingSessionRange,
   resolveTrailingTradingSessionRange,
   runScreeningWithValidation,
 } from "../lib/analysis/screening-validation";
 import type { MarketBar } from "../lib/market/types";
+
+const completedOptimizationProgress = {
+  completed: 39_927,
+  total: 39_927,
+  stageCompleted: 2_236,
+  stageTotal: 2_236,
+  failed: 0,
+  stage: "allocations" as const,
+  strategyAId: null,
+  strategyBId: null,
+};
+
+test("fills period and range progress when their four-stage optimization completes", () => {
+  for (const mode of ["sample", "range"] as const) {
+    const progress = resolveScreeningProgressBarState(
+      completedOptimizationProgress,
+      {
+        mode,
+        phase: "optimization",
+        foldIndex: 0,
+        foldCount: 1,
+        completed: completedOptimizationProgress.completed,
+        total: completedOptimizationProgress.total,
+        window: {
+          startTime: "2026-01-01",
+          endTime: "2026-07-27",
+        },
+        optimizationProgress: completedOptimizationProgress,
+      },
+    );
+
+    assert.equal(progress.value, progress.maximum);
+    assert.equal(progress.maximum, 4);
+  }
+});
+
+test("adds one progress segment per rolling selection window", () => {
+  const optimization = resolveScreeningProgressBarState(
+    completedOptimizationProgress,
+    {
+      mode: "rolling",
+      phase: "optimization",
+      foldIndex: 0,
+      foldCount: 3,
+      completed: completedOptimizationProgress.completed,
+      total: completedOptimizationProgress.total,
+      window: {
+        startTime: "2022-01-01",
+        endTime: "2026-07-27",
+      },
+      optimizationProgress: completedOptimizationProgress,
+    },
+  );
+  const middleWindow = resolveScreeningProgressBarState(
+    completedOptimizationProgress,
+    {
+      mode: "rolling",
+      phase: "selection",
+      foldIndex: 1,
+      foldCount: 3,
+      completed: 50,
+      total: 100,
+      window: {
+        startTime: "2023-01-01",
+        endTime: "2023-12-31",
+      },
+    },
+  );
+  const completed = resolveScreeningProgressBarState(
+    completedOptimizationProgress,
+    {
+      mode: "rolling",
+      phase: "selection",
+      foldIndex: 2,
+      foldCount: 3,
+      completed: 100,
+      total: 100,
+      window: {
+        startTime: "2024-01-01",
+        endTime: "2024-12-31",
+      },
+    },
+  );
+
+  assert.deepEqual(optimization, { value: 4, maximum: 7 });
+  assert.deepEqual(middleWindow, { value: 5.5, maximum: 7 });
+  assert.deepEqual(completed, { value: 7, maximum: 7 });
+});
 
 function firstScreeningCandidatePerStrategy() {
   const seen = new Set<string>();
@@ -162,6 +251,70 @@ test("keeps calendar ranges and trailing session counts synchronized", () => {
       sessions: bars.length,
     },
   );
+});
+
+test("keeps native one-minute ranges exact within the same trading day", () => {
+  const bars: MarketBar[] = Array.from({ length: 10 }, (_, index) => {
+    const minute = 30 + index;
+    const close = 100 + index;
+    return {
+      time: `2026-08-07 09:${minute}`,
+      timestamp: Date.parse(`2026-08-07T00:${minute}:00.000Z`),
+      open: close - 0.5,
+      close,
+      high: close + 0.5,
+      low: close - 1,
+      volume: 1_000 + index,
+      amount: 0,
+      amplitude: 1,
+      changePercent: 0.1,
+      change: 0.1,
+      turnoverRate: 0,
+    };
+  });
+
+  assert.deepEqual(
+    resolveTradingSessionRange(
+      bars,
+      "2026-08-07 09:33",
+      "2026-08-07 09:36",
+    ),
+    {
+      startTime: "2026-08-07 09:33",
+      endTime: "2026-08-07 09:36",
+      sessions: 4,
+    },
+  );
+  assert.deepEqual(
+    resolveTrailingTradingSessionRange(
+      bars,
+      3,
+      "2026-08-07 09:38",
+    ),
+    {
+      startTime: "2026-08-07 09:36",
+      endTime: "2026-08-07 09:38",
+      sessions: 3,
+    },
+  );
+
+  const result = runBacktest(
+    bars,
+    "sma-cross",
+    { fast: 2, slow: 3 },
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1m",
+      executionPolicy: "next-open",
+      entryFilter: null,
+      startTime: "2026-08-07 09:33",
+      endTime: "2026-08-07 09:36",
+    },
+  );
+  assert.equal(result.equity[0].time, "2026-08-07 09:33");
+  assert.equal(result.equity.at(-1)!.time, "2026-08-07 09:36");
 });
 
 test("period screening ranks and reports only the selected window", async () => {

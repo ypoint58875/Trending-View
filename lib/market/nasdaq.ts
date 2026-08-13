@@ -113,7 +113,11 @@ export async function fetchNasdaqDailySeries(
   if (!extendedHistory) {
     start.setUTCFullYear(start.getUTCFullYear() - 5);
   }
-  const code = instrument.code.replace(/^\^/, "").replace(/\..*$/, "");
+  const providerCode =
+    instrument.provider === "nasdaq" && instrument.secid.trim()
+      ? instrument.secid
+      : instrument.code;
+  const code = providerCode.replace(/^\^/, "").replace(/\..*$/, "");
   const url = new URL(
     `${HISTORICAL_ENDPOINT}/${encodeURIComponent(code)}/historical`,
   );

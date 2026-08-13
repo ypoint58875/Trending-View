@@ -14,7 +14,11 @@ import type { MarketBar, MarketInterval } from "@/lib/market/types";
 
 type WorkerScreeningOptions = Pick<
   RunScreeningWithValidationOptions,
-  "objective" | "entryFilters" | "onProgress" | "onValidationProgress"
+  | "objective"
+  | "entryFilters"
+  | "excludedStrategyIds"
+  | "onProgress"
+  | "onValidationProgress"
 > & {
   signal?: AbortSignal;
 };
@@ -104,6 +108,9 @@ export function runScreeningInWorker(
         objective: options.objective,
         entryFilters: options.entryFilters
           ? [...options.entryFilters]
+          : undefined,
+        excludedStrategyIds: options.excludedStrategyIds
+          ? [...options.excludedStrategyIds]
           : undefined,
       },
     };

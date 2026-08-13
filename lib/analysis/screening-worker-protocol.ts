@@ -10,6 +10,7 @@ import type {
   ScreeningValidationProgress,
 } from "./screening-validation";
 import type { MovingAverageSlopeFilter } from "./entry-filter";
+import type { StrategyId } from "./strategies";
 import type { MarketBar, MarketInterval } from "@/lib/market/types";
 
 export interface ScreeningWorkerRunRequest {
@@ -23,6 +24,7 @@ export interface ScreeningWorkerRunRequest {
   options: {
     objective?: ScreeningObjective;
     entryFilters?: MovingAverageSlopeFilter[];
+    excludedStrategyIds?: StrategyId[];
   };
 }
 

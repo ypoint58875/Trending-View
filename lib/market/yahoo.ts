@@ -10,7 +10,12 @@ import {
   clampMarketSeriesLimit,
   requestsExtendedDailyHistory,
 } from "./history";
-import { resolveLatestDailyBarStatus } from "./session";
+import { exchangeFromProviderLabels } from "./exchanges";
+import { createLocalMarketRelayRequest } from "./local-relay";
+import {
+  resolveLatestDailyBarStatus,
+  resolveLatestIntradayBarStatus,
+} from "./session";
 
 const SEARCH_ENDPOINT = "https://query1.finance.yahoo.com/v1/finance/search";
 const CHART_ENDPOINT = "https://query1.finance.yahoo.com/v8/finance/chart";
@@ -50,8 +55,14 @@ const yahooIndexAliases: Record<string, string> = {
   GDAXI: "^GDAXI",
   FCHI: "^FCHI",
   STOXX50E: "^STOXX50E",
+  SX5E: "^STOXX50E",
+  NDX100: "^NDX",
   KS11: "^KS11",
+  SENSEX: "^BSESN",
+  BVSP: "^BVSP",
+  SSMI: "^SSMI",
   TWII: "^TWII",
+  STI: "^STI",
   AXJO: "^AXJO",
 };
 
@@ -112,22 +123,12 @@ interface YahooChartResponse {
 function exchangeFromYahoo(
   exchange: string | undefined,
   display: string | undefined,
+  code?: string,
 ): MarketExchange {
-  const value = `${exchange ?? ""} ${display ?? ""}`.toUpperCase();
-  if (value.includes("TOKYO") || value.includes("JPX")) return "JPX";
-  if (value.includes("NASDAQ") || value.includes("NGM")) return "NASDAQ";
-  if (
-    value.includes("NYSE ARCA") ||
-    value.includes("PCX") ||
-    value.includes("ARCX")
-  ) {
-    return "NYSE_ARCA";
-  }
-  if (value.includes("HONG KONG") || value.includes("HKG")) return "HKEX";
-  if (value.includes("SHANGHAI") || value.includes("SHH")) return "SSE";
-  if (value.includes("SHENZHEN") || value.includes("SHZ")) return "SZSE";
-  if (value.includes("PHLX") || value.includes("NIM")) return "PHLX";
-  return "OTHER";
+  return exchangeFromProviderLabels(
+    `${exchange ?? ""} ${display ?? ""}`,
+    code,
+  );
 }
 
 async function fetchJson<T>(
@@ -139,13 +140,22 @@ async function fetchJson<T>(
     url,
     new URL(url.toString().replace("//query1.", "//query2.")),
   ];
+  const relayRequests = endpoints
+    .map((endpoint) =>
+      createLocalMarketRelayRequest(endpoint, DEFAULT_HEADERS),
+    )
+    .filter((request): request is Request => request !== null);
+  const candidates: Array<URL | Request> = [
+    ...relayRequests,
+    ...endpoints,
+  ];
   let lastStatus = 0;
   let lastError: unknown = null;
 
-  for (const endpoint of endpoints) {
+  for (const endpoint of candidates) {
     try {
       const response = await fetchImpl(endpoint, {
-        headers: DEFAULT_HEADERS,
+        ...(endpoint instanceof Request ? {} : { headers: DEFAULT_HEADERS }),
         signal: AbortSignal.timeout(12_000),
         ...(requestCache === "no-store" ? { cache: requestCache } : {}),
       });
@@ -169,15 +179,66 @@ export function yahooSymbolForInstrument(instrument: MarketInstrument): string {
     return instrument.secid;
   }
   if (instrument.assetType === "index") {
-    const alias = yahooIndexAliases[instrument.code.toUpperCase()];
-    if (alias) return alias;
-    if (instrument.exchange === "SSE") return `${instrument.code}.SS`;
-    if (instrument.exchange === "SZSE") return `${instrument.code}.SZ`;
-    return `^${instrument.code}`;
+    return yahooIndexSymbolForCode(instrument.code, instrument.exchange);
   }
   if (instrument.exchange === "SSE") return `${instrument.code}.SS`;
   if (instrument.exchange === "SZSE") return `${instrument.code}.SZ`;
+  if (instrument.exchange === "HKEX") return `${instrument.code}.HK`;
   return instrument.code;
+}
+
+export function yahooPrimarySymbolForInstrument(
+  instrument: MarketInstrument,
+): string | null {
+  if (instrument.provider === "yahoo") {
+    return yahooSymbolForInstrument(instrument);
+  }
+  if (instrument.assetType === "index") {
+    const normalizedCode = instrument.code
+      .replace(/^\^/, "")
+      .replace(/\.(SS|SZ|HK)$/i, "")
+      .toUpperCase();
+    if (
+      yahooIndexAliases[normalizedCode] ||
+      instrument.exchange === "SSE" ||
+      instrument.exchange === "SZSE"
+    ) {
+      return yahooIndexSymbolForCode(
+        normalizedCode,
+        instrument.exchange,
+      );
+    }
+    return null;
+  }
+  if (instrument.assetType !== "etf") return null;
+
+  const normalizedCode = instrument.code.replace(
+    /\.(SS|SZ|HK)$/i,
+    "",
+  );
+  if (instrument.exchange === "SSE") return `${normalizedCode}.SS`;
+  if (instrument.exchange === "SZSE") return `${normalizedCode}.SZ`;
+  if (instrument.exchange === "HKEX") return `${normalizedCode}.HK`;
+  if (
+    instrument.exchange === "NYSE" ||
+    instrument.exchange === "NYSE_ARCA" ||
+    instrument.exchange === "NASDAQ"
+  ) {
+    return normalizedCode;
+  }
+  return null;
+}
+
+export function yahooIndexSymbolForCode(
+  code: string,
+  exchange: MarketExchange,
+): string {
+  const normalizedCode = code.replace(/^\^/, "").toUpperCase();
+  const alias = yahooIndexAliases[normalizedCode];
+  if (alias) return alias;
+  if (exchange === "SSE") return `${normalizedCode}.SS`;
+  if (exchange === "SZSE") return `${normalizedCode}.SZ`;
+  return `^${normalizedCode}`;
 }
 
 export async function searchYahoo(
@@ -205,7 +266,11 @@ export async function searchYahoo(
       secid: item.symbol!,
       code: item.symbol!.replace(/^\^/, ""),
       name: item.longname || item.shortname || item.symbol!,
-      exchange: exchangeFromYahoo(item.exchange, item.exchDisp),
+      exchange: exchangeFromYahoo(
+        item.exchange,
+        item.exchDisp,
+        item.symbol,
+      ),
       assetType:
         item.quoteType === "INDEX"
           ? ("index" as const)
@@ -357,7 +422,11 @@ export function parseYahooChart(
     Number.isFinite(providerPreviousClose)
       ? providerPreviousClose * firstAcceptedAdjustmentFactor
       : providerPreviousClose;
-  const exchange = exchangeFromYahoo(result.meta?.exchangeName, "");
+  const exchange = exchangeFromYahoo(
+    result.meta?.exchangeName,
+    "",
+    result.meta?.symbol || instrument.code,
+  );
   return {
     instrument: {
       ...instrument,
@@ -385,7 +454,11 @@ export function parseYahooChart(
             fetchedAt,
             result.meta?.currentTradingPeriod?.regular?.end,
           )
-        : "unknown",
+        : resolveLatestIntradayBarStatus(
+            bars.at(-1)!.timestamp,
+            fetchedAt,
+            interval === "1m" ? 1 : Number(interval.slice(0, -1)),
+          ),
     source: "yahoo",
     fetchedAt: fetchedAt.toISOString(),
   };

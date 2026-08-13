@@ -36,7 +36,7 @@ export function BacktestChart({
         boundaryGap: false,
         axisLine: { lineStyle: { color: "#26332f" } },
         axisTick: { show: false },
-        axisLabel: { color: "#6f807a", fontSize: 9, hideOverlap: true },
+        axisLabel: { color: "#6f807a", fontSize: 10, hideOverlap: true },
       },
       yAxis: [
         {
@@ -47,7 +47,7 @@ export function BacktestChart({
           axisTick: { show: false },
           axisLabel: {
             color: "#6f807a",
-            fontSize: 9,
+            fontSize: 10,
             formatter: (value: number) => `${Math.round(value / 1000)}k`,
           },
           splitLine: { lineStyle: { color: "#1b2723", type: "dashed" } },

@@ -431,7 +431,7 @@ finalists separately per filter period and combine only finalists from the same
 period. Store the winning filter in each standalone or combination result so
 applying it remains exactly reproducible in the strategy lab.
 
-## D-025: One live performance range across screening, lab, and shortcuts
+## D-025: One live performance range across screening and the strategy lab
 
 Use the strategy-lab start/end dates as the calendar representation of one
 shared trading-session range, with the period-sample session input as its count
@@ -444,10 +444,9 @@ instrument instead of restoring a shortcut's creation-time dates.
 Keep range-validation selection/test evidence and rolling-fold evidence
 independent from presentation. After those ranks are fixed, replay retained
 candidates over the shared range for result tables, shortlist cards, and lab
-application. Recalculate active-instrument shortcut returns from saved plans
-and saved costs over the same range without rewriting durable record
-provenance. Do not show an inactive instrument's stored numeric return as if it
-used the current range.
+application. The earlier shortcut-range portion of this decision is superseded
+by D-039; creation-time shortcut metrics remain provenance rather than a second
+editable workspace interval.
 
 ## D-026: Exhaustive parameters, family-scoped EMA5-8, and automatic winner combinations
 
@@ -542,3 +541,354 @@ instrument, interval, full plan (including independent filters), range, cash,
 commission, and slippage match. Indicator visibility/settings and recalculated
 metrics are replaceable presentation state. Any material strategy or execution
 setting difference creates a new row.
+
+## D-030: Atomic market-source reconciliation
+
+Supersede D-011's rule that a latest source or adjustment mismatch remains a
+warning until a later compatible refresh. Continue to forbid direct merges
+unless interval, source, and adjustment mode are identical.
+
+When a valid latest response differs from the active history, pin the provider
+that produced that latest response and request its complete history with
+fallback and caching disabled. Replace the active series atomically with that
+complete single-provider result, merging the fresh latest window only when its
+adjustment mode also matches. If strict history recovery fails, retain the prior
+complete series and show the mismatch warning.
+
+Do not infer a cross-provider multiplier from a small overlap window. Provider
+close times, corrections, index methodology, and corporate-action adjustment
+can differ even when recent prices appear close. The consistency boundary is a
+whole normalized `MarketSeries`, not individual bars from multiple sources.
+
+## D-031: Canonical source locking and provider-isolated snapshots
+
+Supersede D-030's rule that a newly successful provider may replace the whole
+active series. Assign one deterministic canonical primary to each instrument.
+Pin N225 to Eastmoney, SOX to Nasdaq, and the built-in gold, silver, WTI, and
+copper continuous proxies to their Eastmoney identifiers. Other search results
+retain the selected provider as primary.
+
+Persist canonical history, every provider's normalized snapshots, close-only
+references, fingerprints, and source health in separate IndexedDB stores. A
+completed canonical bar is immutable. The primary may replace only an
+unconfirmed final bar and append newer dates. A backup must never overwrite,
+splice, or rescale canonical OHLC. During a primary outage it may supply only a
+same-instrument, non-stale, price-plausible temporary quote.
+
+Treat Eastmoney market `100` as an overseas bucket rather than JPX. Resolve
+known global index codes through a shared venue mapping and use `OTHER` for an
+unknown code. Keep history cacheable even under strict-provider routing, while
+latest requests remain uncached. Prefer Eastmoney HTTPS and retry the same
+public host over HTTP only after a transport failure; no credentials are sent.
+
+This decision prioritizes reproducible charts over silently changing
+methodology. Before the first successful primary load, an outage may still
+produce an explicit empty/unavailable state. Do not describe public website
+sources as having an availability SLA.
+
+## D-032: Commodity canonical source and local proxy relay
+
+Supersede only D-031's commodity-primary assignment. Pin the built-in gold,
+silver, WTI, and copper continuous quote proxies to Yahoo `GC=F`, `SI=F`,
+`CL=F`, and `HG=F`. Retain the corresponding Eastmoney continuous identifiers
+as provider-isolated backups. Do not promote a backup or merge its OHLC when
+Yahoo is unavailable.
+
+When the Windows launcher detects `HTTP_PROXY` or `HTTPS_PROXY`, start a
+loopback-only relay on port 3001. Allow only reviewed Yahoo and Eastmoney HTTPS
+hosts and paths, forward only non-sensitive browser headers, and pass only the
+fixed loopback relay URL into the local Worker binding. Never pass proxy
+addresses, credentials, cookies, or authorization headers into Worker code or
+logs. Without a configured proxy, keep direct provider requests unchanged.
+
+If a canonical source assignment changes, reject a stored canonical row whose
+source no longer equals the configured primary. Never preserve the old row and
+splice new-primary dates into it.
+
+## D-033: Yahoo-first verified canonical mappings
+
+Supersede D-031's N225/SOX assignments and D-032's rule that a configured
+primary change rejects the existing same-instrument canonical row. Use Yahoo
+as canonical primary for N225 `^N225`, SOX `^SOX`, the existing continuous
+commodity proxies, Yahoo-discovered instruments, and indexes or ETFs whose
+Yahoo symbol can be derived by an explicit shared mapping. If an instrument
+does not carry an exact Yahoo identity and its exchange/code mapping is not
+verified, retain the selected provider instead of guessing a Yahoo suffix.
+
+Prefer Yahoo results during multi-provider search de-duplication so the exact
+provider symbol survives. Retain original Eastmoney or Nasdaq definitions,
+optional EODHD, and close-only FRED as isolated backup/reference definitions
+where supported. A Yahoo 403/429 or transport failure does not authorize a
+backup history to overwrite the chart.
+
+Key canonical cache reads by normalized instrument and interval across this
+deliberate source-policy change. Existing confirmed dates remain immutable;
+the current Yahoo primary may replace only an unconfirmed final date and add
+missing or newer dates. Canonical writes still require a successful response
+from the current primary, and provider source snapshots remain isolated. This
+preserves the user's locked chart history while changing future ownership to
+Yahoo.
+
+The 2026-07-27 strict-provider verification returned valid Yahoo history for
+all 16 configured global indexes, 11 ETFs, and four commodity proxies. Keep the
+proxy-capable loopback relay plus query1/query2/direct fallbacks because Yahoo
+official pages may rate-limit automated access and provide no availability
+SLA.
+
+## D-034: Validated backup promotion and quota-aware recovery
+
+Supersede D-031 through D-033 only where they forbid every backup from entering
+canonical OHLC. Keep their canonical identity, immutable completed-bar,
+provider-isolated snapshot, and explicit source-label rules.
+
+Every backup now declares one of two promotion policies:
+
+- `verified-identity` is reserved for deterministic symbol/exchange mappings.
+  It may recover an empty chart.
+- `overlap-required` needs at least five common dates plus bounded close and
+  OHLC error. An ETF adjustment mismatch needs at least ten overlaps and a
+  stricter error threshold.
+
+Try backups sequentially in profile order and stop at the first promotable
+series. A promoted backup may replace only an unconfirmed final bar and append
+missing or newer dates; it never rewrites confirmed canonical OHLC. Keep the
+preferred source eligible on later refreshes and identify fallback ownership in
+the UI. Credentialed providers are excluded from routine background audits and
+are called only during recovery to conserve quotas.
+
+Use the official Nikkei CSV first for N225. Use Zhitu immediately after the
+original provider for SSE/SZSE indexes. Use EODHD, Twelve Data, Financial
+Modeling Prep, Alpha Vantage, Marketstack, and Nasdaq only where the adapter and
+profile support the asset class. Use Tencent's no-key SSE/SZSE snapshot only as
+the last temporary-quote candidate: its single bar can never satisfy promotion.
+Commodity fallbacks remain audit-only because continuous-contract methodologies
+are not assumed identical.
+
+Do not enable a configured provider merely because a key exists. Finnhub stock
+candles currently lack the required entitlement, EIA is a reference-statistics
+source rather than OHLC, and ZYHub returned an insufficient-balance response in
+the 2026-07-28 runtime probe. They remain documented candidates until a strict
+daily-bar request succeeds and the identity/licensing boundary is reviewed.
+
+## D-035: Temporary current-session bars remain display-only
+
+Supersede D-034 only for Chinese quote recovery order and temporary-quote
+display behavior. When an SSE/SZSE index or ETF primary fails, probe the no-key
+Tencent session quote before quota-bearing history sources. Continue until a
+promotable history series is found, retaining that series as the canonical
+base.
+
+After canonical identity, date, OHLC, and relative-price validation, the
+Tencent quote may append a newer session or replace only an unconfirmed
+same-day bar in the active in-memory series. This allows the chart, market
+statistics, live guidance, and active shortcut returns to use the same current
+bar. Never write this temporary bar to canonical storage. A completed same-day
+canonical bar remains immutable, the one-bar quote cannot recover an empty
+chart, and it never becomes a historical source.
+
+## D-036: Session-aware refresh, relay availability, and safe key status
+
+Supersede D-009's fixed 60-second timer and D-032's proxy-conditional relay
+lifecycle. Keep the existing canonical merge and immutable-bar rules.
+
+Use browser-side session-aware scheduling for this local, single-user workspace
+instead of a durable server scheduler. Refresh a visible active instrument
+every five minutes during a known regular session and through 30 minutes after
+close, then stop. For the current COMEX/NYMEX proxies, apply the Sunday-Friday
+Globex session, retain the 30-minute close grace, and skip the daily maintenance
+break and weekend closure. Use 15 minutes for unknown venues. Focus and
+visibility events share the same last-attempt timestamp and cannot create extra
+requests.
+
+When the preferred source fails, immediately try ordered backups. Increment a
+global 15-, 30-, then 60-minute backoff only after the complete chain fails;
+clear it after any accepted primary, promoted backup, or temporary quote. Keep
+credential-free audits at a 30-minute cadence and credentialed backups
+recovery-only. Refresh all shortcut instruments after the manual header action
+and each scheduled active-instrument refresh cycle, report progress, and
+enforce a 60-second cooldown. Preserve a queued automatic request until the
+sequential inactive-instrument pass can start.
+
+Always ensure the allowlisted loopback relay from every launcher path and use
+its fixed URL by default in development. Reuse a healthy QuantScope relay,
+remove only a verified orphan, and never stop an unrelated port-3001 listener.
+Production still requires an explicit relay binding.
+
+Store local secrets only in ignored `.env.local`; placeholder names belong in
+`.env.example`. Classify on-use provider failures without returning upstream
+bodies: invalid/expired credential, access/entitlement denial, quota limit,
+missing configuration, or generic upstream failure. Only 401 or explicit
+invalid/expired-key evidence is labeled as a credential issue; a 403 is not
+enough to claim expiration. Do not background-probe unused keys.
+
+## D-037: Rolling source selection and validated gold providers
+
+Keep Yahoo `GC=F` as the configured gold identity, but formally register FMP
+`GCUSD`, AllTick `GOLD`, and Eastmoney `101.GC00Y` as ordered gold backups.
+Treat every one as `overlap-required`: the upstream symbols may represent
+spot, CFD, or continuous-futures methodologies, so none may recover an empty
+chart or rewrite a confirmed Yahoo date.
+
+Retain lifetime counters for diagnostics and a bounded 31-day sample list for
+selection. Demote a configured source after three latest consecutive failures,
+or when at least five 7-day attempts fall below 80%. A backup needs at least
+three 7-day attempts at 95%, five 30-day attempts at 90%, no current demotion,
+and passing latest-date/gap/OHLC quality. Probe a demoted configured primary no
+more often than hourly. Restore it only after seven elapsed days and a
+95%-healthy 7-day window. These asymmetric gates are deliberate hysteresis.
+
+Active gold may audit FMP and AllTick every 30 minutes so a healthy candidate
+can collect evidence. An invalid credential receives a 24-hour page-session
+audit cooldown; a reload permits immediate validation after credential
+replacement.
+The 2026-07-28 FMP `GCUSD` probe succeeded through the latest date; the supplied
+AllTick token returned HTTP 401. Its replacement seven-day trial token returned
+valid `GOLD` bars and passed Yahoo overlap. Stop network access at the explicit
+local expiry timestamp and use the existing credential-expired status.
+
+## D-038: Documented allowances and Juhe final-quote recovery
+
+Record the official free/starter allowance, reset period, access date, and
+integration status for every locally recognized credential. Keep those
+published baselines separate from the account entitlement shown by a provider
+dashboard. Do not call an unused provider solely to discover its plan. Apply a
+hard runtime counter only where an implemented source consumes a small known
+bucket; otherwise retain ordered recovery, cooldown, and safe quota-error
+classification.
+
+Add Juhe Data only as the final SSE/SZSE index/ETF current-quote fallback. Try
+the no-key Tencent quote first and skip Juhe after any accepted Tencent quote.
+Juhe returns one raw bar, cannot recover an empty chart, cannot enter effective-
+primary selection, cannot persist history, and is excluded from routine audits.
+Protect the current stock-product allowance with a 50-call Shanghai-calendar-
+day gate and optional same-day external-usage offset. The in-process counter is
+a client guard; the upstream provider remains authoritative after restarts.
+
+## D-039: Fixed shortcut comparison snapshots and OHLC-only chart scale
+
+Whenever usable history for a shortcut instrument changes, replay every saved
+plan for that canonical instrument over the same latest 128 trading sessions
+and persist each rolling return without changing history. After a one-click
+screening completes, require its archive request to include the complete saved
+cohort and append exactly one event to every row. An exact standalone plan uses
+its native standalone-result rank, and an exact two-strategy plan uses its
+native combination-result rank. A plan absent from that run appends `null`,
+rendered as `未`, so absence still occupies one of the newest five events.
+Different optimization objectives share this one history; the objective is
+provenance for the run, not a history partition. The screening-run snapshot key
+deduplicates writes, so rerenders and market refreshes cannot create history
+while every new completed screening does. Rolling-return refresh remains
+independent and never changes a rank event.
+
+Keep the bounded rank history as JSON on the saved row instead of creating a
+child table: the product reads and writes the full five-value integer-or-null
+value with the
+shortcut, does not query individual rank events, and needs owner-scoped atomic
+row validation more than unbounded audit analytics. Group deletion accepts a
+canonical instrument key but resolves and deletes only the current owner's
+matching stored aliases.
+
+Derive the visible main-price-axis minimum and maximum from candle lows and
+highs, with fixed padding, and recompute them on data zoom. Do not allow
+strategy lines, indicator overlays, or markers to affect those bounds. This
+makes K-line comparisons across saved strategies visually stable for the same
+instrument and zoom window. Use integer bounds and integer tick-label formatting
+so the K-line vertical axis never displays decimals. Keep the latest-guidance
+card at a fixed height with internal overflow for the same layout-stability
+reason.
+
+Keep the compact screening archive, comparison helpers, pruning, and rank
+write path as backend provenance. Do not render a separate screening-history or
+weekly-comparison panel because its user-facing role is already covered by the
+shortcut rows' rolling returns and newest-five rank/absence histories.
+
+## D-040: Volume eligibility, complete fallback promotion, and atomic cohorts
+
+Treat price validity and volume availability as separate properties. Require at
+least 20 bars and 90% positive-volume coverage before exposing VWAP, MFI, CMF,
+OBV, MFI Reversal, or VWAP Reversion. Do not manufacture zero-volume signals or
+splice volume from a different provider or date. The current primary may fill a
+cached zero-volume date only when it is still the same source and date; all
+locked OHLC fields remain unchanged. This is metadata enrichment, not a price
+correction. A recent isolated gap gets one full-history repair attempt per
+browser session. Price-only studies remain available.
+If a saved shortcut cohort contains a volume-dependent plan, block the complete
+screening run instead of recording ranks for only part of that cohort.
+
+When the configured source cannot populate an empty chart, promote the verified
+fallback selected by the recovery pipeline. Prefer longer history among equally
+fresh valid candidates, and require at least 500 historical observations before
+a backup qualifies for persistent health-based promotion. A current quote alone
+can still be displayed temporarily but cannot become canonical history.
+
+Write each completed screening snapshot and its full saved-strategy rank cohort
+in one D1 batch with an independent UUID snapshot key. Apply the same atomicity
+principle to rolling-return cohorts, legacy rank backfill, and first-level group
+deletion. Benchmark open positions are marked at the final close and therefore
+pay entry costs only; no synthetic final exit cost is charged.
+
+## D-041: Fixed-scope shortcut folders and safe deletion
+
+Use one normalized owner-scoped folder table with two explicit scopes rather
+than a recursive general-purpose tree. Instrument folders live in the root
+context. Strategy folders belong to one canonical instrument context. Saved
+rows keep nullable affiliations, and every assignment validates owner, scope,
+and context.
+
+Deleting a folder means unfiling its contents. Clear both nullable affiliations
+and delete the folder in one D1 batch, with `ON DELETE SET NULL` as the schema
+backstop. Never cascade folder deletion into saved backtests. Keep disclosure
+interaction for instruments and restrict drag/keyboard ordering to the current
+folder section.
+
+## D-042: Bounded long-only tactical allocation modes
+
+Keep strategy combinations long-only and bound every target to `[0, 1]`.
+Retain the established base-then-add mode and add one explicit full-then-reduce
+mode: the long-cycle entry starts at A+B, a short-cycle exit removes only its
+tactical sleeve, a later short-cycle entry restores that sleeve, and the
+long-cycle exit clears all exposure. Screen both modes across the same five
+allocation splits, persist the winning mode, and include it in exact candidate,
+shortcut, archive, and shortlist identity. Do not introduce arbitrary sequence
+editing or negative positions.
+
+## D-043: Categorized indicator discovery and confirmed structure pilot
+
+Treat mutable TradingView community ranks as idea discovery, not executable
+specifications. Do not copy community Pine source. Organize the internal
+registry into stable category menus, keep a separate device-local favorites
+list, and seed that list with an independently implemented support/resistance
+break study. Confirm pivots only after right-side bars close and never
+backpaint their levels onto earlier bars.
+
+## D-044: Canonical bar ordering and one-minute interval isolation
+
+Normalize all merged market bars by canonical `bar.time`; provider timestamps
+remain metadata and cannot determine order across sources. The workspace has
+two explicit modes, `1d` and provider-native `1m`. Cache, source health,
+fingerprint, screening, saved-plan identity, chart reset keys, ranges, and
+latest-bar status include the interval. Never derive 1-minute bars from daily
+data and do not expose 5/15/30/60-minute controls. Bound minute history to
+1,500 bars, use minute-exact string ranges, refresh once per minute during the
+venue session, and keep multi-source promotion/reference audits daily-only.
+Unavailable intraday volume remains unavailable.
+
+## D-045: Community analysis intake and validation-first screening
+
+Treat downloaded or referenced Pine scripts as provenance inputs rather than
+runtime dependencies. Record each source in the community catalog, assign a
+stable registry ID and typed parameters, implement the calculation as an
+independent pure TypeScript port, and require aligned-output and prefix-causality
+tests. Pine-only rendering, alert, leverage, and multi-timeframe behavior must be
+either mapped explicitly to host contracts or disclosed as unsupported. This
+keeps future local-file and website-reference intake repeatable without adding a
+second execution engine or copying third-party source into the application.
+
+Remove user-facing ordinal strategy ranks and shortcut rank histories. Keep
+objective sorting internal only to select screening candidates. Present each
+result and saved shortcut with a validation prompt based on a 30-session review
+and independent 63-session confirmation, including an explicit insufficient-data
+state. Exact shortcut matches show that they are already added; same-type matches
+show parameter, allocation, filter, and tactical-mode differences. Preserve
+legacy rank columns as inert compatibility storage until a separate migration is
+worth the operational risk.

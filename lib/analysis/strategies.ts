@@ -1,4 +1,5 @@
 import type { MarketBar } from "@/lib/market/types";
+import type { IndicatorId } from "./indicator-registry";
 import {
   bollingerBands,
   ema,
@@ -6,6 +7,7 @@ import {
   kdj,
   macd,
   mfi,
+  rollingHighLow,
   roc,
   rsi,
   sma,
@@ -17,6 +19,10 @@ import {
   TRADINGVIEW_BUILT_IN_STRATEGIES,
   type TradingViewBuiltInStrategyId,
 } from "./built-in-strategies";
+import {
+  COMMUNITY_STRATEGIES,
+  type CommunityStrategyId,
+} from "./community/strategies";
 import { buildStrategyOrderTimeline } from "./strategy-execution";
 import {
   emptyOrderSeries,
@@ -38,7 +44,21 @@ export type StrategyId =
   | "mfi-reversal"
   | "roc-momentum"
   | "vwap-reversion"
+  | CommunityStrategyId
   | TradingViewBuiltInStrategyId;
+
+export const VOLUME_REQUIRED_STRATEGY_IDS = [
+  "mfi-reversal",
+  "vwap-reversion",
+] as const satisfies readonly StrategyId[];
+
+const volumeRequiredStrategyIds = new Set<StrategyId>(
+  VOLUME_REQUIRED_STRATEGY_IDS,
+);
+
+export function strategyRequiresVolume(id: StrategyId): boolean {
+  return volumeRequiredStrategyIds.has(id);
+}
 
 export interface StrategyParameters {
   [key: string]: number;
@@ -51,6 +71,7 @@ export interface StrategyDefinition {
   id: StrategyId;
   horizon: StrategyHorizon;
   indicatorId: string;
+  paneIndicatorId?: IndicatorId;
   equivalenceGroup?: StrategyEquivalenceGroup;
   defaultParameters: StrategyParameters;
   buildTarget: (
@@ -85,6 +106,8 @@ const LONG_HORIZON_IDS = new Set<StrategyId>([
   "tv-price-channel",
   "tv-supertrend",
   "tv-technical-ratings",
+  "community-squeeze-momentum",
+  "community-ut-bot",
 ]);
 
 function strategyHorizon(id: StrategyId): StrategyHorizon {
@@ -217,19 +240,15 @@ function donchianBreakout(
   let inPosition = false;
   const entryPeriod = parameters.entryPeriod;
   const exitPeriod = parameters.exitPeriod;
+  const entryRange = rollingHighLow(bars, entryPeriod);
+  const exitRange = rollingHighLow(bars, exitPeriod);
 
   for (let index = 1; index < bars.length; index += 1) {
     if (!inPosition && index >= entryPeriod) {
-      const previousHigh = Math.max(
-        ...bars
-          .slice(index - entryPeriod, index)
-          .map((bar) => bar.high),
-      );
+      const previousHigh = entryRange.highest[index - 1]!;
       if (bars[index].close > previousHigh) inPosition = true;
     } else if (inPosition && index >= exitPeriod) {
-      const previousLow = Math.min(
-        ...bars.slice(index - exitPeriod, index).map((bar) => bar.low),
-      );
+      const previousLow = exitRange.lowest[index - 1]!;
       if (bars[index].close < previousLow) inPosition = false;
     }
     target[index] = inPosition ? 1 : 0;
@@ -245,23 +264,15 @@ function donchianIntrabarOrders(
   const entryPeriod = Math.max(Math.round(parameters.entryPeriod), 1);
   const exitPeriod = Math.max(Math.round(parameters.exitPeriod), 1);
   const orders = emptyOrderSeries(bars.length);
+  const entryRange = rollingHighLow(bars, entryPeriod);
+  const exitRange = rollingHighLow(bars, exitPeriod);
 
   for (let index = 1; index < bars.length; index += 1) {
-    const entryWindow =
-      index >= entryPeriod
-        ? bars.slice(index - entryPeriod, index)
-        : null;
-    const exitWindow =
-      index >= exitPeriod
-        ? bars.slice(index - exitPeriod, index)
-        : null;
     orders[index] = {
-      entryStop: entryWindow
-        ? Math.max(...entryWindow.map((bar) => bar.high))
-        : null,
-      exitStop: exitWindow
-        ? Math.min(...exitWindow.map((bar) => bar.low))
-        : null,
+      entryStop:
+        index >= entryPeriod ? entryRange.highest[index - 1] : null,
+      exitStop:
+        index >= exitPeriod ? exitRange.lowest[index - 1] : null,
     };
   }
 
@@ -477,6 +488,7 @@ export const STRATEGIES: StrategyDefinition[] = [
     id: "rsi-reversal",
     horizon: "short",
     indicatorId: "rsi",
+    paneIndicatorId: "rsi",
     defaultParameters: { period: 14, entry: 30, exit: 65 },
     buildTarget: rsiReversal,
   },
@@ -484,6 +496,7 @@ export const STRATEGIES: StrategyDefinition[] = [
     id: "macd-momentum",
     horizon: "long",
     indicatorId: "macd",
+    paneIndicatorId: "macd",
     equivalenceGroup: "macd-cross",
     defaultParameters: { fast: 12, slow: 26, signal: 9 },
     buildTarget: macdMomentum,
@@ -514,6 +527,7 @@ export const STRATEGIES: StrategyDefinition[] = [
     id: "kdj-reversal",
     horizon: "short",
     indicatorId: "kdj",
+    paneIndicatorId: "kdj",
     defaultParameters: { period: 9, entry: 35, exit: 65 },
     buildTarget: kdjReversal,
   },
@@ -548,6 +562,7 @@ export const STRATEGIES: StrategyDefinition[] = [
     id: "mfi-reversal",
     horizon: "short",
     indicatorId: "mfi",
+    paneIndicatorId: "mfi",
     defaultParameters: { period: 14, entry: 20, exit: 60 },
     buildTarget: mfiReversal,
   },
@@ -555,6 +570,7 @@ export const STRATEGIES: StrategyDefinition[] = [
     id: "roc-momentum",
     horizon: "long",
     indicatorId: "roc",
+    paneIndicatorId: "roc",
     defaultParameters: { period: 12, entry: 2, exit: 0 },
     buildTarget: rocMomentum,
   },
@@ -570,6 +586,7 @@ export const STRATEGIES: StrategyDefinition[] = [
     horizon: strategyHorizon(strategy.id),
     equivalenceGroup: builtInEquivalenceGroup(strategy.id),
   })),
+  ...COMMUNITY_STRATEGIES,
 ];
 
 export const LONG_HORIZON_STRATEGY_IDS: StrategyId[] = STRATEGIES.filter(

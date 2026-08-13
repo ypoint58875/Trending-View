@@ -10,6 +10,8 @@ import {
   Eye,
   EyeOff,
   FlaskConical,
+  Folder,
+  FolderPlus,
   GripVertical,
   LineChart,
   LoaderCircle,
@@ -19,9 +21,10 @@ import {
   Search,
   ShieldAlert,
   Sparkles,
+  Star,
   Square,
+  Pencil,
   Trash2,
-  Trophy,
 } from "lucide-react";
 import {
   useCallback,
@@ -43,18 +46,22 @@ import {
   runAllocationBacktest,
   runBacktest,
   type AllocationBacktestResult,
-  type BacktestPerformance,
   type BacktestResult,
   type BacktestSettings,
 } from "@/lib/analysis/backtest";
 import {
   INDICATOR_PREFERENCES_STORAGE_KEY,
+  DEFAULT_FAVORITE_INDICATOR_IDS,
+  INDICATOR_CATEGORIES,
   INDICATORS,
   createDefaultIndicatorSettings,
   getDefaultIndicatorParameters,
   getIndicator,
+  getIndicatorsByCategory,
+  indicatorRequiresVolume,
   indicatorConfigurationsEqual,
   parseIndicatorWorkspacePreferences,
+  type IndicatorCategoryId,
   type IndicatorId,
 } from "@/lib/analysis/indicator-registry";
 import {
@@ -66,21 +73,27 @@ import {
 } from "@/lib/analysis/screening";
 import {
   STRATEGIES,
+  VOLUME_REQUIRED_STRATEGY_IDS,
   areStrategiesEquivalent,
   getStrategy,
+  strategyRequiresVolume,
   type StrategyId,
   type StrategyParameters,
 } from "@/lib/analysis/strategies";
 import {
   DEFAULT_STRATEGY_A_ALLOCATION,
   DEFAULT_STRATEGY_B_ALLOCATION,
+  DEFAULT_TACTICAL_ALLOCATION_MODE,
   STRATEGY_LAYER_ALLOCATION_CANDIDATES,
+  TACTICAL_ALLOCATION_MODES,
   TWO_STRATEGY_ALLOCATION_CANDIDATES,
   buildLiveAllocationGuidance,
   buildStrategyPlanTimeline,
+  resolveTacticalAllocationMode,
   type CombinationScreeningProgress,
   type StrategyAllocationPlan,
   type StrategyCombinationResult,
+  type TacticalAllocationMode,
 } from "@/lib/analysis/strategy-combinations";
 import {
   DEFAULT_ROLLING_WINDOW_YEARS,
@@ -88,6 +101,7 @@ import {
   DEFAULT_SAMPLE_VALIDATION_SESSIONS,
   SCREENING_VALIDATION_MODES,
   ScreeningValidationError,
+  resolveScreeningProgressBarState,
   resolveTradingSessionRange,
   resolveTrailingTradingSessionRange,
   type ScreeningCandidateReference,
@@ -103,30 +117,43 @@ import {
 } from "@/lib/analysis/screening-validation";
 import { runScreeningInWorker } from "@/lib/analysis/screening-worker-client";
 import {
-  compareScreeningRuns,
   createSaveScreeningRunInput,
   fingerprintMarketSeries,
-  type ScreeningRunCandidate,
   type ScreeningRunRecord,
 } from "@/lib/analysis/screening-runs";
 import {
   DEFAULT_STRATEGY_SHORTLIST_DEPUTY_COUNT,
+  evaluateRecentStrategyEffectiveness,
   selectStrategyShortlist,
+  type RecentEffectivenessReview,
   type StrategyShortlistEntry,
 } from "@/lib/analysis/strategy-shortlist";
 import {
   MAX_SAVED_BACKTEST_SCROLL_RECORDS,
+  SAVED_BACKTEST_ROLLING_SESSIONS,
   canReuseSavedBacktestMarketSeries,
   createSaveBacktestInput,
+  findStrategyShortcutMatch,
   groupSavedBacktests,
+  reorderSavedBacktestFolders,
   reorderSavedBacktestGroups,
   reorderSavedBacktestsWithinGroup,
+  resolveSavedBacktestReturnDisplay,
   savedBacktestInstrumentKey,
   strategyPlansEqual,
+  type StrategyShortcutMatch,
   type SavedBacktestRecord,
+  type SavedBacktestFolder,
 } from "@/lib/analysis/saved-backtests";
 import { buildLiveStrategyGuidance } from "@/lib/analysis/live-guidance";
-import { buildAllocationTradeMarkers } from "@/lib/analysis/trade-markers";
+import {
+  buildStrategyLinkedPaneIndicators,
+  mergeChartIndicatorConfigurations,
+} from "@/lib/analysis/strategy-indicators";
+import {
+  buildAllocationTradeMarkers,
+  buildTradeMarkers,
+} from "@/lib/analysis/trade-markers";
 import {
   analyzeStrategyStability,
   type StabilityEvidence,
@@ -136,14 +163,53 @@ import type {
   MarketBar,
   MarketInstrument,
   MarketInterval,
+  MarketReferenceSeries,
   MarketSeries,
+  MarketTemporaryQuote,
 } from "@/lib/market/types";
 import { DAILY_HISTORY_LIMIT } from "@/lib/market/history";
-import { mergeLatestMarketSeries } from "@/lib/market/series";
 import {
-  readCachedMarketSeriesEntry,
-  writeCachedMarketSeries,
-} from "@/lib/market/client-cache";
+  mergeCanonicalMarketSeries,
+  mergePreferredTemporaryQuote,
+  selectCanonicalFallbackSeries,
+  temporaryQuoteFromMarketSeries,
+  type CanonicalFallbackCandidate,
+} from "@/lib/market/series";
+import {
+  refreshShortcutMarketInstrument,
+  type ShortcutMarketRefreshResult,
+} from "@/lib/market/shortcut-refresh";
+import {
+  resolveCanonicalMarketProfile,
+  type CanonicalMarketSourceDefinition,
+} from "@/lib/market/canonical";
+import {
+  readCanonicalMarketSeriesEntry,
+  readMarketSourceHealth,
+  recordMarketSourceAttempt,
+  writeCanonicalMarketSeries,
+  writeMarketReferenceSnapshot,
+  writeMarketSourceSnapshot,
+  type MarketSourceHealthRecord,
+} from "@/lib/market/canonical-cache";
+import { readCachedMarketSeriesEntry } from "@/lib/market/client-cache";
+import {
+  assessMarketVolumeCoverage,
+  measureMarketReferenceQuality,
+  measureMarketSeriesQuality,
+  missingPublishedVolumeRepairKey,
+} from "@/lib/market/quality";
+import {
+  INTRADAY_MARKET_REFRESH_INTERVAL_MS,
+  marketRefreshFailureBackoffMs,
+  resolveMarketAutoRefreshPolicy,
+  UNKNOWN_MARKET_REFRESH_INTERVAL_MS,
+} from "@/lib/market/session";
+import {
+  orderMarketRecoveryDefinitions,
+  selectMarketSourceByRollingHealth,
+  summarizeMarketSourceHealth,
+} from "@/lib/market/source-health";
 import {
   DEFAULT_MOVING_AVERAGE_SLOPE_FILTER,
   MAX_MOVING_AVERAGE_SLOPE_PERIOD,
@@ -157,12 +223,12 @@ import {
 } from "@/lib/analysis/entry-filter";
 
 const defaultInstrument: MarketInstrument = {
-  secid: "100.N225",
+  secid: "^N225",
   code: "N225",
   name: copy.defaultInstrument.name,
   exchange: "JPX",
   assetType: "index",
-  provider: "eastmoney",
+  provider: "yahoo",
 };
 
 const priceChartLabels = {
@@ -177,23 +243,40 @@ const priceChartLabels = {
   series: { ...copy.chart.series },
 };
 
-const relativeLongStrategyLineLabels: StrategyLineLabels = {
-  prefix: copy.chart.strategyLines.longPrefix,
-  roles: { ...copy.chart.strategyLines.roles },
-};
-
-const relativeShortStrategyLineLabels: StrategyLineLabels = {
-  prefix: copy.chart.strategyLines.shortPrefix,
-  roles: { ...copy.chart.strategyLines.roles },
-};
+function chartStrategyLineLabels(
+  strategyId: StrategyId,
+  horizon: "long" | "short",
+): StrategyLineLabels {
+  return {
+    prefix: `${
+      horizon === "long" ? copy.lab.relativeLong : copy.lab.relativeShort
+    } · ${copy.strategies[strategyId].name}`,
+    roles: { ...copy.chart.strategyLines.roles },
+    actionRoles:
+      horizon === "long"
+        ? {
+            entry: copy.chart.open,
+            exit: copy.chart.lightPosition,
+          }
+        : {
+            entry: copy.chart.shortBuy,
+            exit: copy.chart.shortSell,
+          },
+  };
+}
 
 const backtestChartLabels = {
   equity: copy.chart.equity,
   drawdown: copy.chart.drawdown,
 };
 
-const DAILY_INTERVAL: MarketInterval = "1d";
+type WorkspaceInterval = Extract<MarketInterval, "1d" | "1m">;
+
+const DAILY_INTERVAL: WorkspaceInterval = "1d";
+const INTRADAY_INTERVAL: WorkspaceInterval = "1m";
+const INTRADAY_HISTORY_LIMIT = 1_500;
 const HISTORICAL_EXECUTION_POLICY = "hybrid" as const;
+const DEFAULT_COMMISSION_PERCENT = 0.05;
 const STRATEGY_ALLOCATION_OPTIONS = STRATEGY_LAYER_ALLOCATION_CANDIDATES.map(
   (allocation) => allocation * 100,
 );
@@ -202,6 +285,13 @@ const DUAL_ALLOCATION_OPTIONS = TWO_STRATEGY_ALLOCATION_CANDIDATES.map(
     strategyA: strategyAAllocation * 100,
     strategyB: strategyBAllocation * 100,
   }),
+).filter(
+  (option, index, options) =>
+    options.findIndex(
+      (candidate) =>
+        candidate.strategyA === option.strategyA &&
+        candidate.strategyB === option.strategyB,
+    ) === index,
 );
 const DEFAULT_SCREENING_CUSTOM_RANGE: ScreeningRangeValidationConfig["range"] = {
   startTime: "",
@@ -227,6 +317,7 @@ function cloneStrategyPlan(
       : null,
     strategyAAllocation: plan.strategyAAllocation,
     strategyBAllocation: plan.strategyBAllocation,
+    tacticalMode: resolveTacticalAllocationMode(plan.tacticalMode),
     strategyAEntryFilter: cloneMovingAverageSlopeFilter(
       plan.strategyAEntryFilter ?? plan.entryFilter,
     ),
@@ -245,6 +336,7 @@ function defaultAppliedStrategyPlan(): StrategyAllocationPlan {
     strategyB: null,
     strategyAAllocation: 1,
     strategyBAllocation: 0,
+    tacticalMode: DEFAULT_TACTICAL_ALLOCATION_MODE,
     strategyAEntryFilter: null,
     strategyBEntryFilter: null,
   };
@@ -297,9 +389,24 @@ const cacheTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
   hourCycle: "h23",
 });
 
-const LIVE_REFRESH_INTERVAL_MS = 60_000;
+const AUTO_REFRESH_POLICY_CHECK_INTERVAL_MS = 30_000;
+const BACKUP_SOURCE_AUDIT_INTERVAL_MS = 30 * 60 * 1_000;
+const SHORTCUT_REFRESH_COOLDOWN_MS = 60_000;
+
+interface ShortcutRefreshProgress {
+  completed: number;
+  total: number;
+  updated: number;
+  retained: number;
+}
 
 type SavedBacktestDragState =
+  | {
+      kind: "folder";
+      folderId: number;
+      scope: SavedBacktestFolder["scope"];
+      contextKey: string;
+    }
   | { kind: "group"; groupKey: string }
   | { kind: "record"; groupKey: string; recordId: number };
 
@@ -317,6 +424,17 @@ function formatNumber(value: number, digits = 2) {
 
 function datePart(time: string) {
   return time.slice(0, 10);
+}
+
+function workspaceTimeInputValue(
+  time: string,
+  interval: WorkspaceInterval,
+) {
+  return interval === INTRADAY_INTERVAL ? time.replace(" ", "T") : datePart(time);
+}
+
+function marketTimeFromInput(value: string) {
+  return value.replace("T", " ");
 }
 
 function runStrategyPlanRangeBacktest(
@@ -373,6 +491,26 @@ function isMarketSeries(value: unknown): value is MarketSeries {
   );
 }
 
+function strategyPlanRequiresVolume(plan: StrategyAllocationPlan): boolean {
+  return [plan.strategyA, plan.strategyB].some(
+    (selection) =>
+      selection !== null && strategyRequiresVolume(selection.strategyId),
+  );
+}
+
+function isMarketReferenceSeries(
+  value: unknown,
+): value is MarketReferenceSeries {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<MarketReferenceSeries>;
+  return (
+    Array.isArray(candidate.observations) &&
+    candidate.source === "fred" &&
+    candidate.interval === "1d" &&
+    typeof candidate.fetchedAt === "string"
+  );
+}
+
 function canonicalizeSearchQuery(query: string) {
   const normalized = query.trim();
   const alias = Object.entries(copy.searchAliases).find(
@@ -392,6 +530,8 @@ function isDecimalParameter(key: string) {
     "maximum",
     "minimumBodyPercent",
     "tick",
+    "bbWidth",
+    "kcWidth",
   ].includes(key);
 }
 
@@ -399,63 +539,6 @@ function parameterStep(key: string) {
   if (key === "tick") return 0.01;
   if (isIntegerStrategyParameterKey(key)) return 1;
   return isDecimalParameter(key) ? 0.1 : 1;
-}
-
-function resultTone(result: BacktestPerformance) {
-  return result.totalReturn > 0 && result.sharpe > 0 && result.tradeCount >= 2
-    ? "positive"
-    : "neutral";
-}
-
-type ScreeningCautionReason = keyof typeof copy.screening.cautionReasons;
-
-function resultCautionReasons(
-  result: BacktestPerformance,
-): ScreeningCautionReason[] {
-  const reasons: ScreeningCautionReason[] = [];
-  if (result.totalReturn <= 0) reasons.push("return");
-  if (result.sharpe <= 0) reasons.push("sharpe");
-  if (result.tradeCount < 2) reasons.push("trades");
-  return reasons;
-}
-
-function resultStatusTitle(result: BacktestPerformance) {
-  const reasons = resultCautionReasons(result);
-  if (reasons.length === 0) return copy.screening.suitableReason;
-  return `${copy.screening.cautionReason}${copy.common.colon}${reasons
-    .map((reason) => copy.screening.cautionReasons[reason])
-    .join(` ${copy.common.separator} `)}`;
-}
-
-function formatObjectiveValue(
-  result: BacktestPerformance,
-  objective: ScreeningObjective,
-) {
-  const value = screeningObjectiveValue(result, objective);
-  if (objective === "totalReturn") return formatPercent(value, true);
-  return formatNumber(value, 2);
-}
-
-function rankingPerformance(
-  result: ScreeningSingleResult | ScreeningCombinationResult,
-): BacktestPerformance {
-  return result.screeningValidation?.rankingPerformance ?? result;
-}
-
-function selectionScore(
-  result: ScreeningSingleResult | ScreeningCombinationResult,
-): number | null {
-  return result.screeningValidation?.selectionScore ?? null;
-}
-
-function formatSelectionValue(
-  result: ScreeningSingleResult | ScreeningCombinationResult,
-  objective: ScreeningObjective,
-) {
-  const score = selectionScore(result);
-  return score === null
-    ? formatObjectiveValue(rankingPerformance(result), objective)
-    : formatNumber(score, 2);
 }
 
 function emptyCombinationProgress(): CombinationScreeningProgress {
@@ -474,17 +557,175 @@ function emptyCombinationProgress(): CombinationScreeningProgress {
 function formatStabilityEvidenceReason(
   reason: StabilityEvidenceReason,
   evidence: StabilityEvidence,
+  interval: WorkspaceInterval,
 ) {
   if (reason === "invalid-parameters") {
     return copy.stability.evidenceReasons.invalidParameters;
   }
   if (reason === "insufficient-observations") {
-    return `${copy.stability.evidenceReasons.insufficientObservations} ${evidence.observationCount} / ${evidence.minimumObservationCount}`;
+    const label =
+      interval === INTRADAY_INTERVAL
+        ? copy.stability.evidenceReasons.insufficientBars
+        : copy.stability.evidenceReasons.insufficientObservations;
+    return `${label} ${evidence.observationCount} / ${evidence.minimumObservationCount}`;
   }
   if (reason === "insufficient-trades") {
     return `${copy.stability.evidenceReasons.insufficientTrades} ${evidence.tradeCount} / ${evidence.minimumTradeCount}`;
   }
   return copy.stability.evidenceReasons.noNearbyVariants;
+}
+
+function singleResultPlan(result: ScreeningSingleResult): StrategyAllocationPlan {
+  return {
+    strategyA: {
+      strategyId: result.strategyId,
+      parameters: { ...result.parameters },
+    },
+    strategyB: null,
+    strategyAAllocation: 1,
+    strategyBAllocation: 0,
+    strategyAEntryFilter: result.entryFilter ?? null,
+    strategyBEntryFilter: null,
+  };
+}
+
+function combinationResultPlan(
+  result: ScreeningCombinationResult,
+): StrategyAllocationPlan {
+  return {
+    strategyA: {
+      strategyId: result.strategyAId,
+      parameters: { ...result.strategyAParameters },
+    },
+    strategyB: {
+      strategyId: result.strategyBId,
+      parameters: { ...result.strategyBParameters },
+    },
+    strategyAAllocation: result.strategyAAllocation,
+    strategyBAllocation: result.strategyBAllocation,
+    tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
+    strategyAEntryFilter: result.strategyAEntryFilter ?? null,
+    strategyBEntryFilter: result.strategyBEntryFilter ?? null,
+  };
+}
+
+function recentValidationTitle(review: RecentEffectivenessReview): string {
+  if (review.status === "insufficient") {
+    return `${copy.screening.validationDetails.insufficient} ${review.executionCount} / 2`;
+  }
+  const recentExcess =
+    review.recentExcessReturn === null
+      ? copy.common.unavailable
+      : formatPercent(review.recentExcessReturn, true);
+  const recentDrawdown =
+    review.recentMaxDrawdown === null
+      ? copy.common.unavailable
+      : formatPercent(review.recentMaxDrawdown);
+  const confirmation =
+    review.confirmationExcessReturn === null
+      ? copy.common.unavailable
+      : formatPercent(review.confirmationExcessReturn, true);
+  return `${copy.screening.validationDetails.recentExcess} ${recentExcess} ${copy.common.separator} ${copy.screening.drawdown} ${recentDrawdown} ${copy.common.separator} ${copy.screening.validationDetails.confirmationExcess} ${confirmation}`;
+}
+
+function recentValidationLabel(review: RecentEffectivenessReview): string {
+  if (review.status === "insufficient") {
+    return `${copy.screening.validationDetails.recentExecutions} ${review.executionCount} / 2 ${copy.screening.validationDetails.executionUnit} ${copy.common.separator} ${copy.screening.validationStatuses.insufficient}`;
+  }
+  return copy.screening.validationStatuses[review.status];
+}
+
+function shortcutMatchTitle(match: StrategyShortcutMatch): string {
+  if (match.kind === "exact") return copy.screening.shortcutMatch.exact;
+  const differences = match.parameterDifferences.slice(0, 4).map(
+    (difference) =>
+      `${copy.parameters[difference.key as keyof typeof copy.parameters] ?? difference.key} ${difference.savedValue ?? copy.common.unavailable} → ${difference.candidateValue ?? copy.common.unavailable}`,
+  );
+  if (match.allocationDifferent) {
+    differences.push(copy.screening.shortcutMatch.allocationDifferent);
+  }
+  if (match.entryFilterDifferent) {
+    differences.push(copy.screening.shortcutMatch.filterDifferent);
+  }
+  if (match.tacticalModeDifferent) {
+    differences.push(copy.screening.shortcutMatch.tacticalDifferent);
+  }
+  return `${copy.screening.shortcutMatch.sameType}${
+    differences.length > 0
+      ? `${copy.common.colon}${differences.join(` ${copy.common.separator} `)}`
+      : ""
+  }`;
+}
+
+function CommittedNumberInput({
+  value,
+  onCommit,
+  min,
+  max,
+  step,
+  name,
+  disabled = false,
+  integer = false,
+  normalize,
+}: {
+  value: number;
+  onCommit: (value: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
+  name?: string;
+  disabled?: boolean;
+  integer?: boolean;
+  normalize?: (value: number) => number;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const editingRef = useRef(false);
+
+  useEffect(() => {
+    if (!editingRef.current) setDraft(String(value));
+  }, [value]);
+
+  const restore = () => setDraft(String(value));
+  const commit = () => {
+    editingRef.current = false;
+    const parsed = draft.trim() === "" ? Number.NaN : Number(draft);
+    if (!Number.isFinite(parsed)) {
+      restore();
+      return;
+    }
+    let nextValue = integer ? Math.floor(parsed) : parsed;
+    if (min !== undefined) nextValue = Math.max(nextValue, min);
+    if (max !== undefined) nextValue = Math.min(nextValue, max);
+    if (normalize) nextValue = normalize(nextValue);
+    setDraft(String(nextValue));
+    onCommit(nextValue);
+  };
+
+  return (
+    <input
+      name={name}
+      type="number"
+      value={draft}
+      min={min}
+      max={max}
+      step={step}
+      disabled={disabled}
+      onFocus={(event) => {
+        editingRef.current = true;
+        event.currentTarget.select();
+      }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          editingRef.current = false;
+          restore();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
 }
 
 function StrategyParameterFields({
@@ -502,7 +743,6 @@ function StrategyParameterFields({
     <div className="parameter-block">
       <div className="subheading">
         <span>{heading}</span>
-        <small>{copy.lab.automatic}</small>
       </div>
       <div className="parameter-grid">
         {Object.entries(parameters).map(([key, value]) => (
@@ -510,9 +750,8 @@ function StrategyParameterFields({
             <span>
               {copy.parameters[key as keyof typeof copy.parameters] ?? key}
             </span>
-            <input
+            <CommittedNumberInput
               name={`${namePrefix}-${key}`}
-              type="number"
               value={value}
               min={
                 isIntegerStrategyParameterKey(key)
@@ -522,12 +761,13 @@ function StrategyParameterFields({
                     : undefined
               }
               step={parameterStep(key)}
-              onChange={(event) =>
+              integer={isIntegerStrategyParameterKey(key)}
+              onCommit={(nextValue) =>
                 onChange({
                   ...parameters,
                   [key]: normalizeStrategyParameterInput(
                     key,
-                    Number(event.target.value),
+                    nextValue,
                   ),
                 })
               }
@@ -571,24 +811,20 @@ function formatMovingAverageSlopeFilter(
   return `${filter.movingAverageType.toUpperCase()}(${filter.period}) ${copy.entryFilter.slopeAtLeast} ${formatNumber(filter.minimumSlopePercent)}%`;
 }
 
-function screeningRunCandidateName(candidate: ScreeningRunCandidate) {
-  const strategyAName = copy.strategies[candidate.strategyAId].name;
-  if (!candidate.strategyBId) return strategyAName;
-  return `${strategyAName} + ${copy.strategies[candidate.strategyBId].name}`;
-}
-
 function MovingAverageSlopeFilterFields({
   draft,
   namePrefix,
   onChange,
   disabled = false,
   context,
+  intraday = false,
 }: {
   draft: MovingAverageSlopeFilterDraft;
   namePrefix: string;
   onChange: (draft: MovingAverageSlopeFilterDraft) => void;
   disabled?: boolean;
   context: "lab" | "screening";
+  intraday?: boolean;
 }) {
   const controlsDisabled = disabled || !draft.enabled;
   return (
@@ -620,7 +856,11 @@ function MovingAverageSlopeFilterFields({
             <output>EMA</output>
           </label>
           <label>
-            <span>{copy.entryFilter.period}</span>
+            <span>
+              {intraday
+                ? copy.entryFilter.periodBars
+                : copy.entryFilter.period}
+            </span>
             <output>
               {SCREENING_MOVING_AVERAGE_SLOPE_PERIODS[0]}
               {"–"}
@@ -628,7 +868,11 @@ function MovingAverageSlopeFilterFields({
             </output>
           </label>
           <label>
-            <span>{copy.entryFilter.minimumSlope}</span>
+            <span>
+              {intraday
+                ? copy.entryFilter.minimumSlopeBars
+                : copy.entryFilter.minimumSlope}
+            </span>
             <output>
               {SCREENING_MOVING_AVERAGE_SLOPE_MINIMUM_PERCENT}%
             </output>
@@ -658,58 +902,48 @@ function MovingAverageSlopeFilterFields({
             </select>
           </label>
           <label>
-            <span>{copy.entryFilter.period}</span>
-            <input
+            <span>
+              {intraday
+                ? copy.entryFilter.periodBars
+                : copy.entryFilter.period}
+            </span>
+            <CommittedNumberInput
               name={`${namePrefix}-period`}
-              type="number"
               min={2}
               max={MAX_MOVING_AVERAGE_SLOPE_PERIOD}
               step={1}
               value={draft.period}
               disabled={controlsDisabled}
-              onChange={(event) => {
-                const value = Number(event.target.value);
+              integer
+              onCommit={(value) => {
                 onChange({
                   ...draft,
-                  period: Math.min(
-                    Math.max(
-                      Number.isFinite(value) ? Math.floor(value) : 2,
-                      2,
-                    ),
-                    MAX_MOVING_AVERAGE_SLOPE_PERIOD,
-                  ),
+                  period: value,
                 });
               }}
             />
           </label>
           <label>
-            <span>{copy.entryFilter.minimumSlope}</span>
-            <input
+            <span>
+              {intraday
+                ? copy.entryFilter.minimumSlopeBars
+                : copy.entryFilter.minimumSlope}
+            </span>
+            <CommittedNumberInput
               name={`${namePrefix}-minimum-slope`}
-              type="number"
               step={0.01}
               value={draft.minimumSlopePercent}
               disabled={controlsDisabled}
-              onChange={(event) => {
-                const value = Number(event.target.value);
+              onCommit={(value) => {
                 onChange({
                   ...draft,
-                  minimumSlopePercent: Number.isFinite(value)
-                    ? value
-                    : 0,
+                  minimumSlopePercent: value,
                 });
               }}
             />
           </label>
         </div>
       )}
-      <small>
-        {draft.enabled
-          ? context === "screening"
-            ? copy.entryFilter.screeningHint
-            : copy.entryFilter.hint
-          : copy.entryFilter.disabledHint}
-      </small>
     </fieldset>
   );
 }
@@ -719,6 +953,8 @@ export function MarketWorkspace() {
     useState<MarketInstrument>(defaultInstrument);
   const [seriesState, setSeries] = useState<MarketSeries | null>(null);
   const series = isMarketSeries(seriesState) ? seriesState : null;
+  const [researchInterval, setResearchInterval] =
+    useState<WorkspaceInterval>(DAILY_INTERVAL);
   const [chartType, setChartType] = useState<"candlestick" | "line">(
     "candlestick",
   );
@@ -727,6 +963,11 @@ export function MarketWorkspace() {
   const [visibleIndicatorIds, setVisibleIndicatorIds] = useState<IndicatorId[]>(
     [],
   );
+  const [favoriteIndicatorIds, setFavoriteIndicatorIds] = useState<
+    IndicatorId[]
+  >([...DEFAULT_FAVORITE_INDICATOR_IDS]);
+  const [openIndicatorCategory, setOpenIndicatorCategory] =
+    useState<IndicatorCategoryId | null>(null);
   const [indicatorSettings, setIndicatorSettings] = useState(
     createDefaultIndicatorSettings,
   );
@@ -753,7 +994,9 @@ export function MarketWorkspace() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [initialCash, setInitialCash] = useState(100_000);
-  const [commissionPercent, setCommissionPercent] = useState(0.03);
+  const [commissionPercent, setCommissionPercent] = useState(
+    DEFAULT_COMMISSION_PERCENT,
+  );
   const [slippagePercent, setSlippagePercent] = useState(0.02);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<MarketInstrument[]>([]);
@@ -763,10 +1006,27 @@ export function MarketWorkspace() {
   const [cachedPreviewAt, setCachedPreviewAt] = useState<number | null>(
     null,
   );
+  const [temporaryQuote, setTemporaryQuote] =
+    useState<MarketTemporaryQuote | null>(null);
+  const [refreshedShortcutMarkets, setRefreshedShortcutMarkets] =
+    useState<Map<string, ShortcutMarketRefreshResult>>(
+      () => new Map(),
+    );
+  const [refreshingSavedMarkets, setRefreshingSavedMarkets] =
+    useState(false);
+  const [shortcutRefreshProgress, setShortcutRefreshProgress] =
+    useState<ShortcutRefreshProgress | null>(null);
+  const [shortcutRefreshCoolingDown, setShortcutRefreshCoolingDown] =
+    useState(false);
+  const [sourceHealth, setSourceHealth] = useState<
+    MarketSourceHealthRecord[]
+  >([]);
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [shortcutRefreshRequestVersion, setShortcutRefreshRequestVersion] =
+    useState(0);
   const [screening, setScreening] = useState(false);
   const [screeningError, setScreeningError] = useState<
-    ScreeningValidationErrorCode | "run" | ""
+    ScreeningValidationErrorCode | "volume-unavailable" | "run" | ""
   >("");
   const [screenResults, setScreenResults] = useState<
     ScreeningSingleResult[]
@@ -778,7 +1038,10 @@ export function MarketWorkspace() {
   const [screeningValidationMode, setScreeningValidationMode] =
     useState<ScreeningValidationMode>("sample");
   const [screeningEntryFilterDraft, setScreeningEntryFilterDraft] = useState(
-    () => createMovingAverageSlopeFilterDraft(),
+    () =>
+      createMovingAverageSlopeFilterDraft(
+        DEFAULT_MOVING_AVERAGE_SLOPE_FILTER,
+      ),
   );
   const [sampleValidationPeriods, setSampleValidationPeriods] =
     useState<ScreeningSamplePeriodConfig[]>(() =>
@@ -801,73 +1064,210 @@ export function MarketWorkspace() {
   const [combinationResults, setCombinationResults] = useState<
     ScreeningCombinationResult[]
   >([]);
-  const [screeningRuns, setScreeningRuns] = useState<
-    ScreeningRunRecord[]
-  >([]);
-  const [screeningRunsLoading, setScreeningRunsLoading] = useState(false);
-  const [screeningRunsError, setScreeningRunsError] = useState(false);
   const [strategyAAllocationPercent, setStrategyAAllocationPercent] = useState(
     DEFAULT_STRATEGY_A_ALLOCATION * 100,
   );
   const [strategyBAllocationPercent, setStrategyBAllocationPercent] = useState(
     DEFAULT_STRATEGY_B_ALLOCATION * 100,
   );
+  const [tacticalAllocationMode, setTacticalAllocationMode] =
+    useState<TacticalAllocationMode>(DEFAULT_TACTICAL_ALLOCATION_MODE);
   const [savedBacktests, setSavedBacktests] = useState<
     SavedBacktestRecord[]
+  >([]);
+  const [savedBacktestFolders, setSavedBacktestFolders] = useState<
+    SavedBacktestFolder[]
   >([]);
   const [savedBacktestsLoading, setSavedBacktestsLoading] = useState(true);
   const [savedBacktestsError, setSavedBacktestsError] = useState(false);
   const [expandedSavedBacktestGroups, setExpandedSavedBacktestGroups] =
     useState<string[]>([]);
+  const [collapsedSavedBacktestFolderIds, setCollapsedSavedBacktestFolderIds] =
+    useState<number[]>([]);
   const [savedBacktestDrag, setSavedBacktestDrag] =
     useState<SavedBacktestDragState | null>(null);
   const [savedBacktestDropTarget, setSavedBacktestDropTarget] = useState("");
   const [savedBacktestOrderSaving, setSavedBacktestOrderSaving] =
     useState(false);
+  const [savedBacktestFolderSaving, setSavedBacktestFolderSaving] =
+    useState(false);
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
   const searchContainerRef = useRef<HTMLDivElement>(null);
+  const indicatorMenusRef = useRef<HTMLDivElement>(null);
   const chartSectionRef = useRef<HTMLElement>(null);
   const screeningAbortRef = useRef<AbortController | null>(null);
+  const shortcutRefreshAbortRef = useRef<AbortController | null>(null);
   const currentSeriesKeyRef = useRef("");
   const latestSeriesDateRef = useRef("");
   const marketSeriesRef = useRef<MarketSeries | null>(null);
+  const canonicalSeriesRef = useRef<MarketSeries | null>(null);
+  const temporaryQuoteRef = useRef<MarketTemporaryQuote | null>(null);
+  const refreshedShortcutMarketsRef = useRef<
+    Map<string, ShortcutMarketRefreshResult>
+  >(new Map());
   const cachedSeriesActiveRef = useRef(false);
+  const sourceHistoryAuditKeyRef = useRef("");
+  const volumeRepairAttemptKeyRef = useRef("");
+  const latestSourceAuditAtRef = useRef(0);
+  const credentialAuditRetryAfterRef = useRef(
+    new Map<string, number>(),
+  );
+  const lastMarketRefreshAttemptAtRef = useRef(0);
+  const automaticRefreshBackoffRef = useRef({
+    failures: 0,
+    retryAfter: 0,
+  });
+  const shortcutRefreshCooldownTimerRef = useRef<number | null>(null);
+  const handledShortcutRefreshRequestVersionRef = useRef(0);
+  const savedBacktestRollingSyncRef = useRef(new Map<string, string>());
+  const primaryBackoffRef = useRef({
+    instrumentKey: "",
+    failures: 0,
+    retryAfter: 0,
+  });
   const sharedRangeSessionsRef = useRef(
     DEFAULT_SAMPLE_VALIDATION_SESSIONS,
   );
   const sharedRangeRef = useRef({ startDate: "", endDate: "" });
   const activeIndicator = getIndicator(focusedIndicator);
   const indicatorParameters = indicatorSettings[focusedIndicator];
+  const volumeCoverage = useMemo(
+    () => assessMarketVolumeCoverage(series?.bars ?? []),
+    [series],
+  );
+  const reliableVolume = volumeCoverage.reliable;
+  const focusedIndicatorVolumeUnavailable =
+    indicatorRequiresVolume(focusedIndicator) && !reliableVolume;
   const focusedIndicatorVisible =
-    visibleIndicatorIds.includes(focusedIndicator);
+    visibleIndicatorIds.includes(focusedIndicator) &&
+    !focusedIndicatorVolumeUnavailable;
+  const effectiveVisibleIndicatorIds = useMemo(
+    () =>
+      visibleIndicatorIds.filter(
+        (id) => reliableVolume || !indicatorRequiresVolume(id),
+      ),
+    [reliableVolume, visibleIndicatorIds],
+  );
   const visibleIndicators = useMemo<readonly ChartIndicatorConfiguration[]>(
     () =>
-      visibleIndicatorIds.map((id) => ({
+      effectiveVisibleIndicatorIds.map((id) => ({
         id,
         parameters: indicatorSettings[id],
       })),
-    [indicatorSettings, visibleIndicatorIds],
+    [effectiveVisibleIndicatorIds, indicatorSettings],
+  );
+  const strategyLinkedIndicators = useMemo(
+    () => buildStrategyLinkedPaneIndicators(appliedStrategyPlan),
+    [appliedStrategyPlan],
+  );
+  const chartIndicators = useMemo(
+    () =>
+      mergeChartIndicatorConfigurations(
+        visibleIndicators,
+        strategyLinkedIndicators,
+      ),
+    [strategyLinkedIndicators, visibleIndicators],
   );
   const savedBacktestGroups = useMemo(
     () => groupSavedBacktests(savedBacktests),
     [savedBacktests],
   );
+  const instrumentShortcutFolders = useMemo(
+    () =>
+      savedBacktestFolders.filter((folder) => folder.scope === "instrument"),
+    [savedBacktestFolders],
+  );
+  const savedBacktestInstrumentSections = useMemo(() => {
+    const sections: Array<{
+      folder: SavedBacktestFolder | null;
+      groups: typeof savedBacktestGroups;
+    }> = instrumentShortcutFolders.map((folder) => ({
+      folder,
+      groups: savedBacktestGroups.filter(
+        (group) => group.instrumentFolderId === folder.id,
+      ),
+    }));
+    const unfiledGroups = savedBacktestGroups.filter(
+      (group) =>
+        group.instrumentFolderId === null ||
+        !instrumentShortcutFolders.some(
+          (folder) => folder.id === group.instrumentFolderId,
+        ),
+    );
+    if (unfiledGroups.length > 0) {
+      sections.push({ folder: null, groups: unfiledGroups });
+    }
+    return sections;
+  }, [instrumentShortcutFolders, savedBacktestGroups]);
   const activeScreeningRunInstrumentKey = savedBacktestInstrumentKey(
     series?.instrument ?? instrument,
   );
+  const activeSavedBacktestGroup = savedBacktestGroups.find(
+    (group) => group.key === activeScreeningRunInstrumentKey,
+  );
+  const activeSavedGroupRequiresVolume =
+    activeSavedBacktestGroup?.records.some((record) =>
+      strategyPlanRequiresVolume(record.plan),
+    ) ?? false;
+  const screeningBlockedByVolume =
+    !reliableVolume && activeSavedGroupRequiresVolume;
+  const applyTemporaryQuote = useCallback(
+    (quote: MarketTemporaryQuote | null) => {
+      temporaryQuoteRef.current = quote;
+      setTemporaryQuote(quote);
+    },
+    [],
+  );
+  const markMarketRefreshSuccess = useCallback(() => {
+    automaticRefreshBackoffRef.current = {
+      failures: 0,
+      retryAfter: 0,
+    };
+  }, []);
+  const markMarketRefreshFailure = useCallback(() => {
+    const failures = Math.min(
+      automaticRefreshBackoffRef.current.failures + 1,
+      3,
+    );
+    automaticRefreshBackoffRef.current = {
+      failures,
+      retryAfter:
+        Date.now() + marketRefreshFailureBackoffMs(failures),
+    };
+  }, []);
 
   const fetchMarket = useCallback(
     async (signal: AbortSignal) => {
+      lastMarketRefreshAttemptAtRef.current = Date.now();
       setLoading(true);
       setErrorCode("");
-      const seriesKey = `${instrument.provider}:${instrument.secid}:${DAILY_INTERVAL}`;
-      const seriesLimit = DAILY_HISTORY_LIMIT;
+      const profile = resolveCanonicalMarketProfile(instrument);
+      const profileBackoffKey = `${profile.key}:${researchInterval}`;
+      const sourceHealthKey =
+        researchInterval === DAILY_INTERVAL
+          ? profile.key
+          : `${profile.key}:${researchInterval}`;
+      if (
+        primaryBackoffRef.current.instrumentKey !== profileBackoffKey
+      ) {
+        primaryBackoffRef.current = {
+          instrumentKey: profileBackoffKey,
+          failures: 0,
+          retryAfter: 0,
+        };
+      }
+      const seriesKey = `${profile.key}:${researchInterval}`;
+      const seriesLimit =
+        researchInterval === DAILY_INTERVAL
+          ? DAILY_HISTORY_LIMIT
+          : INTRADAY_HISTORY_LIMIT;
       const loadSeries = async (
         requestInstrument: MarketInstrument,
         mode: "history" | "latest",
         limit: number,
+        audit = false,
       ) => {
         const params = new URLSearchParams({
           secid: requestInstrument.secid,
@@ -876,13 +1276,15 @@ export function MarketWorkspace() {
           exchange: requestInstrument.exchange,
           provider: requestInstrument.provider,
           assetType: requestInstrument.assetType,
-          interval: DAILY_INTERVAL,
+          interval: researchInterval,
           limit: String(limit),
           mode,
+          strictProvider: "1",
         });
+        if (audit) params.set("audit", "1");
         const response = await fetch(`/api/market?${params}`, {
           signal,
-          cache: mode === "latest" ? "no-store" : "default",
+          cache: mode === "latest" ? "no-store" : "no-cache",
         });
         const payload = (await response.json()) as MarketSeries & {
           error?: string;
@@ -892,42 +1294,93 @@ export function MarketWorkspace() {
         }
         return payload;
       };
+      const loadReference = async (
+        mode: "history" | "latest",
+        limit: number,
+      ) => {
+        const params = new URLSearchParams({
+          provider: "fred",
+          code: "N225",
+          mode,
+          limit: String(limit),
+          audit: "1",
+        });
+        const response = await fetch(`/api/market/reference?${params}`, {
+          signal,
+          cache: mode === "latest" ? "no-store" : "default",
+        });
+        const payload = (await response.json()) as MarketReferenceSeries & {
+          error?: string;
+        };
+        if (
+          !response.ok ||
+          payload.error ||
+          !isMarketReferenceSeries(payload)
+        ) {
+          throw new Error(payload.error || "UNKNOWN");
+        }
+        return payload;
+      };
 
       try {
-        const currentSeries = isMarketSeries(marketSeriesRef.current)
-          ? marketSeriesRef.current
+        let currentSeries = isMarketSeries(canonicalSeriesRef.current)
+          ? canonicalSeriesRef.current
           : null;
+        if (
+          currentSeries &&
+          (savedBacktestInstrumentKey(currentSeries.instrument) !==
+            profile.key ||
+            currentSeries.interval !== researchInterval)
+        ) {
+          currentSeries = null;
+        }
         if (currentSeries === null && marketSeriesRef.current !== null) {
           marketSeriesRef.current = null;
+          canonicalSeriesRef.current = null;
           currentSeriesKeyRef.current = "";
           latestSeriesDateRef.current = "";
         }
+        const missingVolumeDates = currentSeries
+          ? missingPublishedVolumeRepairKey(currentSeries.bars)
+          : "";
+        const volumeRepairAttemptKey = missingVolumeDates
+          ? `${seriesKey}:${currentSeries?.source ?? ""}:${missingVolumeDates}`
+          : "";
+        const repairsMissingVolume =
+          volumeRepairAttemptKey !== "" &&
+          volumeRepairAttemptKeyRef.current !== volumeRepairAttemptKey;
+        if (repairsMissingVolume) {
+          volumeRepairAttemptKeyRef.current = volumeRepairAttemptKey;
+        }
         const refreshesLatestOnly =
           currentSeries !== null &&
+          currentSeries.bars.length >= 120 &&
           currentSeriesKeyRef.current === seriesKey &&
-          !cachedSeriesActiveRef.current;
-        const applyLoadedSeries = (payload: MarketSeries) => {
+          !repairsMissingVolume;
+        const applyLoadedSeries = (
+          payload: MarketSeries,
+          canonicalPayload = payload,
+        ) => {
           marketSeriesRef.current = payload;
+          canonicalSeriesRef.current = canonicalPayload;
           setSeries(payload);
 
           if (!payload.bars.length) return;
           const sameSeries = currentSeriesKeyRef.current === seriesKey;
           const previousLatestDate = latestSeriesDateRef.current;
-          const firstDate = datePart(payload.bars[0].time);
-          const lastDate = datePart(
-            payload.bars[payload.bars.length - 1].time,
-          );
+          const firstTime = payload.bars[0].time;
+          const lastTime = payload.bars[payload.bars.length - 1].time;
           const currentRange = sharedRangeRef.current;
           const followsLatest =
             sameSeries &&
             (!currentRange.endDate ||
               currentRange.endDate === previousLatestDate ||
-              currentRange.endDate > lastDate);
+              currentRange.endDate > lastTime);
           const keepsHistoricalRange =
             sameSeries &&
             !followsLatest &&
-            currentRange.startDate >= firstDate &&
-            currentRange.endDate <= lastDate;
+            currentRange.startDate >= firstTime &&
+            currentRange.endDate <= lastTime;
           const nextRange = keepsHistoricalRange
             ? resolveTradingSessionRange(
                 payload.bars,
@@ -937,7 +1390,7 @@ export function MarketWorkspace() {
             : resolveTrailingTradingSessionRange(
                 payload.bars,
                 sharedRangeSessionsRef.current,
-                lastDate,
+                lastTime,
               );
           if (nextRange) {
             sharedRangeRef.current = {
@@ -952,16 +1405,63 @@ export function MarketWorkspace() {
             ]);
           }
           currentSeriesKeyRef.current = seriesKey;
-          latestSeriesDateRef.current = lastDate;
+          latestSeriesDateRef.current = lastTime;
         };
 
         if (!refreshesLatestOnly) {
-          const cached = await readCachedMarketSeriesEntry(
-            instrument,
-            DAILY_INTERVAL,
+          let cached = await readCanonicalMarketSeriesEntry(
+            profile.primary.instrument,
+            researchInterval,
           );
+          if (!cached) {
+            const legacyCandidates = [
+              profile.primary.instrument,
+              instrument,
+            ].filter(
+              (candidate, index, candidates) =>
+                candidates.findIndex(
+                  (item) =>
+                    item.provider === candidate.provider &&
+                    item.secid === candidate.secid,
+                ) === index,
+            );
+            for (const candidate of legacyCandidates) {
+              const legacy = await readCachedMarketSeriesEntry(
+                candidate,
+                researchInterval,
+              );
+              if (
+                legacy &&
+                legacy.series.bars.length >= 120 &&
+                savedBacktestInstrumentKey(legacy.series.instrument) ===
+                  profile.key
+              ) {
+                const migrated =
+                  legacy.series.source === profile.primary.provider
+                    ? mergeCanonicalMarketSeries(
+                        null,
+                        legacy.series,
+                        seriesLimit,
+                        profile,
+                      )
+                    : {
+                        ...legacy.series,
+                        instrument: profile.primary.instrument,
+                        bars: legacy.series.bars.slice(-seriesLimit),
+                      };
+                cached = {
+                  ...legacy,
+                  fingerprint: await fingerprintMarketSeries(migrated),
+                  series: migrated,
+                };
+                await writeCanonicalMarketSeries(migrated, profile);
+                break;
+              }
+            }
+          }
           if (signal.aborted) return;
           if (cached) {
+            currentSeries = cached.series;
             applyLoadedSeries(cached.series);
             cachedSeriesActiveRef.current = true;
             setCachedPreviewAt(cached.cachedAt);
@@ -969,73 +1469,427 @@ export function MarketWorkspace() {
           }
         }
 
-        let payload: MarketSeries;
-
-        if (refreshesLatestOnly) {
-          const latest = await loadSeries(
-            currentSeries.instrument,
-            "latest",
-            5,
+        let knownSourceHealth = await readMarketSourceHealth(sourceHealthKey);
+        if (!signal.aborted) setSourceHealth(knownSourceHealth);
+        const updateSourceHealth = async () => {
+          const health = await readMarketSourceHealth(sourceHealthKey);
+          knownSourceHealth = health;
+          if (!signal.aborted) setSourceHealth(health);
+        };
+        const loadTrackedSeries = async (
+          definition: CanonicalMarketSourceDefinition & {
+            instrument: MarketInstrument;
+          },
+          mode: "history" | "latest",
+          limit: number,
+          canonical: MarketSeries | null,
+          audit = false,
+        ) => {
+          const startedAt = performance.now();
+          try {
+            const source = await loadSeries(
+              definition.instrument,
+              mode,
+              limit,
+              audit,
+            );
+            const latencyMs = performance.now() - startedAt;
+            await writeMarketSourceSnapshot(source, profile, mode);
+            await recordMarketSourceAttempt({
+              instrumentKey: sourceHealthKey,
+              provider: definition.provider,
+              success: true,
+              latencyMs,
+              quality: measureMarketSeriesQuality(
+                canonical,
+                source,
+                definition,
+                latencyMs,
+              ),
+            });
+            credentialAuditRetryAfterRef.current.delete(
+              definition.provider,
+            );
+            return source;
+          } catch (error) {
+            if ((error as Error).name !== "AbortError") {
+              if (
+                definition.networkRoute === "credentialed" &&
+                (error as Error).message ===
+                  "PROVIDER_CREDENTIAL_INVALID"
+              ) {
+                credentialAuditRetryAfterRef.current.set(
+                  definition.provider,
+                  Date.now() + 24 * 60 * 60 * 1_000,
+                );
+              }
+              await recordMarketSourceAttempt({
+                instrumentKey: sourceHealthKey,
+                provider: definition.provider,
+                success: false,
+                latencyMs: performance.now() - startedAt,
+                errorCode: (error as Error).message || "UNKNOWN",
+              });
+            }
+            throw error;
+          }
+        };
+        const auditBackupSources = async (
+          mode: "history" | "latest",
+          limit: number,
+          canonical: MarketSeries | null,
+        ): Promise<{
+          candidates: CanonicalFallbackCandidate[];
+          quotes: MarketTemporaryQuote[];
+        }> => {
+          const backupResults = await Promise.all(
+            profile.backups
+              .filter((definition) => {
+                if (definition.networkRoute !== "credentialed") {
+                  return true;
+                }
+                if (
+                  instrument.assetType !== "commodity" ||
+                  !["fmp", "alltick"].includes(definition.provider)
+                ) {
+                  return false;
+                }
+                return (
+                  Date.now() >=
+                  (credentialAuditRetryAfterRef.current.get(
+                    definition.provider,
+                  ) ?? 0)
+                );
+              })
+              .map(async (definition) => {
+              try {
+                const source = await loadTrackedSeries(
+                  definition,
+                  mode,
+                  limit,
+                  canonical,
+                  true,
+                );
+                return {
+                  definition,
+                  source,
+                  quote: canonical
+                    ? temporaryQuoteFromMarketSeries(
+                        source,
+                        canonical,
+                        profile,
+                      )
+                    : null,
+                };
+              } catch (error) {
+                if ((error as Error).name === "AbortError") throw error;
+                return null;
+              }
+              }),
           );
-          if (
-            latest.source === currentSeries.source &&
-            latest.priceAdjustment === currentSeries.priceAdjustment
-          ) {
-            payload = mergeLatestMarketSeries(
-              currentSeries,
-              latest,
+          await Promise.all(
+            profile.references.map(async (definition) => {
+              const startedAt = performance.now();
+              try {
+                const reference = await loadReference(mode, limit);
+                const latencyMs = performance.now() - startedAt;
+                await writeMarketReferenceSnapshot(reference, mode);
+                await recordMarketSourceAttempt({
+                  instrumentKey: sourceHealthKey,
+                  provider: definition.provider,
+                  success: true,
+                  latencyMs,
+                  quality: measureMarketReferenceQuality(
+                    canonical,
+                    reference,
+                    definition,
+                    latencyMs,
+                  ),
+                });
+              } catch (error) {
+                if ((error as Error).name === "AbortError") throw error;
+                await recordMarketSourceAttempt({
+                  instrumentKey: sourceHealthKey,
+                  provider: definition.provider,
+                  success: false,
+                  latencyMs: performance.now() - startedAt,
+                  errorCode: (error as Error).message || "UNKNOWN",
+                });
+              }
+            }),
+          );
+          await updateSourceHealth();
+          const successful = backupResults.filter(
+            (
+              result,
+            ): result is NonNullable<typeof result> => result !== null,
+          );
+          return {
+            candidates: successful.map(({ definition, source }) => ({
+              definition,
+              series: source,
+            })),
+            quotes: successful
+              .map(({ quote }) => quote)
+              .filter(
+                (quote): quote is MarketTemporaryQuote => quote !== null,
+              )
+            .sort(
+              (left, right) =>
+                right.time.localeCompare(left.time) ||
+                right.fetchedAt.localeCompare(left.fetchedAt),
+            ),
+          };
+        };
+        const recoverFromBackupSources = async (
+          mode: "history" | "latest",
+          limit: number,
+          canonical: MarketSeries | null,
+        ): Promise<{
+          promoted: MarketSeries | null;
+          quote: MarketTemporaryQuote | null;
+        }> => {
+          const quotes: MarketTemporaryQuote[] = [];
+          const candidates: CanonicalFallbackCandidate[] = [];
+          const recoveryDefinitions =
+            researchInterval === DAILY_INTERVAL
+              ? orderMarketRecoveryDefinitions(profile, knownSourceHealth)
+              : [];
+          for (const definition of recoveryDefinitions) {
+            if (
+              definition.provider === "juhe" &&
+              (!canonical || quotes.length > 0)
+            ) {
+              continue;
+            }
+            try {
+              const source = await loadTrackedSeries(
+                definition,
+                mode,
+                limit,
+                canonical,
+                true,
+              );
+              candidates.push({ definition, series: source });
+              const quote = canonical
+                ? temporaryQuoteFromMarketSeries(
+                    source,
+                    canonical,
+                    profile,
+                  )
+                : null;
+              if (quote) quotes.push(quote);
+            } catch (error) {
+              if ((error as Error).name === "AbortError") throw error;
+            }
+          }
+          await updateSourceHealth();
+          const promoted = selectCanonicalFallbackSeries(
+            canonical,
+            candidates,
+            seriesLimit,
+            profile,
+          );
+          quotes.sort(
+            (left, right) =>
+              right.time.localeCompare(left.time) ||
+              right.fetchedAt.localeCompare(left.fetchedAt),
+          );
+          return {
+            promoted,
+            quote: quotes[0] ?? null,
+          };
+        };
+
+        const primaryMode = refreshesLatestOnly ? "latest" : "history";
+        const primaryLimit = refreshesLatestOnly ? 5 : seriesLimit;
+        const initialSourceSelection =
+          selectMarketSourceByRollingHealth(
+            profile,
+            knownSourceHealth,
+          );
+        const rollingHealthSkipsPrimary =
+          researchInterval === DAILY_INTERVAL &&
+          initialSourceSelection.configuredPrimaryDegraded &&
+          !initialSourceSelection.shouldProbeConfiguredPrimary;
+        if (
+          Date.now() < primaryBackoffRef.current.retryAfter ||
+          rollingHealthSkipsPrimary
+        ) {
+          const backup = await recoverFromBackupSources(
+            currentSeries ? "latest" : "history",
+            currentSeries ? 10 : seriesLimit,
+            currentSeries,
+          );
+          if (backup.promoted) {
+            const displayed = mergePreferredTemporaryQuote(
+              backup.promoted,
+              [backup.quote, temporaryQuoteRef.current],
               seriesLimit,
             );
-            setErrorCode("");
+            applyLoadedSeries(displayed.series, backup.promoted);
+            cachedSeriesActiveRef.current = false;
+            setCachedPreviewAt(null);
+            applyTemporaryQuote(displayed.quote);
+            setErrorCode(
+              displayed.quote
+                ? "PRIMARY_SOURCE_TEMPORARY_QUOTE"
+                : "VERIFIED_BACKUP_ACTIVE",
+            );
+            await writeCanonicalMarketSeries(backup.promoted, profile);
+            markMarketRefreshSuccess();
           } else {
-            payload = currentSeries;
-            setErrorCode("LATEST_SERIES_MISMATCH");
+            const displayed = currentSeries
+              ? mergePreferredTemporaryQuote(
+                  currentSeries,
+                  [backup.quote, temporaryQuoteRef.current],
+                  seriesLimit,
+                )
+              : null;
+            if (displayed && currentSeries) {
+              applyLoadedSeries(displayed.series, currentSeries);
+            }
+            applyTemporaryQuote(displayed?.quote ?? null);
+            setErrorCode(
+              displayed?.quote
+                ? "PRIMARY_SOURCE_TEMPORARY_QUOTE"
+                : "PRIMARY_SOURCE_UNAVAILABLE",
+            );
+            if (backup.quote) {
+              markMarketRefreshSuccess();
+            } else {
+              markMarketRefreshFailure();
+            }
           }
-        } else {
-          const history = await loadSeries(
-            instrument,
-            "history",
+          return;
+        }
+        try {
+          const primary = await loadTrackedSeries(
+            profile.primary,
+            primaryMode,
+            primaryLimit,
+            currentSeries,
+          );
+          const payload = mergeCanonicalMarketSeries(
+            currentSeries,
+            primary,
+            seriesLimit,
+            profile,
+          );
+          applyLoadedSeries(payload);
+          cachedSeriesActiveRef.current = false;
+          primaryBackoffRef.current = {
+            instrumentKey: profileBackoffKey,
+            failures: 0,
+            retryAfter: 0,
+          };
+          setCachedPreviewAt(null);
+          applyTemporaryQuote(null);
+          setErrorCode("");
+          await writeCanonicalMarketSeries(payload, profile);
+          await updateSourceHealth();
+          markMarketRefreshSuccess();
+
+          const now = Date.now();
+          const auditsHistory =
+            researchInterval === DAILY_INTERVAL &&
+            sourceHistoryAuditKeyRef.current !== profile.key;
+          const auditsLatest =
+            researchInterval === DAILY_INTERVAL &&
+            now - latestSourceAuditAtRef.current >=
+            BACKUP_SOURCE_AUDIT_INTERVAL_MS;
+          if (auditsHistory || auditsLatest) {
+            sourceHistoryAuditKeyRef.current = profile.key;
+            latestSourceAuditAtRef.current = now;
+            void auditBackupSources(
+              auditsHistory ? "history" : "latest",
+              auditsHistory ? seriesLimit : 10,
+              payload,
+            ).catch(() => {
+              // An aborted or failed audit never changes the canonical chart.
+            });
+          }
+        } catch (error) {
+          if ((error as Error).name === "AbortError") throw error;
+          const failures = Math.min(
+            primaryBackoffRef.current.failures + 1,
+            3,
+          );
+          primaryBackoffRef.current = {
+            instrumentKey: profileBackoffKey,
+            failures,
+            retryAfter:
+              Date.now() + marketRefreshFailureBackoffMs(failures),
+          };
+          const retained = currentSeries;
+          const backup = await recoverFromBackupSources(
+            retained ? "latest" : "history",
+            retained ? 10 : seriesLimit,
+            retained,
+          );
+          if (backup.promoted) {
+            const displayed = mergePreferredTemporaryQuote(
+              backup.promoted,
+              [backup.quote, temporaryQuoteRef.current],
+              seriesLimit,
+            );
+            applyLoadedSeries(displayed.series, backup.promoted);
+            cachedSeriesActiveRef.current = false;
+            setCachedPreviewAt(null);
+            applyTemporaryQuote(displayed.quote);
+            setErrorCode(
+              displayed.quote
+                ? "PRIMARY_SOURCE_TEMPORARY_QUOTE"
+                : "VERIFIED_BACKUP_ACTIVE",
+            );
+            await writeCanonicalMarketSeries(
+              backup.promoted,
+              profile,
+            );
+            markMarketRefreshSuccess();
+            return;
+          }
+          if (!retained) {
+            applyTemporaryQuote(null);
+            setErrorCode("PRIMARY_SOURCE_UNAVAILABLE");
+            throw error;
+          }
+          const displayed = mergePreferredTemporaryQuote(
+            retained,
+            [backup.quote, temporaryQuoteRef.current],
             seriesLimit,
           );
-          payload = history;
-          try {
-            const latest = await loadSeries(
-              history.instrument,
-              "latest",
-              5,
-            );
-            if (
-              latest.source === history.source &&
-              latest.priceAdjustment === history.priceAdjustment
-            ) {
-              payload = mergeLatestMarketSeries(
-                history,
-                latest,
-                seriesLimit,
-              );
-              setErrorCode("");
-            } else {
-              setErrorCode("LATEST_SERIES_MISMATCH");
-            }
-          } catch (error) {
-            if ((error as Error).name === "AbortError") throw error;
-            // Cached history remains usable when the latest-bar request fails.
-            setErrorCode("LATEST_UNAVAILABLE");
+          applyLoadedSeries(displayed.series, retained);
+          applyTemporaryQuote(displayed.quote);
+          setErrorCode(
+            displayed.quote
+              ? "PRIMARY_SOURCE_TEMPORARY_QUOTE"
+              : "PRIMARY_SOURCE_UNAVAILABLE",
+          );
+          if (backup.quote) {
+            markMarketRefreshSuccess();
+          } else {
+            markMarketRefreshFailure();
           }
         }
-        applyLoadedSeries(payload);
-        cachedSeriesActiveRef.current = false;
-        setCachedPreviewAt(null);
-        void writeCachedMarketSeries(payload, [instrument]);
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
-          setErrorCode((error as Error).message || "UNKNOWN");
+          markMarketRefreshFailure();
+          setErrorCode((current) =>
+            current || (error as Error).message || "UNKNOWN",
+          );
         }
       } finally {
         if (!signal.aborted) setLoading(false);
       }
     },
-    [instrument],
+    [
+      applyTemporaryQuote,
+      instrument,
+      markMarketRefreshFailure,
+      markMarketRefreshSuccess,
+      researchInterval,
+    ],
   );
 
   useEffect(() => {
@@ -1050,30 +1904,59 @@ export function MarketWorkspace() {
   }, [fetchMarket, refreshVersion]);
 
   useEffect(() => {
-    const refreshVisibleMarket = () => {
-      if (document.visibilityState === "visible") {
-        setRefreshVersion((value) => value + 1);
+    const refreshVisibleMarket = (isExplicitUserInteraction = false) => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now < automaticRefreshBackoffRef.current.retryAfter) return;
+      const policy = resolveMarketAutoRefreshPolicy(
+        instrument,
+        new Date(now),
+      );
+      const minInterval = policy.enabled
+        ? researchInterval === INTRADAY_INTERVAL
+          ? Math.min(
+              policy.minimumIntervalMs,
+              INTRADAY_MARKET_REFRESH_INTERVAL_MS,
+            )
+          : policy.minimumIntervalMs
+        : researchInterval === INTRADAY_INTERVAL
+          ? INTRADAY_MARKET_REFRESH_INTERVAL_MS
+          : UNKNOWN_MARKET_REFRESH_INTERVAL_MS;
+      const allowClosedRefresh =
+        isExplicitUserInteraction &&
+        marketSeriesRef.current?.latestBarStatus !== "complete";
+      if (!policy.enabled && !allowClosedRefresh) {
+        return;
+      }
+      if (now - lastMarketRefreshAttemptAtRef.current < minInterval) {
+        return;
+      }
+      lastMarketRefreshAttemptAtRef.current = now;
+      setRefreshVersion((value) => value + 1);
+      if (researchInterval === DAILY_INTERVAL) {
+        setShortcutRefreshRequestVersion((value) => value + 1);
       }
     };
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") refreshVisibleMarket();
+      if (document.visibilityState === "visible") refreshVisibleMarket(true);
+    };
+    const handleFocus = () => {
+      refreshVisibleMarket(true);
     };
     const refreshTimer = window.setInterval(
-      refreshVisibleMarket,
-      LIVE_REFRESH_INTERVAL_MS,
+      () => refreshVisibleMarket(false),
+      AUTO_REFRESH_POLICY_CHECK_INTERVAL_MS,
     );
-    window.addEventListener("focus", refreshVisibleMarket);
+    window.addEventListener("focus", handleFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       window.clearInterval(refreshTimer);
-      window.removeEventListener("focus", refreshVisibleMarket);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [instrument, researchInterval]);
 
   useEffect(() => {
-    if (query.trim().length < 1) return;
-
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setSearching(true);
@@ -1112,9 +1995,36 @@ export function MarketWorkspace() {
     return () => document.removeEventListener("mousedown", closeSearch);
   }, []);
 
+  useEffect(() => {
+    if (!openIndicatorCategory) return;
+
+    const closeIndicatorMenu = (event: MouseEvent) => {
+      if (
+        indicatorMenusRef.current &&
+        !indicatorMenusRef.current.contains(event.target as Node)
+      ) {
+        setOpenIndicatorCategory(null);
+      }
+    };
+    const closeIndicatorMenuOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenIndicatorCategory(null);
+    };
+
+    document.addEventListener("mousedown", closeIndicatorMenu);
+    document.addEventListener("keydown", closeIndicatorMenuOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeIndicatorMenu);
+      document.removeEventListener("keydown", closeIndicatorMenuOnEscape);
+    };
+  }, [openIndicatorCategory]);
+
   useEffect(
     () => () => {
       screeningAbortRef.current?.abort();
+      shortcutRefreshAbortRef.current?.abort();
+      if (shortcutRefreshCooldownTimerRef.current !== null) {
+        window.clearTimeout(shortcutRefreshCooldownTimerRef.current);
+      }
     },
     [],
   );
@@ -1132,6 +2042,7 @@ export function MarketWorkspace() {
           if (preferences) {
             setFocusedIndicator(preferences.focusedIndicator);
             setVisibleIndicatorIds(preferences.visibleIndicatorIds);
+            setFavoriteIndicatorIds(preferences.favoriteIndicatorIds);
             setIndicatorSettings(preferences.settings);
           } else {
             window.localStorage.removeItem(INDICATOR_PREFERENCES_STORAGE_KEY);
@@ -1154,6 +2065,7 @@ export function MarketWorkspace() {
         JSON.stringify({
           focusedIndicator,
           visibleIndicatorIds,
+          favoriteIndicatorIds,
           settings: indicatorSettings,
         }),
       );
@@ -1162,6 +2074,7 @@ export function MarketWorkspace() {
     }
   }, [
     focusedIndicator,
+    favoriteIndicatorIds,
     indicatorPreferencesReady,
     indicatorSettings,
     visibleIndicatorIds,
@@ -1178,9 +2091,11 @@ export function MarketWorkspace() {
         });
         const payload = (await response.json()) as {
           savedBacktests?: SavedBacktestRecord[];
+          savedBacktestFolders?: SavedBacktestFolder[];
         };
         if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
         setSavedBacktests(payload.savedBacktests ?? []);
+        setSavedBacktestFolders(payload.savedBacktestFolders ?? []);
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           setSavedBacktestsError(true);
@@ -1203,52 +2118,172 @@ export function MarketWorkspace() {
     };
   }, [loadSavedBacktests]);
 
-  const loadScreeningRuns = useCallback(
-    async (instrumentKey: string, signal?: AbortSignal) => {
-      setScreeningRunsLoading(true);
-      setScreeningRunsError(false);
-      try {
-        const response = await fetch(
-          `/api/screening-runs?instrumentKey=${encodeURIComponent(
-            instrumentKey,
-          )}&limit=12`,
-          { signal, cache: "no-store" },
-        );
-        const payload = (await response.json()) as {
-          screeningRuns?: ScreeningRunRecord[];
-        };
-        if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
-        setScreeningRuns(payload.screeningRuns ?? []);
-      } catch (error) {
-        if ((error as Error).name !== "AbortError") {
-          setScreeningRunsError(true);
-        }
-      } finally {
-        if (!signal?.aborted) setScreeningRunsLoading(false);
+  const startShortcutRefreshCooldown = useCallback(() => {
+    if (shortcutRefreshCooldownTimerRef.current !== null) {
+      window.clearTimeout(shortcutRefreshCooldownTimerRef.current);
+    }
+    setShortcutRefreshCoolingDown(true);
+    shortcutRefreshCooldownTimerRef.current = window.setTimeout(() => {
+      shortcutRefreshCooldownTimerRef.current = null;
+      setShortcutRefreshCoolingDown(false);
+      setShortcutRefreshProgress(null);
+    }, SHORTCUT_REFRESH_COOLDOWN_MS);
+  }, []);
+
+  const startSavedMarketRefresh = useCallback((refreshActive: boolean) => {
+    if (
+      refreshingSavedMarkets ||
+      shortcutRefreshCoolingDown ||
+      shortcutRefreshAbortRef.current !== null ||
+      shortcutRefreshCooldownTimerRef.current !== null
+    ) {
+      return false;
+    }
+    if (refreshActive) {
+      primaryBackoffRef.current = {
+        instrumentKey: "",
+        failures: 0,
+        retryAfter: 0,
+      };
+      automaticRefreshBackoffRef.current = {
+        failures: 0,
+        retryAfter: 0,
+      };
+      setRefreshVersion((value) => value + 1);
+    }
+    const controller = new AbortController();
+    shortcutRefreshAbortRef.current = controller;
+    const activeKey = savedBacktestInstrumentKey(
+      series?.instrument ?? instrument,
+    );
+    const instruments = new Map<string, MarketInstrument>();
+    for (const saved of savedBacktests) {
+      const key = savedBacktestInstrumentKey(saved.instrument);
+      if (key !== activeKey && !instruments.has(key)) {
+        instruments.set(key, saved.instrument);
       }
-    },
-    [],
-  );
+    }
+    if (instruments.size === 0) {
+      shortcutRefreshAbortRef.current = null;
+      setRefreshingSavedMarkets(false);
+      setShortcutRefreshProgress({
+        completed: 0,
+        total: 0,
+        updated: 0,
+        retained: 0,
+      });
+      startShortcutRefreshCooldown();
+      return true;
+    }
+    setRefreshingSavedMarkets(true);
+    setShortcutRefreshProgress({
+      completed: 0,
+      total: instruments.size,
+      updated: 0,
+      retained: 0,
+    });
+    void (async () => {
+      for (const [key, savedInstrument] of instruments) {
+        if (controller.signal.aborted) return;
+        let updated = false;
+        try {
+          const result = await refreshShortcutMarketInstrument(
+            savedInstrument,
+            {
+              signal: controller.signal,
+              previousTemporaryQuote:
+                refreshedShortcutMarketsRef.current.get(key)
+                  ?.temporaryQuote ?? null,
+            },
+          );
+          if (controller.signal.aborted) return;
+          if (result) {
+            updated = result.status !== "retained";
+            refreshedShortcutMarketsRef.current = new Map(
+              refreshedShortcutMarketsRef.current,
+            ).set(key, result);
+            setRefreshedShortcutMarkets(
+              new Map(refreshedShortcutMarketsRef.current),
+            );
+          }
+        } catch (error) {
+          if ((error as Error).name === "AbortError") throw error;
+        } finally {
+          if (!controller.signal.aborted) {
+            setShortcutRefreshProgress((current) => ({
+              completed: (current?.completed ?? 0) + 1,
+              total: current?.total ?? instruments.size,
+              updated: (current?.updated ?? 0) + Number(updated),
+              retained:
+                (current?.retained ?? 0) + Number(!updated),
+            }));
+          }
+        }
+      }
+    })()
+      .catch((error) => {
+        if ((error as Error).name !== "AbortError") {
+          console.error("Shortcut market refresh failed", {
+            message:
+              error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      })
+      .finally(() => {
+        if (shortcutRefreshAbortRef.current === controller) {
+          shortcutRefreshAbortRef.current = null;
+          setRefreshingSavedMarkets(false);
+          startShortcutRefreshCooldown();
+        }
+      });
+    return true;
+  }, [
+    instrument,
+    refreshingSavedMarkets,
+    savedBacktests,
+    series,
+    shortcutRefreshCoolingDown,
+    startShortcutRefreshCooldown,
+  ]);
+
+  const requestImmediateMarketRefresh = useCallback(() => {
+    if (researchInterval === INTRADAY_INTERVAL) {
+      primaryBackoffRef.current = {
+        instrumentKey: "",
+        failures: 0,
+        retryAfter: 0,
+      };
+      automaticRefreshBackoffRef.current = {
+        failures: 0,
+        retryAfter: 0,
+      };
+      setRefreshVersion((value) => value + 1);
+      return;
+    }
+    startSavedMarketRefresh(true);
+  }, [researchInterval, startSavedMarketRefresh]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      void loadScreeningRuns(
-        activeScreeningRunInstrumentKey,
-        controller.signal,
-      );
-    }, 0);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [activeScreeningRunInstrumentKey, loadScreeningRuns]);
+    if (
+      shortcutRefreshRequestVersion === 0 ||
+      shortcutRefreshRequestVersion <=
+        handledShortcutRefreshRequestVersionRef.current
+    ) {
+      return;
+    }
+    if (startSavedMarketRefresh(false)) {
+      handledShortcutRefreshRequestVersionRef.current =
+        shortcutRefreshRequestVersion;
+    }
+  }, [shortcutRefreshRequestVersion, startSavedMarketRefresh]);
 
   const latest = series?.bars.at(-1);
   const previous = series?.bars.at(-2);
   const comparisonPrice =
     previous?.close ?? series?.previousClose ?? latest?.open ?? 0;
-  const priceChange = latest ? latest.close - comparisonPrice : 0;
+  const displayedPrice = temporaryQuote?.price ?? latest?.close;
+  const priceChange =
+    displayedPrice === undefined ? 0 : displayedPrice - comparisonPrice;
   const priceChangePercent =
     comparisonPrice === 0 ? 0 : (priceChange / comparisonPrice) * 100;
   const strategyPlan = useMemo<StrategyAllocationPlan | null>(() => {
@@ -1282,6 +2317,7 @@ export function MarketWorkspace() {
         : null,
       strategyAAllocation,
       strategyBAllocation,
+      tacticalMode: tacticalAllocationMode,
       strategyAEntryFilter: activeMovingAverageSlopeFilter(
         strategyAEntryFilterDraft,
       ),
@@ -1298,19 +2334,29 @@ export function MarketWorkspace() {
     strategyBId,
     strategyAEntryFilterDraft,
     strategyBEntryFilterDraft,
+    tacticalAllocationMode,
   ]);
   const singleSelection =
     strategyPlan &&
     Boolean(strategyPlan.strategyA) !== Boolean(strategyPlan.strategyB)
       ? (strategyPlan.strategyA ?? strategyPlan.strategyB)
       : null;
+  const strategyPlanVolumeUnavailable = Boolean(
+    strategyPlan && !reliableVolume && strategyPlanRequiresVolume(strategyPlan),
+  );
   const usesSingleFullAllocation =
     Boolean(singleSelection) &&
     (strategyPlan?.strategyA
       ? strategyPlan.strategyAAllocation === 1
       : strategyPlan?.strategyBAllocation === 1);
   const activeStrategyTimeline = useMemo(() => {
-    if (!series?.bars.length || !strategyPlan) return null;
+    if (
+      !series?.bars.length ||
+      !strategyPlan ||
+      strategyPlanVolumeUnavailable
+    ) {
+      return null;
+    }
     try {
       return buildStrategyPlanTimeline(series.bars, strategyPlan, {
         startTime: startDate || series.bars[0].time,
@@ -1319,7 +2365,13 @@ export function MarketWorkspace() {
     } catch {
       return null;
     }
-  }, [endDate, series, startDate, strategyPlan]);
+  }, [
+    endDate,
+    series,
+    startDate,
+    strategyPlan,
+    strategyPlanVolumeUnavailable,
+  ]);
   const relativeLongStrategy = activeStrategyTimeline?.relativeLongStrategy;
   const appliedSingleSelection =
     appliedStrategyPlan &&
@@ -1332,8 +2384,19 @@ export function MarketWorkspace() {
     (appliedStrategyPlan?.strategyA
       ? appliedStrategyPlan.strategyAAllocation === 1
       : appliedStrategyPlan?.strategyBAllocation === 1);
+  const appliedStrategyPlanVolumeUnavailable = Boolean(
+    appliedStrategyPlan &&
+      !reliableVolume &&
+      strategyPlanRequiresVolume(appliedStrategyPlan),
+  );
   const appliedStrategyTimeline = useMemo(() => {
-    if (!series?.bars.length || !appliedStrategyPlan) return null;
+    if (
+      !series?.bars.length ||
+      !appliedStrategyPlan ||
+      appliedStrategyPlanVolumeUnavailable
+    ) {
+      return null;
+    }
     try {
       return buildStrategyPlanTimeline(series.bars, appliedStrategyPlan, {
         startTime: startDate || series.bars[0].time,
@@ -1342,11 +2405,23 @@ export function MarketWorkspace() {
     } catch {
       return null;
     }
-  }, [appliedStrategyPlan, endDate, series, startDate]);
+  }, [
+    appliedStrategyPlan,
+    appliedStrategyPlanVolumeUnavailable,
+    endDate,
+    series,
+    startDate,
+  ]);
   const appliedRelativeLongStrategy =
     appliedStrategyTimeline?.relativeLongStrategy;
   const liveGuidance = useMemo(() => {
-    if (!series?.bars.length || !appliedStrategyPlan) return null;
+    if (
+      !series?.bars.length ||
+      !appliedStrategyPlan ||
+      appliedStrategyPlanVolumeUnavailable
+    ) {
+      return null;
+    }
     try {
       const allocation = buildLiveAllocationGuidance(
         series.bars,
@@ -1413,6 +2488,7 @@ export function MarketWorkspace() {
             entryPrice: guidance.todayEntryPrice,
             exitPrice: guidance.todayExitPrice,
             pendingNextOpenAction: guidance.pendingNextOpenAction,
+            entryBlockedByFilter: guidance.entryBlockedByFilter,
           },
         ];
       });
@@ -1446,6 +2522,10 @@ export function MarketWorkspace() {
                 : "next-open"),
             triggerPrice: exact?.triggerPrice ?? null,
             orderPrices,
+            entryBlockedByFilter: Boolean(
+              exact?.entryBlockedByFilter ||
+                orderPrices.some((order) => order.entryBlockedByFilter),
+            ),
           }
         : null;
     } catch {
@@ -1454,6 +2534,7 @@ export function MarketWorkspace() {
   }, [
     appliedSingleSelection,
     appliedStrategyPlan,
+    appliedStrategyPlanVolumeUnavailable,
     appliedUsesSingleFullAllocation,
     endDate,
     series,
@@ -1462,10 +2543,69 @@ export function MarketWorkspace() {
   const lastUpdated = series?.fetchedAt
     ? updateTimeFormatter.format(new Date(series.fetchedAt))
     : copy.common.unavailable;
+  const lastUpdatedAt = series?.fetchedAt
+    ? cacheTimeFormatter.format(new Date(series.fetchedAt))
+    : null;
   const cachedPreviewTime =
     cachedPreviewAt === null
       ? null
       : cacheTimeFormatter.format(new Date(cachedPreviewAt));
+  const sourceHealthSummary = sourceHealth
+    .map((record) => {
+      const quality = record.quality;
+      const rolling = summarizeMarketSourceHealth(record);
+      const rollingAvailability = (
+        window: typeof rolling.sevenDays,
+      ) =>
+        window.availabilityPercent === null
+          ? copy.common.unavailable
+          : `${window.availabilityPercent.toFixed(1)}%`;
+      const details = [
+        `${copy.chart.availability7Days} ${rollingAvailability(
+          rolling.sevenDays,
+        )}`,
+        `${copy.chart.availability30Days} ${rollingAvailability(
+          rolling.thirtyDays,
+        )}`,
+        `${copy.chart.latency} ${Math.round(record.averageLatencyMs)} ms`,
+      ];
+      if (rolling.demotedAt) {
+        details.push(copy.chart.temporarilyDemoted);
+      }
+      if (quality?.missingDatePercent !== null && quality) {
+        details.push(
+          `${copy.chart.dateGaps} ${quality.missingDatePercent.toFixed(2)}%`,
+        );
+      }
+      if (quality?.meanCloseErrorPercent !== null && quality) {
+        details.push(
+          `${copy.chart.closeError} ${quality.meanCloseErrorPercent.toFixed(2)}%`,
+        );
+      }
+      if (
+        quality?.volumeCoveragePercent !== undefined &&
+        quality.volumeCoveragePercent !== null
+      ) {
+        details.push(
+          `${copy.marketStats.volume} ${quality.volumeCoveragePercent.toFixed(1)}%`,
+        );
+      }
+      if (record.lastErrorCode) {
+        const translatedError =
+          copy.errors[
+            record.lastErrorCode as keyof typeof copy.errors
+          ] ?? record.lastErrorCode;
+        details.push(
+          `${copy.chart.lastSourceError} ${translatedError}`,
+        );
+      }
+      return `${copy.sources[record.provider]}: ${details.join(" · ")}`;
+    })
+    .join("\n");
+  const credentialIssueCount = sourceHealth.filter(
+    (record) =>
+      record.lastErrorCode === "PROVIDER_CREDENTIAL_INVALID",
+  ).length;
 
   const backtest = useMemo<
     BacktestResult | AllocationBacktestResult | null
@@ -1474,7 +2614,8 @@ export function MarketWorkspace() {
       !series?.bars.length ||
       !startDate ||
       !endDate ||
-      !strategyPlan
+      !strategyPlan ||
+      strategyPlanVolumeUnavailable
     ) {
       return null;
     }
@@ -1485,7 +2626,7 @@ export function MarketWorkspace() {
         slippageRate: slippagePercent / 100,
         startTime: startDate,
         endTime: endDate,
-        interval: DAILY_INTERVAL,
+        interval: researchInterval,
         executionPolicy: HISTORICAL_EXECUTION_POLICY,
         entryFilter: strategyPlan.strategyA
           ? strategyPlanEntryFilter(strategyPlan, "strategyA")
@@ -1524,7 +2665,9 @@ export function MarketWorkspace() {
     slippagePercent,
     startDate,
     activeStrategyTimeline,
+    researchInterval,
     strategyPlan,
+    strategyPlanVolumeUnavailable,
     usesSingleFullAllocation,
   ]);
   const appliedBacktest = useMemo<
@@ -1534,7 +2677,8 @@ export function MarketWorkspace() {
       !series?.bars.length ||
       !startDate ||
       !endDate ||
-      !appliedStrategyPlan
+      !appliedStrategyPlan ||
+      appliedStrategyPlanVolumeUnavailable
     ) {
       return null;
     }
@@ -1545,7 +2689,7 @@ export function MarketWorkspace() {
         slippageRate: slippagePercent / 100,
         startTime: startDate,
         endTime: endDate,
-        interval: DAILY_INTERVAL,
+        interval: researchInterval,
         executionPolicy: HISTORICAL_EXECUTION_POLICY,
         entryFilter: appliedStrategyPlan.strategyA
           ? strategyPlanEntryFilter(
@@ -1584,11 +2728,13 @@ export function MarketWorkspace() {
   }, [
     appliedSingleSelection,
     appliedStrategyPlan,
+    appliedStrategyPlanVolumeUnavailable,
     appliedStrategyTimeline,
     appliedUsesSingleFullAllocation,
     commissionPercent,
     endDate,
     initialCash,
+    researchInterval,
     series,
     slippagePercent,
     startDate,
@@ -1600,6 +2746,7 @@ export function MarketWorkspace() {
       !startDate ||
       !endDate ||
       !strategyPlan ||
+      strategyPlanVolumeUnavailable ||
       !singleSelection ||
       !usesSingleFullAllocation
     ) {
@@ -1616,7 +2763,7 @@ export function MarketWorkspace() {
           slippageRate: slippagePercent / 100,
           startTime: startDate,
           endTime: endDate,
-          interval: DAILY_INTERVAL,
+          interval: researchInterval,
           executionPolicy: HISTORICAL_EXECUTION_POLICY,
           entryFilter: strategyPlan.strategyA
             ? strategyPlanEntryFilter(strategyPlan, "strategyA")
@@ -1631,11 +2778,13 @@ export function MarketWorkspace() {
     commissionPercent,
     endDate,
     initialCash,
+    researchInterval,
     series,
     singleSelection,
     slippagePercent,
     startDate,
     strategyPlan,
+    strategyPlanVolumeUnavailable,
     usesSingleFullAllocation,
   ]);
   const stabilityNearby = stability?.nearby ?? null;
@@ -1650,17 +2799,19 @@ export function MarketWorkspace() {
     readonly ChartStrategyConfiguration[]
   >(
     () =>
-      appliedStrategyPlan
+      appliedStrategyPlan && !appliedStrategyPlanVolumeUnavailable
         ? [
             ...(appliedStrategyPlan.strategyA
               ? [
                   {
                     id: appliedStrategyPlan.strategyA.strategyId,
                     parameters: appliedStrategyPlan.strategyA.parameters,
-                    lineLabels:
+                    lineLabels: chartStrategyLineLabels(
+                      appliedStrategyPlan.strategyA.strategyId,
                       appliedRelativeLongStrategy === "strategyB"
-                        ? relativeShortStrategyLineLabels
-                        : relativeLongStrategyLineLabels,
+                        ? "short"
+                        : "long",
+                    ),
                   },
                 ]
               : []),
@@ -1669,21 +2820,31 @@ export function MarketWorkspace() {
                   {
                     id: appliedStrategyPlan.strategyB.strategyId,
                     parameters: appliedStrategyPlan.strategyB.parameters,
-                    lineLabels:
+                    lineLabels: chartStrategyLineLabels(
+                      appliedStrategyPlan.strategyB.strategyId,
                       appliedRelativeLongStrategy === "strategyB"
-                        ? relativeLongStrategyLineLabels
-                        : relativeShortStrategyLineLabels,
+                        ? "long"
+                        : "short",
+                    ),
                   },
                 ]
               : []),
           ]
         : [],
-    [appliedRelativeLongStrategy, appliedStrategyPlan],
+    [
+      appliedRelativeLongStrategy,
+      appliedStrategyPlan,
+      appliedStrategyPlanVolumeUnavailable,
+    ],
   );
-  const allocationTradeMarkers =
-    appliedBacktest && "rebalances" in appliedBacktest
+  const appliedTradeMarkers = appliedBacktest
+    ? "rebalances" in appliedBacktest
       ? buildAllocationTradeMarkers(appliedBacktest.rebalances)
-      : undefined;
+      : buildTradeMarkers(
+          appliedBacktest.trades,
+          appliedBacktest.openPosition,
+        )
+    : undefined;
 
   const scrollToStrategyChart = () => {
     window.requestAnimationFrame(() =>
@@ -1715,6 +2876,7 @@ export function MarketWorkspace() {
     setStrategyBParameters({});
     setStrategyAAllocationPercent(100);
     setStrategyBAllocationPercent(0);
+    setTacticalAllocationMode(DEFAULT_TACTICAL_ALLOCATION_MODE);
     setStrategyAEntryFilterDraft(
       createMovingAverageSlopeFilterDraft(entryFilter),
     );
@@ -1729,6 +2891,7 @@ export function MarketWorkspace() {
       strategyB: null,
       strategyAAllocation: 1,
       strategyBAllocation: 0,
+      tacticalMode: DEFAULT_TACTICAL_ALLOCATION_MODE,
       strategyAEntryFilter: cloneMovingAverageSlopeFilter(entryFilter),
       strategyBEntryFilter: null,
     });
@@ -1841,6 +3004,9 @@ export function MarketWorkspace() {
     setStrategyBAllocationPercent(
       Math.round(result.strategyBAllocation * 100),
     );
+    setTacticalAllocationMode(
+      resolveTacticalAllocationMode(result.tacticalMode),
+    );
     setStrategyAEntryFilterDraft(
       createMovingAverageSlopeFilterDraft(
         result.strategyAEntryFilter,
@@ -1862,6 +3028,7 @@ export function MarketWorkspace() {
       },
       strategyAAllocation: result.strategyAAllocation,
       strategyBAllocation: result.strategyBAllocation,
+      tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
       strategyAEntryFilter: cloneMovingAverageSlopeFilter(
         result.strategyAEntryFilter,
       ),
@@ -1886,6 +3053,7 @@ export function MarketWorkspace() {
 
   const toggleIndicator = (nextIndicator: IndicatorId) => {
     setFocusedIndicator(nextIndicator);
+    if (!reliableVolume && indicatorRequiresVolume(nextIndicator)) return;
     setVisibleIndicatorIds((current) =>
       current.includes(nextIndicator)
         ? current.filter((id) => id !== nextIndicator)
@@ -1894,6 +3062,7 @@ export function MarketWorkspace() {
   };
 
   const toggleFocusedIndicator = () => {
+    if (focusedIndicatorVolumeUnavailable) return;
     setVisibleIndicatorIds((current) =>
       current.includes(focusedIndicator)
         ? current.filter((id) => id !== focusedIndicator)
@@ -1940,10 +3109,10 @@ export function MarketWorkspace() {
         body: JSON.stringify(
           createSaveBacktestInput(
             series?.instrument ?? instrument,
-            DAILY_INTERVAL,
+            researchInterval,
             appliedStrategyPlan,
-            startDate,
-            endDate,
+            datePart(startDate),
+            datePart(endDate),
             initialCash,
             commissionPercent,
             slippagePercent,
@@ -2004,16 +3173,130 @@ export function MarketWorkspace() {
 
   const clearMarketSeries = () => {
     marketSeriesRef.current = null;
+    canonicalSeriesRef.current = null;
     cachedSeriesActiveRef.current = false;
     currentSeriesKeyRef.current = "";
     latestSeriesDateRef.current = "";
+    lastMarketRefreshAttemptAtRef.current = 0;
+    automaticRefreshBackoffRef.current = {
+      failures: 0,
+      retryAfter: 0,
+    };
     setSeries(null);
     setCachedPreviewAt(null);
+    applyTemporaryQuote(null);
+    setSourceHealth([]);
     setErrorCode("");
     setLoading(true);
   };
 
+  const chooseResearchInterval = (nextInterval: WorkspaceInterval) => {
+    if (nextInterval === researchInterval) return;
+    resetScreening();
+    clearMarketSeries();
+    sharedRangeRef.current = { startDate: "", endDate: "" };
+    setScreeningCustomRange(DEFAULT_SCREENING_CUSTOM_RANGE);
+    if (
+      nextInterval === INTRADAY_INTERVAL &&
+      screeningValidationMode === "rolling"
+    ) {
+      setScreeningValidationMode("sample");
+    }
+    setResearchInterval(nextInterval);
+  };
+
+  const toggleIndicatorFavorite = (indicatorId: IndicatorId) => {
+    setFavoriteIndicatorIds((current) =>
+      current.includes(indicatorId)
+        ? current.filter((id) => id !== indicatorId)
+        : [...current, indicatorId],
+    );
+  };
+
+  const renderIndicatorControl = (
+    item: (typeof INDICATORS)[number],
+    keyPrefix: string,
+    closeMenuOnSelect = false,
+  ) => {
+    const focused = focusedIndicator === item.id;
+    const volumeUnavailable =
+      indicatorRequiresVolume(item.id) && !reliableVolume;
+    const visible = effectiveVisibleIndicatorIds.includes(item.id);
+    const accessibleLabel = `${copy.indicators[item.id].name} ${copy.common.separator} ${
+      volumeUnavailable
+        ? copy.indicatorSettings.volumeUnavailable
+        : visible
+          ? copy.indicatorSettings.visible
+          : copy.indicatorSettings.hidden
+    }`;
+    return (
+      <button
+        type="button"
+        id={`indicator-tab-${keyPrefix}-${item.id}`}
+        aria-controls="indicator-settings-panel"
+        aria-pressed={visible}
+        aria-current={focused ? "true" : undefined}
+        aria-label={accessibleLabel}
+        disabled={volumeUnavailable}
+        key={`${keyPrefix}-${item.id}`}
+        className={`${focused ? "focused" : ""} ${
+          visible ? "visible" : ""
+        }`.trim()}
+        onClick={() => {
+          toggleIndicator(item.id);
+          if (closeMenuOnSelect) setOpenIndicatorCategory(null);
+        }}
+        title={accessibleLabel}
+      >
+        {copy.indicators[item.id].short}
+      </button>
+    );
+  };
+
+  const renderIndicatorMenuItem = (
+    item: (typeof INDICATORS)[number],
+    category: IndicatorCategoryId,
+  ) => {
+    const favorite = favoriteIndicatorIds.includes(item.id);
+    const favoriteLabel = `${
+      favorite
+        ? copy.indicatorSettings.removeFavorite
+        : copy.indicatorSettings.addFavorite
+    } ${copy.indicators[item.id].name}`;
+
+    return (
+      <div
+        className="indicator-category-item"
+        key={`${category}-${item.id}`}
+      >
+        {renderIndicatorControl(item, category, true)}
+        <button
+          id={`indicator-favorite-${category}-${item.id}`}
+          className={`indicator-item-favorite ${favorite ? "favorite" : ""}`}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleIndicatorFavorite(item.id);
+          }}
+          aria-pressed={favorite}
+          aria-label={favoriteLabel}
+          title={favoriteLabel}
+        >
+          <Star
+            size={13}
+            fill={favorite ? "currentColor" : "none"}
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+    );
+  };
+
   const openSavedBacktest = (saved: SavedBacktestRecord) => {
+    const savedWorkspaceInterval =
+      saved.interval === INTRADAY_INTERVAL
+        ? INTRADAY_INTERVAL
+        : DAILY_INTERVAL;
     const restoredStrategyB =
       saved.plan.strategyA &&
       saved.plan.strategyB &&
@@ -2030,14 +3313,25 @@ export function MarketWorkspace() {
       saved.instrument,
       series?.instrument ?? instrument,
       series,
-      DAILY_INTERVAL,
+      savedWorkspaceInterval,
     );
+    if (
+      !sameCanonicalInstrument ||
+      !reusesCurrentSeries ||
+      researchInterval !== savedWorkspaceInterval
+    ) {
+      resetScreening();
+    }
     if (!sameCanonicalInstrument) {
       clearMarketSeries();
       setInstrument(saved.instrument);
     } else if (!reusesCurrentSeries) {
       clearMarketSeries();
       setRefreshVersion((value) => value + 1);
+    }
+    if (researchInterval !== savedWorkspaceInterval) {
+      sharedRangeRef.current = { startDate: "", endDate: "" };
+      setResearchInterval(savedWorkspaceInterval);
     }
     setVisibleIndicatorIds(saved.indicators.map((indicator) => indicator.id));
     setIndicatorSettings((current) => {
@@ -2065,6 +3359,9 @@ export function MarketWorkspace() {
       createMovingAverageSlopeFilterDraft(
         strategyPlanEntryFilter(saved.plan, "strategyB"),
       ),
+    );
+    setTacticalAllocationMode(
+      resolveTacticalAllocationMode(saved.plan.tacticalMode),
     );
     const savedStrategyAAllocation = Math.round(
       saved.plan.strategyAAllocation * 100,
@@ -2107,6 +3404,7 @@ export function MarketWorkspace() {
         : null,
       strategyAAllocation: restoredStrategyAAllocation / 100,
       strategyBAllocation: restoredStrategyBAllocation / 100,
+      tacticalMode: resolveTacticalAllocationMode(saved.plan.tacticalMode),
       strategyAEntryFilter: strategyPlanEntryFilter(
         saved.plan,
         "strategyA",
@@ -2133,6 +3431,221 @@ export function MarketWorkspace() {
     }
   };
 
+  const deleteSavedBacktestGroup = async (groupKey: string) => {
+    if (!window.confirm(copy.savedBacktests.removeGroupConfirm)) return;
+    try {
+      const response = await fetch(
+        `/api/saved-backtests?instrumentKey=${encodeURIComponent(groupKey)}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+      setSavedBacktests((current) =>
+        current.filter(
+          (record) => savedBacktestInstrumentKey(record.instrument) !== groupKey,
+        ),
+      );
+      setExpandedSavedBacktestGroups((current) =>
+        current.filter((key) => key !== groupKey),
+      );
+      savedBacktestRollingSyncRef.current.delete(groupKey);
+      setSavedBacktestsError(false);
+    } catch {
+      setSavedBacktestsError(true);
+    }
+  };
+
+  const strategyShortcutFoldersForGroup = (groupKey: string) =>
+    savedBacktestFolders.filter(
+      (folder) =>
+        folder.scope === "strategy" && folder.contextKey === groupKey,
+    );
+
+  const strategyShortcutSectionsForGroup = (
+    group: (typeof savedBacktestGroups)[number],
+  ) => {
+    const folders = strategyShortcutFoldersForGroup(group.key);
+    const sections: Array<{
+      folder: SavedBacktestFolder | null;
+      records: SavedBacktestRecord[];
+    }> = folders.map((folder) => ({
+      folder,
+      records: group.records.filter(
+        (record) => record.strategyFolderId === folder.id,
+      ),
+    }));
+    const unfiledRecords = group.records.filter(
+      (record) =>
+        !record.strategyFolderId ||
+        !folders.some((folder) => folder.id === record.strategyFolderId),
+    );
+    if (unfiledRecords.length > 0) {
+      sections.push({ folder: null, records: unfiledRecords });
+    }
+    return sections;
+  };
+
+  const createSavedBacktestFolder = async (
+    scope: SavedBacktestFolder["scope"],
+    contextKey = "root",
+  ) => {
+    const name = window.prompt(
+      scope === "instrument"
+        ? copy.savedBacktests.createInstrumentFolderPrompt
+        : copy.savedBacktests.createStrategyFolderPrompt,
+    )?.trim();
+    if (!name) return;
+    setSavedBacktestFolderSaving(true);
+    try {
+      const response = await fetch("/api/saved-backtest-folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope, contextKey, name }),
+      });
+      const payload = (await response.json()) as {
+        folder?: SavedBacktestFolder;
+      };
+      if (!response.ok || !payload.folder) {
+        throw new Error("PERSISTENCE_UNAVAILABLE");
+      }
+      setSavedBacktestFolders((current) => [
+        payload.folder!,
+        ...current.filter((folder) => folder.id !== payload.folder!.id),
+      ]);
+      setCollapsedSavedBacktestFolderIds((current) =>
+        current.filter((id) => id !== payload.folder!.id),
+      );
+      setSavedBacktestsError(false);
+    } catch {
+      setSavedBacktestsError(true);
+    } finally {
+      setSavedBacktestFolderSaving(false);
+    }
+  };
+
+  const renameSavedBacktestFolder = async (folder: SavedBacktestFolder) => {
+    const name = window.prompt(
+      copy.savedBacktests.renameFolderPrompt,
+      folder.name,
+    )?.trim();
+    if (!name || name === folder.name) return;
+    setSavedBacktestFolderSaving(true);
+    try {
+      const response = await fetch("/api/saved-backtest-folders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: folder.id, name }),
+      });
+      const payload = (await response.json()) as {
+        folder?: SavedBacktestFolder;
+      };
+      if (!response.ok || !payload.folder) {
+        throw new Error("PERSISTENCE_UNAVAILABLE");
+      }
+      setSavedBacktestFolders((current) =>
+        current.map((item) =>
+          item.id === folder.id ? payload.folder! : item,
+        ),
+      );
+      setSavedBacktestsError(false);
+    } catch {
+      setSavedBacktestsError(true);
+    } finally {
+      setSavedBacktestFolderSaving(false);
+    }
+  };
+
+  const deleteSavedBacktestFolder = async (folder: SavedBacktestFolder) => {
+    if (!window.confirm(copy.savedBacktests.deleteFolderConfirm)) return;
+    setSavedBacktestFolderSaving(true);
+    try {
+      const response = await fetch(
+        `/api/saved-backtest-folders?id=${folder.id}`,
+        { method: "DELETE" },
+      );
+      if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+      setSavedBacktestFolders((current) =>
+        current.filter((item) => item.id !== folder.id),
+      );
+      setCollapsedSavedBacktestFolderIds((current) =>
+        current.filter((id) => id !== folder.id),
+      );
+      setSavedBacktests((current) =>
+        current.map((record) =>
+          folder.scope === "instrument" &&
+          record.instrumentFolderId === folder.id
+            ? { ...record, instrumentFolderId: null }
+            : folder.scope === "strategy" &&
+                record.strategyFolderId === folder.id
+              ? { ...record, strategyFolderId: null }
+              : record,
+        ),
+      );
+      setSavedBacktestsError(false);
+    } catch {
+      setSavedBacktestsError(true);
+    } finally {
+      setSavedBacktestFolderSaving(false);
+    }
+  };
+
+  const assignSavedBacktestInstrumentFolder = async (
+    instrumentKey: string,
+    folderId: number | null,
+  ) => {
+    setSavedBacktestFolderSaving(true);
+    try {
+      const response = await fetch("/api/saved-backtest-folders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: "instrument", instrumentKey, folderId }),
+      });
+      if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+      setSavedBacktests((current) =>
+        current.map((record) =>
+          savedBacktestInstrumentKey(record.instrument) === instrumentKey
+            ? { ...record, instrumentFolderId: folderId }
+            : record,
+        ),
+      );
+      setSavedBacktestsError(false);
+    } catch {
+      setSavedBacktestsError(true);
+    } finally {
+      setSavedBacktestFolderSaving(false);
+    }
+  };
+
+  const assignSavedBacktestStrategyFolder = async (
+    savedBacktestId: number,
+    folderId: number | null,
+  ) => {
+    setSavedBacktestFolderSaving(true);
+    try {
+      const response = await fetch("/api/saved-backtest-folders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: "strategy",
+          savedBacktestId,
+          folderId,
+        }),
+      });
+      if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+      setSavedBacktests((current) =>
+        current.map((record) =>
+          record.id === savedBacktestId
+            ? { ...record, strategyFolderId: folderId }
+            : record,
+        ),
+      );
+      setSavedBacktestsError(false);
+    } catch {
+      setSavedBacktestsError(true);
+    } finally {
+      setSavedBacktestFolderSaving(false);
+    }
+  };
+
   const toggleSavedBacktestGroup = (groupKey: string) => {
     setExpandedSavedBacktestGroups((current) =>
       current.includes(groupKey)
@@ -2141,11 +3654,23 @@ export function MarketWorkspace() {
     );
   };
 
+  const toggleSavedBacktestFolder = (folderId: number) => {
+    setCollapsedSavedBacktestFolderIds((current) =>
+      current.includes(folderId)
+        ? current.filter((id) => id !== folderId)
+        : [...current, folderId],
+    );
+  };
+
   const startSavedBacktestDrag = (
     event: ReactDragEvent<HTMLElement>,
     drag: SavedBacktestDragState,
   ) => {
-    if (savedBacktestOrderSaving) {
+    if (
+      drag.kind === "folder"
+        ? savedBacktestFolderSaving
+        : savedBacktestOrderSaving
+    ) {
       event.preventDefault();
       return;
     }
@@ -2160,6 +3685,101 @@ export function MarketWorkspace() {
   const finishSavedBacktestDrag = () => {
     setSavedBacktestDrag(null);
     setSavedBacktestDropTarget("");
+  };
+
+  const persistSavedBacktestFolderOrder = async (
+    nextOrder: SavedBacktestFolder[],
+    scope: SavedBacktestFolder["scope"],
+    contextKey: string,
+  ) => {
+    if (
+      nextOrder.length !== savedBacktestFolders.length ||
+      nextOrder.every(
+        (folder, index) => folder.id === savedBacktestFolders[index]?.id,
+      )
+    ) {
+      finishSavedBacktestDrag();
+      return;
+    }
+    const previousOrder = savedBacktestFolders;
+    const orderedIds = nextOrder
+      .filter(
+        (folder) =>
+          folder.scope === scope && folder.contextKey === contextKey,
+      )
+      .map((folder) => folder.id);
+    setSavedBacktestFolders(nextOrder);
+    setSavedBacktestsError(false);
+    setSavedBacktestFolderSaving(true);
+    finishSavedBacktestDrag();
+    try {
+      const response = await fetch("/api/saved-backtest-folders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope, contextKey, orderedIds }),
+      });
+      if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+    } catch {
+      setSavedBacktestFolders(previousOrder);
+      setSavedBacktestsError(true);
+    } finally {
+      setSavedBacktestFolderSaving(false);
+    }
+  };
+
+  const dropSavedBacktestFolder = (
+    event: ReactDragEvent<HTMLElement>,
+    targetFolder: SavedBacktestFolder,
+  ) => {
+    event.stopPropagation();
+    if (
+      savedBacktestDrag?.kind !== "folder" ||
+      savedBacktestDrag.folderId === targetFolder.id ||
+      savedBacktestDrag.scope !== targetFolder.scope ||
+      savedBacktestDrag.contextKey !== targetFolder.contextKey
+    ) {
+      finishSavedBacktestDrag();
+      return;
+    }
+    event.preventDefault();
+    void persistSavedBacktestFolderOrder(
+      reorderSavedBacktestFolders(
+        savedBacktestFolders,
+        targetFolder.scope,
+        targetFolder.contextKey,
+        savedBacktestDrag.folderId,
+        targetFolder.id,
+      ),
+      targetFolder.scope,
+      targetFolder.contextKey,
+    );
+  };
+
+  const moveSavedBacktestFolderByOffset = (
+    folder: SavedBacktestFolder,
+    offset: -1 | 1,
+  ) => {
+    const siblings = savedBacktestFolders.filter(
+      (candidate) =>
+        candidate.scope === folder.scope &&
+        candidate.contextKey === folder.contextKey,
+    );
+    const folderIndex = siblings.findIndex(
+      (candidate) => candidate.id === folder.id,
+    );
+    const target = siblings[folderIndex + offset];
+    if (!target) return;
+    void persistSavedBacktestFolderOrder(
+      reorderSavedBacktestFolders(
+        savedBacktestFolders,
+        folder.scope,
+        folder.contextKey,
+        folder.id,
+        target.id,
+      ),
+      folder.scope,
+      folder.contextKey,
+    );
   };
 
   const persistSavedBacktestOrder = async (
@@ -2201,9 +3821,20 @@ export function MarketWorkspace() {
     targetGroupKey: string,
   ) => {
     event.stopPropagation();
+    const sourceGroup =
+      savedBacktestDrag?.kind === "group"
+        ? savedBacktestGroups.find(
+            (group) => group.key === savedBacktestDrag.groupKey,
+          )
+        : undefined;
+    const targetGroup = savedBacktestGroups.find(
+      (group) => group.key === targetGroupKey,
+    );
     if (
       savedBacktestDrag?.kind !== "group" ||
-      savedBacktestDrag.groupKey === targetGroupKey
+      savedBacktestDrag.groupKey === targetGroupKey ||
+      (sourceGroup?.instrumentFolderId ?? null) !==
+        (targetGroup?.instrumentFolderId ?? null)
     ) {
       finishSavedBacktestDrag();
       return;
@@ -2224,10 +3855,25 @@ export function MarketWorkspace() {
     targetRecordId: number,
   ) => {
     event.stopPropagation();
+    const draggedRecordId =
+      savedBacktestDrag?.kind === "record"
+        ? savedBacktestDrag.recordId
+        : null;
+    const group = savedBacktestGroups.find(
+      (candidate) => candidate.key === targetGroupKey,
+    );
+    const sourceRecord = group?.records.find(
+      (record) => record.id === draggedRecordId,
+    );
+    const targetRecord = group?.records.find(
+      (record) => record.id === targetRecordId,
+    );
     if (
       savedBacktestDrag?.kind !== "record" ||
       savedBacktestDrag.groupKey !== targetGroupKey ||
-      savedBacktestDrag.recordId === targetRecordId
+      savedBacktestDrag.recordId === targetRecordId ||
+      (sourceRecord?.strategyFolderId ?? null) !==
+        (targetRecord?.strategyFolderId ?? null)
     ) {
       finishSavedBacktestDrag();
       return;
@@ -2247,10 +3893,18 @@ export function MarketWorkspace() {
     groupKey: string,
     offset: -1 | 1,
   ) => {
-    const groupIndex = savedBacktestGroups.findIndex(
+    const currentGroup = savedBacktestGroups.find(
       (group) => group.key === groupKey,
     );
-    const target = savedBacktestGroups[groupIndex + offset];
+    const siblingGroups = savedBacktestGroups.filter(
+      (group) =>
+        (group.instrumentFolderId ?? null) ===
+        (currentGroup?.instrumentFolderId ?? null),
+    );
+    const groupIndex = siblingGroups.findIndex(
+      (group) => group.key === groupKey,
+    );
+    const target = siblingGroups[groupIndex + offset];
     if (!target) return;
     void persistSavedBacktestOrder(
       reorderSavedBacktestGroups(savedBacktests, groupKey, target.key),
@@ -2265,9 +3919,17 @@ export function MarketWorkspace() {
     const group = savedBacktestGroups.find(
       (candidate) => candidate.key === groupKey,
     );
+    const currentRecord = group?.records.find(
+      (record) => record.id === recordId,
+    );
+    const siblingRecords = group?.records.filter(
+      (record) =>
+        (record.strategyFolderId ?? null) ===
+        (currentRecord?.strategyFolderId ?? null),
+    );
     const recordIndex =
-      group?.records.findIndex((record) => record.id === recordId) ?? -1;
-    const target = group?.records[recordIndex + offset];
+      siblingRecords?.findIndex((record) => record.id === recordId) ?? -1;
+    const target = siblingRecords?.[recordIndex + offset];
     if (!target) return;
     void persistSavedBacktestOrder(
       reorderSavedBacktestsWithinGroup(
@@ -2281,8 +3943,12 @@ export function MarketWorkspace() {
 
   const startScreening = async () => {
     if (!series?.bars.length) return;
+    if (screeningBlockedByVolume) {
+      setScreeningError("volume-unavailable");
+      return;
+    }
     const runObjective = screeningObjective;
-    const latestDate = datePart(series.bars.at(-1)!.time);
+    const latestDate = series.bars.at(-1)!.time;
     const validationConfig: ScreeningValidationConfig =
       screeningValidationMode === "sample"
         ? {
@@ -2330,7 +3996,7 @@ export function MarketWorkspace() {
           slippageRate: slippagePercent / 100,
           startTime: startDate,
           endTime: endDate,
-          interval: DAILY_INTERVAL,
+          interval: researchInterval,
           executionPolicy: HISTORICAL_EXECUTION_POLICY,
           entryFilter: activeMovingAverageSlopeFilter(
             screeningEntryFilterDraft,
@@ -2342,6 +4008,9 @@ export function MarketWorkspace() {
           entryFilters: screeningEntryFilterDraft.enabled
             ? buildScreeningMovingAverageSlopeFilters()
             : undefined,
+          excludedStrategyIds: reliableVolume
+            ? undefined
+            : VOLUME_REQUIRED_STRATEGY_IDS,
           signal: controller.signal,
           onProgress: setScreenProgress,
           onValidationProgress: setValidationProgress,
@@ -2373,6 +4042,7 @@ export function MarketWorkspace() {
           },
           outcome,
           dataFingerprint,
+          temporaryQuote,
         );
         const archiveResponse = await fetch("/api/screening-runs", {
           method: "POST",
@@ -2382,21 +4052,14 @@ export function MarketWorkspace() {
         });
         const archivePayload = (await archiveResponse.json()) as {
           screeningRun?: ScreeningRunRecord;
-          previousRun?: ScreeningRunRecord | null;
         };
         if (!archiveResponse.ok || !archivePayload.screeningRun) {
           throw new Error("PERSISTENCE_UNAVAILABLE");
         }
-        setScreeningRuns((current) => [
-          archivePayload.screeningRun!,
-          ...current.filter(
-            (run) => run.id !== archivePayload.screeningRun!.id,
-          ),
-        ].slice(0, 12));
-        setScreeningRunsError(false);
+        setSavedBacktestsError(false);
       } catch (archiveError) {
         if ((archiveError as Error).name !== "AbortError") {
-          setScreeningRunsError(true);
+          setSavedBacktestsError(true);
         }
       }
     } catch (error) {
@@ -2435,10 +4098,17 @@ export function MarketWorkspace() {
     }
   };
 
-  const minDate = series?.bars.length ? datePart(series.bars[0].time) : "";
+  const minDate = series?.bars.length ? series.bars[0].time : "";
   const maxDate = series?.bars.length
-    ? datePart(series.bars[series.bars.length - 1].time)
+    ? series.bars[series.bars.length - 1].time
     : "";
+  const screeningRangeSessions = series?.bars.length
+    ? (resolveTradingSessionRange(
+        series.bars,
+        screeningCustomRange.startTime || startDate,
+        screeningCustomRange.endTime || endDate || maxDate,
+      )?.sessions ?? 0)
+    : 0;
   const activeInstrument = series?.instrument ?? instrument;
   const activeInstrumentKey = savedBacktestInstrumentKey(activeInstrument);
   const sharedRangeSessions =
@@ -2508,62 +4178,195 @@ export function MarketWorkspace() {
       ),
     );
   };
-  const savedBacktestRangeMetrics = useMemo(() => {
-    const metrics = new Map<number, BacktestPerformance | null>();
-    if (!series?.bars.length || !startDate || !endDate) return metrics;
-    for (const saved of savedBacktests) {
-      if (
-        saved.interval !== DAILY_INTERVAL ||
-        savedBacktestInstrumentKey(saved.instrument) !==
-          activeInstrumentKey
-      ) {
-        continue;
+  const savedBacktestRollingGroups = useMemo(() => {
+    const groups: Array<{
+      instrumentKey: string;
+      marketSeries: MarketSeries;
+      evaluations: Array<{
+        id: number;
+        performance: BacktestResult | AllocationBacktestResult;
+      }>;
+    }> = [];
+    for (const group of savedBacktestGroups) {
+      const marketSeries =
+        group.key === activeInstrumentKey
+          ? series
+          : refreshedShortcutMarkets.get(group.key)
+              ?.displayedSeries ?? null;
+      if (!marketSeries?.bars.length) continue;
+      const rollingRange = resolveTrailingTradingSessionRange(
+        marketSeries.bars,
+        SAVED_BACKTEST_ROLLING_SESSIONS,
+      );
+      if (!rollingRange || rollingRange.sessions < 3) continue;
+      const evaluations: Array<{
+        id: number;
+        performance: BacktestResult | AllocationBacktestResult;
+      }> = [];
+      const marketHasReliableVolume = assessMarketVolumeCoverage(
+        marketSeries.bars,
+      ).reliable;
+      for (const saved of group.records) {
+        if (
+          saved.interval !== marketSeries.interval ||
+          !marketHasReliableVolume &&
+          strategyPlanRequiresVolume(saved.plan)
+        ) {
+          continue;
+        }
+        try {
+          evaluations.push({
+            id: saved.id,
+            performance: runStrategyPlanRangeBacktest(
+              marketSeries.bars,
+              saved.plan,
+              {
+                initialCash: saved.initialCash,
+                commissionRate: saved.commissionPercent / 100,
+                slippageRate: saved.slippagePercent / 100,
+                startTime: rollingRange.startTime,
+                endTime: rollingRange.endTime,
+                interval: marketSeries.interval,
+                executionPolicy: HISTORICAL_EXECUTION_POLICY,
+                entryFilter: null,
+              },
+            ),
+          });
+        } catch {
+          // One invalid legacy plan must not block the remaining shortcuts.
+        }
       }
-      try {
-        metrics.set(
-          saved.id,
-          runStrategyPlanRangeBacktest(series.bars, saved.plan, {
-            initialCash: saved.initialCash,
-            commissionRate: saved.commissionPercent / 100,
-            slippageRate: saved.slippagePercent / 100,
-            startTime: startDate,
-            endTime: endDate,
-            interval: DAILY_INTERVAL,
-            executionPolicy: HISTORICAL_EXECUTION_POLICY,
-            entryFilter: null,
-          }),
-        );
-      } catch {
-        metrics.set(saved.id, null);
+      if (evaluations.length > 0) {
+        groups.push({
+          instrumentKey: group.key,
+          marketSeries,
+          evaluations,
+        });
       }
     }
-    return metrics;
+    return groups;
   }, [
     activeInstrumentKey,
-    endDate,
-    savedBacktests,
+    refreshedShortcutMarkets,
+    savedBacktestGroups,
     series,
-    startDate,
   ]);
-  const screeningBusy = screening;
-  const screeningRunComparison = useMemo(
+  const savedBacktestRollingMetrics = useMemo(
     () =>
-      screeningRuns[0]
-        ? compareScreeningRuns(
-            screeningRuns[0],
-            screeningRuns[1] ?? null,
-          )
-        : null,
-    [screeningRuns],
+      new Map(
+        savedBacktestRollingGroups.flatMap((group) =>
+          group.evaluations.map((evaluation) => [
+            evaluation.id,
+            evaluation.performance,
+          ] as const),
+        ),
+      ),
+    [savedBacktestRollingGroups],
   );
-  const resultsValidationMode =
-    screenResults[0]?.screeningValidation?.mode ??
-    combinationResults[0]?.screeningValidation?.mode ??
-    null;
-  const hasScreeningResults =
-    screenResults.length > 0 || combinationResults.length > 0;
-  const screeningResultEntryFilter =
-    screenResults[0]?.entryFilter ?? null;
+  const savedBacktestRecentReviews = useMemo(
+    () =>
+      new Map(
+        savedBacktestRollingGroups.flatMap((group) =>
+          group.evaluations.map((evaluation) => [
+            evaluation.id,
+            evaluateRecentStrategyEffectiveness(
+              evaluation.performance,
+              group.marketSeries.bars,
+            ),
+          ] as const),
+        ),
+      ),
+    [savedBacktestRollingGroups],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      for (const group of savedBacktestRollingGroups) {
+        if (controller.signal.aborted) return;
+        const marketFingerprint = await fingerprintMarketSeries(
+          group.marketSeries,
+        );
+        const evaluationIds = group.evaluations
+          .map((evaluation) => evaluation.id)
+          .sort((left, right) => left - right);
+        const syncKey = `${marketFingerprint}:${evaluationIds.join(",")}`;
+        if (
+          savedBacktestRollingSyncRef.current.get(group.instrumentKey) ===
+          syncKey
+        ) {
+          continue;
+        }
+        savedBacktestRollingSyncRef.current.set(
+          group.instrumentKey,
+          syncKey,
+        );
+        try {
+          const response = await fetch("/api/saved-backtests", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              instrumentKey: group.instrumentKey,
+              marketFingerprint,
+              evaluations: group.evaluations.map((evaluation) => ({
+                id: evaluation.id,
+                totalReturn: evaluation.performance.totalReturn,
+              })),
+            }),
+          });
+          const payload = (await response.json()) as {
+            rollingUpdates?: Array<{
+              id: number;
+              rollingTotalReturn: number | null;
+            }>;
+          };
+          if (!response.ok || !payload.rollingUpdates) {
+            throw new Error("PERSISTENCE_UNAVAILABLE");
+          }
+          const updates = new Map(
+            payload.rollingUpdates.map((update) => [update.id, update]),
+          );
+          setSavedBacktests((current) =>
+            current.map((record) => {
+              const update = updates.get(record.id);
+              return update
+                ? {
+                    ...record,
+                    rollingTotalReturn: update.rollingTotalReturn,
+                  }
+                : record;
+            }),
+          );
+          setSavedBacktestsError(false);
+        } catch (error) {
+          if ((error as Error).name === "AbortError") return;
+          if (
+            savedBacktestRollingSyncRef.current.get(group.instrumentKey) ===
+            syncKey
+          ) {
+            savedBacktestRollingSyncRef.current.delete(group.instrumentKey);
+          }
+          setSavedBacktestsError(true);
+        }
+      }
+    })();
+    return () => controller.abort();
+  }, [savedBacktestRollingGroups]);
+  const screeningBusy = screening;
+  const activeShortcutRecords =
+    activeSavedBacktestGroup?.records.filter(
+      (record) => record.interval === researchInterval,
+    ) ?? [];
+  const screeningResultShortcutMatch = (
+    result: ScreeningSingleResult | ScreeningCombinationResult,
+  ) =>
+    findStrategyShortcutMatch(
+      "strategyId" in result
+        ? singleResultPlan(result)
+        : combinationResultPlan(result),
+      activeShortcutRecords,
+    );
   const strategyShortlist = useMemo(
     () =>
       selectStrategyShortlist(
@@ -2607,65 +4410,10 @@ export function MarketWorkspace() {
     strategyShortlist.length > 0 &&
     strategyShortlistDeputyCount <
       DEFAULT_STRATEGY_SHORTLIST_DEPUTY_COUNT;
-  const screenProgressStageIndex =
-    screenProgress.stage === "strategies"
-      ? 0
-      : screenProgress.stage === "entryFilters"
-        ? 1
-        : screenProgress.stage === "pairs"
-          ? 2
-          : 3;
-  const screenProgressValue =
-    screenProgressStageIndex +
-    (screenProgress.stageTotal > 0
-      ? Math.min(
-          Math.max(
-            screenProgress.stageCompleted / screenProgress.stageTotal,
-            0,
-          ),
-          1,
-        )
-      : screenProgressStageIndex > 0
-        ? 1
-        : 0);
-  const validationPhaseValue = validationProgress
-    ? validationProgress.phase === "optimization"
-      ? screenProgressValue
-      : validationProgress.phase === "selection"
-        ? 4 +
-          (validationProgress.mode === "sample"
-            ? validationProgress.foldIndex
-            : 0) +
-          (validationProgress.total > 0
-            ? validationProgress.completed / validationProgress.total
-            : 0)
-        : validationProgress.phase === "display"
-          ? 4 +
-            validationProgress.foldCount +
-            (validationProgress.total > 0
-              ? validationProgress.completed /
-                validationProgress.total
-              : 0)
-        : 5 +
-          (validationProgress.total > 0
-            ? validationProgress.completed / validationProgress.total
-            : 0)
-    : 0;
-  const validationProgressMaximum =
-    validationProgress?.mode === "rolling"
-      ? Math.max(validationProgress.foldCount * 5, 1)
-      : validationProgress?.mode === "range"
-        ? 6
-        : 5 + (validationProgress?.foldCount ?? 3);
-  const validationProgressValue = validationProgress
-    ? validationProgress.mode === "rolling"
-      ? validationProgress.foldIndex * 5 +
-        Math.min(validationPhaseValue, 5)
-      : validationPhaseValue
-    : screenProgressValue;
-  const screeningProgressMaximum = validationProgress
-    ? validationProgressMaximum
-    : 4;
+  const screeningProgressBar = resolveScreeningProgressBarState(
+    screenProgress,
+    validationProgress,
+  );
   const selectedValidationCandidateName = (
     reference: ScreeningCandidateReference,
   ) => {
@@ -2690,6 +4438,29 @@ export function MarketWorkspace() {
       ? [copy.strategies[appliedStrategyPlan.strategyB.strategyId].name]
       : []),
   ].join(" + ");
+  const shortcutRefreshStatusText = shortcutRefreshProgress
+    ? shortcutRefreshProgress.total > 0
+      ? [
+          `${copy.refreshStatus.progress} ${shortcutRefreshProgress.completed}/${shortcutRefreshProgress.total}`,
+          `${copy.refreshStatus.updated} ${shortcutRefreshProgress.updated}`,
+          `${copy.refreshStatus.retained} ${shortcutRefreshProgress.retained}`,
+          shortcutRefreshCoolingDown
+            ? copy.refreshStatus.cooldown
+            : null,
+        ]
+          .filter(Boolean)
+          .join(` ${copy.common.separator} `)
+      : [
+          copy.refreshStatus.currentOnly,
+          shortcutRefreshCoolingDown
+            ? copy.refreshStatus.cooldown
+            : null,
+        ]
+          .filter(Boolean)
+          .join(` ${copy.common.separator} `)
+    : null;
+  const refreshActionLabel =
+    shortcutRefreshStatusText || copy.refresh;
 
   return (
     <main className="workspace-shell">
@@ -2758,13 +4529,27 @@ export function MarketWorkspace() {
 
         <div className="price-block">
           <strong>
-            {latest ? formatNumber(latest.close) : copy.common.unavailable}
+            {displayedPrice !== undefined
+              ? formatNumber(displayedPrice)
+              : copy.common.unavailable}
           </strong>
           <span className={priceChange >= 0 ? "positive" : "negative"}>
             {priceChange >= 0 ? "+" : ""}
             {formatNumber(priceChange)} {copy.common.separator}{" "}
             {formatPercent(priceChangePercent, true)}
           </span>
+          {temporaryQuote ? (
+            <small>
+              {copy.chart.temporaryQuote}{" "}
+              {copy.sources[temporaryQuote.provider]}{" "}
+              {copy.common.separator} {temporaryQuote.time}
+            </small>
+          ) : null}
+          {activeInstrument.assetType === "commodity" ? (
+            <small className="commodity-proxy-note">
+              {copy.lab.commodityProxyDisclosure}
+            </small>
+          ) : null}
         </div>
 
         <div className="market-stat-row">
@@ -2774,9 +4559,9 @@ export function MarketWorkspace() {
             [copy.marketStats.low, latest?.low],
             [
               copy.marketStats.volume,
-              latest?.volume
+              reliableVolume && latest?.volume
                 ? compactFormatter.format(latest.volume)
-                : undefined,
+                : copy.marketStats.volumeUnavailable,
             ],
             [
               copy.marketStats.amount,
@@ -2813,6 +4598,15 @@ export function MarketWorkspace() {
               ? `${copy.liveGuidance.descriptions[liveGuidance.action]} ${copy.common.separator} ${liveGuidance.barTime}`
               : copy.liveGuidance.waitingForData}
           </small>
+          {series?.fetchedAt && lastUpdatedAt && (
+            <small>
+              {copy.liveGuidance.lastUpdated} ·{" "}
+              <time dateTime={series.fetchedAt}>{lastUpdatedAt}</time>
+              {" · "}
+              {copy.liveGuidance.source} ·{" "}
+              {copy.sources[series.source]}
+            </small>
+          )}
           {liveGuidance?.orderPrices.map((order) => (
             <small key={order.slot}>
               {[
@@ -2833,92 +4627,152 @@ export function MarketWorkspace() {
                       ]
                     }`
                   : null,
+                order.entryBlockedByFilter
+                  ? `${order.slot} ${copy.liveGuidance.entryBlockedByFilter}`
+                  : null,
               ]
                 .filter(Boolean)
                 .join(` ${copy.common.separator} `)}
             </small>
           ))}
-          <em>
-            {copy.liveGuidance.execution[liveGuidance?.executionMode ?? "next-open"]}{" "}
-            {copy.common.separator} {copy.liveGuidance.disclosure}{" "}
-            {copy.common.separator}{" "}
-             {copy.liveGuidance.autoRefresh}
-             {series?.latestBarStatus === "in-progress"
-               ? ` ${copy.common.separator} ${copy.liveGuidance.inProgressBar}`
-               : series?.latestBarStatus === "unknown"
-                 ? ` ${copy.common.separator} ${copy.liveGuidance.unknownBarStatus}`
-                 : ""}
-             {liveGuidance?.orderPrices.some(
-              (order) => order.pendingNextOpenAction !== null,
-            )
-              ? ` ${copy.common.separator} ${copy.liveGuidance.pendingGapOverride}`
-              : ""}
-          </em>
+          {liveGuidance?.entryBlockedByFilter &&
+            !liveGuidance.orderPrices.some(
+              (order) => order.entryBlockedByFilter,
+            ) && (
+              <small className="live-guidance-entry-blocked" role="status">
+                {copy.liveGuidance.entryBlockedByFilter}
+              </small>
+            )}
+          {shortcutRefreshStatusText ? (
+            <small
+              className="market-refresh-status"
+              role="status"
+              aria-live="polite"
+            >
+              {shortcutRefreshStatusText}
+            </small>
+          ) : null}
         </div>
 
         <button
           className="icon-button"
           type="button"
-          onClick={() => setRefreshVersion((value) => value + 1)}
-          aria-label={copy.refresh}
-          title={copy.refresh}
+          onClick={requestImmediateMarketRefresh}
+          disabled={
+            refreshingSavedMarkets || shortcutRefreshCoolingDown
+          }
+          aria-label={refreshActionLabel}
+          title={refreshActionLabel}
         >
-          <RefreshCw size={16} className={loading ? "spin" : ""} />
+          <RefreshCw
+            size={16}
+            className={
+              loading || refreshingSavedMarkets ? "spin" : ""
+            }
+          />
         </button>
       </section>
 
       <section className="chart-toolbar">
-        <div className="toolbar-group chart-type-tabs">
-          <button
-            type="button"
-            className={chartType === "candlestick" ? "active" : ""}
-            onClick={() => setChartType("candlestick")}
+        <div className="chart-toolbar-menu-row">
+          <div
+            className="toolbar-group chart-interval-tabs"
+            role="group"
+            aria-label={copy.chart.intervalMode}
           >
-            <CandlestickChart size={15} />
-            {copy.chart.candlestick}
-          </button>
-          <button
-            type="button"
-            className={chartType === "line" ? "active" : ""}
-            onClick={() => setChartType("line")}
-          >
-            <LineChart size={15} />
-            {copy.chart.line}
-          </button>
+            <button
+              type="button"
+              className={researchInterval === DAILY_INTERVAL ? "active" : ""}
+              aria-pressed={researchInterval === DAILY_INTERVAL}
+              onClick={() => chooseResearchInterval(DAILY_INTERVAL)}
+            >
+              {copy.intervals[DAILY_INTERVAL]}
+            </button>
+            <button
+              type="button"
+              className={
+                researchInterval === INTRADAY_INTERVAL ? "active" : ""
+              }
+              aria-pressed={researchInterval === INTRADAY_INTERVAL}
+              onClick={() => chooseResearchInterval(INTRADAY_INTERVAL)}
+            >
+              {copy.intervals[INTRADAY_INTERVAL]}
+            </button>
+          </div>
+          <span className="toolbar-divider" />
+          <div className="toolbar-group chart-type-tabs">
+            <button
+              type="button"
+              className={chartType === "candlestick" ? "active" : ""}
+              onClick={() => setChartType("candlestick")}
+            >
+              <CandlestickChart size={15} />
+              {copy.chart.candlestick}
+            </button>
+            <button
+              type="button"
+              className={chartType === "line" ? "active" : ""}
+              onClick={() => setChartType("line")}
+            >
+              <LineChart size={15} />
+              {copy.chart.line}
+            </button>
+          </div>
+          <span className="toolbar-divider" />
+          <div className="indicator-menu-system" ref={indicatorMenusRef}>
+            <div
+              className="indicator-category-menus"
+              aria-label={copy.indicatorSettings.menus}
+            >
+              {INDICATOR_CATEGORIES.map((category) => {
+                const open = openIndicatorCategory === category;
+                const menuId = `indicator-category-${category}`;
+                return (
+                  <div
+                    className={`indicator-category-menu ${open ? "open" : ""}`}
+                    key={category}
+                  >
+                    <button
+                      className="indicator-category-trigger"
+                      type="button"
+                      aria-expanded={open}
+                      aria-controls={menuId}
+                      onClick={() =>
+                        setOpenIndicatorCategory((current) =>
+                          current === category ? null : category,
+                        )
+                      }
+                    >
+                      {copy.indicatorCategories[category]}
+                      <ChevronDown size={12} aria-hidden="true" />
+                    </button>
+                    <div
+                      id={menuId}
+                      className="indicator-controls indicator-category-items"
+                      hidden={!open}
+                    >
+                      {getIndicatorsByCategory(category).map((item) =>
+                        renderIndicatorMenuItem(item, category),
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
-        <span className="toolbar-divider" />
         <div
-          className="indicator-controls"
+          className="indicator-controls indicator-favorites"
           role="group"
-          aria-label={copy.indicatorsTitle}
+          aria-label={copy.indicatorSettings.favorites}
         >
-          {INDICATORS.map((item) => {
-            const focused = focusedIndicator === item.id;
-            const visible = visibleIndicatorIds.includes(item.id);
-            const accessibleLabel = `${copy.indicators[item.id].name} ${copy.common.separator} ${
-              visible
-                ? copy.indicatorSettings.visible
-                : copy.indicatorSettings.hidden
-            }`;
-            return (
-              <button
-                type="button"
-                id={`indicator-tab-${item.id}`}
-                aria-controls="indicator-settings-panel"
-                aria-pressed={visible}
-                aria-current={focused ? "true" : undefined}
-                aria-label={accessibleLabel}
-                key={item.id}
-                className={`${focused ? "focused" : ""} ${
-                  visible ? "visible" : ""
-                }`.trim()}
-                onClick={() => toggleIndicator(item.id)}
-                title={accessibleLabel}
-              >
-                {copy.indicators[item.id].short}
-              </button>
-            );
-          })}
+          <span className="indicator-menu-label">
+            <Star size={12} aria-hidden="true" />
+            {copy.indicatorSettings.favorites}
+          </span>
+          {favoriteIndicatorIds.map((id) =>
+            renderIndicatorControl(getIndicator(id), "favorite"),
+          )}
         </div>
       </section>
 
@@ -2931,6 +4785,11 @@ export function MarketWorkspace() {
           <span>{copy.indicatorSettings.eyebrow}</span>
           <strong>{copy.indicators[focusedIndicator].name}</strong>
         </div>
+        {focusedIndicatorVolumeUnavailable ? (
+          <span className="indicator-volume-warning" role="status">
+            {copy.indicatorSettings.volumeUnavailable}
+          </span>
+        ) : null}
         {activeIndicator.parameters.length > 0 ? (
           <div className="indicator-parameter-controls">
             {activeIndicator.parameters.map((parameter) => (
@@ -2940,16 +4799,16 @@ export function MarketWorkspace() {
                     parameter.key as keyof typeof copy.parameters
                   ]}
                 </span>
-                <input
+                <CommittedNumberInput
                   name={`indicator-${parameter.key}`}
-                  type="number"
                   value={indicatorParameters[parameter.key]}
                   min={parameter.minimum}
                   step={parameter.step}
-                  onChange={(event) =>
+                  integer={parameter.step >= 1}
+                  onCommit={(value) =>
                     updateIndicatorParameter(
                       parameter.key,
-                      Number(event.target.value),
+                      value,
                     )
                   }
                 />
@@ -2962,11 +4821,37 @@ export function MarketWorkspace() {
           </span>
         )}
         <button
+          className={`indicator-favorite-button ${
+            favoriteIndicatorIds.includes(focusedIndicator) ? "favorite" : ""
+          }`}
+          type="button"
+          onClick={() => toggleIndicatorFavorite(focusedIndicator)}
+          aria-pressed={favoriteIndicatorIds.includes(focusedIndicator)}
+          aria-label={`${
+            favoriteIndicatorIds.includes(focusedIndicator)
+              ? copy.indicatorSettings.removeFavorite
+              : copy.indicatorSettings.addFavorite
+          } ${copy.indicators[focusedIndicator].name}`}
+        >
+          <Star
+            size={13}
+            fill={
+              favoriteIndicatorIds.includes(focusedIndicator)
+                ? "currentColor"
+                : "none"
+            }
+          />
+          {favoriteIndicatorIds.includes(focusedIndicator)
+            ? copy.indicatorSettings.removeFavorite
+            : copy.indicatorSettings.addFavorite}
+        </button>
+        <button
           className={`indicator-visibility-button ${
             focusedIndicatorVisible ? "visible" : ""
           }`}
           type="button"
           onClick={toggleFocusedIndicator}
+          disabled={focusedIndicatorVolumeUnavailable}
           aria-pressed={focusedIndicatorVisible}
           aria-label={`${
             focusedIndicatorVisible
@@ -3004,15 +4889,14 @@ export function MarketWorkspace() {
                 <span>
                   {copy.indicatorSettings.visibleIndicators}{" "}
                   {copy.common.separator}{" "}
-                  {visibleIndicatorIds.length > 0
-                    ? visibleIndicatorIds
-                        .map((id) => copy.indicators[id].short)
+                  {chartIndicators.length > 0
+                    ? chartIndicators
+                        .map((indicator) => copy.indicators[indicator.id].short)
                         .join(" / ")
                     : copy.indicatorSettings.none}
                 </span>
                 <small>
                   {copy.indicatorSettings.activeStrategy}{" "}
-                  {copy.common.separator} {copy.chart.strategyLines.prefix}{" "}
                   {copy.common.separator}{" "}
                   {appliedStrategySummary || copy.lab.noStrategy}
                 </small>
@@ -3049,18 +4933,46 @@ export function MarketWorkspace() {
                     <span>
                       {series.bars.length} {copy.chart.bars}
                     </span>
-                     <span>{copy.sources[series.source]}</span>
                      <span>
-                       {
-                         copy.chart.latestBarStatus[
-                           series.latestBarStatus
-                         ]
+                       {copy.chart.canonicalSource}{" "}
+                       {copy.sources[series.source]}
+                     </span>
+                     <span
+                       title={
+                         sourceHealthSummary ||
+                         copy.chart.sourceHealthUnavailable
                        }
+                     >
+                       {copy.chart.sourceHealth} {sourceHealth.length}
+                     </span>
+                     {credentialIssueCount > 0 && (
+                       <span
+                         className="source-credential-warning"
+                         title={
+                           copy.errors.PROVIDER_CREDENTIAL_INVALID
+                         }
+                       >
+                         {copy.chart.credentialIssues}{" "}
+                         {credentialIssueCount}
+                       </span>
+                     )}
+                     <span>
+                       {researchInterval === INTRADAY_INTERVAL
+                         ? copy.chart.latestIntradayBarStatus[
+                             series.latestBarStatus
+                           ]
+                         : copy.chart.latestBarStatus[
+                             series.latestBarStatus
+                           ]}
                      </span>
                      <span>
                       {copy.marketStats.asOf} {lastUpdated}
                     </span>
-                    <span>{copy.liveGuidance.autoRefresh}</span>
+                    <span>
+                      {researchInterval === INTRADAY_INTERVAL
+                        ? copy.liveGuidance.intradayAutoRefresh
+                        : copy.liveGuidance.autoRefresh}
+                    </span>
                   </>
                 )}
               </div>
@@ -3083,7 +4995,7 @@ export function MarketWorkspace() {
                 </strong>
                 <button
                   type="button"
-                  onClick={() => setRefreshVersion((value) => value + 1)}
+                  onClick={requestImmediateMarketRefresh}
                 >
                   {copy.retry}
                 </button>
@@ -3097,10 +5009,10 @@ export function MarketWorkspace() {
                     ? appliedBacktest.trades
                     : []
                 }
-                tradeMarkers={allocationTradeMarkers}
-                dataKey={`${activeInstrument.provider}:${activeInstrument.secid}:${DAILY_INTERVAL}`}
+                tradeMarkers={appliedTradeMarkers}
+                dataKey={`${activeInstrument.provider}:${activeInstrument.secid}:${researchInterval}`}
                 chartType={chartType}
-                visibleIndicators={visibleIndicators}
+                visibleIndicators={chartIndicators}
                 strategyConfigurations={strategyConfigurations}
                 ariaLabel={copy.chart.aria}
                 labels={priceChartLabels}
@@ -3127,18 +5039,6 @@ export function MarketWorkspace() {
             <div>
               <span className="eyebrow">{copy.savedBacktests.eyebrow}</span>
               <strong>{copy.savedBacktests.title}</strong>
-              {startDate && endDate && (
-                <small className="saved-shortcuts-range">
-                  {copy.savedBacktests.returnRange}
-                  {copy.common.colon}
-                  {startDate} — {endDate}
-                  {" "}
-                  {copy.common.separator}
-                  {" "}
-                  {sharedRangeSessions}
-                  {copy.screening.tradingSessions}
-                </small>
-              )}
             </div>
             <div className="saved-shortcuts-save">
               <button
@@ -3162,7 +5062,17 @@ export function MarketWorkspace() {
                       : saveStatus === "error"
                         ? copy.savedBacktests.saveError
                         : copy.savedBacktests.save}
-                </span>
+                  </span>
+              </button>
+              <button
+                className="saved-shortcut-folder-create"
+                type="button"
+                disabled={savedBacktestFolderSaving}
+                onClick={() => void createSavedBacktestFolder("instrument")}
+                aria-label={copy.savedBacktests.createInstrumentFolder}
+                title={copy.savedBacktests.createInstrumentFolder}
+              >
+                <FolderPlus size={15} />
               </button>
               <Bookmark size={19} />
             </div>
@@ -3177,7 +5087,7 @@ export function MarketWorkspace() {
                 <LoaderCircle className="spin" size={14} />
                 {copy.savedBacktests.loading}
               </div>
-            ) : savedBacktests.length === 0 ? (
+            ) : savedBacktests.length === 0 && savedBacktestFolders.length === 0 ? (
               <div className="saved-shortcuts-state">
                 {savedBacktestsError
                   ? copy.savedBacktests.loadError
@@ -3190,7 +5100,147 @@ export function MarketWorkspace() {
                     {copy.savedBacktests.loadError}
                   </div>
                 )}
-                {savedBacktestGroups.map((group) => {
+                {savedBacktestInstrumentSections.map((section) => {
+                  const folderExpanded = section.folder
+                    ? !collapsedSavedBacktestFolderIds.includes(
+                        section.folder.id,
+                      )
+                    : true;
+                  const folderPanelId = section.folder
+                    ? `saved-backtest-folder-${section.folder.id}`
+                    : undefined;
+                  const folderDropKey = section.folder
+                    ? `folder:${section.folder.id}`
+                    : "";
+                  return (
+                    <div
+                      className={`saved-shortcut-folder-section ${
+                        section.folder ? "filed" : "unfiled"
+                      } ${
+                        section.folder &&
+                        savedBacktestDrag?.kind === "folder" &&
+                        savedBacktestDrag.folderId === section.folder.id
+                          ? "dragging"
+                          : ""
+                      } ${
+                        section.folder &&
+                        savedBacktestDropTarget === folderDropKey
+                          ? "drag-over"
+                          : ""
+                      }`}
+                      key={
+                        section.folder
+                          ? `folder-${section.folder.id}`
+                          : "unfiled"
+                      }
+                      onDragOver={(event) => {
+                        if (
+                          section.folder &&
+                          savedBacktestDrag?.kind === "folder" &&
+                          savedBacktestDrag.folderId !== section.folder.id &&
+                          savedBacktestDrag.scope === section.folder.scope &&
+                          savedBacktestDrag.contextKey ===
+                            section.folder.contextKey
+                        ) {
+                          event.preventDefault();
+                          event.dataTransfer.dropEffect = "move";
+                          setSavedBacktestDropTarget(folderDropKey);
+                        }
+                      }}
+                      onDrop={(event) => {
+                        if (section.folder) {
+                          dropSavedBacktestFolder(event, section.folder);
+                        }
+                      }}
+                    >
+                      {section.folder && (
+                        <div className="saved-shortcut-folder-heading">
+                          <button
+                            className="saved-shortcut-folder-drag-handle"
+                            type="button"
+                            draggable={!savedBacktestFolderSaving}
+                            onDragStart={(event) =>
+                              startSavedBacktestDrag(event, {
+                                kind: "folder",
+                                folderId: section.folder!.id,
+                                scope: section.folder!.scope,
+                                contextKey: section.folder!.contextKey,
+                              })
+                            }
+                            onDragEnd={finishSavedBacktestDrag}
+                            onKeyDown={(event) => {
+                              if (event.key === "ArrowUp") {
+                                event.preventDefault();
+                                moveSavedBacktestFolderByOffset(
+                                  section.folder!,
+                                  -1,
+                                );
+                              } else if (event.key === "ArrowDown") {
+                                event.preventDefault();
+                                moveSavedBacktestFolderByOffset(
+                                  section.folder!,
+                                  1,
+                                );
+                              }
+                            }}
+                            aria-label={`${copy.savedBacktests.reorderFolder} ${section.folder.name}`}
+                          >
+                            <GripVertical size={13} />
+                          </button>
+                          <button
+                            className="saved-shortcut-folder-toggle"
+                            type="button"
+                            onClick={() =>
+                              toggleSavedBacktestFolder(section.folder!.id)
+                            }
+                            aria-expanded={folderExpanded}
+                            aria-controls={folderPanelId}
+                          >
+                            {folderExpanded ? (
+                              <ChevronDown size={13} />
+                            ) : (
+                              <ChevronRight size={13} />
+                            )}
+                            <Folder size={14} aria-hidden="true" />
+                            <strong>{section.folder.name}</strong>
+                            <small>
+                              {section.groups.length > 0
+                                ? `${section.groups.length}`
+                                : copy.savedBacktests.emptyFolder}
+                            </small>
+                          </button>
+                          <button
+                            className="saved-shortcut-folder-edit"
+                            type="button"
+                            disabled={savedBacktestFolderSaving}
+                            onClick={() =>
+                              void renameSavedBacktestFolder(section.folder!)
+                            }
+                            aria-label={`${copy.savedBacktests.renameFolder} ${section.folder.name}`}
+                            title={copy.savedBacktests.renameFolder}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                          <button
+                            className="saved-shortcut-folder-delete"
+                            type="button"
+                            disabled={savedBacktestFolderSaving}
+                            onClick={() =>
+                              void deleteSavedBacktestFolder(section.folder!)
+                            }
+                            aria-label={`${copy.savedBacktests.deleteFolder} ${section.folder.name}`}
+                            title={copy.savedBacktests.deleteFolder}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      )}
+                      {folderExpanded && (
+                        <div
+                          className="saved-shortcut-folder-contents"
+                          id={folderPanelId}
+                        >
+                          {section.groups.map((group) => {
                   const expanded =
                     expandedSavedBacktestGroups.includes(group.key);
                   const groupPanelId = `saved-backtest-group-${group.key.replace(
@@ -3212,9 +5262,19 @@ export function MarketWorkspace() {
                       }`}
                       key={group.key}
                       onDragOver={(event) => {
+                        const sourceGroup =
+                          savedBacktestDrag?.kind === "group"
+                            ? savedBacktestGroups.find(
+                                (candidate) =>
+                                  candidate.key ===
+                                  savedBacktestDrag.groupKey,
+                              )
+                            : undefined;
                         if (
                           savedBacktestDrag?.kind === "group" &&
-                          savedBacktestDrag.groupKey !== group.key
+                          savedBacktestDrag.groupKey !== group.key &&
+                          (sourceGroup?.instrumentFolderId ?? null) ===
+                            (group.instrumentFolderId ?? null)
                         ) {
                           event.preventDefault();
                           event.dataTransfer.dropEffect = "move";
@@ -3276,6 +5336,51 @@ export function MarketWorkspace() {
                             {copy.savedBacktests.savedPlans}
                           </b>
                         </button>
+                        <select
+                          className="saved-shortcut-folder-select"
+                          value={group.instrumentFolderId ?? ""}
+                          disabled={savedBacktestFolderSaving}
+                          onChange={(event) =>
+                            void assignSavedBacktestInstrumentFolder(
+                              group.key,
+                              event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            )
+                          }
+                          aria-label={`${copy.savedBacktests.moveToFolder} ${group.instrument.name}`}
+                          title={copy.savedBacktests.instrumentFolder}
+                        >
+                          <option value="">{copy.savedBacktests.unfiled}</option>
+                          {instrumentShortcutFolders.map((folder) => (
+                            <option key={folder.id} value={folder.id}>
+                              {folder.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="saved-shortcut-group-folder-create"
+                          type="button"
+                          disabled={savedBacktestFolderSaving}
+                          onClick={() =>
+                            void createSavedBacktestFolder("strategy", group.key)
+                          }
+                          aria-label={`${copy.savedBacktests.createStrategyFolder} ${group.instrument.name}`}
+                          title={copy.savedBacktests.createStrategyFolder}
+                        >
+                          <FolderPlus size={13} />
+                        </button>
+                        <button
+                          className="saved-shortcut-group-delete"
+                          type="button"
+                          onClick={() =>
+                            void deleteSavedBacktestGroup(group.key)
+                          }
+                          aria-label={`${copy.savedBacktests.removeGroup} ${group.instrument.name}`}
+                          title={copy.savedBacktests.removeGroup}
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
 
                       {expanded && (
@@ -3283,7 +5388,176 @@ export function MarketWorkspace() {
                           className="saved-shortcut-group-records"
                           id={groupPanelId}
                         >
-                          {group.records.map((saved) => {
+                          {strategyShortcutSectionsForGroup(group).map(
+                            (strategySection) => {
+                              const strategyFolderExpanded =
+                                strategySection.folder
+                                  ? !collapsedSavedBacktestFolderIds.includes(
+                                      strategySection.folder.id,
+                                    )
+                                  : true;
+                              const strategyFolderPanelId =
+                                strategySection.folder
+                                  ? `saved-backtest-folder-${strategySection.folder.id}`
+                                  : undefined;
+                              const strategyFolderDropKey =
+                                strategySection.folder
+                                  ? `folder:${strategySection.folder.id}`
+                                  : "";
+                              return (
+                                <div
+                                  className={`saved-shortcut-strategy-folder-section ${
+                                    strategySection.folder
+                                      ? "filed"
+                                      : "unfiled"
+                                  } ${
+                                    strategySection.folder &&
+                                    savedBacktestDrag?.kind === "folder" &&
+                                    savedBacktestDrag.folderId ===
+                                      strategySection.folder.id
+                                      ? "dragging"
+                                      : ""
+                                  } ${
+                                    strategySection.folder &&
+                                    savedBacktestDropTarget ===
+                                      strategyFolderDropKey
+                                      ? "drag-over"
+                                      : ""
+                                  }`}
+                                  key={
+                                    strategySection.folder
+                                      ? `strategy-folder-${strategySection.folder.id}`
+                                      : `strategy-unfiled-${group.key}`
+                                  }
+                                  onDragOver={(event) => {
+                                    if (
+                                      strategySection.folder &&
+                                      savedBacktestDrag?.kind === "folder" &&
+                                      savedBacktestDrag.folderId !==
+                                        strategySection.folder.id &&
+                                      savedBacktestDrag.scope ===
+                                        strategySection.folder.scope &&
+                                      savedBacktestDrag.contextKey ===
+                                        strategySection.folder.contextKey
+                                    ) {
+                                      event.preventDefault();
+                                      event.dataTransfer.dropEffect = "move";
+                                      setSavedBacktestDropTarget(
+                                        strategyFolderDropKey,
+                                      );
+                                    }
+                                  }}
+                                  onDrop={(event) => {
+                                    if (strategySection.folder) {
+                                      dropSavedBacktestFolder(
+                                        event,
+                                        strategySection.folder,
+                                      );
+                                    }
+                                  }}
+                                >
+                                  {strategySection.folder && (
+                                    <div className="saved-shortcut-strategy-folder-heading">
+                                      <button
+                                        className="saved-shortcut-folder-drag-handle"
+                                        type="button"
+                                        draggable={!savedBacktestFolderSaving}
+                                        onDragStart={(event) =>
+                                          startSavedBacktestDrag(event, {
+                                            kind: "folder",
+                                            folderId:
+                                              strategySection.folder!.id,
+                                            scope:
+                                              strategySection.folder!.scope,
+                                            contextKey:
+                                              strategySection.folder!
+                                                .contextKey,
+                                          })
+                                        }
+                                        onDragEnd={finishSavedBacktestDrag}
+                                        onKeyDown={(event) => {
+                                          if (event.key === "ArrowUp") {
+                                            event.preventDefault();
+                                            moveSavedBacktestFolderByOffset(
+                                              strategySection.folder!,
+                                              -1,
+                                            );
+                                          } else if (
+                                            event.key === "ArrowDown"
+                                          ) {
+                                            event.preventDefault();
+                                            moveSavedBacktestFolderByOffset(
+                                              strategySection.folder!,
+                                              1,
+                                            );
+                                          }
+                                        }}
+                                        aria-label={`${copy.savedBacktests.reorderFolder} ${strategySection.folder.name}`}
+                                      >
+                                        <GripVertical size={12} />
+                                      </button>
+                                      <button
+                                        className="saved-shortcut-folder-toggle"
+                                        type="button"
+                                        onClick={() =>
+                                          toggleSavedBacktestFolder(
+                                            strategySection.folder!.id,
+                                          )
+                                        }
+                                        aria-expanded={strategyFolderExpanded}
+                                        aria-controls={strategyFolderPanelId}
+                                      >
+                                        {strategyFolderExpanded ? (
+                                          <ChevronDown size={12} />
+                                        ) : (
+                                          <ChevronRight size={12} />
+                                        )}
+                                        <Folder size={13} aria-hidden="true" />
+                                        <strong>
+                                          {strategySection.folder.name}
+                                        </strong>
+                                        <small>
+                                          {strategySection.records.length > 0
+                                            ? `${strategySection.records.length}`
+                                            : copy.savedBacktests.emptyFolder}
+                                        </small>
+                                      </button>
+                                      <button
+                                        className="saved-shortcut-folder-edit"
+                                        type="button"
+                                        disabled={savedBacktestFolderSaving}
+                                        onClick={() =>
+                                          void renameSavedBacktestFolder(
+                                            strategySection.folder!,
+                                          )
+                                        }
+                                        aria-label={`${copy.savedBacktests.renameFolder} ${strategySection.folder.name}`}
+                                        title={copy.savedBacktests.renameFolder}
+                                      >
+                                        <Pencil size={11} />
+                                      </button>
+                                      <button
+                                        className="saved-shortcut-folder-delete"
+                                        type="button"
+                                        disabled={savedBacktestFolderSaving}
+                                        onClick={() =>
+                                          void deleteSavedBacktestFolder(
+                                            strategySection.folder!,
+                                          )
+                                        }
+                                        aria-label={`${copy.savedBacktests.deleteFolder} ${strategySection.folder.name}`}
+                                        title={copy.savedBacktests.deleteFolder}
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    </div>
+                                  )}
+                                  {strategyFolderExpanded && (
+                                    <div
+                                      className="saved-shortcut-folder-contents"
+                                      id={strategyFolderPanelId}
+                                    >
+                                      {strategySection.records.map((saved) => {
                             const requestedInstrumentActive =
                               saved.instrument.secid === instrument.secid &&
                               saved.instrument.provider ===
@@ -3296,7 +5570,7 @@ export function MarketWorkspace() {
                             const active =
                               (requestedInstrumentActive ||
                                 resolvedInstrumentActive) &&
-                              saved.interval === DAILY_INTERVAL &&
+                              saved.interval === researchInterval &&
                               appliedStrategyPlan !== null &&
                               strategyPlansEqual(
                                 saved.plan,
@@ -3326,13 +5600,47 @@ export function MarketWorkspace() {
                               .filter(Boolean)
                               .join(" + ");
                             const recordDropKey = `record:${saved.id}`;
-                            const currentRangeMetrics =
-                              savedBacktestRangeMetrics.get(saved.id) ??
+                            const rollingMetrics =
+                              savedBacktestRollingMetrics.get(saved.id) ??
                               null;
-                            const usesCurrentRange =
-                              savedBacktestRangeMetrics.has(saved.id);
+                            const recentReview =
+                              savedBacktestRecentReviews.get(saved.id) ??
+                              null;
                             const displayedReturn =
-                              currentRangeMetrics?.totalReturn ?? null;
+                              resolveSavedBacktestReturnDisplay(
+                                rollingMetrics,
+                                saved.metrics,
+                                saved.rollingTotalReturn,
+                              );
+                            const addedAt = cacheTimeFormatter.format(
+                              new Date(saved.createdAt),
+                            );
+                            const savedStrategyAEntryFilter =
+                              strategyPlanEntryFilter(
+                                saved.plan,
+                                "strategyA",
+                              );
+                            const savedStrategyBEntryFilter =
+                              strategyPlanEntryFilter(
+                                saved.plan,
+                                "strategyB",
+                              );
+                            const savedEntryFilterSummary = [
+                              saved.plan.strategyA &&
+                              savedStrategyAEntryFilter
+                                ? `A ${formatMovingAverageSlopeFilter(
+                                    savedStrategyAEntryFilter,
+                                  )}`
+                                : null,
+                              saved.plan.strategyB &&
+                              savedStrategyBEntryFilter
+                                ? `B ${formatMovingAverageSlopeFilter(
+                                    savedStrategyBEntryFilter,
+                                  )}`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" / ");
                             return (
                               <div
                                 className={`saved-shortcut ${
@@ -3351,10 +5659,20 @@ export function MarketWorkspace() {
                                 }`}
                                 key={saved.id}
                                 onDragOver={(event) => {
+                                  const draggedRecordId =
+                                    savedBacktestDrag?.kind === "record"
+                                      ? savedBacktestDrag.recordId
+                                      : null;
+                                  const sourceRecord = group.records.find(
+                                    (record) =>
+                                      record.id === draggedRecordId,
+                                  );
                                   if (
                                     savedBacktestDrag?.kind === "record" &&
                                     savedBacktestDrag.groupKey === group.key &&
-                                    savedBacktestDrag.recordId !== saved.id
+                                    savedBacktestDrag.recordId !== saved.id &&
+                                    (sourceRecord?.strategyFolderId ?? null) ===
+                                      (saved.strategyFolderId ?? null)
                                   ) {
                                     event.preventDefault();
                                     event.dataTransfer.dropEffect = "move";
@@ -3408,84 +5726,81 @@ export function MarketWorkspace() {
                                   className="saved-shortcut-main"
                                   type="button"
                                   onClick={() => openSavedBacktest(saved)}
-                                  aria-label={`${copy.savedBacktests.open} ${group.instrument.name} ${strategyLabel}`}
+                                  aria-label={`${copy.savedBacktests.open} ${group.instrument.name} ${strategyLabel} ${copy.savedBacktests.addedAt} ${addedAt}`}
                                 >
                                   <span className="saved-shortcut-name">
                                     <strong>{strategyLabel}</strong>
                                     <b
                                       className={
-                                        displayedReturn === null
-                                          ? "neutral"
-                                          : displayedReturn >= 0
+                                        displayedReturn.totalReturn >= 0
                                             ? "positive"
                                             : "negative"
                                       }
                                     >
-                                      {displayedReturn === null
-                                        ? copy.common.unavailable
-                                        : formatPercent(
-                                            displayedReturn,
-                                            true,
-                                          )}
+                                      {formatPercent(
+                                        displayedReturn.totalReturn,
+                                        true,
+                                      )}
                                     </b>
                                   </span>
                                   <small>
-                                    {usesCurrentRange
-                                      ? copy.savedBacktests.currentRange
-                                      : copy.savedBacktests
-                                          .switchToCalculate}
+                                    {copy.savedBacktests.addedAt} ·{" "}
+                                    <time dateTime={saved.createdAt}>
+                                      {addedAt}
+                                    </time>
                                   </small>
-                                  <small>
-                                    {copy.intervals[saved.interval]}{" "}
-                                    {copy.common.separator}{" "}
-                                    {saved.plan.strategyA
-                                      ? `A ${Math.round(
-                                          saved.plan
-                                            .strategyAAllocation * 100,
-                                        )}%`
-                                      : ""}
-                                    {saved.plan.strategyA &&
-                                    saved.plan.strategyB
-                                      ? " + "
-                                      : ""}
-                                    {saved.plan.strategyB
-                                      ? `B ${Math.round(
-                                          saved.plan
-                                            .strategyBAllocation * 100,
-                                        )}%`
-                                      : ""}
-                                  </small>
-                                  <small>
-                                    {copy.savedBacktests.indicatorsPrefix}{" "}
-                                    {saved.indicators.length > 0
-                                      ? saved.indicators
-                                          .map(
-                                            (indicator) =>
-                                              copy.indicators[
-                                                indicator.id
-                                              ].short,
-                                          )
-                                          .join(" + ")
-                                      : copy.savedBacktests.noIndicators}
-                                  </small>
-                                  <small>
-                                    {copy.entryFilter.savedPrefix}{" "}
-                                    A{" "}
-                                    {formatMovingAverageSlopeFilter(
-                                      strategyPlanEntryFilter(
-                                        saved.plan,
-                                        "strategyA",
-                                      ),
+                                  {recentReview && (
+                                    <small
+                                      className={`saved-shortcut-validation review-${recentReview.status}`}
+                                      title={recentValidationTitle(recentReview)}
+                                    >
+                                      {recentValidationLabel(recentReview)}
+                                    </small>
+                                  )}
+                                  {saved.plan.strategyA &&
+                                    saved.plan.strategyB && (
+                                      <>
+                                        <small>
+                                          A{" "}
+                                          {Math.round(
+                                            saved.plan
+                                              .strategyAAllocation * 100,
+                                          )}
+                                          % + B{" "}
+                                          {Math.round(
+                                            saved.plan
+                                              .strategyBAllocation * 100,
+                                          )}
+                                          %
+                                        </small>
+                                        <small>
+                                          {
+                                            copy.lab.tacticalModes[
+                                              resolveTacticalAllocationMode(
+                                                saved.plan.tacticalMode,
+                                              )
+                                            ]
+                                          }
+                                        </small>
+                                      </>
                                     )}
-                                    {saved.plan.strategyB
-                                      ? ` / B ${formatMovingAverageSlopeFilter(
-                                          strategyPlanEntryFilter(
-                                            saved.plan,
-                                            "strategyB",
-                                          ),
-                                        )}`
-                                      : ""}
-                                  </small>
+                                  {saved.indicators.length > 0 && (
+                                    <small>
+                                      {copy.savedBacktests.indicatorsPrefix}{" "}
+                                      {saved.indicators
+                                        .map(
+                                          (indicator) =>
+                                            copy.indicators[indicator.id].short,
+                                        )
+                                        .join(" + ")}
+                                    </small>
+                                  )}
+                                  {savedEntryFilterSummary.length > 0 && (
+                                    <small>
+                                      {copy.entryFilter.savedPrefix}{" "}
+                                      {savedEntryFilterSummary}
+                                    </small>
+                                  )}
                                   {saved.interval !== DAILY_INTERVAL && (
                                     <span className="saved-shortcut-legacy">
                                       {
@@ -3500,6 +5815,32 @@ export function MarketWorkspace() {
                                     </span>
                                   )}
                                 </button>
+                                <select
+                                  className="saved-shortcut-folder-select strategy"
+                                  value={saved.strategyFolderId ?? ""}
+                                  disabled={savedBacktestFolderSaving}
+                                  onChange={(event) =>
+                                    void assignSavedBacktestStrategyFolder(
+                                      saved.id,
+                                      event.target.value
+                                        ? Number(event.target.value)
+                                        : null,
+                                    )
+                                  }
+                                  aria-label={`${copy.savedBacktests.moveToFolder} ${strategyLabel}`}
+                                  title={copy.savedBacktests.strategyFolder}
+                                >
+                                  <option value="">
+                                    {copy.savedBacktests.unfiled}
+                                  </option>
+                                  {strategyShortcutFoldersForGroup(
+                                    group.key,
+                                  ).map((folder) => (
+                                    <option key={folder.id} value={folder.id}>
+                                      {folder.name}
+                                    </option>
+                                  ))}
+                                </select>
                                 <button
                                   className="saved-shortcut-delete"
                                   type="button"
@@ -3512,7 +5853,18 @@ export function MarketWorkspace() {
                                   <Trash2 size={12} />
                                 </button>
                               </div>
-                            );
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                              );
+                            },
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
                           })}
                         </div>
                       )}
@@ -3527,13 +5879,17 @@ export function MarketWorkspace() {
 
       <section className="research-lab-grid">
         <aside className="strategy-panel panel">
-          <div className="panel-heading">
+          <div className="panel-heading strategy-panel-heading">
             <div>
               <span className="eyebrow">{copy.lab.title}</span>
               <div className="strategy-title-line">
                 <strong>
                   {selectedStrategySummary || copy.lab.noStrategy}
                 </strong>
+              </div>
+            </div>
+            <div className="strategy-heading-controls">
+              <div className="strategy-horizon-badges">
                 {strategyAId && strategyBId && relativeLongStrategy && (
                   <span
                     className={`horizon-badge ${
@@ -3556,26 +5912,25 @@ export function MarketWorkspace() {
                     {relativeLongStrategy === "strategyB"
                       ? copy.lab.relativeLong
                       : copy.lab.relativeShort}
-                  </span>
+                    </span>
                 )}
               </div>
-            </div>
-            <div className="lab-heading-actions">
-              <button
-                className="apply-current-strategy-button"
-                type="button"
-                onClick={applyCurrentStrategyToChart}
-                aria-label={copy.lab.applyToChart}
-                title={copy.lab.applyToChart}
-              >
-                <LineChart size={14} />
-                <span>{copy.lab.apply}</span>
-              </button>
-              <FlaskConical size={19} />
+              <div className="lab-heading-actions">
+                <button
+                  className="apply-current-strategy-button"
+                  type="button"
+                  onClick={applyCurrentStrategyToChart}
+                  disabled={!strategyPlan || strategyPlanVolumeUnavailable}
+                  aria-label={copy.lab.applyToChart}
+                  title={copy.lab.applyToChart}
+                >
+                  <LineChart size={14} />
+                  <span>{copy.lab.apply}</span>
+                </button>
+                <FlaskConical size={19} />
+              </div>
             </div>
           </div>
-          <p className="panel-copy">{copy.lab.subtitle}</p>
-
           <div className="strategy-selector-grid">
             <div className="strategy-selector-card">
               <label className="field-label">
@@ -3595,20 +5950,21 @@ export function MarketWorkspace() {
                       key={strategy.id}
                       value={strategy.id}
                       disabled={
-                        strategyBId
+                        (!reliableVolume &&
+                          strategyRequiresVolume(strategy.id)) ||
+                        (strategyBId
                           ? areStrategiesEquivalent(strategy.id, strategyBId)
-                          : false
+                          : false)
                       }
                     >
                       {copy.strategies[strategy.id].name}
+                      {!reliableVolume &&
+                      strategyRequiresVolume(strategy.id)
+                        ? ` (${copy.lab.volumeRequiredSuffix})`
+                        : ""}
                     </option>
                   ))}
                 </select>
-                <small>
-                  {strategyAId
-                    ? copy.strategies[strategyAId].description
-                    : copy.lab.noStrategyADescription}
-                </small>
               </label>
               {strategyAId && (
                 <>
@@ -3623,6 +5979,7 @@ export function MarketWorkspace() {
                     namePrefix="strategy-a-entry-filter"
                     draft={strategyAEntryFilterDraft}
                     onChange={setStrategyAEntryFilterDraft}
+                    intraday={researchInterval === INTRADAY_INTERVAL}
                   />
                 </>
               )}
@@ -3645,20 +6002,21 @@ export function MarketWorkspace() {
                       key={strategy.id}
                       value={strategy.id}
                       disabled={
-                        strategyAId
+                        (!reliableVolume &&
+                          strategyRequiresVolume(strategy.id)) ||
+                        (strategyAId
                           ? areStrategiesEquivalent(strategy.id, strategyAId)
-                          : false
+                          : false)
                       }
                     >
                       {copy.strategies[strategy.id].name}
+                      {!reliableVolume &&
+                      strategyRequiresVolume(strategy.id)
+                        ? ` (${copy.lab.volumeRequiredSuffix})`
+                        : ""}
                     </option>
                   ))}
                 </select>
-                <small>
-                  {strategyBId
-                    ? copy.strategies[strategyBId].description
-                    : copy.lab.noStrategyBDescription}
-                </small>
               </label>
               {strategyBId && (
                 <>
@@ -3673,6 +6031,7 @@ export function MarketWorkspace() {
                     namePrefix="strategy-b-entry-filter"
                     draft={strategyBEntryFilterDraft}
                     onChange={setStrategyBEntryFilterDraft}
+                    intraday={researchInterval === INTRADAY_INTERVAL}
                   />
                 </>
               )}
@@ -3706,7 +6065,6 @@ export function MarketWorkspace() {
                   ))
                 )}
               </select>
-              <small>{copy.lab.strategyAAllocationHint}</small>
             </label>
             <label className="field-label">
               <span>{copy.lab.strategyBAllocation}</span>
@@ -3734,37 +6092,77 @@ export function MarketWorkspace() {
                   ))
                 )}
               </select>
-              <small>{copy.lab.strategyBAllocationHint}</small>
+            </label>
+            <label className="field-label tactical-allocation-mode">
+              <span>{copy.lab.tacticalMode}</span>
+              <select
+                name="tactical-allocation-mode"
+                value={tacticalAllocationMode}
+                disabled={!strategyAId || !strategyBId}
+                onChange={(event) =>
+                  setTacticalAllocationMode(
+                    event.target.value as TacticalAllocationMode,
+                  )
+                }
+              >
+                {TACTICAL_ALLOCATION_MODES.map((mode) => (
+                  <option key={mode} value={mode}>
+                    {copy.lab.tacticalModes[mode]}
+                  </option>
+                ))}
+              </select>
             </label>
           </div>
 
           <div className="date-grid">
             <label className="field-label">
-              <span>{copy.lab.start}</span>
+              <span>
+                {researchInterval === INTRADAY_INTERVAL
+                  ? copy.lab.startTime
+                  : copy.lab.start}
+              </span>
               <input
-                type="date"
-                value={startDate}
-                min={minDate}
-                max={endDate || maxDate}
+                type={
+                  researchInterval === INTRADAY_INTERVAL
+                    ? "datetime-local"
+                    : "date"
+                }
+                value={workspaceTimeInputValue(startDate, researchInterval)}
+                min={workspaceTimeInputValue(minDate, researchInterval)}
+                max={workspaceTimeInputValue(
+                  endDate || maxDate,
+                  researchInterval,
+                )}
                 onChange={(event) => {
                   updateSharedRangeFromDates(
-                    event.target.value,
+                    marketTimeFromInput(event.target.value),
                     endDate,
                   );
                 }}
               />
             </label>
             <label className="field-label">
-              <span>{copy.lab.end}</span>
+              <span>
+                {researchInterval === INTRADAY_INTERVAL
+                  ? copy.lab.endTime
+                  : copy.lab.end}
+              </span>
               <input
-                type="date"
-                value={endDate}
-                min={startDate || minDate}
-                max={maxDate}
+                type={
+                  researchInterval === INTRADAY_INTERVAL
+                    ? "datetime-local"
+                    : "date"
+                }
+                value={workspaceTimeInputValue(endDate, researchInterval)}
+                min={workspaceTimeInputValue(
+                  startDate || minDate,
+                  researchInterval,
+                )}
+                max={workspaceTimeInputValue(maxDate, researchInterval)}
                 onChange={(event) => {
                   updateSharedRangeFromDates(
                     startDate,
-                    event.target.value,
+                    marketTimeFromInput(event.target.value),
                   );
                 }}
               />
@@ -3774,38 +6172,29 @@ export function MarketWorkspace() {
           <div className="settings-grid">
             <label className="field-label">
               <span>{copy.lab.initialCash}</span>
-              <input
-                type="number"
+              <CommittedNumberInput
                 value={initialCash}
                 min={1000}
                 step={10000}
-                onChange={(event) => {
-                  setInitialCash(Math.max(Number(event.target.value), 1000))
-                }}
+                onCommit={setInitialCash}
               />
             </label>
             <label className="field-label">
               <span>{copy.lab.commission} %</span>
-              <input
-                type="number"
+              <CommittedNumberInput
                 value={commissionPercent}
                 min={0}
                 step={0.01}
-                onChange={(event) => {
-                  setCommissionPercent(Math.max(Number(event.target.value), 0))
-                }}
+                onCommit={setCommissionPercent}
               />
             </label>
             <label className="field-label">
               <span>{copy.lab.slippage} %</span>
-              <input
-                type="number"
+              <CommittedNumberInput
                 value={slippagePercent}
                 min={0}
                 step={0.01}
-                onChange={(event) => {
-                  setSlippagePercent(Math.max(Number(event.target.value), 0))
-                }}
+                onCommit={setSlippagePercent}
               />
             </label>
           </div>
@@ -3890,8 +6279,6 @@ export function MarketWorkspace() {
                         : copy.common.unavailable}
                 </span>
               </div>
-              <p>{copy.stability.description}</p>
-
               {stability && !stability.evidence.sufficient && (
                 <div className="stability-evidence" role="status">
                   <strong>{copy.stability.insufficientEvidence}</strong>
@@ -3901,6 +6288,7 @@ export function MarketWorkspace() {
                         {formatStabilityEvidenceReason(
                           reason,
                           stability.evidence,
+                          researchInterval,
                         )}
                       </li>
                     ))}
@@ -3986,11 +6374,10 @@ export function MarketWorkspace() {
                     </dl>
                   </div>
                 </>
-              ) : !stability ? (
+              ) : !stability &&
+                (!strategyPlan || usesSingleFullAllocation) ? (
                 <div className="stability-unavailable">
-                  {strategyPlan && !usesSingleFullAllocation
-                    ? copy.stability.planUnavailable
-                    : copy.stability.unavailable}
+                  {copy.stability.unavailable}
                 </div>
               ) : null}
             </section>
@@ -4014,7 +6401,6 @@ export function MarketWorkspace() {
                 <Sparkles size={21} />
                 {copy.screening.title}
               </h2>
-              <p>{copy.screening.description}</p>
             </div>
             <div className="screening-config">
               <fieldset className="screening-config-group screening-optimization-group">
@@ -4038,18 +6424,10 @@ export function MarketWorkspace() {
                         </option>
                       ))}
                     </select>
-                    <small>
-                      {
-                        copy.screening.objectiveDescriptions[
-                          screeningObjective
-                        ]
-                      }
-                    </small>
                   </label>
                   <div className="screening-control-field screening-full-traversal">
                     <span>{copy.screening.parameterTraversal}</span>
                     <strong>{copy.screening.fullTraversal}</strong>
-                    <small>{copy.screening.fullTraversalHint}</small>
                   </div>
                 </div>
               </fieldset>
@@ -4059,6 +6437,7 @@ export function MarketWorkspace() {
                 draft={screeningEntryFilterDraft}
                 onChange={setScreeningEntryFilterDraft}
                 disabled={screeningBusy}
+                intraday={researchInterval === INTRADAY_INTERVAL}
               />
               <fieldset className="screening-config-group screening-validation-group">
                 <legend>{copy.screening.validationGroup}</legend>
@@ -4075,40 +6454,39 @@ export function MarketWorkspace() {
                     }}
                   >
                     {SCREENING_VALIDATION_MODES.map((value) => (
-                      <option value={value} key={value}>
+                      <option
+                        value={value}
+                        key={value}
+                        disabled={
+                          researchInterval === INTRADAY_INTERVAL &&
+                          value === "rolling"
+                        }
+                      >
                         {copy.screening.validationModes[value]}
                       </option>
                     ))}
                   </select>
-                  <small>
-                    {
-                      copy.screening.validationDescriptions[
-                        screeningValidationMode
-                      ]
-                    }
-                  </small>
                 </label>
               {screeningValidationMode === "sample" && (
                 <fieldset className="screening-sample-windows">
                   <legend>{copy.screening.samplePeriodsTitle}</legend>
                   <label className="screening-sample-period-field">
-                    <span>{copy.screening.samplePeriodSessions}</span>
-                    <input
+                    <span>
+                      {researchInterval === INTRADAY_INTERVAL
+                        ? copy.screening.samplePeriodBars
+                        : copy.screening.samplePeriodSessions}
+                    </span>
+                    <CommittedNumberInput
                       name="strategy-sample-period-sessions"
-                      type="number"
                       min={3}
                       max={maximumSharedRangeSessions}
                       step={1}
                       value={sharedRangeSessions}
                       disabled={screeningBusy}
-                      onChange={(event) => {
-                        updateSharedRangeFromSessions(
-                          Number(event.target.value),
-                        );
-                      }}
+                      integer
+                      onCommit={updateSharedRangeFromSessions}
                     />
                   </label>
-                  <small>{copy.screening.samplePeriodsHint}</small>
                 </fieldset>
               )}
               {(screeningValidationMode === "range" ||
@@ -4127,71 +6505,85 @@ export function MarketWorkspace() {
                   </legend>
                   <div className="screening-date-window">
                     <label>
-                      <span>{copy.lab.start}</span>
+                      <span>
+                        {researchInterval === INTRADAY_INTERVAL
+                          ? copy.lab.startTime
+                          : copy.lab.start}
+                      </span>
                       <input
                         name="strategy-screening-range-start"
-                        type="date"
-                        value={
-                          screeningCustomRange.startTime || startDate
+                        type={
+                          researchInterval === INTRADAY_INTERVAL
+                            ? "datetime-local"
+                            : "date"
                         }
+                        value={workspaceTimeInputValue(
+                          screeningCustomRange.startTime || startDate,
+                          researchInterval,
+                        )}
                         disabled={screeningBusy}
                         onChange={(event) => {
                           setScreeningCustomRange((current) => ({
                             ...current,
-                            startTime: event.target.value,
+                            startTime: marketTimeFromInput(event.target.value),
                           }));
                         }}
                       />
                     </label>
                     <label>
-                      <span>{copy.lab.end}</span>
+                      <span>
+                        {researchInterval === INTRADAY_INTERVAL
+                          ? copy.lab.endTime
+                          : copy.lab.end}
+                      </span>
                       <input
                         name="strategy-screening-range-end"
-                        type="date"
-                        value={
-                          screeningCustomRange.endTime ||
-                          endDate ||
-                          maxDate
+                        type={
+                          researchInterval === INTRADAY_INTERVAL
+                            ? "datetime-local"
+                            : "date"
                         }
+                        value={workspaceTimeInputValue(
+                          screeningCustomRange.endTime ||
+                            endDate ||
+                            maxDate,
+                          researchInterval,
+                        )}
                         disabled={screeningBusy}
                         onChange={(event) => {
                           setScreeningCustomRange((current) => ({
                             ...current,
-                            endTime: event.target.value,
+                            endTime: marketTimeFromInput(event.target.value),
                           }));
                         }}
                       />
                     </label>
+                    <div className="screening-range-session-count">
+                      <span>
+                        {researchInterval === INTRADAY_INTERVAL
+                          ? copy.screening.rangeBars
+                          : copy.screening.rangeSessions}
+                      </span>
+                      <output>
+                        {screeningRangeSessions > 0
+                          ? screeningRangeSessions
+                          : copy.common.unavailable}
+                      </output>
+                    </div>
                   </div>
                   {screeningValidationMode === "rolling" && (
                     <label className="screening-control-field screening-rolling-window">
                       <span>{copy.screening.rollingWindowYears}</span>
-                      <input
+                      <CommittedNumberInput
                         name="strategy-rolling-window-years"
-                        type="number"
                         min={1}
                         max={30}
                         step={1}
                         value={rollingWindowYears}
                         disabled={screeningBusy}
-                        onChange={(event) => {
-                          const nextValue = Number(event.target.value);
-                          setRollingWindowYears(
-                            Math.min(
-                              Math.max(
-                                Number.isFinite(nextValue)
-                                  ? Math.floor(nextValue)
-                                  : 1,
-                                1,
-                              ),
-                              30,
-                            ),
-                          );
-                        }}
+                        integer
+                        onCommit={setRollingWindowYears}
                       />
-                      <small>
-                        {copy.screening.rollingWindowYearsHint}
-                      </small>
                     </label>
                   )}
                 </fieldset>
@@ -4199,11 +6591,10 @@ export function MarketWorkspace() {
               </fieldset>
             </div>
             <div className="screening-action-field">
-              <span>{copy.screening.actionLabel}</span>
               <button
                 type="button"
                 className={`primary-action ${screening ? "stop" : ""}`}
-                disabled={!series}
+                disabled={!series || screeningBlockedByVolume}
                 onClick={() =>
                   screening ? stopScreening() : void startScreening()
                 }
@@ -4215,31 +6606,11 @@ export function MarketWorkspace() {
                 )}
                 {screening ? copy.screening.stop : copy.screening.action}
               </button>
-            </div>
-          </div>
-          <div className="screening-meta">
-            <div className="screening-meta-copy">
-              <p className="screening-status-rule">
-                {copy.screening.statusRule}
-              </p>
-              {hasScreeningResults && (
-                <p className="screening-result-context">
-                  {copy.screening.resultSnapshotNotice}
-                  {" "}
-                  {copy.screening.sampleResultMetricNotice}
-                  {" "}
-                  {copy.screening.entryFilterSnapshot}{" "}
-                  {copy.entryFilter.resultPrefix}
-                  {copy.common.colon}
-                  {formatMovingAverageSlopeFilter(
-                    screeningResultEntryFilter,
-                  )}
-                </p>
-              )}
-            </div>
-            <div className="risk-note">
-              <ShieldAlert size={15} />
-              <span>{copy.screening.validationOverfit}</span>
+              {!reliableVolume ? (
+                <small className="screening-volume-notice" role="status">
+                  {copy.screening.volumeLimited}
+                </small>
+              ) : null}
             </div>
           </div>
           {screeningError && (
@@ -4278,11 +6649,7 @@ export function MarketWorkspace() {
                                   ? copy.combinationScreening.runningPairs
                                   : copy.combinationScreening
                                       .runningAllocations
-                            : validationProgress.phase === "selection"
-                              ? copy.screening.runningValidation
-                              : validationProgress.phase === "display"
-                                ? copy.screening.runningDisplayMetrics
-                              : copy.screening.runningTest
+                            : copy.screening.runningValidation
                         }`
                       : screenProgress.stage === "strategies"
                         ? copy.combinationScreening.runningStrategies
@@ -4311,14 +6678,14 @@ export function MarketWorkspace() {
                 </strong>
               </div>
               <progress
-                max={screeningProgressMaximum}
-                value={validationProgressValue}
+                max={screeningProgressBar.maximum}
+                value={screeningProgressBar.value}
               />
             </div>
           )}
         </div>
 
-        {validationReport && (
+        {validationReport && validationReport.mode !== "sample" && (
           <section className="screening-validation-report">
             <div className="screening-validation-report-heading">
               <div>
@@ -4339,114 +6706,7 @@ export function MarketWorkspace() {
                 }
               </p>
             </div>
-            {validationReport.mode === "sample" ? (
-              <>
-                <div className="screening-validation-windows sample">
-                  <div>
-                    <span>
-                      {copy.screening.sampleWindow} ·{" "}
-                      {validationReport.periods[0]?.sessions}{" "}
-                      {copy.screening.tradingSessions}
-                    </span>
-                    <strong>
-                      {validationReport.window.startTime} —{" "}
-                      {validationReport.window.endTime}
-                    </strong>
-                  </div>
-                </div>
-                <div className="screening-validation-summary">
-                  <div>
-                    <span>{copy.screening.selectedCandidate}</span>
-                    <strong>
-                      {selectedValidationCandidateName(
-                        validationReport.selected,
-                      )}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>{copy.screening.weightedRankScore}</span>
-                    <strong>
-                      {formatNumber(
-                        validationReport.selectionScore,
-                        2,
-                      )}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>{copy.screening.displayPeriodReturn}</span>
-                    <strong
-                      className={
-                        validationReport.performance.totalReturn >= 0
-                          ? "positive"
-                          : "negative"
-                      }
-                    >
-                      {formatPercent(
-                        validationReport.performance.totalReturn,
-                        true,
-                      )}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>{copy.screening.longPeriodDrawdown}</span>
-                    <strong className="negative">
-                      {formatPercent(
-                        validationReport.periods.at(-1)!
-                          .performance.maxDrawdown,
-                      )}
-                    </strong>
-                  </div>
-                </div>
-                <div className="results-table-wrap screening-period-table">
-                  <table className="results-table">
-                    <thead>
-                      <tr>
-                        <th>{copy.screening.samplePeriod}</th>
-                        <th>{copy.screening.return}</th>
-                        <th>{copy.screening.drawdown}</th>
-                        <th>{copy.screening.sharpe}</th>
-                        <th>{copy.screening.normalizedRankScore}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {validationReport.periods.map((period) => (
-                        <tr key={period.sessions}>
-                          <td>
-                            {period.sessions}{" "}
-                            {copy.screening.tradingSessions}
-                          </td>
-                          <td
-                            className={
-                              period.performance.totalReturn >= 0
-                                ? "positive"
-                                : "negative"
-                            }
-                          >
-                            {formatPercent(
-                              period.performance.totalReturn,
-                              true,
-                            )}
-                          </td>
-                          <td className="negative">
-                            {formatPercent(
-                              period.performance.maxDrawdown,
-                            )}
-                          </td>
-                          <td>
-                            {formatNumber(
-                              period.performance.sharpe,
-                            )}
-                          </td>
-                          <td>
-                            {formatNumber(period.rankScore, 2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : validationReport.mode === "range" ? (
+            {validationReport.mode === "range" ? (
               <>
                 <div className="screening-validation-windows">
                   <div>
@@ -4511,15 +6771,6 @@ export function MarketWorkspace() {
                     </strong>
                   </div>
                   <div>
-                    <span>{copy.screening.weightedRankScore}</span>
-                    <strong>
-                      {formatNumber(
-                        validationReport.selectionScore,
-                        2,
-                      )}
-                    </strong>
-                  </div>
-                  <div>
                     <span>{copy.screening.completedWindows}</span>
                     <strong>{validationReport.folds.length}</strong>
                   </div>
@@ -4559,7 +6810,6 @@ export function MarketWorkspace() {
                       <thead>
                         <tr>
                           <th>{copy.screening.rollingWindow}</th>
-                          <th>{copy.screening.normalizedRankScore}</th>
                           <th>{copy.screening.return}</th>
                           <th>{copy.screening.drawdown}</th>
                           <th>{copy.screening.sharpe}</th>
@@ -4576,9 +6826,6 @@ export function MarketWorkspace() {
                               {fold.partial
                                 ? ` ${copy.screening.partialWindow}`
                                 : ""}
-                            </td>
-                            <td>
-                              {formatNumber(fold.rankScore, 2)}
                             </td>
                             <td
                               className={
@@ -4602,164 +6849,6 @@ export function MarketWorkspace() {
                             </td>
                           </tr>
                         ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </details>
-              </>
-            )}
-          </section>
-        )}
-
-        {(screeningRunsLoading ||
-          screeningRunsError ||
-          screeningRuns.length > 0) && (
-          <section className="screening-history">
-            <div className="screening-history-heading">
-              <div>
-                <Activity size={16} />
-                <strong>{copy.screeningHistory.title}</strong>
-              </div>
-              <span>
-                {screeningRunsLoading
-                  ? copy.screeningHistory.loading
-                  : `${screeningRuns.length} ${copy.screeningHistory.runs}`}
-              </span>
-            </div>
-            {screeningRunsError && (
-              <p className="screening-history-error">
-                <ShieldAlert size={14} />
-                {copy.screeningHistory.loadError}
-              </p>
-            )}
-            {screeningRuns[0] && (
-              <>
-                <div className="screening-history-latest">
-                  <div>
-                    <span>{copy.screeningHistory.latestWinner}</span>
-                    <strong>
-                      {screeningRuns[0].candidates[0]
-                        ? screeningRunCandidateName(
-                            screeningRuns[0].candidates[0],
-                          )
-                        : copy.common.unavailable}
-                    </strong>
-                  </div>
-                  <div>
-                    <span>{copy.screeningHistory.marketSnapshot}</span>
-                    <strong>
-                      {copy.sources[screeningRuns[0].source]}{" "}
-                      {copy.common.separator}{" "}
-                      {screeningRuns[0].lastBarDate}
-                    </strong>
-                    <small>
-                      {screeningRuns[0].dataFingerprint.slice(0, 12)}
-                    </small>
-                  </div>
-                  <div>
-                    <span>{copy.screeningHistory.runTime}</span>
-                    <strong>
-                      {cacheTimeFormatter.format(
-                        new Date(screeningRuns[0].createdAt),
-                      )}
-                    </strong>
-                  </div>
-                </div>
-                {screeningRunComparison && (
-                  <div className="screening-history-comparison">
-                    <div>
-                      <span>{copy.screeningHistory.winnerChange}</span>
-                      <strong>
-                        {screeningRunComparison.winnerChanged
-                          ? copy.screeningHistory.changed
-                          : copy.screeningHistory.unchanged}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>{copy.screeningHistory.topTenOverlap}</span>
-                      <strong>
-                        {screeningRunComparison.topTenOverlap} / 10
-                      </strong>
-                    </div>
-                    <div>
-                      <span>
-                        {copy.screeningHistory.previousRank}
-                      </span>
-                      <strong>
-                        {screeningRunComparison.currentWinnerPreviousRank ??
-                          copy.common.unavailable}
-                      </strong>
-                    </div>
-                    <div>
-                      <span>{copy.screeningHistory.returnDelta}</span>
-                      <strong>
-                        {screeningRunComparison.totalReturnDelta === null
-                          ? copy.common.unavailable
-                          : formatPercent(
-                              screeningRunComparison.totalReturnDelta,
-                              true,
-                            )}
-                      </strong>
-                    </div>
-                  </div>
-                )}
-                <details className="screening-history-details">
-                  <summary>{copy.screeningHistory.viewHistory}</summary>
-                  <div className="results-table-wrap">
-                    <table className="results-table">
-                      <thead>
-                        <tr>
-                          <th>{copy.screeningHistory.runTime}</th>
-                          <th>{copy.screeningHistory.mode}</th>
-                          <th>{copy.screeningHistory.latestWinner}</th>
-                          <th>{copy.screening.return}</th>
-                          <th>{copy.screening.sharpe}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {screeningRuns.map((run) => {
-                          const winner = run.candidates[0];
-                          return (
-                            <tr key={run.id}>
-                              <td>
-                                {cacheTimeFormatter.format(
-                                  new Date(run.createdAt),
-                                )}
-                              </td>
-                              <td>
-                                {
-                                  copy.screening.validationModes[
-                                    run.validationMode
-                                  ]
-                                }
-                              </td>
-                              <td>
-                                {winner
-                                  ? screeningRunCandidateName(winner)
-                                  : copy.common.unavailable}
-                              </td>
-                              <td
-                                className={
-                                  (winner?.metrics.totalReturn ?? 0) >= 0
-                                    ? "positive"
-                                    : "negative"
-                                }
-                              >
-                                {winner
-                                  ? formatPercent(
-                                      winner.metrics.totalReturn,
-                                      true,
-                                    )
-                                  : copy.common.unavailable}
-                              </td>
-                              <td>
-                                {winner
-                                  ? formatNumber(winner.metrics.sharpe)
-                                  : copy.common.unavailable}
-                              </td>
-                            </tr>
-                          );
-                        })}
                       </tbody>
                     </table>
                   </div>
@@ -4826,7 +6915,13 @@ export function MarketWorkspace() {
                             entry.result.strategyAAllocation * 100,
                           )}% + B ${Math.round(
                             entry.result.strategyBAllocation * 100,
-                          )}%`}
+                          )}% ${copy.common.separator} ${
+                            copy.lab.tacticalModes[
+                              resolveTacticalAllocationMode(
+                                entry.result.tacticalMode,
+                              )
+                            ]
+                          }`}
                     </span>
                     <dl className="strategy-shortlist-metrics">
                       <div>
@@ -4914,7 +7009,7 @@ export function MarketWorkspace() {
           >
           <div className="results-heading">
             <div>
-              <Trophy size={17} />
+              <Activity size={17} />
               <strong id="single-strategy-results-title">
                 {copy.screening.singleResultsTitle}
               </strong>
@@ -4939,21 +7034,23 @@ export function MarketWorkspace() {
               <table className="results-table">
                 <thead>
                   <tr>
-                    <th>{copy.screening.rank}</th>
                     <th>{copy.screening.strategy}</th>
                     <th>{copy.screening.return}</th>
                     <th>{copy.screening.drawdown}</th>
                     <th>{copy.screening.sharpe}</th>
                     <th>{copy.screening.trades}</th>
-                    <th>
-                      {resultsValidationMode === "sample"
-                        ? copy.screening.weightedRankScore
-                        : copy.screening.selectionObjectiveValue}
-                    </th>
+                    <th>{copy.screening.validationPrompt}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {screenResults.map((result, index) => (
+                  {screenResults.map((result) => {
+                    const recentReview = evaluateRecentStrategyEffectiveness(
+                      result,
+                      series?.bars ?? [],
+                    );
+                    const shortcutMatch =
+                      screeningResultShortcutMatch(result);
+                    return (
                     <tr
                       className="clickable-result-row"
                       key={`${result.strategyId}-${JSON.stringify(result.parameters)}`}
@@ -4979,11 +7076,6 @@ export function MarketWorkspace() {
                         );
                       }}
                     >
-                      <td>
-                        <span className={`rank rank-${index + 1}`}>
-                          {index + 1}
-                        </span>
-                      </td>
                       <td>
                         <div className="strategy-cell">
                           <div className="strategy-name-line">
@@ -5012,6 +7104,14 @@ export function MarketWorkspace() {
                               )}
                             </small>
                           )}
+                          {shortcutMatch && (
+                            <small
+                              className={`shortcut-match-badge ${shortcutMatch.kind}`}
+                              title={shortcutMatchTitle(shortcutMatch)}
+                            >
+                              {shortcutMatchTitle(shortcutMatch)}
+                            </small>
+                          )}
                         </div>
                       </td>
                       <td
@@ -5028,22 +7128,15 @@ export function MarketWorkspace() {
                       <td>{result.tradeCount}</td>
                       <td>
                         <span
-                          className={`fit-badge ${resultTone(result)}`}
-                          title={resultStatusTitle(result)}
-                        >
-                          {resultTone(result) === "positive"
-                            ? copy.screening.suitable
-                            : copy.screening.caution}
-                          <b>
-                            {formatSelectionValue(
-                              result,
-                              screenResultsObjective,
-                            )}
-                          </b>
+                              className={`fit-badge review-${recentReview.status}`}
+                              title={recentValidationTitle(recentReview)}
+                            >
+                              {recentValidationLabel(recentReview)}
                         </span>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -5056,7 +7149,7 @@ export function MarketWorkspace() {
         >
             <div className="results-heading">
               <div>
-                <Trophy size={17} />
+                <Activity size={17} />
                 <strong id="combination-strategy-results-title">
                   {copy.screening.combinationResultsTitle}
                 </strong>
@@ -5083,7 +7176,6 @@ export function MarketWorkspace() {
                   <table className="results-table combination-table">
                     <thead>
                       <tr>
-                        <th>{copy.screening.rank}</th>
                         <th>{copy.combinationScreening.strategyA}</th>
                         <th>{copy.combinationScreening.strategyB}</th>
                         <th>{copy.combinationScreening.allocationPlan}</th>
@@ -5091,18 +7183,22 @@ export function MarketWorkspace() {
                         <th>{copy.screening.drawdown}</th>
                         <th>{copy.screening.sharpe}</th>
                         <th>{copy.combinationScreening.rebalances}</th>
-                        <th>
-                          {resultsValidationMode === "sample"
-                            ? copy.screening.weightedRankScore
-                            : copy.screening.selectionObjectiveValue}
-                        </th>
+                        <th>{copy.screening.validationPrompt}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {combinationResults.map((result, index) => (
+                      {combinationResults.map((result) => {
+                        const recentReview =
+                          evaluateRecentStrategyEffectiveness(
+                            result,
+                            series?.bars ?? [],
+                          );
+                        const shortcutMatch =
+                          screeningResultShortcutMatch(result);
+                        return (
                         <tr
                           className="clickable-result-row"
-                          key={`${result.strategyAId}-${result.strategyBId}`}
+                          key={`${result.strategyAId}-${result.strategyBId}-${result.strategyAAllocation}-${result.strategyBAllocation}-${resolveTacticalAllocationMode(result.tacticalMode)}`}
                           tabIndex={0}
                           title={copy.screening.applyToChart}
                           aria-label={`${copy.screening.applyToChart}: ${
@@ -5120,11 +7216,6 @@ export function MarketWorkspace() {
                             applyCombinationResult(result);
                           }}
                         >
-                          <td>
-                            <span className={`rank rank-${index + 1}`}>
-                              {index + 1}
-                            </span>
-                          </td>
                           <td>
                             <div className="strategy-cell">
                               <div className="strategy-name-line">
@@ -5155,6 +7246,14 @@ export function MarketWorkspace() {
                                   {formatMovingAverageSlopeFilter(
                                     result.strategyAEntryFilter,
                                   )}
+                                </small>
+                              )}
+                              {shortcutMatch && (
+                                <small
+                                  className={`shortcut-match-badge ${shortcutMatch.kind}`}
+                                  title={shortcutMatchTitle(shortcutMatch)}
+                                >
+                                  {shortcutMatchTitle(shortcutMatch)}
                                 </small>
                               )}
                             </div>
@@ -5216,6 +7315,15 @@ export function MarketWorkspace() {
                                     100,
                                 )}%
                               </small>
+                              <small>
+                                {
+                                  copy.lab.tacticalModes[
+                                    resolveTacticalAllocationMode(
+                                      result.tacticalMode,
+                                    )
+                                  ]
+                                }
+                              </small>
                             </div>
                           </td>
                           <td
@@ -5234,22 +7342,15 @@ export function MarketWorkspace() {
                           <td>{result.tradeCount}</td>
                           <td>
                             <span
-                              className={`fit-badge ${resultTone(result)}`}
-                              title={resultStatusTitle(result)}
+                              className={`fit-badge review-${recentReview.status}`}
+                              title={recentValidationTitle(recentReview)}
                             >
-                              {resultTone(result) === "positive"
-                                ? copy.screening.suitable
-                                : copy.screening.caution}
-                              <b>
-                                {formatSelectionValue(
-                                  result,
-                                  screenResultsObjective,
-                                )}
-                              </b>
+                              {recentValidationLabel(recentReview)}
                             </span>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -5262,7 +7363,6 @@ export function MarketWorkspace() {
       </section>
 
       <footer className="app-footer">
-        <span>{copy.marketSource}</span>
         <span>{copy.footer}</span>
         <strong>{copy.researchOnly}</strong>
       </footer>
