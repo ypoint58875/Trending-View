@@ -14,7 +14,9 @@ import {
   buildTradeMarkerSeriesFromMarkers,
   buildVisiblePriceAxisRange,
   formatPriceAxisValue,
+  formatPriceChartTime,
   formatPriceChartTooltipValue,
+  priceDataZoomWindowForTimeRange,
 } from "../app/components/PriceChart";
 import type { MarketBar } from "../lib/market/types";
 import type {
@@ -36,6 +38,7 @@ type ZoomEntry = {
   zoomOnMouseWheel?: boolean;
   moveOnMouseMove?: boolean;
   moveOnMouseWheel?: boolean;
+  minValueSpan?: number;
 };
 
 type MarkerSeries = {
@@ -143,10 +146,15 @@ const chartBars: MarketBar[] = [1, 2, 3, 4].map((close, index) => ({
   turnoverRate: 0,
 }));
 
-function entries(barsLength: number, xAxisIndexes: number[]) {
+function entries(
+  barsLength: number,
+  xAxisIndexes: number[],
+  interval: "1d" | "1m" = "1d",
+) {
   return buildPriceDataZoom(
     barsLength,
     xAxisIndexes,
+    interval,
   ) as ZoomEntry[];
 }
 
@@ -327,6 +335,7 @@ test("passes explicit axes to every MACD series", () => {
 test("uses dedicated high-contrast colors for trade markers", () => {
   const [buy, sell, rangeExit] = buildTradeMarkerSeries([], {
     openPosition: "Open",
+    carryPosition: "Opening position",
     closePosition: "Close",
     shortBuy: "Short buy",
     shortSell: "Short sell",
@@ -406,6 +415,7 @@ test("places allocation markers outside candles without intercepting chart drag"
     },
     {
       openPosition: "Open",
+      carryPosition: "Opening position",
       closePosition: "Close",
       shortBuy: "Short buy",
       shortSell: "Short sell",
@@ -424,6 +434,45 @@ test("places allocation markers outside candles without intercepting chart drag"
   assert.deepEqual(sell.data?.[0].value, ["2026-01-03", 106]);
   assert.equal(sell.data?.[0].tradePrice, 99);
   assert.equal(sell.silent, true);
+});
+
+test("renders intraday chart times in Asia/Shanghai without moving daily labels", () => {
+  const intradayBar: MarketBar = {
+    ...chartBars[0],
+    time: "2026-08-14 10:26",
+    timestamp: Date.UTC(2026, 7, 14, 1, 26),
+  };
+
+  assert.equal(formatPriceChartTime(intradayBar, "1m"), "2026-08-14 09:26");
+  assert.equal(formatPriceChartTime(intradayBar, "1d"), intradayBar.time);
+
+  const [buy] = buildTradeMarkerSeriesFromMarkers(
+    {
+      buys: [
+        {
+          time: intradayBar.time,
+          price: intradayBar.close,
+          event: "entry",
+          action: "open",
+          signals: ["long-entry"],
+        },
+      ],
+      sells: [],
+      rangeExits: [],
+    },
+    {
+      openPosition: "Open",
+      carryPosition: "Opening position",
+      closePosition: "Close",
+      shortBuy: "Short buy",
+      shortSell: "Short sell",
+      rangeExit: "Range exit",
+    },
+    [intradayBar],
+    "1m",
+  ) as unknown as MarkerSeries[];
+
+  assert.deepEqual(buy.data?.[0].value, ["2026-08-14 09:26", 0.5]);
 });
 
 test("makes the selected price-chart zoom window directly draggable", () => {
@@ -461,6 +510,13 @@ test("links price zoom across every requested grid and starts with recent bars",
   for (const entry of entries(80, [0, 1, 2])) {
     assert.equal(entry.start, 0);
     assert.equal(entry.end, 100);
+  }
+
+  for (const entry of entries(2_500, [0, 1], "1m")) {
+    assert.equal(entry.minValueSpan, 120);
+  }
+  for (const entry of entries(2_500, [0, 1], "1d")) {
+    assert.equal(entry.minValueSpan, undefined);
   }
 });
 
@@ -529,6 +585,7 @@ test("renders confirmed support, resistance, and break markers without backpaint
     ...chartBars[0],
     ...value,
     open: value.close,
+    volume: 2 ** index,
     time: `2026-02-0${index + 1}`,
     timestamp: Date.UTC(2026, 1, index + 1),
   }));
@@ -536,7 +593,7 @@ test("renders confirmed support, resistance, and break markers without backpaint
     buildIndicatorSeries(
       bars,
       "supportResistanceBreaks",
-      { leftBars: 1, rightBars: 1 },
+      { leftBars: 1, rightBars: 1, volumeThreshold: 0 },
       indicatorLabels,
       2,
       2,
@@ -566,9 +623,9 @@ test("renders confirmed support, resistance, and break markers without backpaint
     null,
     null,
   ]);
-  assert.equal(support.name, "Support (1/1)");
+  assert.equal(support.name, "Support (1/1/0)");
   assert.equal(support.connectNulls, false);
-  assert.equal(support.lineStyle?.color, "#233dee");
+  assert.equal(support.lineStyle?.color, "#22c55e");
   assert.equal(resistance.connectNulls, false);
   assert.equal(bullishBreak.type, "scatter");
   assert.equal(bearishBreak.xAxisIndex, 2);
@@ -680,6 +737,31 @@ test("restores a dragged zoom window after chart options change", () => {
     assert.equal(entry.start, 88);
     assert.equal(entry.end, 100);
   }
+});
+
+test("focuses the price chart on the applied screening window", () => {
+  const bars = Array.from({ length: 10 }, (_, index) => ({
+    time: `2026-01-${String(index + 1).padStart(2, "0")}`,
+  })) as MarketBar[];
+
+  assert.deepEqual(
+    priceDataZoomWindowForTimeRange(
+      bars,
+      "2026-01-03",
+      "2026-01-06",
+    ),
+    { start: 20, end: 60 },
+  );
+  const focusedZoom = buildPriceDataZoom(10, [0, 1], "1d", {
+    start: 20,
+    end: 60,
+  }) as Array<{ start?: number; end?: number }>;
+  assert.ok(focusedZoom.length > 0);
+  assert.ok(
+    focusedZoom.every(
+      (component) => component.start === 20 && component.end === 60,
+    ),
+  );
 });
 
 test("derives the price axis only from the visible OHLC window", () => {

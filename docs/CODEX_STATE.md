@@ -1,5 +1,54 @@
 # Codex State
 
+## 2026-08-21 multi-strategy search/display diversity split
+
+- One-click screening now retains the top 20 intermediate candidates for each Strategy A primary inside every three-through-nine-strategy level. Triple parent-pair selection, triple finalists, and higher-order forward-expansion finalists all use this per-primary search pool, with an internal level bound of the registered strategy count multiplied by 20 (1,140 with the current 57 strategies).
+- Final results are handled separately: each three-through-nine-strategy category is globally objective-ranked, retains at most five rows for the same Strategy A primary, and retains at most 30 rows overall. The existing one-best-result-per-unordered-strategy-set rule remains in force. Single- and dual-strategy results, candidate backtests, allocation searches, and consensus thresholds are unchanged.
+- The complete `npm test` workflow passes: strict TypeScript, all 231 TypeScript tests (including 135 analysis tests and the Windows launcher suite), the production build, and both rendered/source checks. Repository-wide ESLint and `git diff --check` also pass.
+
+## 2026-08-21 compact multi-strategy presentation and chart-window fix
+
+- Three-through-nine-strategy plans use one concise `Strategy A name · N-strategy consensus` presentation in the chart header, shortlist, saved shortcut, and result table. Full component names remain in hover/accessibility text. Multi-strategy result rows use one combined strategy cell with at most two gray lines of remaining names, omit per-leg parameters and role badges, and collapse weights to Strategy A plus the aggregate remainder; single and dual rows remain detailed.
+- Strategy application, screening-result application, and saved-shortcut opening no longer add strategy-declared indicator panes or restore stored indicator snapshots. Indicator visibility and parameters are exclusively controlled by the manual indicator UI; persisted shortcut indicator JSON remains backward-compatible provenance.
+- `PriceChart` now initializes ECharts' real data-zoom window from the same applied focus window used for the visible OHLC y-axis range. This removes the x/y window mismatch that could clip or omit candles after applying a screening result.
+- Strict TypeScript, repository-wide ESLint, 25 focused chart/indicator tests, the production build, and both rendered/source tests pass. The full TypeScript suite reached 230/231 twice; its only failure was the pre-existing Windows launcher process-cleanup test when `taskkill.exe` reported that an already-exited child could not be terminated. That test passes 14/14 when run independently.
+- A local browser check loaded 6,524 N225 bars, confirmed no document or result-group horizontal overflow, kept the chart at 544 pixels with zero lower panes after applying the KDJ strategy, and reported no console warnings or errors.
+
+## 2026-08-21 six- through nine-strategy screening and shortcut guidance
+
+- One-click screening now continues through bounded six-, seven-, eight-, and nine-strategy forward-expansion stages. The shared plan/result/persistence/archive contract is A–I, each one-through-nine category retains at most 30 independently ranked results, and higher-order allocation searches cover 126/84/36/9 positive tenth-based compositions for six/seven/eight/nine legs.
+- Three-through-nine-leg plans remain one weighted-consensus decision rather than independent sleeves. Saved shortcuts for these plans no longer render per-leg entry/exit prices; they show current 0%/100% consensus, active strategy count and weight, current action, and the 40%-weight/count exit condition. Single- and dual-strategy shortcut price guidance is unchanged.
+- A selected backtest range can legitimately inherit an already-open position, so its first in-range transaction may be a clear. Allocation backtests now expose this inherited state as a chart-only `Opening position` marker at the first selected open. The marker creates no rebalance, cost, trade, or performance change.
+- Repository-wide ESLint, strict TypeScript, all 232 TypeScript tests, the production build, and both rendered/source tests pass. The previous ECharts module-registration `use` false positive remains resolved through the `registerEChartsModules` import alias.
+- A local browser check loaded the existing shortcut data and confirmed that a three-strategy row renders `Current consensus / Support strength / Current action / Exit condition`, while single/dual rows still expose current allocation and entry/exit price fields.
+
+## 2026-08-21 four- and five-strategy screening update
+
+- One-click screening now continues through bounded four- and five-strategy forward-expansion stages. It expands retained winners from the preceding strategy count instead of exhaustively enumerating every catalog tuple, rejects identical/equivalent legs, and independently retains the top 30 results for each of the one-, two-, three-, four-, and five-strategy categories.
+- Three-to-five-strategy allocations are judgment weights rather than independent tradable sleeves. Screening evaluates all positive 10% compositions once: 36 three-leg, 84 four-leg, and 126 five-leg candidates. A strict strategy majority plus 60% weighted support opens one 100% position; support at 40% or less, or an insufficient active-strategy count, closes it; the intermediate band holds the prior state and avoids partial rebalancing.
+- Result panels are five vertically stacked disclosures with independent numbering. A–E selections, allocations, filters, archive keys, saved plans, linked indicators, shortlist membership, chart application, and live allocation replay now share the same five-slot contract while legacy A/B and A/B/C data remains valid.
+- The misleading repository-wide ESLint failure was removed by aliasing ECharts' module-level `use` registration function to `registerEChartsModules`; the three unused test imports were also removed. Repository-wide ESLint, strict TypeScript, and all 231 TypeScript tests pass.
+- The production build and both rendered tests pass. A local in-app browser confirmed exactly five ordered result disclosures, no document-level horizontal overflow, independent four-strategy collapse from 164 pixels to 44 pixels without changing sibling panels, and no console warnings or errors.
+- The weighted-consensus update preserves direct single-strategy and hierarchical dual-strategy execution. Regression coverage confirms binary three-strategy consensus targets, no rebalance while consensus remains valid, 36/84/126 three-to-five-leg weight compositions, and independent top-30 retention; strict TypeScript, repository-wide ESLint, all 231 TypeScript tests, the production build, and both rendered tests pass.
+
+## 2026-08-21 screening result layout update
+
+- One-click screening results render as full-width, vertically stacked disclosure groups. Each group is independently collapsible, preserves the optimization engine's existing order within that category, and numbers its own rows from one.
+- The original three-panel layout passed strict TypeScript, all then-current tests, the production build, rendered/source tests, and browser interaction checks. The later five-strategy update supersedes its panel count and resolved the previously documented ESLint findings.
+
+## 2026-08-20 strategy and screening update
+
+- The registry contains 57 strategies and 40 indicators. Twenty strategies from the supplied TradingView collection are causal, long-only, registered in finite parameter spaces, and included in standalone and combination one-click screening. Ten indicators were added through the shared community registry, including an explicit-date Anchored VWAP and a developing Session Volume Profile.
+- S/R Break matches the supplied TradingView logic: confirmed 15/15 pivots, EMA(5)/EMA(10) volume oscillator with a configurable default threshold of 20, close crossovers, and both wick markers. Levels begin only on the confirmation bar.
+- One-click screening labels multi-range mode as `Multi-period screening`, with two default explicit date intervals and `+`/`-` controls for two through eight periods. Every interval is replayed independently and contributes an equal-weight normalized rank. Applying a screening result replays chart trade/rebalance markers only in that method's exact window or independent windows and focuses their envelope. Opening a saved shortcut instead uses the latest 128 trading sessions. Mode and ranges persist locally.
+- HalfTrend, QQE Mod, and Schaff Trend Cycle are price-only strategies and remain available when a market has unreliable volume. The initial parameter traversal is 45,196 candidates with reliable volume and 39,934 candidates without it; only MFI Reversal, VWAP Reversion, Volume-Weighted MACD, and MFI + RSI are excluded in the latter case. Pair and allocation stages extend the displayed total after standalone optimization.
+- Combination screening retains the top three final parameter sets per strategy and evaluates all `3 x 3` parameter crossings for each of the 1,594 non-equivalent strategy-ID pairs. It keeps the best parameter crossing per pair before replaying all ten allocation/tactical-mode choices, so a second- or third-ranked standalone parameter set can win through complementary pair behavior.
+- Combination screening continues from the best 128 pair parents through bounded three-, four-, and five-strategy discovery. Retained multi-strategy sets replay positive 10% judgment-weight compositions once and each strategy-count category keeps its own top 30.
+- Strategy plans, saved shortcuts, screening archives, linked indicators, chart overlays, and live allocation guidance accept optional Strategy C–E while continuing to parse legacy A/B and A/B/C JSON. Pair rows retain core/tactical roles; three-to-five-strategy rows label the longest-duration leg as the primary reference and all other legs as supporting judgments.
+- A post-screening comprehensive assessment combines up to five diversified standalone, pair, and triple shortlist candidates. Rank-weighted previous/current target allocations produce a rounded 10% target, buy/add/hold/reduce/sell/wait action, agreement, and confidence card above the existing recommendation shortlist.
+- Shortcut matching requires the same strategy count and complete ID set, so a standalone strategy never matches a saved combination containing it. Combination names put the detected relative long cycle first.
+- Chart action copy uses `清仓` consistently. The separate header advice card is removed. Every shortcut preserves its rolling return and shows muted labels with red/green current allocation plus separate A-long/B-short entry and exit values; added time and redundant adjustment metadata are not rendered.
+
 ## Current status
 
 The daily and provider-native one-minute index, ETF, and commodity-proxy
@@ -7,6 +56,57 @@ QuantScope version is implemented and buildable.
 
 Implemented:
 
+- The Windows launcher captures and relays local D1 migration output. When
+  Wrangler prints the exact no-pending-migrations terminal message but leaves
+  its process tree alive, the launcher waits a two-second exit grace period,
+  closes only that completed migration tree, and continues startup. Normal
+  success and failure exit codes are preserved; a timeout without the terminal
+  success message still fails startup.
+- Native one-minute screening now requires at least five distinct trading
+  sessions in the selected range. Below that boundary the workspace keeps the
+  minute chart available but does not produce screening rankings.
+- One-minute chart labels, crosshair headers, tooltips, and trade-marker
+  coordinates render from the provider epoch in `Asia/Shanghai`. Canonical
+  `bar.time` remains exchange-local for market-session and analysis rules.
+  Minute zoom keeps at least 120 bars visible when that many are available,
+  preventing an accidentally over-zoomed sparse K-line view; daily zoom is
+  unchanged. While the venue refresh policy is active, a newest-bar lag of
+  three minutes or more is displayed as a prominent estimated minute-data
+  delay. A live N225 check at 2026-08-14 09:55 +08:00 measured exactly 15
+  minutes between the latest bar epoch and the Yahoo fetch time.
+- The one-minute workspace retains up to 2,500 native bars and selects the
+  complete returned minute range on load, so a five-session provider window is
+  not silently reduced to the daily workspace's 128-bar research default.
+  Combination names in the strategy lab, applied chart summary, and saved
+  shortcuts place the selected-range relative long-cycle strategy before the
+  relative short-cycle strategy. Saved shortcut names wrap to additional lines
+  instead of being truncated by the return column, and their recent-validation
+  badge sits immediately to the right of the return in the shortcut row's
+  upper-right control area, above the folder selector and delete action. The
+  strategy name keeps the complete main-content column across both grid rows;
+  the outcome column uses 12 pixels of that column's reserved right padding so
+  return values are not left-clipped. Validation-state changes cannot resize
+  the name or introduce a horizontal scrollbar. One-click screening result
+  tables and recommendation cards retain their existing A/B presentation.
+- Screening result tables use compact six-column and eight-column fixed layouts
+  without an internal horizontal scrollbar and remain side by side above 1,120
+  pixels with a 45/55 single/combination width split. Standalone results omit
+  redundant horizon badges; combination badges
+  use concise `Long cycle` / `Short cycle` labels. Shortcut badges compare only
+  saved plans for the screened canonical instrument and interval. A combination
+  is labelled only when both strategy IDs match the same saved plan; one shared
+  component is insufficient. Badges show only `Added` or `Same type exists`,
+  while the complete parameter comparison remains in the hover title.
+- Recent-validation badges use the compact labels `Recent valid`, `Evidence
+  differs`, `Recent weakness`, and `Insufficient sample`. A shared note below
+  the screening tables explains the execution-count and multi-window evidence
+  rules, while hover titles retain the result-specific figures.
+- The chart runtime registers only the line, bar, candlestick, and scatter
+  ECharts modules plus the components used by the workspace. The production
+  client workspace chunk is 843.2 KiB, down from 1,364.1 KiB before modular
+  registration (38.2% smaller). Initial mount also skips the search endpoint
+  while the search query is empty, leaving market history and saved-plan
+  loading as the only startup requests.
 - Index/ETF/commodity-proxy search with individual-equity filtering. A local
   major-index catalog resolves common exact symbols before network discovery;
   public remote discovery is time-bounded and credentialed providers are used
@@ -89,7 +189,7 @@ Implemented:
   orders bars by canonical trading `bar.time`; provider timestamp epoch/unit
   differences can no longer reorder adjacent daily sessions.
 - Candlestick/line switching, provider volume, shared zoom, and an ordered
-  visible collection drawn from 30 indicators.
+  visible collection drawn from 40 indicators.
 - Volume coverage is measured independently from price validity. When fewer
   than 90% of at least 20 bars have positive volume, VWAP/MFI/CMF/OBV and their
   dependent strategies are unavailable; missing volume is never synthesized
@@ -182,10 +282,10 @@ Implemented:
   zoom window for the current instrument and interval. Periodic market option
   updates replace only variable axes, grids, zoom, and series components, so
   an active crosshair price tooltip is preserved across a refresh.
-- Fourteen extended strategies, independent equivalents of all 20 official
-  TradingView built-in strategy templates, and three community-script ports.
-- Explicit horizon metadata for all 37 strategies: 19 long-horizon trend,
-  breakout, channel, and persistent-momentum rules plus 18 short-horizon
+- Thirty-seven non-built-in strategies, independent equivalents of all 20 official
+  TradingView built-in strategy templates, including twenty-three community-script ports.
+- Explicit horizon metadata for all 57 strategies: 33 long-horizon trend,
+  breakout, channel, and persistent-momentum rules plus 24 short-horizon
   reversal, candle, pivot, oscillator, and volatility rules. Standalone
   results expose this descriptive metadata; Strategy A/B selectors and
   combination eligibility do not use it as a filter.
@@ -232,8 +332,8 @@ Implemented:
   observations, two completed base trades, and a valid nearby variant before
   applying the inclusive 75% return-sign, 15-point return-range, and 10-point
   drawdown-deterioration thresholds. Regimes retain causal pre-range warm-up.
-- Exhaustive parameter-grid optimization across all 37 strategies, with all
-  37,182 valid finite strategy-parameter combinations, no sampling control,
+- Exhaustive parameter-grid optimization across all 57 strategies, with all
+  45,196 valid finite strategy-parameter combinations, no sampling control,
   cancellation, and best-per-strategy result retention. A dedicated module Web
   Worker owns the full optimizer and its run-local target/indicator caches, so
   progress and cancellation messages do not depend on main-thread calculation.
@@ -244,41 +344,47 @@ Implemented:
   Screening
   builds targets from complete loaded history and restricts only performance
   metrics to the selected range. The EMA phase retains compact Top-60 metrics;
-  only each strategy's unique final winner keeps complete execution state for
-  pair replay.
+  each strategy's top three final parameter sets keep complete execution state
+  for pair replay.
 - Three deterministic screening objectives: balanced score, maximum return,
   and maximum Sharpe. Return/drawdown and minimum-drawdown targets are not
   exposed. Balanced score is `0.45 * current-window return +
   8 * clamp(current-window Sharpe, -5, 5) + 0.35 * current-window drawdown`.
   Trade count is excluded from rank and remains only a displayed metric and
   candidate/observe-only condition.
-- A unified strategy plan with optional Strategy A and Strategy B selections,
+- A unified strategy plan with optional Strategy A through Strategy E selections,
   independent parameters and allocations, and the complete registry available
-  in both selectors. Either selection can be empty, and duplicate or declared
-  equivalent pairs are rejected. Each parameter section is nested directly
-  below its own selector.
-  For a dual plan, selected-range average active-run length determines the
-  relative long-cycle gate; duration ties prefer fewer target transitions and
-  then Strategy A. In base-then-add mode, the relative-long entry establishes
-  its allocation, a later fresh relative-short entry adds the other allocation,
-  its exit removes that layer, and the relative-long exit clears both. In
-  full-then-reduce mode, the relative-long entry establishes A+B, a short-cycle
-  exit removes the tactical sleeve, a later entry restores it, and the gate exit
-  clears all exposure. Both modes remain strictly long-only inside `[0, 1]`.
+  in every selector. Any selection can be empty, and duplicate or declared
+  equivalent legs are rejected pairwise. Each parameter section is nested directly
+  below its own selector. New daily and one-minute workspaces start with both
+  selectors empty and no applied chart strategy. Applying an empty draft is a
+  supported action that clears strategy-linked panes, price references, trade
+  markers, and latest guidance from the trend chart.
+  Selected-range average active-run length still determines stable display roles.
+  One strategy directly controls exposure and two strategies retain the existing
+  core/tactical hierarchy. Three through five strategies instead form one
+  weighted consensus with 60% entry, 40% exit, count confirmation, and a
+  hold-state hysteresis band; their portfolio exposure is only 0% or 100%.
 - One unified one-click strategy screen with one objective, one progress
-  stream, and one stop action. The progress bar maps the four optimizer stages
+  stream, and one stop action. The progress bar maps the ten optimizer stages
   plus one segment per rolling selection window; period, range, and rolling
   completion all resolve exactly to 100%. Its left result
   column returns exactly one best parameter set per standalone strategy. The
-  same four-stage run retains one unique final winner per strategy and
-  automatically ranks every unordered pair of non-equivalent winners, keeps up
-  to 4,096 pair finalists, then compares 50/50, 60/40, 40/60, 70/30, and
+  same run retains the top three final parameter sets per strategy,
+  automatically ranks all nine crossings for every unordered pair of
+  non-equivalent strategy IDs, keeps the best crossing per pair and up to 4,096
+  pair finalists, then compares 50/50, 60/40, 40/60, 70/30, and
   30/70 under both tactical modes. Holdings remain 0%, 30%, 40%, 50%, 60%,
-  70%, or 100%. The current
-  maximum is 664 winner pairs, so every retained pair reaches the
-  allocation stage. Its right result column keeps one best result per unique
-  unordered strategy-ID pair, ranks up to 32 pairs, displays A/B plus the
-  derived relative roles, and applies a complete result to the lab and chart.
+  70%, or 100% for pairs. The best 128 pair parents then generate bounded
+  triples, then bounded forward expansion adds four- and five-strategy sets;
+  retained three-to-five-leg sets replay every positive 10% judgment-weight
+  composition once (36/84/126 candidates). The current
+  maximum is 1,594 strategy-ID pairs, so every retained pair reaches the
+  allocation stage. Its right result column keeps one best result per complete
+  unordered component set, retains 30 results independently for every one-to-five
+  strategy category, displays A–E plus pair core/tactical or multi-leg
+  primary/supporting judgment roles, and applies a complete result to the
+  lab and chart.
 - Three one-click recent-adaptive modes: default period screening runs the
   complete parameter/EMA/combination/allocation workflow only on one adjustable
   trailing window; the default 128 sessions share one constant with the lab.
@@ -350,9 +456,8 @@ Implemented:
   ignore an incomplete/unknown latest bar, while prior-day resting price orders
   remain active. A touched entry rejected by the moving-average slope filter
   keeps its displayed condition price and reports a distinct blocked state
-  instead of looking like an ordinary wait. The latest-guidance card has a fixed 126-pixel height and keeps
-  excess details inside its own scroll area, so neighboring header content does
-  not shift as guidance length changes.
+  instead of looking like an ordinary wait. This guidance is rendered within
+  each saved shortcut instead of a separate instrument-header card.
 - Per-user D1-backed saved backtests with a dedicated upper-right shortcut bar
   that contains the Save current strategy action and restores
   index/ETF/commodity identity plus the complete A/B strategy plan. New JSON
@@ -418,8 +523,9 @@ Implemented:
 - A lower research area that places the strategy lab and automated screening
   together. The lab edits a draft plan and its backtest; the trend chart,
   markers, and latest guidance retain a separate applied plan until the user
-  presses Apply. Screening-result and saved-shortcut row actions update both
-  states. Durable saving remains only in the shortcut panel. Screening controls span a
+  presses Apply. Apply accepts an empty draft so the user can explicitly clear
+  the applied chart strategy. Screening-result and saved-shortcut row actions
+  update both states. Durable saving remains only in the shortcut panel. Screening controls span a
   horizontal bar above equal-width standalone and combination result columns;
   every retained compact, keyboard-focusable result row applies directly,
   tables do not
@@ -447,6 +553,11 @@ Implemented:
 
 ## Verification status
 
+- Guarded local migration execution passed 14 focused Windows launcher tests,
+  all 217 TypeScript tests, strict TypeScript, the production build, and both
+  rendered/source tests on 2026-08-13. A live Wrangler 4.92.0 run reproduced
+  the post-success hang after `No migrations to apply!`; the new two-second
+  grace path returned `RecoveredNoOp` and left no migration processes alive.
 - Community catalog/registry integration, all nine indicator and three strategy
   ports, validation-first result/shortcut presentation, exact and same-type
   shortcut matching, conditional screening preservation, sample-report removal,

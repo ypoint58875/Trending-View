@@ -416,6 +416,162 @@ function Test-DependenciesReady {
   }
 }
 
+function Stop-QuantScopeProcessTree {
+  param([Parameter(Mandatory = $true)]$Process)
+
+  try {
+    $Process.Refresh()
+    if ($Process.HasExited) {
+      return
+    }
+  } catch {
+    return
+  }
+
+  & taskkill.exe /PID ([string]$Process.Id) /T /F *> $null
+  try {
+    $null = $Process.WaitForExit(5000)
+  } catch {
+    # The exact process tree was already requested to stop.
+  }
+}
+
+function Invoke-QuantScopeLocalMigrations {
+  param(
+    [string]$Root = $projectRoot,
+    [string]$NpmCommand = "npm.cmd",
+    [int]$TimeoutMilliseconds = 120000,
+    [int]$NoOpExitGraceMilliseconds = 2000,
+    [int]$PollMilliseconds = 100
+  )
+
+  $eventToken = [Guid]::NewGuid().ToString("N")
+  $stdoutEventId = "quantscope-migration-stdout-$eventToken"
+  $stderrEventId = "quantscope-migration-stderr-$eventToken"
+  $process = $null
+  $observedOutput = New-Object Text.StringBuilder
+  $noOpSeenAt = $null
+  $status = "Exited"
+  $exitCode = $null
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
+
+  try {
+    $resolvedNpmCommand = $NpmCommand
+    if (-not [IO.Path]::IsPathRooted($resolvedNpmCommand)) {
+      $npmApplication = Get-Command `
+        $resolvedNpmCommand `
+        -CommandType Application `
+        -ErrorAction Stop |
+        Select-Object -First 1
+      $resolvedNpmCommand = $npmApplication.Source
+    }
+    $startInfo = New-Object Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $resolvedNpmCommand
+    $startInfo.Arguments = "run local:db:migrate"
+    $startInfo.WorkingDirectory = $Root
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding = [Text.Encoding]::UTF8
+    $startInfo.CreateNoWindow = $true
+
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $startInfo
+    $process.EnableRaisingEvents = $true
+    Register-ObjectEvent `
+      -InputObject $process `
+      -EventName OutputDataReceived `
+      -SourceIdentifier $stdoutEventId *> $null
+    Register-ObjectEvent `
+      -InputObject $process `
+      -EventName ErrorDataReceived `
+      -SourceIdentifier $stderrEventId *> $null
+    if (-not $process.Start()) {
+      throw "The local migration process could not start."
+    }
+    $process.BeginOutputReadLine()
+    $process.BeginErrorReadLine()
+
+    while ($true) {
+      $process.Refresh()
+      foreach ($sourceId in @($stdoutEventId, $stderrEventId)) {
+        $events = @(Get-Event `
+          -SourceIdentifier $sourceId `
+          -ErrorAction SilentlyContinue)
+        foreach ($event in $events) {
+          $line = $event.SourceEventArgs.Data
+          if ($null -ne $line) {
+            Write-Host $line
+            $null = $observedOutput.AppendLine($line)
+          }
+          Remove-Event -EventIdentifier $event.EventIdentifier
+        }
+      }
+
+      if ($process.HasExited) {
+        $null = $process.WaitForExit()
+        $exitCode = $process.ExitCode
+        break
+      }
+
+      if (
+        -not $noOpSeenAt -and
+        $observedOutput.ToString().Contains("No migrations to apply!")
+      ) {
+        $noOpSeenAt = [DateTime]::UtcNow
+      }
+      if (
+        $noOpSeenAt -and
+        (
+          [DateTime]::UtcNow -ge
+            $noOpSeenAt.AddMilliseconds($NoOpExitGraceMilliseconds)
+        )
+      ) {
+        $status = "RecoveredNoOp"
+        Stop-QuantScopeProcessTree -Process $process
+        break
+      }
+      if ([DateTime]::UtcNow -ge $deadline) {
+        $status = "TimedOut"
+        Stop-QuantScopeProcessTree -Process $process
+        break
+      }
+
+      Start-Sleep -Milliseconds $PollMilliseconds
+    }
+
+    Start-Sleep -Milliseconds $PollMilliseconds
+    foreach ($sourceId in @($stdoutEventId, $stderrEventId)) {
+      $events = @(Get-Event `
+        -SourceIdentifier $sourceId `
+        -ErrorAction SilentlyContinue)
+      foreach ($event in $events) {
+        $line = $event.SourceEventArgs.Data
+        if ($null -ne $line) {
+          Write-Host $line
+        }
+        Remove-Event -EventIdentifier $event.EventIdentifier
+      }
+    }
+
+    return [pscustomobject]@{
+      Status = $status
+      ExitCode = $exitCode
+    }
+  } finally {
+    foreach ($sourceId in @($stdoutEventId, $stderrEventId)) {
+      Unregister-Event `
+        -SourceIdentifier $sourceId `
+        -ErrorAction SilentlyContinue
+      Get-Event `
+        -SourceIdentifier $sourceId `
+        -ErrorAction SilentlyContinue |
+        Remove-Event -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 function Wait-QuantScopeStartup {
   param(
     [Parameter(Mandatory = $true)]$ServerProcess,
@@ -566,9 +722,24 @@ Write-Host "Applying local database migrations..."
 $previousCi = $env:CI
 try {
   $env:CI = "1"
-  & npm.cmd run local:db:migrate
-  if ($LASTEXITCODE -ne 0) {
-    Stop-WithError "The local D1 migration failed."
+  $migrationResult = Invoke-QuantScopeLocalMigrations -Root $projectRoot
+  switch ($migrationResult.Status) {
+    "RecoveredNoOp" {
+      Write-Host (
+        "Wrangler reported no pending migrations but did not exit; " +
+        "the completed migration process was closed safely."
+      ) -ForegroundColor Yellow
+    }
+    "TimedOut" {
+      Stop-WithError (
+        "The local D1 migration did not finish within 120 seconds."
+      )
+    }
+    default {
+      if ($migrationResult.ExitCode -ne 0) {
+        Stop-WithError "The local D1 migration failed."
+      }
+    }
   }
 } finally {
   $env:CI = $previousCi

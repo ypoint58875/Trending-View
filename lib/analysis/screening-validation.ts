@@ -16,16 +16,19 @@ import {
 import {
   optimizeStrategyCombinations,
   ROLLING_SINGLE_FINALISTS_PER_STRATEGY,
+  STRATEGY_SLOTS,
   runStrategyCombinationBacktest,
   type CombinationOptimizationResult,
   type CombinationScreeningProgress,
   type OptimizeStrategyCombinationsOptions,
   type StrategyCombinationResult,
 } from "./strategy-combinations";
+import { hasIntradayScreeningEvidence } from "./intraday";
 
 export const SCREENING_VALIDATION_MODES = [
   "sample",
   "range",
+  "multi-range",
   "rolling",
 ] as const;
 export const DEFAULT_SAMPLE_VALIDATION_SESSIONS = 128;
@@ -47,6 +50,11 @@ export interface ScreeningRangeValidationConfig {
   range: ScreeningDateWindow;
 }
 
+export interface ScreeningMultiRangeValidationConfig {
+  mode: "multi-range";
+  ranges: readonly ScreeningDateWindow[];
+}
+
 export interface ScreeningSamplePeriodConfig {
   sessions: number;
   weight: number;
@@ -66,14 +74,17 @@ export interface ScreeningRollingValidationConfig {
 export type ScreeningValidationConfig =
   | ScreeningSampleValidationConfig
   | ScreeningRangeValidationConfig
+  | ScreeningMultiRangeValidationConfig
   | ScreeningRollingValidationConfig;
 
 export type ScreeningValidationErrorCode =
   | "invalid-sample-periods"
   | "insufficient-sample-data"
   | "invalid-range-order"
+  | "invalid-multi-range"
   | "insufficient-range-data"
-  | "insufficient-rolling-data";
+  | "insufficient-rolling-data"
+  | "insufficient-intraday-sessions";
 
 export class ScreeningValidationError extends Error {
   constructor(public readonly code: ScreeningValidationErrorCode) {
@@ -106,6 +117,13 @@ export interface ScreeningCandidateReference {
   kind: "single" | "combination";
   strategyAId: BacktestResult["strategyId"];
   strategyBId: BacktestResult["strategyId"] | null;
+  strategyCId?: BacktestResult["strategyId"] | null;
+  strategyDId?: BacktestResult["strategyId"] | null;
+  strategyEId?: BacktestResult["strategyId"] | null;
+  strategyFId?: BacktestResult["strategyId"] | null;
+  strategyGId?: BacktestResult["strategyId"] | null;
+  strategyHId?: BacktestResult["strategyId"] | null;
+  strategyIId?: BacktestResult["strategyId"] | null;
 }
 
 export interface ScreeningValidationFoldReport {
@@ -120,6 +138,18 @@ export interface ScreeningRangeValidationReport {
   range: ScreeningDateWindow;
   selected: ScreeningCandidateReference;
   performance: BacktestPerformance;
+}
+
+export interface ScreeningMultiRangeValidationReport {
+  mode: "multi-range";
+  ranges: ScreeningDateWindow[];
+  selected: ScreeningCandidateReference;
+  selectionScore: number;
+  folds: ScreeningValidationFoldReport[];
+  positiveFoldCount: number;
+  averageReturn: number;
+  averageSharpe: number;
+  worstDrawdown: number;
 }
 
 export interface ScreeningSampleValidationReport {
@@ -155,6 +185,7 @@ export interface ScreeningRollingValidationReport {
 export type ScreeningValidationReport =
   | ScreeningSampleValidationReport
   | ScreeningRangeValidationReport
+  | ScreeningMultiRangeValidationReport
   | ScreeningRollingValidationReport;
 
 export type ScreeningValidationPhase =
@@ -177,6 +208,20 @@ const SCREENING_OPTIMIZATION_STAGES = [
   "entryFilters",
   "pairs",
   "allocations",
+  "triples",
+  "tripleAllocations",
+  "quadruples",
+  "quadrupleAllocations",
+  "quintuples",
+  "quintupleAllocations",
+  "sextuples",
+  "sextupleAllocations",
+  "septuples",
+  "septupleAllocations",
+  "octuples",
+  "octupleAllocations",
+  "nonuples",
+  "nonupleAllocations",
 ] as const satisfies readonly CombinationScreeningProgress["stage"][];
 
 export interface ScreeningProgressBarState {
@@ -213,11 +258,13 @@ export function resolveScreeningProgressBarState(
       : stageIndex > 0
         ? 1
         : 0);
-  const rollingFoldCount =
-    validationProgress?.mode === "rolling"
+  const selectionWindowCount =
+    validationProgress?.mode === "rolling" ||
+    validationProgress?.mode === "multi-range"
       ? Math.max(validationProgress.foldCount, 0)
       : 0;
-  const maximum = SCREENING_OPTIMIZATION_STAGES.length + rollingFoldCount;
+  const maximum =
+    SCREENING_OPTIMIZATION_STAGES.length + selectionWindowCount;
 
   if (!validationProgress || validationProgress.phase === "optimization") {
     return {
@@ -226,7 +273,11 @@ export function resolveScreeningProgressBarState(
     };
   }
 
-  if (validationProgress.mode !== "rolling" || rollingFoldCount === 0) {
+  if (
+    (validationProgress.mode !== "rolling" &&
+      validationProgress.mode !== "multi-range") ||
+    selectionWindowCount === 0
+  ) {
     return {
       value: maximum,
       maximum,
@@ -235,7 +286,7 @@ export function resolveScreeningProgressBarState(
 
   const foldIndex = Math.min(
     Math.max(validationProgress.foldIndex, 0),
-    rollingFoldCount - 1,
+    selectionWindowCount - 1,
   );
   const value =
     SCREENING_OPTIMIZATION_STAGES.length +
@@ -554,6 +605,7 @@ function singleKey(result: BacktestResult): string {
 }
 
 function combinationKey(result: StrategyCombinationResult): string {
+  const record = result as StrategyCombinationResult & Record<string, unknown>;
   return [
     "combination",
     result.strategyAId,
@@ -564,6 +616,22 @@ function combinationKey(result: StrategyCombinationResult): string {
     result.strategyBAllocation,
     stableEntryFilter(result.strategyAEntryFilter),
     stableEntryFilter(result.strategyBEntryFilter),
+    ...STRATEGY_SLOTS.slice(2).flatMap((slot) => {
+      const id = record[`${slot}Id`] as BacktestResult["strategyId"] | undefined;
+      const parameters = record[`${slot}Parameters`] as
+        | BacktestResult["parameters"]
+        | undefined;
+      return id && parameters
+        ? [
+            id,
+            stableParameters(parameters),
+            (record[`${slot}Allocation`] as number | undefined) ?? 0,
+            stableEntryFilter(
+              record[`${slot}EntryFilter`] as BacktestResult["entryFilter"],
+            ),
+          ]
+        : [];
+    }),
   ].join(":");
 }
 
@@ -571,17 +639,59 @@ function candidateReference(
   result: BacktestResult | StrategyCombinationResult,
 ): ScreeningCandidateReference {
   if ("strategyAId" in result) {
+    const record = result as StrategyCombinationResult & Record<string, unknown>;
     return {
       kind: "combination",
       strategyAId: result.strategyAId,
       strategyBId: result.strategyBId,
-    };
+      ...Object.fromEntries(
+        STRATEGY_SLOTS.slice(2).map((slot) => [
+          `${slot}Id`,
+          record[`${slot}Id`] ?? null,
+        ]),
+      ),
+    } as ScreeningCandidateReference;
   }
   return {
     kind: "single",
     strategyAId: result.strategyId,
     strategyBId: null,
+    strategyCId: null,
+    strategyDId: null,
+    strategyEId: null,
+    strategyFId: null,
+    strategyGId: null,
+    strategyHId: null,
+    strategyIId: null,
   };
+}
+
+export function validateMultiRangeWindows(
+  bars: readonly MarketBar[],
+  config: ScreeningMultiRangeValidationConfig,
+): ScreeningDateWindow[] {
+  if (config.ranges.length < 2) {
+    throw new ScreeningValidationError("invalid-multi-range");
+  }
+  const ranges = config.ranges.map((range) => {
+    try {
+      return validateRangeWindow(bars, { mode: "range", range });
+    } catch {
+      throw new ScreeningValidationError("invalid-multi-range");
+    }
+  });
+  const ordered = [...ranges].sort((left, right) =>
+    rangeStart(left.startTime).localeCompare(rangeStart(right.startTime)),
+  );
+  for (let index = 1; index < ordered.length; index += 1) {
+    if (
+      rangeStart(ordered[index].startTime) <=
+      rangeEnd(ordered[index - 1].endTime)
+    ) {
+      throw new ScreeningValidationError("invalid-multi-range");
+    }
+  }
+  return ranges;
 }
 
 function bestCandidate(
@@ -994,6 +1104,263 @@ async function runRangeValidation(
   };
 }
 
+async function runMultiRangeValidation(
+  bars: MarketBar[],
+  settings: Omit<BacktestSettings, "interval"> & {
+    interval: MarketInterval;
+  },
+  config: ScreeningMultiRangeValidationConfig,
+  options: RunScreeningWithValidationOptions,
+): Promise<ScreeningValidationOutcome> {
+  const ranges = validateMultiRangeWindows(bars, config);
+  const objective = options.objective ?? "balanced";
+  const rankingWindow: ScreeningDateWindow = {
+    startTime: ranges.reduce(
+      (earliest, range) =>
+        rangeStart(range.startTime) < rangeStart(earliest)
+          ? range.startTime
+          : earliest,
+      ranges[0].startTime,
+    ),
+    endTime: ranges.reduce(
+      (latest, range) =>
+        rangeEnd(range.endTime) > rangeEnd(latest)
+          ? range.endTime
+          : latest,
+      ranges[0].endTime,
+    ),
+  };
+  const optimization = await optimizeStrategyCombinations(
+    bars,
+    withWindow(settings, rankingWindow),
+    {
+      ...options,
+      retainedSinglesPerStrategy: ROLLING_SINGLE_FINALISTS_PER_STRATEGY,
+      onProgress: (progress) => {
+        options.onProgress?.(progress);
+        options.onValidationProgress?.({
+          mode: "multi-range",
+          phase: "optimization",
+          foldIndex: 0,
+          foldCount: ranges.length,
+          completed: progress.completed,
+          total: progress.total,
+          window: rankingWindow,
+          optimizationProgress: progress,
+        });
+      },
+    },
+  );
+  if (optimization.cancelled) {
+    return { ...optimization, validationReport: null };
+  }
+
+  const singleCandidatePool =
+    optimization.singleCandidatePool.length > 0
+      ? optimization.singleCandidatePool
+      : optimization.singleResults;
+  const candidateCount =
+    singleCandidatePool.length + optimization.results.length;
+  const evaluations: Array<{
+    range: ScreeningDateWindow;
+    singleResults: ScreeningSingleResult[];
+    combinationResults: ScreeningCombinationResult[];
+    rankScores: Map<string, number>;
+  }> = [];
+  let evaluatedCount = optimization.evaluatedCount;
+  let failedCount = optimization.failedCount;
+
+  for (let rangeIndex = 0; rangeIndex < ranges.length; rangeIndex += 1) {
+    const range = ranges[rangeIndex];
+    const evaluation = await evaluateFrozenCandidates(
+      bars,
+      withWindow(settings, range),
+      singleCandidatePool,
+      optimization.results,
+      {
+        mode: "multi-range",
+        rankingWindow,
+        evaluationWindow: range,
+        foldIndex: rangeIndex,
+        foldCount: ranges.length,
+      },
+      options.signal,
+      (completed, total) =>
+        options.onValidationProgress?.({
+          mode: "multi-range",
+          phase: "selection",
+          foldIndex: rangeIndex,
+          foldCount: ranges.length,
+          completed,
+          total,
+          window: range,
+        }),
+    );
+    evaluatedCount += evaluation.evaluatedCount;
+    failedCount += evaluation.failedCount;
+    if (evaluation.cancelled) {
+      return {
+        singleResults: evaluation.singleResults,
+        results: evaluation.combinationResults,
+        evaluatedCount,
+        totalCandidates:
+          optimization.totalCandidates + candidateCount * ranges.length,
+        failedCount,
+        cancelled: true,
+        validationReport: null,
+      };
+    }
+    evaluations.push({
+      range,
+      singleResults: evaluation.singleResults,
+      combinationResults: evaluation.combinationResults,
+      rankScores: normalizedRankScores(
+        evaluation.singleResults,
+        evaluation.combinationResults,
+        objective,
+      ),
+    });
+  }
+
+  const selectionScoreFor = (
+    result: BacktestResult | StrategyCombinationResult,
+  ): number | null => {
+    const key = candidateKey(result);
+    const scores = evaluations.map((evaluation) =>
+      evaluation.rankScores.get(key),
+    );
+    if (scores.some((score) => score === undefined)) return null;
+    return scores.reduce<number>((sum, score) => sum + (score ?? 0), 0) /
+      scores.length;
+  };
+  const latestEvaluation = evaluations.at(-1)!;
+  const singleResults: ScreeningSingleResult[] = [];
+  for (const candidate of singleCandidatePool) {
+    const selectionScore = selectionScoreFor(candidate);
+    const evaluated = latestEvaluation.singleResults.find(
+      (result) => singleKey(result) === singleKey(candidate),
+    );
+    if (selectionScore !== null && evaluated) {
+      singleResults.push({
+        ...evaluated,
+        screeningValidation: {
+          ...evaluated.screeningValidation!,
+          mode: "multi-range" as const,
+          rankingWindow,
+          evaluationWindow: latestEvaluation.range,
+          foldIndex: 0,
+          foldCount: ranges.length,
+          selectionScore,
+        },
+      });
+    }
+  }
+  const combinationResults: ScreeningCombinationResult[] = [];
+  for (const candidate of optimization.results) {
+    const selectionScore = selectionScoreFor(candidate);
+    const evaluated = latestEvaluation.combinationResults.find(
+      (result) => combinationKey(result) === combinationKey(candidate),
+    );
+    if (selectionScore !== null && evaluated) {
+      combinationResults.push({
+          ...evaluated,
+          screeningValidation: {
+            ...evaluated.screeningValidation!,
+            mode: "multi-range" as const,
+            rankingWindow,
+            evaluationWindow: latestEvaluation.range,
+            foldIndex: 0,
+            foldCount: ranges.length,
+            selectionScore,
+          },
+      });
+    }
+  }
+  const compareScores = (
+    left: ScreeningSingleResult | ScreeningCombinationResult,
+    right: ScreeningSingleResult | ScreeningCombinationResult,
+  ) => {
+    const difference =
+      (right.screeningValidation?.selectionScore ?? 0) -
+      (left.screeningValidation?.selectionScore ?? 0);
+    return Math.abs(difference) > 1e-12
+      ? difference
+      : compareScreeningResults(left, right, objective);
+  };
+  singleResults.sort(compareScores);
+  combinationResults.sort(compareScores);
+  const bestSingleByStrategy = new Map<
+    BacktestResult["strategyId"],
+    ScreeningSingleResult
+  >();
+  singleResults.forEach((result) => {
+    const current = bestSingleByStrategy.get(result.strategyId);
+    if (!current || compareScores(result, current) < 0) {
+      bestSingleByStrategy.set(result.strategyId, result);
+    }
+  });
+  const retainedSingleResults = [...bestSingleByStrategy.values()].sort(
+    compareScores,
+  );
+  const selected = [...retainedSingleResults, ...combinationResults].sort(
+    compareScores,
+  )[0];
+  const folds: ScreeningValidationFoldReport[] = selected
+    ? evaluations.map((evaluation) => {
+        const key = candidateKey(selected);
+        const performance = findEvaluatedCandidate(
+          key,
+          evaluation.singleResults,
+          evaluation.combinationResults,
+        )!;
+        return {
+          window: evaluation.range,
+          partial: false,
+          performance,
+          rankScore: evaluation.rankScores.get(key) ?? 0,
+        };
+      })
+    : [];
+  const report =
+    selected && folds.length === ranges.length
+      ? {
+          mode: "multi-range" as const,
+          ranges,
+          selected: candidateReference(selected),
+          selectionScore:
+            selected.screeningValidation?.selectionScore ?? 0,
+          folds,
+          positiveFoldCount: folds.filter(
+            (fold) => fold.performance.totalReturn > 0,
+          ).length,
+          averageReturn:
+            folds.reduce(
+              (sum, period) => sum + period.performance.totalReturn,
+              0,
+            ) / folds.length,
+          averageSharpe:
+            folds.reduce(
+              (sum, period) => sum + period.performance.sharpe,
+              0,
+            ) / folds.length,
+          worstDrawdown: Math.min(
+            ...folds.map((period) => period.performance.maxDrawdown),
+          ),
+        }
+      : null;
+
+  return {
+    singleResults: retainedSingleResults,
+    results: combinationResults,
+    evaluatedCount,
+    totalCandidates:
+      optimization.totalCandidates + candidateCount * ranges.length,
+    failedCount,
+    cancelled: false,
+    validationReport: report,
+  };
+}
+
 async function runRollingValidation(
   bars: MarketBar[],
   settings: Omit<BacktestSettings, "interval"> & {
@@ -1289,11 +1656,24 @@ export async function runScreeningWithValidation(
   config: ScreeningValidationConfig,
   options: RunScreeningWithValidationOptions = {},
 ): Promise<ScreeningValidationOutcome> {
+  if (
+    settings.interval !== "1d" &&
+    !hasIntradayScreeningEvidence(
+      bars,
+      settings.startTime,
+      settings.endTime,
+    )
+  ) {
+    throw new ScreeningValidationError("insufficient-intraday-sessions");
+  }
   if (config.mode === "sample") {
     return runSampleValidation(bars, settings, config, options);
   }
   if (config.mode === "range") {
     return runRangeValidation(bars, settings, config, options);
+  }
+  if (config.mode === "multi-range") {
+    return runMultiRangeValidation(bars, settings, config, options);
   }
   if (config.mode === "rolling") {
     return runRollingValidation(bars, settings, config, options);

@@ -22,8 +22,17 @@ import {
   resolveTradingSessionRange,
   resolveTrailingTradingSessionRange,
   runScreeningWithValidation,
+  validateMultiRangeWindows,
 } from "../lib/analysis/screening-validation";
 import type { MarketBar } from "../lib/market/types";
+import {
+  encompassingScreeningWindow,
+  resolveScreeningResultChartWindows,
+} from "../lib/analysis/screening-chart";
+import type {
+  ScreeningMultiRangeValidationReport,
+  ScreeningSingleResult,
+} from "../lib/analysis/screening-validation";
 
 const completedOptimizationProgress = {
   completed: 39_927,
@@ -31,12 +40,41 @@ const completedOptimizationProgress = {
   stageCompleted: 2_236,
   stageTotal: 2_236,
   failed: 0,
-  stage: "allocations" as const,
+  stage: "nonupleAllocations" as const,
   strategyAId: null,
   strategyBId: null,
 };
 
-test("fills period and range progress when their four-stage optimization completes", () => {
+test("maps screening results to their exact chart windows", () => {
+  const latestRange = {
+    startTime: "2025-01-01",
+    endTime: "2025-06-30",
+  };
+  const ranges = [
+    { startTime: "2022-01-01", endTime: "2022-12-31" },
+    latestRange,
+  ];
+  const result = {
+    screeningValidation: {
+      mode: "multi-range",
+      rankingWindow: latestRange,
+      evaluationWindow: latestRange,
+    },
+  } as ScreeningSingleResult;
+  const report = {
+    mode: "multi-range",
+    ranges,
+  } as ScreeningMultiRangeValidationReport;
+
+  const resolved = resolveScreeningResultChartWindows(result, report);
+  assert.deepEqual(resolved, ranges);
+  assert.deepEqual(encompassingScreeningWindow(resolved), {
+    startTime: "2022-01-01",
+    endTime: "2025-06-30",
+  });
+});
+
+test("fills period and range progress when their eighteen-stage optimization completes", () => {
   for (const mode of ["sample", "range"] as const) {
     const progress = resolveScreeningProgressBarState(
       completedOptimizationProgress,
@@ -56,7 +94,7 @@ test("fills period and range progress when their four-stage optimization complet
     );
 
     assert.equal(progress.value, progress.maximum);
-    assert.equal(progress.maximum, 4);
+    assert.equal(progress.maximum, 18);
   }
 });
 
@@ -108,9 +146,9 @@ test("adds one progress segment per rolling selection window", () => {
     },
   );
 
-  assert.deepEqual(optimization, { value: 4, maximum: 7 });
-  assert.deepEqual(middleWindow, { value: 5.5, maximum: 7 });
-  assert.deepEqual(completed, { value: 7, maximum: 7 });
+  assert.deepEqual(optimization, { value: 18, maximum: 21 });
+  assert.deepEqual(middleWindow, { value: 19.5, maximum: 21 });
+  assert.deepEqual(completed, { value: 21, maximum: 21 });
 });
 
 function firstScreeningCandidatePerStrategy() {
@@ -251,6 +289,86 @@ test("keeps calendar ranges and trailing session counts synchronized", () => {
       sessions: bars.length,
     },
   );
+});
+
+test("validates multiple explicit non-overlapping backtest ranges", () => {
+  const bars = createMonthlyBars(2020, 2025);
+  const ranges = [
+    { startTime: "2021-01-01", endTime: "2021-12-31" },
+    { startTime: "2024-01-01", endTime: "2024-12-31" },
+  ];
+  assert.deepEqual(
+    validateMultiRangeWindows(bars, { mode: "multi-range", ranges }),
+    [
+      { startTime: "2021-01-01", endTime: "2021-12-01" },
+      { startTime: "2024-01-01", endTime: "2024-12-01" },
+    ],
+  );
+  assert.throws(
+    () =>
+      validateMultiRangeWindows(bars, {
+        mode: "multi-range",
+        ranges: [
+          { startTime: "2021-01-01", endTime: "2022-06-01" },
+          { startTime: "2022-01-01", endTime: "2023-01-01" },
+        ],
+      }),
+    (error) =>
+      error instanceof ScreeningValidationError &&
+      error.code === "invalid-multi-range",
+  );
+});
+
+test("multi-range screening evaluates and equally ranks every selected interval", async () => {
+  const bars = createMonthlyBars(2000, 2008);
+  const candidates = buildScreeningCandidates().filter(
+    (candidate) =>
+      (candidate.strategyId === "sma-cross" &&
+        candidate.parameters.fast === 10 &&
+        candidate.parameters.slow === 30) ||
+      (candidate.strategyId === "rsi-reversal" &&
+        candidate.parameters.period === 14 &&
+        candidate.parameters.entry === 30 &&
+        candidate.parameters.exit === 65),
+  );
+  const outcome = await runScreeningWithValidation(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+      executionPolicy: "next-open",
+    },
+    {
+      mode: "multi-range",
+      ranges: [
+        { startTime: "2001-01-01", endTime: "2002-12-31" },
+        { startTime: "2006-01-01", endTime: "2007-12-31" },
+      ],
+    },
+    {
+      objective: "balanced",
+      candidates,
+      maxPairFinalists: 1,
+      allocationCandidates: [
+        { strategyAAllocation: 0.6, strategyBAllocation: 0.4 },
+      ],
+      yieldEvery: 10_000,
+    },
+  );
+  assert.equal(outcome.cancelled, false);
+  assert.equal(outcome.validationReport?.mode, "multi-range");
+  if (outcome.validationReport?.mode !== "multi-range") {
+    assert.fail("Expected a multi-range validation report");
+  }
+  assert.equal(outcome.validationReport.folds.length, 2);
+  assert.ok(outcome.singleResults.length > 0);
+  assert.equal(
+    outcome.singleResults[0].screeningValidation?.foldCount,
+    2,
+  );
+  assert.equal(outcome.singleResults[0].equity[0]?.time, "2006-01-01");
 });
 
 test("keeps native one-minute ranges exact within the same trading day", () => {

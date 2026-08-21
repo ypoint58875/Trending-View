@@ -1,5 +1,110 @@
 # Technical Research
 
+## 2026-08-21 Six- through nine-strategy screening boundary
+
+Problem:
+
+- Extending weighted-consensus screening beyond five strategies increases both the strategy-set search space and the risk that an apparently superior in-sample combination was selected by trying more alternatives rather than by adding durable information.
+- Positive 10% weights that sum to 100% provide a natural upper bound of ten legs, but a ten-leg plan has only one equal-weight allocation and leaves no room to express relative evidence strength.
+
+Option 1: exhaustively enumerate every six- through nine-strategy set.
+
+- Strengths: can identify the best in-sample result under the tested catalog and objective.
+- Limitations: the combination count becomes unsuitable for an interactive browser worker, and evaluating more configurations increases selection-overfitting exposure. Bailey et al.'s Probability of Backtest Overfitting framework specifically treats selection across many tried configurations as a source of false discoveries.
+
+Option 2: continue bounded forward expansion from retained finalists.
+
+- Strengths: reuses the deterministic pair-to-five-stage architecture, cancellation and progress reporting; keeps several parent paths; and constrains latency while still testing every eligible next strategy for each retained parent. Weighted voting remains a standard ensemble mechanism for combining heterogeneous signals.
+- Limitations: it is an approximate beam search and can discard a weak lower-order parent that would have become a strong higher-order combination.
+
+Decision:
+
+- Extend bounded forward expansion through six, seven, eight, and nine strategies. Retain the best 30 results independently for each strategy count and replay all positive 10% allocations available at that count: 126, 84, 36, and 9 respectively.
+- Stop at nine strategies for now. Nine still permits differentiated weights; ten collapses to a single 10%-per-leg allocation while expanding the opportunity for redundant signals and selection bias.
+- Keep the existing weighted-consensus execution rule: extra strategies improve one portfolio judgment and do not create independently traded sleeves. Treat higher in-sample performance as a candidate for multi-range or out-of-sample validation, not proof that adding more strategies will continue to improve results.
+
+Primary references accessed 2026-08-21:
+
+- https://scikit-learn.org/stable/modules/ensemble.html
+- https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2326253
+
+## 2026-08-21 Multi-strategy judgment versus independent trading sleeves
+
+Problem:
+
+- The first three-to-five-strategy implementation interpreted each strategy's optimized weight as a separately tradable sleeve. It improved signal diversity but could create a partial rebalance whenever any sleeve changed, conflicting with the product goal that more strategies should improve judgment rather than increase trading frequency.
+
+Option 1: retain independent sleeves.
+
+- Strengths: preserves each strategy's exact position contribution and supports gradual exposure changes.
+- Limitations: one strategy transition can cause one portfolio rebalance, so transaction count tends to grow with strategy count.
+
+Option 2: unweighted majority voting.
+
+- Strengths: produces one portfolio decision and is easy to explain.
+- Limitations: discards the allocation search's evidence about relative strategy importance and treats a weak finalist the same as a strong one.
+
+Option 3: weighted consensus with entry/exit hysteresis.
+
+- Strengths: uses optimized allocations as judgment weights, requires a strategy-count majority plus at least 60% active weight to enter, exits only below 40% active weight or when support falls below half, and holds the prior decision in the ambiguous band. Individual strategy changes therefore do not trade unless the combined decision changes. Scikit-learn's official ensemble documentation describes majority voting and weighted aggregation as standard ways to balance weaknesses across different estimators.
+- Limitations: weights no longer represent independently tradable position slices, and three-to-five-strategy price-order evidence is confirmed through the combined bar state for next-open execution rather than producing per-strategy intrabar fills.
+
+Decision:
+
+- Use option 3 for plans with three through five strategies. The portfolio target is binary (0% or 100%); optimized positive 10% allocations are voting weights. Require strict count majority and 60% weighted support to enter. Exit at 40% or less weighted support, or when fewer than half of the strategies remain active. Hold the prior state between those boundaries.
+- Keep single-strategy execution and the existing two-strategy core/tactical allocation behavior unchanged. Three-to-five-strategy candidate allocations need only one execution mode because tactical-sleeve modes are not part of consensus execution.
+- The change is reversible at the shared timeline boundary and requires no persistence migration; existing allocation fields become consensus weights when three or more slots are present.
+
+Primary references accessed 2026-08-21:
+
+- https://scikit-learn.org/stable/modules/ensemble.html#voting-classifier
+- https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.VotingClassifier.html
+
+## 2026-08-21 Four- and five-strategy screening search
+
+Problem:
+
+- Extending the current 57-strategy search from triples to four- and five-strategy plans makes an exhaustive strategy-set traversal impractical in a browser Worker. There are `C(57, 4) = 395,010` four-strategy sets and `C(57, 5) = 4,187,106` five-strategy sets before parameter, allocation, tactical-mode, and validation-window replay.
+- Flexible positive 10% allocations that sum to 100% add 84 allocations for four strategies and 126 allocations for five strategies. The later weighted-consensus decision above removes the redundant tactical-mode duplication for plans with three or more strategies.
+
+Option 1: exhaustive unordered strategy sets and allocations.
+
+- Strengths: evaluates every permitted set and preserves a global optimum under the selected objective.
+- Limitations: Python's official `itertools.combinations` documentation confirms that the output count is `n! / (r! * (n-r)!)`; at the current catalog size, multiplying millions of sets by allocation and validation replays is not an acceptable interactive workload.
+
+Option 2: staged forward expansion with bounded finalists.
+
+- Strengths: extends the existing pair-to-triple architecture, preserves deterministic ordering and cancellation, and evaluates every eligible next strategy only for retained parent plans. Scikit-learn documents forward sequential selection as a greedy procedure that repeatedly adds the best next feature under the chosen score; a bounded finalist beam keeps several parents instead of only one, reducing the brittleness of a single greedy path.
+- Limitations: it is approximate and cannot guarantee that a weak pair or triple which later becomes an exceptional five-strategy plan survives the parent cutoff.
+
+Option 3: introduce a general combinatorial solver.
+
+- Strengths: Google OR-Tools provides mature constraint, integer, and combinatorial optimization solvers.
+- Limitations: QuantScope's objective is produced by a path-dependent backtest with non-linear drawdown, Sharpe, entry filtering, and tactical state. It cannot be expressed as a simple linear or constraint objective without replacing the existing replay semantics, and a new solver would add a large runtime dependency.
+
+Decision:
+
+- Continue the existing deterministic staged forward search: retain bounded triple parents, extend them with every non-equivalent fourth strategy, retain bounded four-strategy finalists, replay all positive 10% four-way judgment weights, then repeat from bounded four-strategy parents for the fifth strategy and five-way weights.
+- Keep the top 30 displayed results independently for one, two, three, four, and five strategies. Parent/finalist bounds are implementation controls, not claims of exhaustive four- or five-strategy optimality.
+- Keep the generalized A-E plan schema. The later decision above supersedes independent tactical sleeves for three-to-five-strategy plans with one weighted consensus decision.
+- The decision is reversible: the stage limits can be increased or a later search backend can replace candidate generation without changing the normalized plan/result contract.
+
+Primary references:
+
+- `https://docs.python.org/3/library/itertools.html#itertools.combinations`
+- `https://scikit-learn.org/stable/modules/feature_selection.html#sequential-feature-selection`
+- `https://developers.google.com/optimization/introduction`
+
+## 2026-08-20: TradingView ports and explicit multi-range screening
+
+TradingView's current [execution model](https://www.tradingview.com/pine-script-docs/language/execution-model/) executes default strategies on confirmed closes and normally fills market orders at the next bar open. Its [repainting guidance](https://www.tradingview.com/pine-script-docs/concepts/repainting/) distinguishes confirmed close calculations from mutable open-bar values. QuantScope therefore keeps the next-open policy, makes imported pivots visible only on their right-side confirmation bar, and never lets a visual back-offset enter a signal array.
+
+Two port approaches were compared. A literal Pine emulator would reproduce displaced plots, reversals, and a second broker model, but would conflict with the host's long-only and no-backpainting invariants. A registry-based formula-and-signal port preserves causal calculations, translates short reversals to exits, and reuses manual backtests, screening, combinations, guidance, and saved plans. The registry approach was selected. Twenty strategies are now included: the prior seventeen plus HalfTrend, QQE Mod, and Schaff Trend Cycle. Ten missing indicators are registered: the prior Keltner, Donchian, Choppiness, Aroon, and TRIX ports plus HalfTrend, QQE Mod, Schaff Trend Cycle, Session Volume Profile, and Anchored VWAP.
+
+The second comparison pass used the original open-source [HalfTrend by everget](https://www.tradingview.com/script/U1SJ8ubc-HalfTrend/), [QQE MOD by Mihkel00](https://www.tradingview.com/script/TpUW4muw-QQE-MOD/), the classic open-source [Schaff Trend Cycle](https://www.tradingview.com/script/dbxXeuw2-Indicator-Schaff-Trend-Cycle-STC/), an open-source [Session Volume Profile](https://www.tradingview.com/script/uDRS8vr5-Session-Volume-Profile-Open-Source-CantoLab/), and the HLC3-based [Anchored VWAP](https://www.tradingview.com/script/L1tWQjgR-Anchored-VWAP/) as primary references. HalfTrend preserves recursive trend/next-trend extrema state; QQE preserves paired Wilder-length RSI-volatility paths and recursive bands; STC preserves the two stochastic normalization passes. Their bearish states clear long exposure instead of opening shorts. The profile distributes volume by exact bar/bin price overlap, expands value area from POC toward the larger adjacent row, and renders the developing current session. Anchored VWAP uses a persisted explicit date-time input rather than an unstable bars-back anchor. All close-derived transitions retain next-open execution.
+
+Two multi-range approaches were compared. Concatenating disjoint bars is cheap but creates false adjacency, contaminates indicator and position state across gaps, and produces an invalid continuous equity curve. Independent interval replay preserves real preceding history. QuantScope now builds a bounded pool on the encompassing history, replays every retained candidate in each explicit interval, normalizes objective ranks per interval, and averages ranks equally. The latest interval supplies coherent visible metrics/equity, while the validation report stores every interval and aggregate statistics. At least two non-overlapping intervals with three bars each are required; the UI allows up to eight and persists mode and dates locally.
+
 Research date: 2026-07-24.
 
 Additional research date: 2026-07-25.
@@ -1261,6 +1366,13 @@ its unfiltered winner with `Top 30 x EMA(5..8)`. Combination screening then
 always runs over 559 unique non-equivalent winner pairs and compares 60/40 with
 40/60. This makes combination work small relative to parameter traversal.
 
+Current amendment (2026-08-20): the winner-only pairing shape could miss a
+second- or third-ranked standalone parameter set whose behavior complements a
+different strategy. The production optimizer now retains the top three final
+sets per strategy, evaluates all `3 x 3` crossings for each of 1,594 current
+non-equivalent strategy-ID pairs, and retains one best crossing per pair before
+the ten allocation/tactical-mode replays.
+
 ### Saved-shortcut chart identity
 
 Provider identity is not instrument identity. A saved N225 record may carry a
@@ -2241,3 +2353,73 @@ Primary references accessed 2026-08-11:
 - https://www.tradingview.com/pine-script-docs/language/execution-model/
 - https://www.tradingview.com/pine-script-docs/concepts/repainting/
 - https://www.tradingview.com/pine-script-docs/concepts/other-timeframes-and-data/
+
+## 2026-08-13 local Wrangler migration exit recovery
+
+The Windows launcher was observed with Wrangler 4.92.0 printing
+`No migrations to apply!` while the Wrangler, npm, and launcher process chain
+remained alive and idle. Port 3000 was still closed, proving that the launcher
+had not advanced to application startup. Cloudflare documents
+`wrangler d1 migrations apply DB --local` as the supported local migration
+command and notes that CI/non-interactive execution skips confirmation; it does
+not define a command-exit timeout or a separate machine-readable completion
+mode.
+
+Two recovery approaches were compared:
+
+1. Apply an unconditional timeout and continue after killing Wrangler. This is
+   simple but unsafe because a slow or blocked real migration could be
+   interrupted and then incorrectly treated as successful.
+2. Capture and relay Wrangler output, retain normal exit-code handling, and
+   start a short exit grace period only after the exact no-pending-migrations
+   terminal message appears. If the process remains alive after that message,
+   terminate only the migration process tree and continue. Any timeout without
+   the terminal success message remains a startup failure.
+
+Approach 2 is selected. It addresses the reproduced no-op hang without
+weakening migration failure handling. Direct SQLite mutation and migration
+skipping were rejected because Wrangler owns the local D1 migration registry
+and rollback semantics.
+
+Primary references accessed 2026-08-13:
+
+- https://developers.cloudflare.com/d1/wrangler-commands/
+- https://developers.cloudflare.com/d1/best-practices/local-development/
+- https://developers.cloudflare.com/d1/reference/migrations/
+## 2026-08-21 three-strategy hierarchy and consensus
+
+Three implementation approaches were compared:
+
+1. Exhaustive N-way parameter/allocation enumeration is conceptually simple
+   but grows cubically before allocation replay, overweights near-duplicate
+   rules, and makes interactive cancellation/progress expensive.
+2. A learned market-regime router or mixture-of-experts can dynamically choose
+   specialists. AlphaMix uses an uncertainty-aware two-stage expert/router
+   design, and published regime-switching portfolio work shows that target
+   weights can depend materially on the prevailing state. This is promising,
+   but QuantScope does not yet have an independently validated regime label,
+   training pipeline, or out-of-sample router evaluation.
+3. A bounded hierarchical ensemble first identifies a persistent core gate,
+   manages faster rules as independent tactical sleeves, and aggregates the
+   already-ranked live targets only after screening. Sliding-window trading-rule
+   ensemble research reports that inertia and transaction-cost control are
+   important, which aligns with retaining explicit gate/tactical state instead
+   of majority-voting every bar.
+
+Decision: implement option 3. Continue from retained pair parents, add one
+non-equivalent third finalist, and replay positive tenth-based allocations only
+for retained triples. Keep both long-only tactical modes and the existing
+execution contract. Use a separate rank-weighted consensus reducer over up to
+five diversified single/pair/triple plans; it reports a current target and
+action but cannot feed back into historical ranking. A learned router remains
+future work until causal regime features and walk-forward validation exist.
+
+Primary research references:
+
+- Sun, Wang, and An, *Quantitative Stock Investment by Routing
+  Uncertainty-Aware Trading Experts*:
+  https://arxiv.org/abs/2207.07578
+- Collin-Dufresne, Daniel, and Saglam, *Liquidity Regimes and Optimal Dynamic
+  Asset Allocation*: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3099895
+- *Grammatical Evolution-based ensembles for algorithmic trading*:
+  https://doi.org/10.1016/j.asoc.2019.105713

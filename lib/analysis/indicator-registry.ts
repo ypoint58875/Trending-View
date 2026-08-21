@@ -53,6 +53,10 @@ export const VOLUME_REQUIRED_INDICATOR_IDS = [
   "mfi",
   "cmf",
   "obv",
+  "supportResistanceBreaks",
+  "supportResistanceSignals",
+  "sessionVolumeProfile",
+  "anchoredVwap",
 ] as const satisfies readonly IndicatorId[];
 
 const volumeRequiredIndicatorIds = new Set<IndicatorId>(
@@ -72,6 +76,7 @@ export interface IndicatorParameterDefinition {
   defaultValue: number;
   minimum: number;
   step: number;
+  kind?: "number" | "datetime";
 }
 
 export interface IndicatorDefinition {
@@ -199,6 +204,7 @@ export const INDICATORS: readonly IndicatorDefinition[] = [
     "structure",
     period("leftBars", 15),
     period("rightBars", 15),
+    decimal("volumeThreshold", 20, 0, 1),
   ),
   ...COMMUNITY_INDICATOR_DEFINITIONS,
 ];

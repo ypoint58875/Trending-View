@@ -1,5 +1,13 @@
 # Function Map
 
+## 2026-08-20 additions
+
+- `supportResistanceBreaks(...)`: confirmation-bar levels, EMA(5)/EMA(10) volume-oscillator filtering, close crossovers, and both wick conditions without backpainting.
+- `validateMultiRangeWindows(...)`: normalizes at least two explicit intervals and rejects invalid, undersized, or overlapping periods.
+- `runMultiRangeValidation(...)`: independently replays retained candidates in every selected interval and orders them by equal-weight average normalized rank.
+- Community strategy builders: seventeen causal long-only formula ports; every bearish source state clears rather than shorts.
+- `keltnerChannels`, `donchianChannels`, `choppinessIndex`, `aroon`, and `trix`: aligned series consumed through the shared indicator registry and chart renderer.
+
 ## Market data
 
 - `searchEastmoney(query)`: searches and retains only index/ETF results.
@@ -18,7 +26,9 @@
   provider discovery runs before optional credentialed providers and is
   bounded by a four-second deadline.
 - `clampMarketSeriesLimit(requestedLimit, interval)`: applies the shared
-  10,000-bar daily cap while retaining the smaller internal intraday cap.
+  10,000-bar daily cap, a 2,500-bar native one-minute cap that can retain a
+  complete five-session provider window, and the smaller 1,500-bar cap for
+  other intraday intervals.
 - `requestsExtendedDailyHistory(interval, requestedLimit)`: identifies daily
   requests that must use the shared 2000-01-01 provider boundary.
 - `fetchEastmoneySeries(instrument, interval, limit)`: fetches and normalizes
@@ -200,12 +210,8 @@
   `parseIndicatorConfigurations(...)`: create and validate the ordered visible
   indicator snapshot shared by the chart and saved-backtest boundary.
 - `indicatorConfigurationsEqual(...)`: compares ordered visible IDs and exact
-  parameters for shortcut active-state matching.
-- `buildStrategyLinkedPaneIndicators(...)`: maps only strategies that declare
-  an exact pane study to validated indicator configurations, using matching
-  strategy parameters where available.
-- `mergeChartIndicatorConfigurations(...)`: preserves manual display order and
-  appends non-duplicate strategy-linked pane configurations.
+  parameters for persistence and compatibility checks; shortcut activation no
+  longer depends on or restores saved indicator snapshots.
 - `supportResistanceBreaks(...)`: creates carried support/resistance levels
   only after both left and right pivot windows are known, then emits later
   close-through break markers without backpainting.
@@ -228,9 +234,19 @@
 - `buildPriceChartLayout(times, paneCount)`: keeps overlay indicators on the
   main price axes and allocates one lower grid for each visible pane indicator.
   Main-axis ticks are integers and its crosshair label uses one decimal.
-- `buildPriceDataZoom(barsLength, xAxisIndexes)`: links price, volume, and all
-  indicator axes to one inside zoom and one directly draggable timeline slider,
-  showing the latest 120 bars initially.
+- `formatPriceChartTime(bar, interval)`: formats one-minute chart categories
+  from the provider epoch in `Asia/Shanghai` while leaving daily and canonical
+  exchange-local market keys unchanged.
+- `buildPriceDataZoom(barsLength, xAxisIndexes, interval, initialWindow)`: links
+  price, volume, and all indicator axes to one inside zoom and one directly
+  draggable timeline slider, initializing the real x-axis window from the same
+  focus window used to derive the visible price-axis range,
+  showing the latest 120 bars initially and preventing one-minute views from
+  shrinking below 120 visible bars when enough history exists.
+- `estimateIntradayDataDelayMinutes(barTimestamp, fetchedAt)`: returns a
+  rounded lag only when the newest minute bar is at least three minutes behind
+  the fetch time; the workspace displays it while the venue refresh policy is
+  enabled.
 - `buildVisiblePriceAxisRange(bars, window)`: derives padded minimum and maximum
   values only from visible candle lows and highs, independent of indicators,
   strategy references, and trade markers.
@@ -335,6 +351,14 @@
 
 ## Simulation
 
+- `resolveScreeningResultChartWindows(result, report)`: maps period, range,
+  rolling, and multi-period screening results back to the exact independent
+  date windows used for ranking. The workspace reruns the applied plan in each
+  window and merges its trade/rebalance markers. Saved shortcuts bypass these
+  windows and use the latest 128 trading sessions.
+- `priceDataZoomWindowForTimeRange(bars, startTime, endTime)`: converts the
+  applied marker envelope into an initial ECharts zoom window so older
+  screening periods are visible immediately.
 - `buildLiveStrategyGuidance(...)`: evaluates the newest available bar through
   the shared strategy registry and returns buy, sell, hold, or wait guidance.
   An optional entry filter suppresses only a new buy; close-confirmed entries
@@ -381,13 +405,14 @@
   and A+B no greater than one. A single selected strategy always produces a
   100% target; explicit layer allocations apply only to dual plans.
 - `buildStrategyPlanTimeline(...)`: rejects duplicate or declared equivalent
-  strategy IDs, derives relative roles from the selected range, and builds both
-  the allocation target and aligned long-entry, long-exit, short-entry, and
-  short-exit events plus causal intrabar execution sequences. A
-  relative-long entry either starts the base allocation or, in the explicit
-  full-then-reduce mode, starts at full A+B exposure. Later short-cycle events
-  add/remove or restore/reduce the tactical sleeve; the relative-long gate close
-  always clears exposure and targets remain inside `[0, 1]`.
+  strategy IDs and builds an aligned allocation timeline. One leg is direct;
+  two legs retain the relative core/tactical state machine and causal intrabar
+  executions. Three-to-five legs use normalized allocation values as judgment
+  weights and return only a binary 0%/100% portfolio target. Entry requires a
+  strict active-strategy majority and at least 60% active weight; exit occurs at
+  40% or less active weight or when fewer than half the legs remain active. The
+  intermediate band holds the prior state. Individual intrabar leg fills do not
+  become portfolio executions for these consensus plans.
 - `buildStrategyPlanTarget(...)`: returns the target portion of the same
   timeline contract.
 - `buildLiveAllocationGuidance(...)`: reports the newest previous/target
@@ -395,7 +420,10 @@
 - `MarketWorkspace.applyCurrentStrategyToChart()`: clones the current lab draft
   into the applied chart plan and moves the viewport to the trend chart.
   Draft selector/parameter edits do not alter chart lines, markers, or latest
-  guidance until this boundary is invoked.
+  guidance until this boundary is invoked. A null draft is valid and clears
+  strategy-linked chart panes, references, markers, and guidance. Both the
+  daily and one-minute workspace snapshots initialize with null draft/applied
+  strategy state.
 - `buildTradeMarkers(trades)`: maps every real long entry to an open marker and
   every real strategy exit to a close marker.
 - `buildAllocationTradeMarkers(rebalances)`: maps allocation increases,
@@ -405,7 +433,7 @@
   both source events for audit.
 - `buildScreeningCandidates(horizons)`: expands every valid finite parameter
   combination for the requested strategy horizons. With the complete registry
-  it returns 37,182 unique strategy/parameter candidates and performs no
+  it returns 45,196 unique strategy/parameter candidates and performs no
   per-strategy sampling.
 - `screeningObjectiveValue(result, objective)`: maps a backtest to balanced,
   total-return, or Sharpe utility. The balanced score is
@@ -424,14 +452,21 @@
   workspace uses the unified combination optimizer below.
 - `optimizeStrategyCombinations(...)`: evaluates every supplied standalone
   candidate unfiltered. For each eligible strategy it keeps compact metrics for
-  the top 60 and evaluates those sets under EMA5-8. It normally keeps one
-  unique final winner per strategy; rolling callers can request a Top-10
-  per-strategy pool. It automatically ranks every unordered non-equivalent
-  retained pair, retains up to 4,096 pairs, and compares 50/50, 60/40, 40/60,
+  the top 60 and evaluates those sets under EMA5-8. It normally keeps the top
+  three final parameter sets per strategy; rolling callers can request a
+  Top-10 per-strategy pool. It evaluates all nine parameter crossings for
+  every unordered non-equivalent strategy pair, keeps the best crossing for
+  each pair, retains up to 4,096 pairs, and compares 50/50, 60/40, 40/60,
   70/30, and 30/70 under both tactical modes. It reports strategy,
   entry-filter, pair, and allocation
-  stages and retains up to 32 ranked combinations, with one best result per
-  unordered strategy-ID pair. The current registry creates 664 winner pairs,
+  stages, then expands retained pair winners through bounded triple, quadruple,
+  and quintuple beams. Three-, four-, and five-leg allocation replay covers all
+  positive 10% judgment-weight compositions once. It retains at most 30
+  results independently for each strategy count, with one best result per
+  unordered strategy-ID set. Three-through-nine-leg search retains the top 20
+  intermediate parent/finalist candidates for each Strategy A primary at every
+  level, while final result categories separately retain at most five rows per
+  primary and 30 total. The current registry creates 1,594 strategy-ID pairs,
   so every pair reaches allocation comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
   are built from complete loaded history and retained only for finalists.
@@ -440,6 +475,14 @@
   default optimizers yield before their first evaluation, at every stage
   transition, and after every 128 evaluations. Browser cooperative yields are followed by a timer-task
   boundary so progress state is committed and painted before work resumes.
+- `MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY`: hard-caps one Strategy A primary
+  at five rows in each final three-through-nine-strategy result category.
+- `MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY`: retains the top 20 intermediate
+  candidates for each Strategy A primary at every three-through-nine search
+  level before expanding the next strategy count.
+- `MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL`: bounds one intermediate level at
+  the registered strategy count multiplied by the per-primary 20-candidate
+  allowance.
 - `runScreeningInWorker(...)`: creates a module Worker for one complete
   validation run, forwards typed optimization/validation progress, sends
   cancellation, and always terminates the worker. It falls back to the core
@@ -482,10 +525,10 @@
   ranks. Complete history remains available for causal indicators and opening
   state, but metrics before each active boundary never enter its score. No mode
   labels its configured windows as training, test, or out-of-sample.
-- `resolveScreeningProgressBarState(...)`: maps the four shared optimizer
+- `resolveScreeningProgressBarState(...)`: maps the six shared optimizer
   stages and each rolling selection window onto one bounded progress scale.
-  Period and range runs end at four of four segments; rolling runs end at
-  `4 + foldCount` of the same maximum.
+  Period and range runs end at six of six segments; rolling runs end at
+  `6 + foldCount` of the same maximum.
 - `equityReturnCorrelation(left, right)`: aligns daily equity returns by date
   and returns their Pearson correlation when at least three finite shared
   observations have non-zero variance.
@@ -502,6 +545,19 @@
   candidates may occupy unfilled display slots only with the `alternative`
   role; they never count as deputies. Recent effectiveness is attached after
   selection and never changes rank.
+- `buildThreeStrategyPlanTimelineFromTargets(...)`: combines three aligned leg
+  targets into one weighted-consensus decision with 60% entry, 40% exit, and
+  strategy-count confirmation. It returns a binary target and emits portfolio
+  events only when that consensus changes.
+- `optimizeStrategyCombinations(...)` triple stages: after normal pair replay,
+  the default run uses up to 128 pair parents, tests non-equivalent third-leg
+  finalists, retains up to 256 unique triples at 40/30/30, and replays all 36
+  tenth-based judgment-weight candidates. `includeTriples: false` remains a
+  test/diagnostic compatibility switch; production defaults to enabled.
+- `buildStrategyConsensusAdvice(evidence)`: de-duplicates live plan evidence,
+  applies deterministic rank weights, rounds the aggregate target to 10%, and
+  returns action, confidence, agreement, directional pressure, and evidence
+  counts without feeding the result back into optimization.
 
 Historical price bars, indicators, strategy lines, live guidance, stability,
 and backtests all receive the same normalized `MarketBar[]` from the active
@@ -529,6 +585,12 @@ and backtests all receive the same normalized `MarketBar[]` from the active
   cleanup and waits for the registered port to be released.
 - `Get-LocalPortOwnerDescription(runtime)`: returns the unresolved listener PID
   for an actionable conflict without exposing command-line or secret values.
+- `Invoke-QuantScopeLocalMigrations(root, npmCommand, timeout, grace)`: relays
+  Wrangler output and preserves its normal exit code. Only the exact
+  no-pending-migrations terminal message enables a short grace period followed
+  by migration-process-tree recovery; an unverified timeout remains a failure.
+- `Stop-QuantScopeProcessTree(process)`: terminates only the process tree rooted
+  at the explicitly started one-shot migration process.
 - `New-QuantScopeServerCommand(root, useMarketRelay, startMarketRelay)`:
   generates the visible server command, reusing a healthy relay or owning and
   cleaning up a newly started relay as appropriate.
@@ -607,17 +669,22 @@ Active and successfully
 refreshed instruments replay every shortcut over their latest 128 trading
 sessions. The resulting return is durable, so an inactive instrument can show
 its last rolling return; a row without a rolling update falls back to its
-creation-time return. The client derives the same 30-session/63-session recent
-validation status used by screening results whenever the evaluated series is
-available.
+creation-time return. The same refreshed series feeds per-shortcut allocation
+guidance and A-long/B-short condition prices; the header does not render a
+separate guidance card.
 
-- `findStrategyShortcutMatch(...)`: compares a screening candidate plan with
-  current-instrument shortcuts. It returns an exact match or the closest shared
-  strategy type, including parameter, allocation, entry-filter, and tactical
-  mode differences.
+- `findStrategyShortcutMatch(...)`: compares a screening candidate plan only
+  with shortcuts from the supplied canonical instrument and interval scope. It
+  returns an exact match or the closest complete strategy-type match, including
+  parameter, allocation, entry-filter, and tactical mode differences. A dual
+  candidate matches only when both strategy IDs occur in the same saved plan;
+  one shared component is insufficient.
 - `evaluateRecentStrategyEffectiveness(...)`: applies the 30-session return,
   buy-and-hold excess, drawdown, two-execution, and optional 63-session
   confirmation gates. `mixed` means the recent excess-return, relative-drawdown,
   and medium-window confirmation evidence does not point in one direction.
 - Community formulas and registration functions are documented in
   `COMMUNITY_IMPORTS.md` and implemented under `lib/analysis/community/`.
+  `halfTrend`, `qqeMod`, and `schaffTrendCycle` expose aligned recursive state;
+  `sessionVolumeProfile` returns aligned POC/VAH/VAL plus latest-session bins;
+  `anchoredVwap` begins HLC3-volume accumulation at an absolute timestamp.

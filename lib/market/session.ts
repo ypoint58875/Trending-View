@@ -114,6 +114,7 @@ const CME_GLOBEX_OPEN_MINUTE = 17 * 60;
 const CME_GLOBEX_CLOSE_MINUTE = 16 * 60;
 export const ACTIVE_MARKET_REFRESH_INTERVAL_MS = 5 * 60 * 1_000;
 export const INTRADAY_MARKET_REFRESH_INTERVAL_MS = 60 * 1_000;
+export const INTRADAY_DELAY_WARNING_THRESHOLD_MINUTES = 3;
 export const UNKNOWN_MARKET_REFRESH_INTERVAL_MS = 15 * 60 * 1_000;
 export const POST_CLOSE_REFRESH_GRACE_MS = 30 * 60 * 1_000;
 export const MARKET_REFRESH_FAILURE_BACKOFF_MS = [
@@ -307,4 +308,20 @@ export function resolveLatestIntradayBarStatus(
   return fetchedAtTime >= barStart + intervalMinutes * 60 * 1_000
     ? "complete"
     : "in-progress";
+}
+
+export function estimateIntradayDataDelayMinutes(
+  barTimestamp: number,
+  fetchedAt: Date,
+): number | null {
+  if (!Number.isFinite(barTimestamp) || !Number.isFinite(fetchedAt.getTime())) {
+    return null;
+  }
+  const delayMinutes = Math.max(
+    0,
+    Math.round((fetchedAt.getTime() - barTimestamp) / (60 * 1_000)),
+  );
+  return delayMinutes >= INTRADAY_DELAY_WARNING_THRESHOLD_MINUTES
+    ? delayMinutes
+    : null;
 }

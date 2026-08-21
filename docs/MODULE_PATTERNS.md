@@ -1,5 +1,24 @@
 # Module Patterns
 
+## Multi-strategy plan slots
+
+- Extend multi-leg behavior through the shared `StrategySlot`/`STRATEGY_SLOTS` A–I contract. Persistence, archive keys, shortlist membership, display, and execution must traverse the same ordered slots while accepting missing trailing legacy slots.
+- Keep execution semantics dependent on strategy count: one leg is direct, two legs retain core/tactical hierarchy, and three-to-nine legs produce one weighted-consensus decision. Multi-leg weights must be finite, positive, and sum to one.
+- Discover four-through-nine-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 20 intermediate candidates per Strategy A primary at every three-through-nine-leg level, then rank all completed candidates and cap only the final displayed category at five per primary and 30 total.
+
+## Explicit multi-range validation
+
+- Add modes to the shared `ScreeningValidationConfig` discriminated union so UI, Worker protocol, archives, and calculation code stay aligned.
+- Never concatenate disjoint market ranges. Replay frozen candidates in each normalized range, rank within each range, then aggregate equal-weight normalized ranks.
+- Keep visible equity/performance from one real interval and store cross-period evidence in `screeningValidation` and the validation report.
+- Persist only user configuration in browser storage; results and market data retain their existing persistence boundaries.
+
+## Long-only TradingView community strategies
+
+- Register every port in `community/strategies.ts`, `strategies.ts`, `screening.ts`, the community catalog, localization, and coverage tests.
+- A port may emit only `0` and `1`; source short/reversal states become exits. Close-derived transitions use the shared next-open executor, and visual offsets are omitted from calculations.
+- Every parameter requires a finite screening domain and localized label. Prefix-causality and long-only target tests apply to the complete registry.
+
 ## Market provider
 
 Every provider must:
@@ -27,6 +46,10 @@ an explicit binding. Runtime lifecycle checks must probe health first, map a
 listener to its owning process, verify the exact current-checkout command and
 role arguments before stopping it, wait for release, and never stop another
 checkout or unrelated listener.
+One-shot local migration commands retain their normal exit-code contract. A
+process-tree recovery is allowed only after Wrangler emits the exact no-pending
+migrations terminal message and then exceeds a short exit grace period. A
+generic timeout must fail startup rather than assume migration success.
 
 Canonical orchestration belongs in `lib/market/canonical.ts`,
 `series.ts`, `quality.ts`, `canonical-cache.ts`, `source-health.ts`, and
@@ -182,10 +205,9 @@ cover the price plot.
 
 When a formula gains a backward-compatible parameter, add it to the registry
 and fill absent stored keys from registry defaults while still rejecting
-unknown keys. Strategy-linked pane studies are explicit strategy metadata, not
-inferred from a generic catalog label. Merge those derived configurations at
-render time so they do not mutate manual visibility preferences or saved
-indicator snapshots.
+unknown keys. Indicator panes are exclusively user-controlled: applying a
+strategy, applying a screening result, or opening a saved shortcut must not
+add, remove, reorder, or reconfigure visible indicators.
 
 Pivot-derived studies must not backpaint. A pivot may be calculated only when
 its configured right-side confirmation bars exist, and its level begins at the
@@ -262,13 +284,17 @@ core optimizer keeps cooperative yields for non-Worker/test callers. Run-local
 indicator, target, and order caches belong inside the worker lifetime; never
 persist or reload a completed result as an optimization cache. The current
 registry must produce exactly
-37,182 candidates; changing a domain requires updating the explicit coverage
+45,196 candidates; changing a domain requires updating the explicit coverage
 test and documentation.
 Objective comparison and tie-breaking belong in the shared screening module,
 not the UI. A candidate/observe-only presentation label may explain evidence
 quality but must not alter ranking. Tests enforce registry coverage, uniqueness,
 the exhaustive count, objective ordering, best-result sorting, progress
 completion, cancellation, and exact screening-card/application equality.
+Combination screening retains the top three final parameter sets per strategy,
+evaluates all nine parameter crossings per non-equivalent strategy-ID pair,
+and keeps one best crossing per pair before allocation replay. Do not collapse
+to the standalone winner before pairing.
 Generate each target from the complete loaded history so persistent state is
 not reset by an arbitrary warm-up boundary, then restrict only performance
 calculation to the selected range. If the complete target is already active
@@ -280,21 +306,18 @@ current run; do not retain every candidate array. When a strategy exposes
 executed target from it; do not also build a close target that the hybrid
 execution path will discard.
 
-Strategy plans use optional Strategy A and Strategy B selections. Both
-selectors accept the complete registry, but a dual plan must contain two
-different, non-equivalent strategy IDs. Equivalent strategy families are
+Strategy plans use optional Strategy A through Strategy E selections. Every
+selector accepts the complete registry, and every selected pair must
+contain different, non-equivalent strategy IDs. Equivalent strategy families are
 declared in the registry rather than inferred from display names. Catalog
-horizon metadata is descriptive and must not filter pair eligibility. For a
-dual plan, summarize each selected-range target
-by average active-run length. The longer average becomes the relative
-long-cycle gate; ties prefer fewer target transitions and then Strategy A.
-Use an event-driven state machine: a relative-long entry establishes its
-allocation. In base-then-add mode, an already-active relative-short signal is
-not inherited, a later fresh entry adds its allocation, and its exit removes
-that layer. In full-then-reduce mode, the gate entry establishes both sleeves,
-a relative-short exit removes its sleeve, and a later entry restores it. A
-relative-long exit clears every active layer. Validate both allocations
-in `[0, 1]` and require their sum not to exceed one.
+horizon metadata is descriptive and must not filter combination eligibility.
+For two legs, summarize selected-range targets by average active-run length and
+retain the established core/tactical event-driven state machine. For three to
+five legs, normalize positive allocations as judgment weights and drive one
+binary portfolio state with strict-majority plus 60% weighted confirmation for
+entry, and 40% weighted support or insufficient active-count confirmation for
+exit. Hold the prior state between thresholds. Do not translate individual leg
+changes into partial portfolio rebalances.
 
 Unified screening must reuse one selected objective, candidate domain, and
 tie-breaking contract for both result groups. First evaluate the complete
@@ -303,14 +326,16 @@ trend/breakout/momentum EMA family continue to the filter stage, and only their
 top 60 compact unfiltered results are compared under EMA(5), EMA(6), EMA(7),
 and EMA(8) at a fixed 0% threshold. Channel BreakOut and Price Channel belong
 to this family; reversal and candlestick strategies do not. Retain exactly one
-unique final winner per strategy for standard display and pairing. Rolling
-screening may retain the best ten per strategy for window aggregation before
-collapsing the displayed list to one per strategy. Combination screening is
-always enabled: enumerate every unordered pair of non-equivalent retained
-single results without catalog-horizon filtering. Retain every pair up to the
-4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With 37 strategies
+winner per strategy for standard display, but retain the top three final
+parameter sets per strategy for pairing. Rolling screening may retain the best
+ten per strategy for window aggregation before collapsing the displayed list
+to one per strategy. Combination screening is always enabled: evaluate all
+nine parameter crossings for every unordered non-equivalent strategy-ID pair
+without catalog-horizon filtering, keep the best crossing per pair, and retain
+every pair up to the
+4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With 57 strategies
 and two equivalent ID pairs excluded, the current catalog creates
-`choose(37, 2) - 2 = 664` unique-winner pairs. Store and replay
+`choose(57, 2) - 2 = 1,594` unique strategy-ID pairs. Store and replay
 `strategyAEntryFilter` and `strategyBEntryFilter` independently, including
 mixed filtered/unfiltered and different-EMA legs. Final presentation is a separate
 bounded view: keep one best result per unordered strategy-ID pair, then sort
@@ -337,7 +362,7 @@ uses its custom-interval objective.
 
 Screening progress presentation must use
 `resolveScreeningProgressBarState(...)` rather than reconstructing validation
-phases in the component. The shared scale contains four optimizer segments and
+phases in the component. The shared scale contains six optimizer segments and
 one additional segment for each rolling selection window. Period, range, and
 rolling completion must always resolve to equal value and maximum.
 
@@ -533,8 +558,40 @@ formula directly to a React component or duplicate its ID list in the main
 registry. Tests must prove catalog/registry agreement, bar alignment, and input
 prefix invariance. See `COMMUNITY_IMPORTS.md` for the complete intake contract.
 
+Recursive Pine ports preserve explicit prior-state variables and initialize
+them from the same first available series values. Visual displacement is never
+used as calculation input. Volume profiles distribute volume by price overlap,
+return aligned developing POC/VAH/VAL series, and keep the latest histogram as
+separate display data. Event-anchored indicators use a persisted absolute
+timestamp parameter with `kind: "datetime"`; bars-back anchors are forbidden
+because appending data would move the anchor and rewrite history.
+
 ## UI copy
 
 Chinese user-facing strings live in `app/i18n/zh-CN.ts`. Business logic,
 internal errors, identifiers, and tests remain English. Provider-defined field
 values may retain their source language when required for parsing.
+## Multi-leg strategy plan pattern
+
+Represent each selected strategy as a stable `strategyA` through `strategyE`
+leg with its own selection, judgment weight, entry filter, target, and order
+fills. Target generation branches within the shared `StrategyAllocationPlan`
+contract: one leg is direct, two legs use hierarchical allocation, and three to
+five legs use weighted consensus. Persistence, live guidance, chart indicators,
+and shortcut display must consume that same contract without treating 3–5 leg
+weights as independent tradable sleeves.
+
+Preserve legacy JSON by keeping trailing Strategy C–E fields optional and
+omitting them when absent. Candidate identity must include the complete sorted
+strategy-ID set, parameters, per-leg filters, allocations, and tactical mode.
+Equivalent strategy families remain invalid in every pairwise comparison.
+
+Triple search must be staged from retained pair parents rather than enumerate
+the cubic raw parameter grid. Keep reference-triple selection and allocation
+replay interruptible, bounded, and progress-reporting. Pair and triple results
+share one presentation pool but de-duplicate only within the same complete
+component set.
+
+Comprehensive assessment is post-screening evidence aggregation. It may consume
+the diversified shortlist and shared live-guidance outputs, but it must not
+modify candidate scores, rankings, backtests, or validation reports.

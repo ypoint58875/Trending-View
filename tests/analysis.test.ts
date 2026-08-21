@@ -35,6 +35,7 @@ import {
 } from "../lib/analysis/indicators";
 import {
   DEFAULT_SCREENING_YIELD_EVERY,
+  MAX_SCREENING_RESULTS_PER_CATEGORY,
   SCREENING_OBJECTIVES,
   buildNearbyParameterSets,
   buildScreeningCandidates,
@@ -57,6 +58,7 @@ import {
   parseSaveBacktestInput,
   parseSavedBacktestOrderInput,
   parseSavedBacktestRollingUpdateInput,
+  parseStrategyAllocationPlan,
   reorderSavedBacktestGroups,
   reorderSavedBacktestFolders,
   reorderSavedBacktestsWithinGroup,
@@ -81,28 +83,47 @@ import {
   INTRABAR_PRICE_ORDER_STRATEGY_IDS,
   LONG_HORIZON_STRATEGY_IDS,
   SHORT_HORIZON_STRATEGY_IDS,
+  VOLUME_REQUIRED_STRATEGY_IDS,
   areStrategiesEquivalent,
   getStrategy,
   getStrategiesByHorizon,
   STRATEGIES,
 } from "../lib/analysis/strategies";
 import {
+  MIN_INTRADAY_SCREENING_SESSIONS,
+  countIntradayTradingSessions,
+  hasIntradayScreeningEvidence,
+} from "../lib/analysis/intraday";
+import {
   COMBINATION_FINALISTS_PER_STRATEGY,
+  FIVE_STRATEGY_ALLOCATION_CANDIDATES,
+  FOUR_STRATEGY_ALLOCATION_CANDIDATES,
+  SIX_STRATEGY_ALLOCATION_CANDIDATES,
+  SEVEN_STRATEGY_ALLOCATION_CANDIDATES,
+  EIGHT_STRATEGY_ALLOCATION_CANDIDATES,
+  NINE_STRATEGY_ALLOCATION_CANDIDATES,
   MAX_COMBINATION_PAIR_FINALISTS,
   MAX_COMBINATION_RESULTS,
+  MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL,
+  MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
+  MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY,
   SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY,
+  STRATEGY_SLOTS,
   STRATEGY_LAYER_ALLOCATION_CANDIDATES,
+  THREE_STRATEGY_ALLOCATION_CANDIDATES,
   TWO_STRATEGY_ALLOCATION_CANDIDATES,
   buildLiveAllocationGuidance,
   buildStrategyPlanAllocationTarget,
   buildStrategyPlanTimeline,
   buildStrategyPlanTimelineFromTargets,
+  buildThreeStrategyPlanTimelineFromTargets,
   buildStrategyCombinationTarget,
   optimizeStrategyCombinations,
   resolveRelativeLongStrategy,
   summarizeStrategySignalHorizon,
   type CombinationScreeningProgress,
 } from "../lib/analysis/strategy-combinations";
+import { buildStrategyConsensusAdvice } from "../lib/analysis/strategy-consensus";
 import {
   TRADINGVIEW_BUILT_IN_STRATEGY_IDS,
 } from "../lib/analysis/built-in-strategies";
@@ -179,6 +200,7 @@ import {
 import {
   ACTIVE_MARKET_REFRESH_INTERVAL_MS,
   UNKNOWN_MARKET_REFRESH_INTERVAL_MS,
+  estimateIntradayDataDelayMinutes,
   marketRefreshFailureBackoffMs,
   resolveLatestDailyBarStatus,
   resolveLatestIntradayBarStatus,
@@ -221,6 +243,46 @@ function makeBars(closes: number[]): MarketBar[] {
     };
   });
 }
+
+function makeIntradayBars(
+  sessions: number,
+  barsPerSession: number,
+): MarketBar[] {
+  const bars: MarketBar[] = [];
+  for (let session = 0; session < sessions; session += 1) {
+    const date = new Date(Date.UTC(2025, 0, session + 1));
+    const day = date.toISOString().slice(0, 10);
+    for (let minute = 0; minute < barsPerSession; minute += 1) {
+      const close = 100 + session + minute * 0.1;
+      bars.push({
+        time: `${day} 09:${String(30 + minute).padStart(2, "0")}`,
+        timestamp: date.getTime() + (30 + minute) * 60_000,
+        open: close,
+        high: close + 0.2,
+        low: close - 0.2,
+        close,
+        volume: 1_000,
+        amount: close * 1_000,
+        amplitude: 0,
+        changePercent: 0,
+        change: 0,
+        turnoverRate: 0,
+      });
+    }
+  }
+  return bars;
+}
+
+test("requires five complete intraday sessions before screening", () => {
+  const fourSessions = makeIntradayBars(4, 10);
+  const fiveSessions = makeIntradayBars(5, 10);
+
+  assert.equal(MIN_INTRADAY_SCREENING_SESSIONS, 5);
+  assert.equal(countIntradayTradingSessions(fourSessions), 4);
+  assert.equal(countIntradayTradingSessions(fiveSessions), 5);
+  assert.equal(hasIntradayScreeningEvidence(fourSessions), false);
+  assert.equal(hasIntradayScreeningEvidence(fiveSessions), true);
+});
 
 function makeOhlcBars(
   rows: Array<{
@@ -870,6 +932,7 @@ test("bounds extended daily history without expanding intraday requests", () => 
   assert.equal(DAILY_HISTORY_START_DATE, "2000-01-01");
   assert.equal(DAILY_HISTORY_LIMIT, 10_000);
   assert.equal(clampMarketSeriesLimit(50_000, "1d"), 10_000);
+  assert.equal(clampMarketSeriesLimit(50_000, "1m"), 2_500);
   assert.equal(clampMarketSeriesLimit(50_000, "5m"), 1_500);
   assert.equal(requestsExtendedDailyHistory("1d", 10_000), true);
   assert.equal(requestsExtendedDailyHistory("1d", 1_500), false);
@@ -1974,7 +2037,7 @@ test("builds aligned long-only signals for every strategy", () => {
     }),
   );
 
-  assert.equal(STRATEGIES.length, 37);
+  assert.equal(STRATEGIES.length, 57);
   assert.equal(TRADINGVIEW_BUILT_IN_STRATEGY_IDS.length, 20);
   assert.deepEqual(
     STRATEGIES.filter((strategy) => strategy.id.startsWith("tv-")).map(
@@ -2020,6 +2083,20 @@ test("classifies every registered strategy into one explicit holding horizon", (
     "tv-technical-ratings",
     "community-squeeze-momentum",
     "community-ut-bot",
+    "community-hull-suite",
+    "community-chandelier-exit",
+    "community-ssl-channel",
+    "community-range-filter",
+    "community-kama-trend",
+    "community-dual-supertrend",
+    "community-alligator-fractal",
+    "community-trendline-break",
+    "community-nadaraya-watson",
+    "community-kalman-velocity",
+    "community-mcginley-dynamic",
+    "community-vortex",
+    "community-volume-weighted-macd",
+    "community-half-trend",
   ]);
   assert.deepEqual(SHORT_HORIZON_STRATEGY_IDS, [
     "rsi-reversal",
@@ -2040,6 +2117,12 @@ test("classifies every registered strategy into one explicit holding horizon", (
     "tv-stochastic-slow",
     "tv-volty-expan-close",
     "community-bollinger-rsi",
+    "community-wave-trend",
+    "community-elder-ray",
+    "community-tma-bands",
+    "community-mfi-rsi",
+    "community-qqe-mod",
+    "community-schaff-trend-cycle",
   ]);
 
   const categorizedIds = [
@@ -2281,6 +2364,11 @@ test("reports current plan allocation and increase, reduce, hold, or wait", () =
       action: "increase",
       previousAllocation: 0,
       targetAllocation: 1,
+      strategyCount: 1,
+      activeStrategyCount: 1,
+      activeWeight: 1,
+      entrySupportCount: 1,
+      exitSupportCount: 1,
     },
   );
   assert.equal(
@@ -2293,6 +2381,11 @@ test("reports current plan allocation and increase, reduce, hold, or wait", () =
       action: "reduce",
       previousAllocation: 1,
       targetAllocation: 0,
+      strategyCount: 1,
+      activeStrategyCount: 0,
+      activeWeight: 0,
+      entrySupportCount: 1,
+      exitSupportCount: 1,
     },
   );
   assert.equal(
@@ -3745,6 +3838,39 @@ test("maps allocation increases, reductions, and valuation exits to markers", ()
   assert.equal(markers.rangeExits[0].price, 98);
 });
 
+test("labels inherited range exposure as an opening position without adding a trade", () => {
+  const bars = makeOhlcBars([
+    { open: 10, high: 10, low: 10, close: 10 },
+    { open: 11, high: 11, low: 11, close: 11 },
+    { open: 12, high: 12, low: 12, close: 12 },
+    { open: 13, high: 13, low: 13, close: 13 },
+    { open: 14, high: 14, low: 14, close: 14 },
+  ]);
+  const result = runAllocationBacktest(bars, [0, 1, 1, 0, 0], {
+    initialCash: 10_000,
+    commissionRate: 0,
+    slippageRate: 0,
+    interval: "1d",
+    startTime: bars[2].time,
+    endTime: bars[4].time,
+  });
+  const markers = buildAllocationTradeMarkers(
+    result.rebalances,
+    result.openingPosition,
+  );
+
+  assert.deepEqual(result.openingPosition, {
+    time: bars[2].time,
+    price: bars[2].open,
+    allocation: 1,
+  });
+  assert.equal(result.tradeCount, 1);
+  assert.equal(result.rebalances.length, 1);
+  assert.equal(markers.buys[0].action, "carry");
+  assert.equal(markers.buys[0].time, bars[2].time);
+  assert.equal(markers.sells.length, 1);
+});
+
 test("classifies a simultaneous long and short exit as one close marker", () => {
   const markers = buildAllocationTradeMarkers([
     {
@@ -3785,14 +3911,17 @@ test("optimizes every strategy and sorts best results by score", async () => {
 
   assert.equal(outcome.totalCandidates, STRATEGIES.length * 3);
   assert.equal(outcome.evaluatedCount, outcome.totalCandidates);
-  assert.equal(outcome.results.length, STRATEGIES.length);
+  assert.equal(
+    outcome.results.length,
+    MAX_SCREENING_RESULTS_PER_CATEGORY,
+  );
   assert.equal(outcome.cancelled, false);
   assert.equal(outcome.failedCount, 0);
   assert.equal(progress.at(0), 0);
   assert.equal(progress.at(-1), outcome.totalCandidates);
   assert.equal(
     new Set(outcome.results.map((result) => result.strategyId)).size,
-    STRATEGIES.length,
+    MAX_SCREENING_RESULTS_PER_CATEGORY,
   );
   for (let index = 1; index < outcome.results.length; index += 1) {
     assert.ok(
@@ -3822,16 +3951,133 @@ test("builds complete horizon-filtered screening candidates", () => {
 test("excludes volume-dependent strategies from screening when requested", () => {
   const candidates = buildScreeningCandidates(
     ["long", "short"],
-    ["mfi-reversal", "vwap-reversion"],
+    VOLUME_REQUIRED_STRATEGY_IDS,
   );
-  assert.ok(candidates.length > 0);
+  assert.equal(candidates.length, 39_934);
   assert.ok(
     candidates.every(
-      (candidate) =>
-        candidate.strategyId !== "mfi-reversal" &&
-        candidate.strategyId !== "vwap-reversion",
+      (candidate) => !VOLUME_REQUIRED_STRATEGY_IDS.includes(
+        candidate.strategyId as (typeof VOLUME_REQUIRED_STRATEGY_IDS)[number],
+      ),
     ),
   );
+  assert.ok(
+    candidates.some((candidate) => candidate.strategyId === "community-half-trend"),
+  );
+  assert.ok(
+    candidates.some((candidate) => candidate.strategyId === "community-qqe-mod"),
+  );
+  assert.ok(
+    candidates.some(
+      (candidate) => candidate.strategyId === "community-schaff-trend-cycle",
+    ),
+  );
+});
+
+test("builds all positive tenth-based three-strategy allocations", () => {
+  assert.equal(THREE_STRATEGY_ALLOCATION_CANDIDATES.length, 36);
+  assert.deepEqual(
+    new Set(
+      THREE_STRATEGY_ALLOCATION_CANDIDATES.map(
+        ({ tacticalMode }) => tacticalMode,
+      ),
+    ),
+    new Set(["add-on-short-entry"]),
+  );
+  assert.ok(
+    THREE_STRATEGY_ALLOCATION_CANDIDATES.every((allocation) => {
+      const values = [
+        allocation.strategyAAllocation,
+        allocation.strategyBAllocation,
+        allocation.strategyCAllocation,
+      ];
+      return (
+        values.every(
+          (value) => value >= 0.1 && Number.isInteger(value * 10),
+        ) &&
+        Math.abs(values.reduce((sum, value) => sum + value, 0) - 1) <
+          1e-10
+      );
+    }),
+  );
+});
+
+test("builds flexible positive tenth-based four- through nine-strategy allocations", () => {
+  assert.equal(FOUR_STRATEGY_ALLOCATION_CANDIDATES.length, 84);
+  assert.equal(FIVE_STRATEGY_ALLOCATION_CANDIDATES.length, 126);
+  assert.equal(SIX_STRATEGY_ALLOCATION_CANDIDATES.length, 126);
+  assert.equal(SEVEN_STRATEGY_ALLOCATION_CANDIDATES.length, 84);
+  assert.equal(EIGHT_STRATEGY_ALLOCATION_CANDIDATES.length, 36);
+  assert.equal(NINE_STRATEGY_ALLOCATION_CANDIDATES.length, 9);
+  for (const candidates of [
+    FOUR_STRATEGY_ALLOCATION_CANDIDATES,
+    FIVE_STRATEGY_ALLOCATION_CANDIDATES,
+    SIX_STRATEGY_ALLOCATION_CANDIDATES,
+    SEVEN_STRATEGY_ALLOCATION_CANDIDATES,
+    EIGHT_STRATEGY_ALLOCATION_CANDIDATES,
+    NINE_STRATEGY_ALLOCATION_CANDIDATES,
+  ] as const) {
+    assert.ok(
+      candidates.every((allocation) => {
+        const values = Object.entries(allocation)
+          .filter(([key]) => key.endsWith("Allocation"))
+          .map(([, value]) => Number(value));
+        return (
+          values.every(
+            (value) => value >= 0.1 && Number.isInteger(value * 10),
+          ) &&
+          Math.abs(values.reduce((sum, value) => sum + value, 0) - 1) < 1e-10
+        );
+      }),
+    );
+  }
+});
+
+test("uses three strategies as one weighted consensus decision", () => {
+  const timeline = buildThreeStrategyPlanTimelineFromTargets(
+    [0, 1, 1, 1, 1, 0],
+    [0, 0, 1, 0, 0, 0],
+    [0, 1, 1, 0, 1, 0],
+    0.4,
+    0.3,
+    0.3,
+    undefined,
+    "strategyA",
+    "add-on-short-entry",
+  );
+  assert.deepEqual(timeline.target, [0, 1, 1, 0, 1, 0]);
+  assert.deepEqual(timeline.signalEvents, [
+    [],
+    ["long-entry"],
+    [],
+    ["long-exit"],
+    ["long-entry"],
+    ["long-exit"],
+  ]);
+  assert.equal(timeline.relativeLongStrategy, "strategyA");
+});
+
+test("does not rebalance while three-strategy consensus remains valid", () => {
+  const timeline = buildThreeStrategyPlanTimelineFromTargets(
+    [0, 1, 1, 1, 1, 0],
+    [0, 1, 0, 1, 1, 0],
+    [0, 1, 1, 0, 1, 1],
+    0.4,
+    0.3,
+    0.3,
+    undefined,
+    "strategyA",
+    "reduce-on-short-exit",
+  );
+  assert.deepEqual(timeline.target, [0, 1, 1, 1, 1, 0]);
+  assert.deepEqual(timeline.signalEvents, [
+    [],
+    ["long-entry"],
+    [],
+    [],
+    [],
+    ["long-exit"],
+  ]);
 });
 
 test("starts fully invested then tactically reduces and replenishes without shorting", () => {
@@ -3903,8 +4149,11 @@ test("keeps screening cards identical to applying the same full-history strategy
     interval: "1d" as const,
     executionPolicy: "hybrid" as const,
   };
+  const candidates = firstScreeningCandidatesPerStrategy(1).filter(
+    (candidate) => candidate.strategyId === "tv-bar-up-down",
+  );
   const outcome = await optimizeStrategies(bars, settings, {
-    candidates: firstScreeningCandidatesPerStrategy(1),
+    candidates,
     yieldEvery: 10_000,
   });
   const screened = outcome.results.find(
@@ -3925,7 +4174,7 @@ test("keeps screening cards identical to applying the same full-history strategy
     bars,
     settings,
     {
-      candidates: firstScreeningCandidatesPerStrategy(1),
+      candidates,
       maxPairFinalists: 1,
       allocationCandidates: [TWO_STRATEGY_ALLOCATION_CANDIDATES[0]],
       yieldEvery: 10_000,
@@ -3963,12 +4212,13 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
     },
     {
       candidates: firstScreeningCandidatesPerStrategy(1),
+      includeTriples: false,
       yieldEvery: 16,
       onProgress: (update) => progress.push({ ...update }),
     },
   );
 
-  assert.equal(COMBINATION_FINALISTS_PER_STRATEGY, 1);
+  assert.equal(COMBINATION_FINALISTS_PER_STRATEGY, 3);
   const distinctStrategyPairCount = STRATEGIES.reduce(
     (count, strategyA, strategyAIndex) =>
       count +
@@ -3980,8 +4230,7 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
   );
   assert.ok(
     MAX_COMBINATION_PAIR_FINALISTS >=
-      distinctStrategyPairCount *
-        COMBINATION_FINALISTS_PER_STRATEGY ** 2,
+      distinctStrategyPairCount,
   );
   assert.equal(
     outcome.totalCandidates,
@@ -3992,7 +4241,10 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
   assert.equal(outcome.evaluatedCount, outcome.totalCandidates);
   assert.equal(outcome.failedCount, 0);
   assert.equal(outcome.cancelled, false);
-  assert.equal(outcome.singleResults.length, STRATEGIES.length);
+  assert.equal(
+    outcome.singleResults.length,
+    MAX_SCREENING_RESULTS_PER_CATEGORY,
+  );
   assert.equal(
     new Set(outcome.singleResults.map((result) => result.strategyId)).size,
     outcome.singleResults.length,
@@ -4012,6 +4264,20 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
     entryFilters: 1,
     pairs: 2,
     allocations: 3,
+    triples: 4,
+    tripleAllocations: 5,
+    quadruples: 6,
+    quadrupleAllocations: 7,
+    quintuples: 8,
+    quintupleAllocations: 9,
+    sextuples: 10,
+    sextupleAllocations: 11,
+    septuples: 12,
+    septupleAllocations: 13,
+    octuples: 14,
+    octupleAllocations: 15,
+    nonuples: 16,
+    nonupleAllocations: 17,
   } as const;
   const segmentedProgress = progress.map(
     (update) =>
@@ -4068,13 +4334,13 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
     );
     assert.deepEqual(
       result.strategyAParameters,
-      outcome.singleResults.find(
+      outcome.singleCandidatePool.find(
         (single) => single.strategyId === result.strategyAId,
       )?.parameters,
     );
     assert.deepEqual(
       result.strategyBParameters,
-      outcome.singleResults.find(
+      outcome.singleCandidatePool.find(
         (single) => single.strategyId === result.strategyBId,
       )?.parameters,
     );
@@ -4117,6 +4383,158 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
       ) <= 0,
     );
   }
+});
+
+test("crosses the top three parameter finalists for every strategy pair", async () => {
+  const bars = makeBars(
+    Array.from({ length: 160 }, (_, index) =>
+      40 + index * 0.04 + Math.sin(index / 5) * 2,
+    ),
+  );
+  const completeCandidates = buildScreeningCandidates();
+  const candidates = ["sma-cross", "rsi-reversal"].flatMap((strategyId) =>
+    completeCandidates
+      .filter((candidate) => candidate.strategyId === strategyId)
+      .slice(0, COMBINATION_FINALISTS_PER_STRATEGY),
+  );
+  const progress: CombinationScreeningProgress[] = [];
+  const outcome = await optimizeStrategyCombinations(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+    },
+    {
+      candidates,
+      allocationCandidates: [TWO_STRATEGY_ALLOCATION_CANDIDATES[0]],
+      yieldEvery: 10_000,
+      onProgress: (update) => progress.push({ ...update }),
+    },
+  );
+
+  assert.equal(
+    progress.find((update) => update.stage === "pairs")?.stageTotal,
+    COMBINATION_FINALISTS_PER_STRATEGY ** 2,
+  );
+  assert.equal(
+    outcome.totalCandidates,
+    candidates.length + COMBINATION_FINALISTS_PER_STRATEGY ** 2,
+  );
+  assert.equal(outcome.results.length, 1);
+});
+
+test("keeps the top thirty two- through nine-strategy results independently", async () => {
+  assert.equal(MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY, 20);
+  assert.equal(
+    MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL,
+    STRATEGIES.length * MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
+  );
+  const bars = makeBars(
+    Array.from(
+      { length: 180 },
+      (_, index) => 40 + index * 0.08 + Math.sin(index / 6) * 2,
+    ),
+  );
+  const strategyIds = [
+    "sma-cross",
+    "rsi-reversal",
+    "macd-momentum",
+    "bollinger-reversion",
+    "donchian-breakout",
+    "kdj-reversal",
+    "ichimoku-trend",
+    "roc-momentum",
+    "tv-bar-up-down",
+  ] as const;
+  const outcome = await optimizeStrategyCombinations(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0.0003,
+      slippageRate: 0.0002,
+      interval: "1d",
+    },
+    {
+      candidates: strategyIds.map((strategyId) => ({
+        strategyId,
+        parameters: { ...getStrategy(strategyId).defaultParameters },
+      })),
+      allocationCandidates: [TWO_STRATEGY_ALLOCATION_CANDIDATES[0]],
+      tripleAllocationCandidates: [
+        THREE_STRATEGY_ALLOCATION_CANDIDATES.find(
+          (allocation) =>
+            allocation.strategyAAllocation === 0.4 &&
+            allocation.strategyBAllocation === 0.3 &&
+            allocation.strategyCAllocation === 0.3 &&
+            allocation.tacticalMode === "add-on-short-entry",
+        )!,
+      ],
+      quadrupleAllocationCandidates: [FOUR_STRATEGY_ALLOCATION_CANDIDATES[0]],
+      quintupleAllocationCandidates: [FIVE_STRATEGY_ALLOCATION_CANDIDATES[0]],
+      sextupleAllocationCandidates: [SIX_STRATEGY_ALLOCATION_CANDIDATES[0]],
+      septupleAllocationCandidates: [SEVEN_STRATEGY_ALLOCATION_CANDIDATES[0]],
+      octupleAllocationCandidates: [EIGHT_STRATEGY_ALLOCATION_CANDIDATES[0]],
+      nonupleAllocationCandidates: [NINE_STRATEGY_ALLOCATION_CANDIDATES[0]],
+      retainedSinglesPerStrategy: 1,
+      maxPairFinalists: 30,
+      maxTripleParentPairs: 28,
+      maxTripleFinalists: 56,
+      yieldEvery: 64,
+    },
+  );
+  const resultsByCount = new Map(
+    Array.from({ length: 8 }, (_, index) => {
+      const count = index + 2;
+      return [
+        count,
+        outcome.results.filter((result) =>
+          STRATEGY_SLOTS.filter((slot) =>
+            Boolean((result as unknown as Record<string, unknown>)[`${slot}Id`]),
+          ).length === count,
+        ),
+      ] as const;
+    }),
+  );
+  assert.equal(outcome.cancelled, false);
+  assert.equal(outcome.failedCount, 0);
+  for (let count = 2; count <= 9; count += 1) {
+    const categoryResults = resultsByCount.get(count) ?? [];
+    const categoryCount = categoryResults.length;
+    assert.ok(categoryCount > 0);
+    assert.ok(categoryCount <= MAX_COMBINATION_RESULTS);
+    if (count >= 3) {
+      const primaryCounts = new Map<string, number>();
+      for (const result of categoryResults) {
+        primaryCounts.set(
+          result.strategyAId,
+          (primaryCounts.get(result.strategyAId) ?? 0) + 1,
+        );
+      }
+      assert.ok(
+        [...primaryCounts.values()].every(
+          (primaryCount) =>
+            primaryCount <= MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY,
+        ),
+      );
+    }
+  }
+  const tripleResults = resultsByCount.get(3)!;
+  const quadrupleResults = resultsByCount.get(4)!;
+  const quintupleResults = resultsByCount.get(5)!;
+  assert.ok(
+    tripleResults.every(
+      (result) =>
+        new Set([
+          result.strategyAId,
+          result.strategyBId,
+          result.strategyCId,
+        ]).size === 3,
+    ),
+  );
+  assert.ok(quadrupleResults.every((result) => result.strategyDId));
+  assert.ok(quintupleResults.every((result) => result.strategyEId));
 });
 
 test("screens EMA 5-8 only for the top 60 eligible-family parameter sets", async () => {
@@ -4245,6 +4663,7 @@ test("bounds allocation optimization to the retained strategy-pair shortlist", a
     },
     {
       candidates: firstScreeningCandidatesPerStrategy(2),
+      includeTriples: false,
       maxPairFinalists,
       yieldEvery: 10_000,
     },
@@ -4259,7 +4678,7 @@ test("bounds allocation optimization to the retained strategy-pair shortlist", a
             !areStrategiesEquivalent(strategyA.id, strategyB.id),
         ).length,
       0,
-    ) * COMBINATION_FINALISTS_PER_STRATEGY ** 2;
+    ) * Math.min(2, COMBINATION_FINALISTS_PER_STRATEGY) ** 2;
   const remainingAllocationCandidates =
     TWO_STRATEGY_ALLOCATION_CANDIDATES.length - 1;
 
@@ -4298,6 +4717,7 @@ test("keeps only the best allocation for each retained strategy pair", async () 
   };
   const outcome = await optimizeStrategyCombinations(bars, settings, {
     candidates: firstScreeningCandidatesPerStrategy(1),
+    includeTriples: false,
     maxPairFinalists: 1,
     yieldEvery: 10_000,
   });
@@ -4407,10 +4827,10 @@ test("ranks screening results by the selected optimization objective", () => {
 test("builds every unique parameter set without per-strategy sampling", () => {
   assert.equal(DEFAULT_SCREENING_YIELD_EVERY, 128);
   assert.equal(SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY, 60);
-  assert.equal(buildScreeningCandidates().length, 37_182);
+  assert.equal(buildScreeningCandidates().length, 45_196);
 
   const screeningCandidates = buildScreeningCandidates();
-  assert.equal(screeningCandidates.length, 37_182);
+  assert.equal(screeningCandidates.length, 45_196);
   const candidatesByStrategy = new Map<
     string,
     Array<Record<string, number>>
@@ -5598,9 +6018,36 @@ test("fingerprints and compares compact screening run archives", async () => {
     kind: "combination" as const,
     strategyBId: "ema-cross" as const,
     strategyBParameters: { fast: 2, slow: 4 },
-    strategyAAllocation: 0.3,
-    strategyBAllocation: 0.7,
-    relativeLongStrategy: "strategyA" as const,
+    strategyCId: "rsi-reversal" as const,
+    strategyCParameters: getStrategy("rsi-reversal").defaultParameters,
+    strategyDId: "macd-momentum" as const,
+    strategyDParameters: getStrategy("macd-momentum").defaultParameters,
+    strategyDEntryFilter: null,
+    strategyEId: "donchian-breakout" as const,
+    strategyEParameters: getStrategy("donchian-breakout").defaultParameters,
+    strategyEEntryFilter: null,
+    strategyFId: "bollinger-reversion" as const,
+    strategyFParameters: getStrategy("bollinger-reversion").defaultParameters,
+    strategyFEntryFilter: null,
+    strategyGId: "kdj-reversal" as const,
+    strategyGParameters: getStrategy("kdj-reversal").defaultParameters,
+    strategyGEntryFilter: null,
+    strategyHId: "ichimoku-trend" as const,
+    strategyHParameters: getStrategy("ichimoku-trend").defaultParameters,
+    strategyHEntryFilter: null,
+    strategyIId: "roc-momentum" as const,
+    strategyIParameters: getStrategy("roc-momentum").defaultParameters,
+    strategyIEntryFilter: null,
+    strategyAAllocation: 0.2,
+    strategyBAllocation: 0.1,
+    strategyCAllocation: 0.1,
+    strategyDAllocation: 0.1,
+    strategyEAllocation: 0.1,
+    strategyFAllocation: 0.1,
+    strategyGAllocation: 0.1,
+    strategyHAllocation: 0.1,
+    strategyIAllocation: 0.1,
+    relativeLongStrategy: "strategyI" as const,
   };
   const nativeCandidates = [input.candidates[0], combinationCandidate];
   assert.deepEqual(
@@ -5730,6 +6177,16 @@ test("matches saved strategy plans by selections, parameters, and allocations", 
 });
 
 test("describes exact and same-type shortcut matches", () => {
+  const instrument = {
+    code: "N225",
+    symbol: "^N225",
+    secid: "100.N225",
+    name: "Nikkei 225",
+    exchange: "JPX" as const,
+    assetType: "index" as const,
+    provider: "yahoo" as const,
+  };
+  const scope = { instrument, interval: "1d" as const };
   const savedPlan = {
     strategyA: {
       strategyId: "sma-cross" as const,
@@ -5741,10 +6198,36 @@ test("describes exact and same-type shortcut matches", () => {
   };
   const saved = {
     id: 91,
+    instrument,
+    interval: "1d",
     plan: savedPlan,
   } as unknown as SavedBacktestRecord;
+  const otherInstrument = {
+    ...saved,
+    id: 92,
+    instrument: {
+      code: "GC=F",
+      symbol: "GC=F",
+      secid: "GC=F",
+      name: "Gold Futures",
+      exchange: "COMEX" as const,
+      assetType: "commodity" as const,
+      provider: "yahoo" as const,
+    },
+  };
+  const otherInterval = {
+    ...saved,
+    id: 93,
+    interval: "1m" as const,
+  };
 
-  assert.deepEqual(findStrategyShortcutMatch(savedPlan, [saved]), {
+  assert.deepEqual(
+    findStrategyShortcutMatch(
+      savedPlan,
+      [otherInstrument, otherInterval, saved],
+      scope,
+    ),
+    {
     kind: "exact",
     savedBacktestId: 91,
     sharedStrategyIds: ["sma-cross"],
@@ -5752,7 +6235,13 @@ test("describes exact and same-type shortcut matches", () => {
     allocationDifferent: false,
     entryFilterDifferent: false,
     tacticalModeDifferent: false,
-  });
+    },
+  );
+
+  assert.equal(
+    findStrategyShortcutMatch(savedPlan, [otherInstrument, otherInterval], scope),
+    null,
+  );
 
   const sameType = findStrategyShortcutMatch(
     {
@@ -5763,6 +6252,7 @@ test("describes exact and same-type shortcut matches", () => {
       },
     },
     [saved],
+    scope,
   );
   assert.equal(sameType?.kind, "same-type");
   assert.deepEqual(sameType?.parameterDifferences, [
@@ -5783,7 +6273,184 @@ test("describes exact and same-type shortcut matches", () => {
         },
       },
       [saved],
+      scope,
     ),
     null,
   );
+
+  const savedCombination = {
+    ...saved,
+    id: 94,
+    plan: {
+      ...savedPlan,
+      strategyAAllocation: 0.6,
+      strategyB: {
+        strategyId: "rsi-reversal" as const,
+        parameters: { period: 14, entry: 30, exit: 65 },
+      },
+      strategyBAllocation: 0.4,
+    },
+  } as SavedBacktestRecord;
+  assert.equal(
+    findStrategyShortcutMatch(savedPlan, [savedCombination], scope),
+    null,
+  );
+  const candidateCombination = {
+    ...savedCombination.plan,
+    strategyB: {
+      strategyId: "macd-momentum" as const,
+      parameters: { fast: 12, slow: 26, signal: 9 },
+    },
+  };
+
+  assert.equal(
+    findStrategyShortcutMatch(candidateCombination, [savedCombination], scope),
+    null,
+  );
+
+  const matchingCombination = {
+    ...candidateCombination,
+    strategyB: {
+      strategyId: "rsi-reversal" as const,
+      parameters: { period: 10, entry: 25, exit: 70 },
+    },
+  };
+  assert.deepEqual(
+    findStrategyShortcutMatch(matchingCombination, [savedCombination], scope)
+      ?.sharedStrategyIds,
+    ["sma-cross", "rsi-reversal"],
+  );
+});
+
+test("parses and compares backward-compatible three-strategy plans", () => {
+  const strategyIds = ["sma-cross", "rsi-reversal", "macd-momentum"] as const;
+  const parsed = parseStrategyAllocationPlan({
+    strategyA: {
+      strategyId: strategyIds[0],
+      parameters: getStrategy(strategyIds[0]).defaultParameters,
+    },
+    strategyB: {
+      strategyId: strategyIds[1],
+      parameters: getStrategy(strategyIds[1]).defaultParameters,
+    },
+    strategyC: {
+      strategyId: strategyIds[2],
+      parameters: getStrategy(strategyIds[2]).defaultParameters,
+    },
+    strategyAAllocation: 0.4,
+    strategyBAllocation: 0.3,
+    strategyCAllocation: 0.3,
+    tacticalMode: "add-on-short-entry",
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.strategyC?.strategyId, "macd-momentum");
+  assert.equal(parsed.strategyCAllocation, 0.3);
+  assert.equal(strategyPlansEqual(parsed, { ...parsed }), true);
+  assert.equal(
+    parseStrategyAllocationPlan({
+      ...parsed,
+      strategyC: parsed.strategyA,
+    }),
+    null,
+  );
+  const fiveStrategyPlan = parseStrategyAllocationPlan({
+    ...parsed,
+    strategyAAllocation: 0.4,
+    strategyBAllocation: 0.2,
+    strategyCAllocation: 0.2,
+    strategyD: {
+      strategyId: "donchian-breakout",
+      parameters: getStrategy("donchian-breakout").defaultParameters,
+    },
+    strategyDAllocation: 0.1,
+    strategyE: {
+      strategyId: "bollinger-reversion",
+      parameters: getStrategy("bollinger-reversion").defaultParameters,
+    },
+    strategyEAllocation: 0.1,
+  });
+  assert.ok(fiveStrategyPlan);
+  assert.equal(fiveStrategyPlan.strategyD?.strategyId, "donchian-breakout");
+  assert.equal(fiveStrategyPlan.strategyE?.strategyId, "bollinger-reversion");
+  assert.equal(strategyPlansEqual(fiveStrategyPlan, { ...fiveStrategyPlan }), true);
+  const nineStrategyPlan = parseStrategyAllocationPlan({
+    ...fiveStrategyPlan,
+    strategyAAllocation: 0.2,
+    strategyBAllocation: 0.1,
+    strategyCAllocation: 0.1,
+    strategyDAllocation: 0.1,
+    strategyEAllocation: 0.1,
+    strategyF: {
+      strategyId: "kdj-reversal",
+      parameters: getStrategy("kdj-reversal").defaultParameters,
+    },
+    strategyFAllocation: 0.1,
+    strategyG: {
+      strategyId: "ichimoku-trend",
+      parameters: getStrategy("ichimoku-trend").defaultParameters,
+    },
+    strategyGAllocation: 0.1,
+    strategyH: {
+      strategyId: "roc-momentum",
+      parameters: getStrategy("roc-momentum").defaultParameters,
+    },
+    strategyHAllocation: 0.1,
+    strategyI: {
+      strategyId: "tv-bar-up-down",
+      parameters: getStrategy("tv-bar-up-down").defaultParameters,
+    },
+    strategyIAllocation: 0.1,
+  });
+  assert.ok(nineStrategyPlan);
+  assert.equal(nineStrategyPlan.strategyI?.strategyId, "tv-bar-up-down");
+  assert.equal(strategyPlansEqual(nineStrategyPlan, { ...nineStrategyPlan }), true);
+});
+
+test("forms a weighted consensus buy point from independent live targets", () => {
+  const advice = buildStrategyConsensusAdvice([
+    {
+      key: "single",
+      strategyIds: ["sma-cross"],
+      previousAllocation: 0,
+      targetAllocation: 1,
+      weight: 3,
+    },
+    {
+      key: "pair",
+      strategyIds: ["rsi-reversal", "macd-momentum"],
+      previousAllocation: 0,
+      targetAllocation: 0.8,
+      weight: 2,
+    },
+    {
+      key: "triple",
+      strategyIds: ["donchian-breakout", "bollinger-reversion", "sma-cross"],
+      previousAllocation: 0.1,
+      targetAllocation: 0.7,
+      weight: 1,
+    },
+  ]);
+  assert.equal(advice?.action, "buy");
+  assert.equal(advice?.confidence, "high");
+  assert.equal(advice?.targetAllocation, 0.9);
+  assert.equal(advice?.evidenceCount, 3);
+});
+
+test("reports material intraday data delay without flagging normal bar latency", () => {
+  const fetchedAt = new Date("2026-08-14T01:55:00.000Z");
+  assert.equal(
+    estimateIntradayDataDelayMinutes(
+      Date.parse("2026-08-14T01:40:00.000Z"),
+      fetchedAt,
+    ),
+    15,
+  );
+  assert.equal(
+    estimateIntradayDataDelayMinutes(
+      Date.parse("2026-08-14T01:53:00.000Z"),
+      fetchedAt,
+    ),
+    null,
+  );
+  assert.equal(estimateIntradayDataDelayMinutes(Number.NaN, fetchedAt), null);
 });

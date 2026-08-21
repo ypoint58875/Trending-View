@@ -231,7 +231,14 @@ test("PowerShell launcher validates, migrates, verifies, and opens localhost", (
   assert.notEqual(launcher, "");
   assert.match(launcher, /\[version\]"22\.13\.0"/);
   assert.match(launcher, /npm\.cmd ci/);
-  assert.match(launcher, /npm\.cmd run local:db:migrate/);
+  assert.match(launcher, /function Invoke-QuantScopeLocalMigrations/);
+  assert.match(
+    launcher,
+    /\.Arguments = "run local:db:migrate"/,
+  );
+  assert.match(launcher, /Get-Command `\r?\n\s+\$resolvedNpmCommand/);
+  assert.match(launcher, /No migrations to apply!/);
+  assert.match(launcher, /Stop-QuantScopeProcessTree -Process \$process/);
   assert.match(launcher, /-Uri \$localUrl `\r?\n\s+-TimeoutSec 10/);
   assert.match(launcher, /\$runtimeHost = "127\.0\.0\.1"/);
   assert.match(launcher, /Application = \[pscustomobject\]@\{/);
@@ -316,6 +323,59 @@ test("dependency readiness rejects missing and damaged installs", () => {
     );
     assert.equal(ready.status, 0, ready.stderr);
     assert.equal(ready.stdout.trim(), "ready");
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("recovers when a completed no-op Wrangler migration does not exit", () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "quantscope-migration-"));
+  const hangingNpm = join(fixtureRoot, "npm-hanging.cmd");
+
+  try {
+    writeFileSync(
+      hangingNpm,
+      [
+        "@echo off",
+        "echo No migrations to apply!",
+        "ping 127.0.0.1 -n 30 >nul",
+      ].join("\r\n"),
+      "ascii",
+    );
+    const result = runLauncherFunction(
+      `$result = Invoke-QuantScopeLocalMigrations -Root ${quotePowerShell(fixtureRoot)} -NpmCommand ${quotePowerShell(hangingNpm)} -TimeoutMilliseconds 5000 -NoOpExitGraceMilliseconds 50 -PollMilliseconds 10; Write-Output "STATUS=$($result.Status);EXIT=$($result.ExitCode)"`,
+    );
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /No migrations to apply!/);
+    assert.match(result.stdout, /STATUS=RecoveredNoOp;EXIT=/);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("preserves normal migration success and failure exit codes", () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), "quantscope-migration-exit-"));
+  const successfulNpm = join(fixtureRoot, "npm-success.cmd");
+  const failingNpm = join(fixtureRoot, "npm-failure.cmd");
+
+  try {
+    writeFileSync(successfulNpm, "@echo migration complete\r\n@exit /b 0\r\n", "ascii");
+    writeFileSync(failingNpm, "@echo migration failed 1>&2\r\n@exit /b 7\r\n", "ascii");
+
+    const successful = runLauncherFunction(
+      `$result = Invoke-QuantScopeLocalMigrations -Root ${quotePowerShell(fixtureRoot)} -NpmCommand ${quotePowerShell(successfulNpm)} -TimeoutMilliseconds 1000 -PollMilliseconds 10; Write-Output "STATUS=$($result.Status);EXIT=$($result.ExitCode)"`,
+    );
+    assert.equal(successful.status, 0, successful.stderr);
+    assert.match(successful.stdout, /migration complete/);
+    assert.match(successful.stdout, /STATUS=Exited;EXIT=0/);
+
+    const failing = runLauncherFunction(
+      `$result = Invoke-QuantScopeLocalMigrations -Root ${quotePowerShell(fixtureRoot)} -NpmCommand ${quotePowerShell(failingNpm)} -TimeoutMilliseconds 1000 -PollMilliseconds 10; Write-Output "STATUS=$($result.Status);EXIT=$($result.ExitCode)"`,
+    );
+    assert.equal(failing.status, 0, failing.stderr);
+    assert.match(failing.stdout, /migration failed/);
+    assert.match(failing.stdout, /STATUS=Exited;EXIT=7/);
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true });
   }

@@ -8,6 +8,7 @@ import {
 import {
   STRATEGIES,
   getStrategy,
+  strategySupportsInterval,
   type StrategyId,
   type StrategyHorizon,
   type StrategyParameters,
@@ -19,6 +20,7 @@ import {
 } from "./entry-filter";
 
 export const DEFAULT_SCREENING_YIELD_EVERY = 128;
+export const MAX_SCREENING_RESULTS_PER_CATEGORY = 30;
 
 const INTEGER_STRATEGY_PARAMETER_KEYS = new Set([
   "fast",
@@ -329,6 +331,136 @@ const PARAMETER_SPACES: Record<StrategyId, ParameterSpace> = {
       { key: "trendPeriod", values: [100, 200] },
     ],
   },
+  "community-hull-suite": {
+    domains: [{ key: "period", values: [9, 16, 25, 36, 49, 64, 81] }],
+  },
+  "community-chandelier-exit": {
+    domains: [
+      { key: "period", values: [10, 14, 22, 30, 40, 50] },
+      { key: "multiplier", values: [1.5, 2, 2.5, 3, 4, 5] },
+    ],
+  },
+  "community-ssl-channel": {
+    domains: [{ key: "period", values: [5, 8, 10, 15, 20, 30, 50, 60] }],
+  },
+  "community-range-filter": {
+    domains: [
+      { key: "period", values: [10, 20, 30, 50, 75, 100] },
+      { key: "multiplier", values: [1, 1.5, 2, 2.5, 3] },
+    ],
+  },
+  "community-kama-trend": {
+    domains: [
+      { key: "period", values: [5, 10, 15, 20, 30, 40, 50] },
+      { key: "fastPeriod", values: [2, 3, 4] },
+      { key: "slowPeriod", values: [20, 30, 40, 50] },
+    ],
+    isValid: ({ fastPeriod, slowPeriod }) => fastPeriod < slowPeriod,
+  },
+  "community-dual-supertrend": {
+    domains: [
+      { key: "fastPeriod", values: [5, 10, 14, 20] },
+      { key: "fastMultiplier", values: [1.5, 2, 2.5, 3] },
+      { key: "slowPeriod", values: [10, 14, 20, 30] },
+      { key: "slowMultiplier", values: [2, 3, 4] },
+    ],
+    isValid: ({ fastPeriod, slowPeriod }) => fastPeriod <= slowPeriod,
+  },
+  "community-alligator-fractal": {
+    domains: [
+      { key: "jawPeriod", values: [10, 13, 16] },
+      { key: "teethPeriod", values: [5, 8, 10] },
+      { key: "lipsPeriod", values: [3, 5, 8] },
+      { key: "fractalPeriod", values: [2, 3, 4] },
+    ],
+    isValid: ({ jawPeriod, teethPeriod, lipsPeriod }) =>
+      lipsPeriod < teethPeriod && teethPeriod < jawPeriod,
+  },
+  "community-wave-trend": {
+    domains: [
+      { key: "channelPeriod", values: [7, 10, 14] },
+      { key: "averagePeriod", values: [14, 21, 28] },
+      { key: "entry", values: [-60, -50, -40] },
+      { key: "exit", values: [40, 50, 60] },
+    ],
+    isValid: ({ entry, exit }) => entry < exit,
+  },
+  "community-trendline-break": {
+    domains: [
+      { key: "swingPeriod", values: [7, 10, 14, 20] },
+      { key: "slopeMultiplier", values: [0.5, 1, 1.5, 2] },
+    ],
+  },
+  "community-nadaraya-watson": {
+    domains: [
+      { key: "lookback", values: [25, 50, 75, 100] },
+      { key: "bandwidth", values: [4, 8, 12] },
+      { key: "bandwidthMultiplier", values: [1, 2] },
+      { key: "bandMultiplier", values: [1, 1.5, 2] },
+    ],
+  },
+  "community-kalman-velocity": {
+    domains: [
+      { key: "factor", values: [0.3, 0.5, 0.8] },
+      { key: "secondFactor", values: [0.3, 0.5, 0.8] },
+      { key: "rPeriod", values: [25, 50, 75] },
+      { key: "baseQ", values: [0.001, 0.002] },
+      { key: "fastQ", values: [0.005, 0.01] },
+      { key: "gateMultiplier", values: [0.5, 1, 2] },
+    ],
+  },
+  "community-mcginley-dynamic": {
+    domains: [{ key: "period", values: [7, 10, 14, 20, 30, 50] }],
+  },
+  "community-vortex": {
+    domains: [{ key: "period", values: [7, 10, 14, 20, 30] }],
+  },
+  "community-volume-weighted-macd": macdSpace,
+  "community-elder-ray": {
+    domains: [{ key: "period", values: [7, 10, 13, 20, 30] }],
+  },
+  "community-tma-bands": {
+    domains: [
+      { key: "period", values: [10, 20, 30, 50] },
+      { key: "multiplier", values: [1, 1.5, 2, 2.5, 3] },
+    ],
+  },
+  "community-mfi-rsi": {
+    domains: [
+      { key: "period", values: [7, 10, 14, 20] },
+      { key: "entry", values: [15, 20, 25, 30] },
+      { key: "exit", values: [55, 60, 65, 70] },
+    ],
+    isValid: ({ entry, exit }) => entry < exit,
+  },
+  "community-half-trend": {
+    domains: [
+      { key: "amplitude", values: [2, 3, 4, 6, 8, 10] },
+      { key: "channelDeviation", values: [1, 1.5, 2, 2.5, 3] },
+    ],
+  },
+  "community-qqe-mod": {
+    domains: [
+      { key: "rsiPeriod", values: [5, 6, 8, 10, 14] },
+      { key: "smoothingPeriod", values: [3, 5, 8] },
+      { key: "primaryMultiplier", values: [2, 3, 4] },
+      { key: "secondaryMultiplier", values: [1.2, 1.61, 2] },
+      { key: "bollingerPeriod", values: [34, 50, 75] },
+      { key: "bollingerMultiplier", values: [0.25, 0.35, 0.5] },
+    ],
+  },
+  "community-schaff-trend-cycle": {
+    domains: [
+      { key: "cyclePeriod", values: [8, 10, 12, 15] },
+      { key: "fastPeriod", values: [12, 18, 23, 26] },
+      { key: "slowPeriod", values: [30, 40, 50, 60] },
+      { key: "smoothingFactor", values: [0.3, 0.5, 0.7] },
+      { key: "entry", values: [20, 25, 30] },
+      { key: "exit", values: [70, 75, 80] },
+    ],
+    isValid: ({ fastPeriod, slowPeriod, entry, exit }) =>
+      fastPeriod < slowPeriod && entry < exit,
+  },
 };
 
 function buildParameterSets(space: ParameterSpace): StrategyParameters[] {
@@ -416,11 +548,14 @@ export function buildNearbyParameterSets(
 export function buildScreeningCandidates(
   horizons: readonly StrategyHorizon[] = ["long", "short"],
   excludedStrategyIds: readonly StrategyId[] = [],
+  interval: MarketInterval = "1d",
 ): ScreeningCandidate[] {
   const includedHorizons = new Set(horizons);
   const excluded = new Set(excludedStrategyIds);
   return STRATEGIES.filter((strategy) =>
-    includedHorizons.has(strategy.horizon) && !excluded.has(strategy.id),
+    includedHorizons.has(strategy.horizon) &&
+    !excluded.has(strategy.id) &&
+    strategySupportsInterval(strategy.id, interval),
   ).flatMap((strategy) => {
     const parameterSets = buildParameterSets(
       PARAMETER_SPACES[strategy.id],
@@ -520,7 +655,7 @@ export async function optimizeStrategies(
   };
   const candidates = options.candidates
     ? [...options.candidates]
-    : buildScreeningCandidates();
+    : buildScreeningCandidates(["long", "short"], [], settings.interval);
   const objective = options.objective ?? "balanced";
   const yieldEvery = Math.max(
     Math.floor(options.yieldEvery ?? DEFAULT_SCREENING_YIELD_EVERY),
@@ -587,9 +722,11 @@ export async function optimizeStrategies(
   }
 
   return {
-    results: [...bestByStrategy.values()].sort((left, right) =>
-      compareScreeningResults(left, right, objective),
-    ),
+    results: [...bestByStrategy.values()]
+      .sort((left, right) =>
+        compareScreeningResults(left, right, objective),
+      )
+      .slice(0, MAX_SCREENING_RESULTS_PER_CATEGORY),
     evaluatedCount,
     totalCandidates: candidates.length,
     failedCount,

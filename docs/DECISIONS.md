@@ -471,6 +471,13 @@ pairs, which is below the 4,096 safety bound. If two winners chose the same EMA
 the pair may retain that shared filter; otherwise replay it without a shared
 EMA because the current plan schema has only one filter field.
 
+Amendment (2026-08-20): standalone display still keeps one winner per strategy,
+but combination screening now retains the top three final parameter sets per
+strategy, evaluates all nine parameter crossings for every non-equivalent
+strategy-ID pair, and keeps the best crossing per pair before allocation
+replay. Independent A/B filters are now stored in the plan, superseding the
+single-filter limitation above.
+
 ## D-027: Same-canonical shortcut reuse and optional licensed EODHD fallback
 
 Treat a saved shortcut as a plan restore when its canonical instrument and
@@ -892,3 +899,46 @@ state. Exact shortcut matches show that they are already added; same-type matche
 show parameter, allocation, filter, and tactical-mode differences. Preserve
 legacy rank columns as inert compatibility storage until a separate migration is
 worth the operational risk.
+## D-046: Staged three-strategy hierarchy and post-screening consensus
+
+Extend the shared strategy-plan contract with optional Strategy C rather than
+create a separate triple-plan model. Detect exactly one core gate from average
+active-run duration and manage the other one or two legs as independent
+tactical sleeves. Preserve base-then-add and full-then-reduce, long-only bounds,
+next-open timing, causal intrabar fills, per-leg filters, and stable A/B/C
+tie-breaking. Triple allocations are positive 10% steps that sum to 100%.
+
+Do not enumerate the full cubic parameter space. Start from the best 128 pair
+parents, test a non-equivalent third finalist at 40/30/30, retain up to 256
+unique triples, then replay the full triple allocation/mode set. Merge pair and
+triple winners into one combination pool while keeping one best result per
+complete unordered strategy-ID set.
+
+Keep comprehensive assessment outside screening. Combine up to five
+diversified standalone, pair, and triple live targets with deterministic rank
+weights; round the target to 10% and disclose action, confidence, agreement,
+and evidence counts above the existing shortlist. The assessment cannot change
+historical rank. Saved A/B plans remain valid JSON, while A/B/C shortcuts reuse
+the current visual style and order the detected core first.
+
+## D-047: Three-to-five-strategy weighted consensus execution
+
+Use three-to-five strategies to improve decision confirmation, not to create
+more independently traded sleeves. Preserve direct single-strategy execution
+and the established dual core/tactical hierarchy. For three-to-five-leg plans,
+interpret positive 10% allocations as normalized judgment weights and execute
+one long-only binary portfolio target.
+
+Require both a strict active-strategy majority and at least 60% active weight to
+enter. Exit at 40% or less active weight, or when the active-strategy count falls
+below half. Hold the previous state between thresholds so individual signal
+changes do not cause partial rebalancing. Individual price-order fills update
+the strategy evidence but do not become separate portfolio executions; a changed
+consensus remains close-confirmed and executes no earlier than the next open.
+
+Screen each three-, four-, and five-leg weight composition once (36, 84, and 126
+candidates) rather than duplicating it across pair-only tactical modes. Keep the
+longest-duration leg only as a stable primary reference for display and identity.
+This decision supersedes D-046's independent-sleeve execution semantics for
+plans with three or more strategies; its staged search and persistence choices
+remain in force.

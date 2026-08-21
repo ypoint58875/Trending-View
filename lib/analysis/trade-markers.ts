@@ -1,5 +1,6 @@
 import type {
   AllocationRebalance,
+  AllocationOpeningPosition,
   AllocationSignalEvent,
   BacktestOpenPosition,
   BacktestTrade,
@@ -9,7 +10,7 @@ export interface TradeMarker {
   time: string;
   price: number;
   event: "entry" | "exit" | "range-exit";
-  action?: "open" | "short-buy" | "short-sell" | "close";
+  action?: "open" | "carry" | "short-buy" | "short-sell" | "close";
   signals?: AllocationSignalEvent[];
 }
 
@@ -61,8 +62,18 @@ export function buildTradeMarkers(
 
 export function buildAllocationTradeMarkers(
   rebalances: AllocationRebalance[],
+  openingPosition: AllocationOpeningPosition | null = null,
 ): TradeMarkers {
   const markers: TradeMarkers = { buys: [], sells: [], rangeExits: [] };
+
+  if (openingPosition) {
+    markers.buys.push({
+      time: openingPosition.time,
+      price: openingPosition.price,
+      event: "entry",
+      action: "carry",
+    });
+  }
 
   rebalances.forEach((rebalance) => {
     const event =

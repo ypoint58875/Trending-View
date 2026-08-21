@@ -1,10 +1,42 @@
 "use client";
 
-import * as echarts from "echarts";
+import {
+  BarChart,
+  CandlestickChart,
+  LineChart,
+  ScatterChart,
+} from "echarts/charts";
+import {
+  AxisPointerComponent,
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+} from "echarts/components";
+import {
+  init,
+  use as registerEChartsModules,
+  type EChartsType,
+} from "echarts/core";
+import { CanvasRenderer } from "echarts/renderers";
+import type { EChartsOption } from "echarts";
 import { useEffect, useRef } from "react";
 
+registerEChartsModules([
+  BarChart,
+  CandlestickChart,
+  LineChart,
+  ScatterChart,
+  AxisPointerComponent,
+  DataZoomComponent,
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+  CanvasRenderer,
+]);
+
 interface EChartProps {
-  option: echarts.EChartsOption;
+  option: EChartsOption;
   className?: string;
   height?: number;
   ariaLabel: string;
@@ -36,9 +68,9 @@ interface DataZoomEvent {
 }
 
 export function applyDataZoomWindow(
-  option: echarts.EChartsOption,
+  option: EChartsOption,
   window: DataZoomWindow | null,
-): echarts.EChartsOption {
+): EChartsOption {
   if (!window || !option.dataZoom) return option;
   const dataZoom = Array.isArray(option.dataZoom)
     ? option.dataZoom
@@ -71,7 +103,7 @@ export function EChart({
   onDataZoomChange,
 }: EChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
+  const chartRef = useRef<EChartsType | null>(null);
   const dataZoomWindowRef = useRef<DataZoomWindow | null>(null);
   const dataZoomResetKeyRef = useRef<string | undefined>(undefined);
   const onDataZoomChangeRef = useRef(onDataZoomChange);
@@ -83,7 +115,7 @@ export function EChart({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const chart = echarts.init(containerRef.current, undefined, {
+    const chart = init(containerRef.current, undefined, {
       renderer: "canvas",
     });
     chartRef.current = chart;

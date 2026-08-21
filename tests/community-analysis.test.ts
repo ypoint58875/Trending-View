@@ -3,13 +3,23 @@ import test from "node:test";
 import { COMMUNITY_ANALYSIS_CATALOG } from "../lib/analysis/community/catalog";
 import {
   adaptiveRegressionBreakout,
+  anchoredVwap,
+  aroon,
   autoAtrTrendTracker,
+  choppinessIndex,
+  donchianChannels,
   fractionalEmaKalman,
+  halfTrend,
+  keltnerChannels,
   nadarayaWatsonTrend,
+  qqeMod,
   rsiDivergenceEngine,
   squeezeMomentum,
+  schaffTrendCycle,
+  sessionVolumeProfile,
   supportResistanceSignals,
   trendlineBreaks,
+  trix,
   waveTrend,
 } from "../lib/analysis/community/indicators";
 import {
@@ -55,15 +65,15 @@ function assertSeriesLength(
 }
 
 test("community catalog is complete and registry-backed", () => {
-  assert.equal(COMMUNITY_ANALYSIS_CATALOG.length, 12);
-  assert.equal(new Set(COMMUNITY_ANALYSIS_CATALOG.map((item) => item.id)).size, 12);
+  assert.equal(COMMUNITY_ANALYSIS_CATALOG.length, 42);
+  assert.equal(new Set(COMMUNITY_ANALYSIS_CATALOG.map((item) => item.id)).size, 42);
   assert.equal(
     COMMUNITY_ANALYSIS_CATALOG.filter((item) => item.kind === "indicator").length,
-    9,
+    19,
   );
   assert.equal(
     COMMUNITY_ANALYSIS_CATALOG.filter((item) => item.kind === "strategy").length,
-    3,
+    23,
   );
   const indicatorIds = new Set(INDICATORS.map((indicator) => indicator.id));
   const strategyIds = new Set(STRATEGIES.map((strategy) => strategy.id));
@@ -87,13 +97,15 @@ test("community catalog is complete and registry-backed", () => {
     ),
     COMMUNITY_INDICATOR_IDS,
   );
-  assert.equal(INDICATORS.length, 30);
-  assert.equal(STRATEGIES.length, 37);
+  assert.equal(INDICATORS.length, 40);
+  assert.equal(STRATEGIES.length, 57);
 });
 
 test("community indicator ports return aligned causal series", () => {
   const bars = makeBars();
   const closes = bars.map((bar) => bar.close);
+  const { bins: volumeProfileBins, ...volumeProfileSeries } =
+    sessionVolumeProfile(bars);
   const results = [
     adaptiveRegressionBreakout(bars),
     autoAtrTrendTracker(bars),
@@ -104,10 +116,21 @@ test("community indicator ports return aligned causal series", () => {
     supportResistanceSignals(bars),
     trendlineBreaks(bars),
     waveTrend(bars),
+    keltnerChannels(bars),
+    donchianChannels(bars),
+    { value: choppinessIndex(bars) },
+    aroon(bars),
+    trix(bars),
+    halfTrend(bars),
+    qqeMod(bars),
+    schaffTrendCycle(bars),
+    volumeProfileSeries,
+    { value: anchoredVwap(bars, bars[120].timestamp) },
   ];
   for (const result of results) {
     assertSeriesLength(result as unknown as Record<string, unknown>, bars.length);
   }
+  assert.equal(volumeProfileBins.length, 24);
 
   const prefixLength = 280;
   const full = trendlineBreaks(bars, 8, 1);
@@ -116,6 +139,18 @@ test("community indicator ports return aligned causal series", () => {
   assert.deepEqual(full.lower.slice(0, prefixLength), prefix.lower);
   assert.deepEqual(full.bullishBreaks.slice(0, prefixLength), prefix.bullishBreaks);
   assert.deepEqual(full.bearishBreaks.slice(0, prefixLength), prefix.bearishBreaks);
+
+  const fullHalfTrend = halfTrend(bars);
+  const prefixHalfTrend = halfTrend(bars.slice(0, prefixLength));
+  assert.deepEqual(fullHalfTrend.trend.slice(0, prefixLength), prefixHalfTrend.trend);
+  const fullQqe = qqeMod(bars);
+  const prefixQqe = qqeMod(bars.slice(0, prefixLength));
+  assert.deepEqual(fullQqe.primary.slice(0, prefixLength), prefixQqe.primary);
+  const fullStc = schaffTrendCycle(bars);
+  const prefixStc = schaffTrendCycle(bars.slice(0, prefixLength));
+  assert.deepEqual(fullStc.value.slice(0, prefixLength), prefixStc.value);
+  const anchored = anchoredVwap(bars, bars[120].timestamp);
+  assert.equal(anchored.slice(0, 120).every((value) => value === null), true);
 });
 
 test("community strategies use bar-aligned close-confirmed targets", () => {

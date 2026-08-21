@@ -6,6 +6,7 @@ export const DAILY_HISTORY_START_TIMESTAMP_SECONDS = 946_684_800;
 export const DAILY_HISTORY_COVERAGE_CUTOFF_DATE = "2000-01-31";
 export const DAILY_HISTORY_LIMIT = 10_000;
 export const STANDARD_PROVIDER_LIMIT = 1_500;
+export const NATIVE_ONE_MINUTE_HISTORY_LIMIT = 2_500;
 
 export function clampMarketSeriesLimit(
   requestedLimit: number,
@@ -16,7 +17,11 @@ export function clampMarketSeriesLimit(
     ? Math.trunc(requestedLimit)
     : fallback;
   const maximum =
-    interval === "1d" ? DAILY_HISTORY_LIMIT : STANDARD_PROVIDER_LIMIT;
+    interval === "1d"
+      ? DAILY_HISTORY_LIMIT
+      : interval === "1m"
+        ? NATIVE_ONE_MINUTE_HISTORY_LIMIT
+        : STANDARD_PROVIDER_LIMIT;
   return Math.min(Math.max(normalized, 2), maximum);
 }
 

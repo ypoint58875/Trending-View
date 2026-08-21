@@ -60,12 +60,15 @@ trades or run unattended jobs.
 - Explicit green-up/red-down chart legend. A selected-range boundary inherits
   an already-open position without a synthetic fill or cost and marks the
   ending position to the last close without forcing a sale.
-- Thirty independently configurable indicators, including moving-average
+- Thirty-five independently configurable indicators, including moving-average
   variants, Bollinger Bands, Ichimoku, Supertrend, momentum, volatility, and
   volume studies. Six category menus replace the flat indicator list, while a
   separate star-managed shortcut strip keeps favorites immediately available.
   The independent, non-backpainting confirmed support/resistance-break overlay
-  is the initial favorite. One indicator is focused for editing while an
+  is the initial favorite. It matches the supplied TradingView rule with
+  15/15 confirmed pivots, EMA(5)/EMA(10) volume-oscillator filtering, and both
+  close-break and wick markers while keeping levels invisible until their
+  confirmation bar. One indicator is focused for editing while an
   ordered collection can remain visible. Indicators are hidden by default,
   each favorite/menu button toggles its own visibility, and parameter changes
   are saved as a device-local preference for later sessions. KDJ exposes its period plus the
@@ -77,19 +80,20 @@ trades or run unattended jobs.
   price-axis range is derived from candle highs and lows only, so switching
   strategies on the same instrument and zoom window does not rescale the K-line
   chart because of a strategy reference overlay.
-- Indicator visibility is independent from strategy selection. The active
-  applied strategy also projects any declared lower-pane study, such as KDJ,
-  RSI, MACD, MFI, ROC, ATR, or ADX, without changing the user's manually saved
-  indicator collection. Exact duplicate configurations render only once. The
-  strategy contributes actual buy/sell fills and, where the rule has
+- Indicator visibility is fully user-controlled. Applying a strategy,
+  screening result, or saved shortcut does not add, remove, or reconfigure
+  lower-pane studies. The strategy contributes actual buy/sell fills and,
+  where the rule has
   continuous price references, solid strategy lines that match their legend
   samples on the main price axis. Empty reference series are omitted. Long
   entry/exit and short entry/exit actions use the four localized action labels
   rather than abstract reference-event names.
   Technical Ratings shows the same EMA-20 and SMA-50 references used by its
   price votes.
-- Fourteen extended strategy families plus independent equivalents of all 20
-  templates in TradingView's official built-in-strategy directory.
+- Thirty-four non-built-in strategy families plus independent equivalents of all 20
+  templates in TradingView's official built-in-strategy directory. The added
+  TradingView community ports are causal and long-only: bearish or short
+  signals clear an existing long position instead of opening a short.
 - Descriptive long-horizon and short-horizon catalog metadata for every
   strategy. Standalone results can expose that intended style, but it no
   longer restricts which two strategies can be combined.
@@ -117,17 +121,18 @@ trades or run unattended jobs.
 - Chart-level fill markers derived from the active backtest and limited to four
   strategy actions: open (long buy), short buy, short sell, and close.
 - Per-user saved backtests with a right-side shortcut bar that restores the
-  instrument, complete optional Strategy A/B plan, both parameter sets,
-  allocations, cost settings, and the indicators that were visible at save time
-  with their exact parameters. The saved date range remains creation-time
+  instrument, complete optional Strategy A–I plan, parameters, allocations,
+  and cost settings without changing the current manual indicator collection.
+  Stored indicator snapshots remain compatibility/provenance data only. The saved date range remains creation-time
   provenance and does not replace the workspace range when opened.
   The shortcut bar contains the Save current strategy action. A save replaces
   the existing record when instrument, plan, range, cash, and costs are
-  identical—even when only visible indicators changed; a materially different
-  setup creates a new snapshot. Every saved strategy row displays its original
-  added date and time in enlarged metadata text. Default daily, single-strategy
-  allocation, disabled-indicator, and disabled-entry-filter labels stay hidden;
-  dual allocations and enabled optional settings remain visible. The
+  identical; a materially different
+  setup creates a new snapshot. Each saved row keeps the strategy name, current
+  rolling return, muted advice labels, red/green current allocation, and
+  separate A-long/B-short entry and exit prices visible; added time and
+  secondary parameter/allocation metadata are omitted. The separate header
+  advice card is removed. The
   scrollable list shows one collapsed row per instrument; expanding it reveals
   the saved strategy/indicator snapshots. Instrument groups and snapshots can
   be reordered by drag and drop or keyboard arrows, and that order persists.
@@ -141,7 +146,7 @@ trades or run unattended jobs.
   stored interval label and disclose that opening them recalculates on daily
   bars. Opening a shortcut for the same canonical instrument preserves the
   already loaded successful price series and restores only the plan,
-  parameters, indicators, and trade markers. A genuinely different canonical
+  parameters, and trade markers. A genuinely different canonical
   instrument triggers a market reload. The header refresh action updates the
   active chart and then refreshes every other unique shortcut instrument
   sequentially in the background. Whenever an active or background shortcut
@@ -162,8 +167,8 @@ trades or run unattended jobs.
   parameter shape and requires 120 in-range daily observations, two completed
   base trades, and a nearby variant before showing stable/sensitive. It never
   selects or applies a replacement parameter.
-- One-click exhaustive strategy screening across all 37 strategies. It
-  traverses all 37,182 finite registered parameter combinations; there is no
+- One-click exhaustive strategy screening across all 57 strategies. It
+  traverses all 45,196 finite registered parameter combinations; there is no
   per-strategy sampling control or hidden cap. One shared objective drives the
   complete single-and-combination workflow.
 - Three focused screening targets: balanced score, maximum return, and maximum
@@ -171,19 +176,24 @@ trades or run unattended jobs.
   8 * clamp(current-window Sharpe, -5, 5) + 0.35 * current-window maximum
   drawdown`; trade count is displayed and still controls the candidate versus
   recent-effectiveness prompt, but does not affect optimization order.
-- Three recent-adaptive screening modes inside the same one-click workflow.
+- Four recent-adaptive screening modes inside the same one-click workflow.
   `Period` is the default and selects parameters, EMA refinement, combinations,
   and allocations only from one adjustable trailing window. The default is 128
   trading sessions and is bidirectionally synchronized with the strategy lab
   range. `Range` performs the same complete selection over one custom start/end
-  interval without separate training or test intervals. `Rolling` first forms
+  interval without separate training or test intervals. `Multi-period screening`
+  accepts
+  two to eight explicit, non-overlapping start/end date intervals, evaluates
+  retained candidates independently in every interval, and ranks them by the
+  equal-weight average of each interval's normalized objective rank. Its mode
+  and date intervals persist in device-local storage. `Rolling` first forms
   the retained candidate pool over one custom total interval, then advances a
   fixed-width calendar window by one year and equally averages each window's
   tied 0-to-100 objective rank. None of these modes is presented as independent
   out-of-sample proof. Bars before an active scoring boundary remain available
   only for causal indicator and position-state continuity; their transactions
   and performance never enter the active-window objective.
-- Monotonic segmented four-stage progress, cancellation, and unexpected-run
+- Monotonic segmented eighteen-stage progress, cancellation, and unexpected-run
   recovery. The first result column keeps
   only the best parameter set for each standalone strategy. Screening
   builds every candidate signal over the complete loaded history and limits
@@ -192,8 +202,8 @@ trades or run unattended jobs.
   before the selected start, the simulation inherits the position at the
   first selected open without a trade or cost. The EMA stage
   keeps only compact metrics for each eligible strategy's top 60 unfiltered
-  parameter sets. Only the final unique winner per strategy keeps its complete
-  execution state for pair replay.
+  parameter sets. The top three final parameter sets per strategy keep their
+  complete execution state for `3 x 3` pair replay.
 - Screening runs in a dedicated module Web Worker. Indicator, target, and
   execution arrays are reused only inside that run; completed results are not
   restored as a calculation cache after refresh.
@@ -225,13 +235,15 @@ trades or run unattended jobs.
   the view to that chart; selector/parameter edits do not change chart lines,
   markers, or live guidance before Apply. Durable saving remains a separate
   shortcut-bar action.
-- The same one-click run automatically pairs the unique final winner of every
-  strategy with every non-equivalent strategy winner at the reference
-  60%/40% allocation, without a separate combination checkbox.
+- The same one-click run retains the top three parameter finalists for every
+  strategy and evaluates all `3 x 3` parameter pairings against every
+  non-equivalent strategy at the reference 60%/40% allocation, without a
+  separate combination checkbox. Each strategy-ID pair keeps its best
+  parameter pairing before allocation replay.
   Equivalent implementations such as the paired MACD-cross and Supertrend
   close-confirmation entries are not combined with themselves. It keeps up to
   4,096 pair finalists before replaying all allocation/mode alternatives. The
-  current 37-strategy catalog produces 664 unique non-equivalent winner pairs,
+  current 57-strategy catalog produces 1,594 unique non-equivalent strategy pairs,
   so no pair is discarded. Both columns render every retained best row. The
   second result column keeps only the best
   parameter/allocation result for each unique strategy-ID pair.
@@ -242,6 +254,18 @@ trades or run unattended jobs.
   remains favorable, has conflicting short/mid-term evidence, needs review, or
   lacks enough recent executions. Exact and same-type shortcut matches are
   labelled with parameter/allocation/filter differences.
+- Pair winners seed bounded forward expansion through three-to-nine-strategy
+  consensus candidates. Every strategy-count category retains at most 30, and
+  three-to-nine-strategy categories retain at most five results with the same
+  Strategy A primary. Staged search is deliberately wider: every primary keeps
+  its top 20 intermediate candidates at each three-to-nine-strategy level for
+  the next expansion. The five-result cap is applied only to final display, so
+  a strong parent is not removed merely because five same-primary variants
+  already rank above it.
+  Three-to-nine-strategy result rows use the concise
+  `Strategy A name · N-strategy consensus` label, keep the remaining strategy
+  names in a compact two-line summary, and omit per-leg parameters; full names
+  remain available through accessible labels and hover text.
 - A post-screening primary/deputy shortlist combines the standalone and
   combination result pools. The highest eligible candidate under the selected
   objective becomes the primary strategy. Up to two deputies must share no
@@ -263,7 +287,8 @@ For one-click local use, double-click `open-quantscope.bat`. The launcher:
 - runs QuantScope only at `http://127.0.0.1:3000`;
 - manages the application on port 3000 and the market relay on port 3001
   through one runtime-port registry;
-- initializes the project-local saved-backtest database;
+- initializes the project-local saved-backtest database and safely recovers
+  when Wrangler reports that no migrations are pending but fails to exit;
 - opens a new maximized Edge window when Edge is available; and
 - never requires a ChatGPT or other account.
 
@@ -440,11 +465,12 @@ allocation engine trades only when planned state changes and does not recenter
 a constant target after ordinary price drift. Every finalist holding choice is
 replayed through the allocation backtest, so exposure, costs, return,
 drawdown, and Sharpe affect its rank. The staged four-phase search is exhaustive
-across the full registered 37,182-parameter Cartesian product. EMA5-8 is a
-second-stage comparison over only the top 60 unfiltered candidates for each
-eligible family, after which combination screening uses retained single
-results across all unordered non-equivalent pairs and compares 50/50, 60/40,
-40/60, 70/30, and 30/70 assignments.
+across the full registered 45,196-parameter Cartesian product. EMA5-8 is a
+  second-stage comparison over only the top 60 unfiltered candidates for each
+  eligible family. Combination screening retains each strategy's top three
+  final parameter sets, evaluates all nine parameter crossings for every
+  unordered non-equivalent strategy pair, keeps the best crossing per pair,
+  and compares 50/50, 60/40, 40/60, 70/30, and 30/70 assignments.
 This reduces combination work without eliminating overfitting.
 Close-confirmed changes execute at the following daily open, while
 causal predefined price orders may execute on the touched bar under the same

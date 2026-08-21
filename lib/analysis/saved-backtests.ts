@@ -6,6 +6,7 @@ import {
 import { isValidStrategyParameters } from "./screening";
 import {
   DEFAULT_TACTICAL_ALLOCATION_MODE,
+  STRATEGY_SLOTS,
   TACTICAL_ALLOCATION_MODES,
   resolveTacticalAllocationMode,
   type TacticalAllocationMode,
@@ -14,6 +15,7 @@ import {
 } from "./strategy-combinations";
 import {
   STRATEGIES,
+  areStrategiesEquivalent,
   getStrategy,
   type StrategyId,
   type StrategyParameters,
@@ -563,36 +565,85 @@ function validatePlan(
   strategyAEntryFilter: MovingAverageSlopeFilter | null = null,
   strategyBEntryFilter: MovingAverageSlopeFilter | null = null,
   tacticalMode: TacticalAllocationMode = DEFAULT_TACTICAL_ALLOCATION_MODE,
+  strategyC: StrategySelection | null | undefined = null,
+  strategyCAllocation: number | null = 0,
+  strategyCEntryFilter: MovingAverageSlopeFilter | null = null,
+  strategyD: StrategySelection | null | undefined = null,
+  strategyDAllocation: number | null = 0,
+  strategyDEntryFilter: MovingAverageSlopeFilter | null = null,
+  strategyE: StrategySelection | null | undefined = null,
+  strategyEAllocation: number | null = 0,
+  strategyEEntryFilter: MovingAverageSlopeFilter | null = null,
+  strategyF: StrategySelection | null | undefined = null,
+  strategyFAllocation: number | null = 0,
+  strategyFEntryFilter: MovingAverageSlopeFilter | null = null,
+  strategyG: StrategySelection | null | undefined = null,
+  strategyGAllocation: number | null = 0,
+  strategyGEntryFilter: MovingAverageSlopeFilter | null = null,
+  strategyH: StrategySelection | null | undefined = null,
+  strategyHAllocation: number | null = 0,
+  strategyHEntryFilter: MovingAverageSlopeFilter | null = null,
+  strategyI: StrategySelection | null | undefined = null,
+  strategyIAllocation: number | null = 0,
+  strategyIEntryFilter: MovingAverageSlopeFilter | null = null,
 ): StrategyAllocationPlan | null {
+  const slotData = [
+    { slot: "strategyA", selection: strategyA, allocation: strategyAAllocation, entryFilter: strategyAEntryFilter },
+    { slot: "strategyB", selection: strategyB, allocation: strategyBAllocation, entryFilter: strategyBEntryFilter },
+    { slot: "strategyC", selection: strategyC, allocation: strategyCAllocation, entryFilter: strategyCEntryFilter },
+    { slot: "strategyD", selection: strategyD, allocation: strategyDAllocation, entryFilter: strategyDEntryFilter },
+    { slot: "strategyE", selection: strategyE, allocation: strategyEAllocation, entryFilter: strategyEEntryFilter },
+    { slot: "strategyF", selection: strategyF, allocation: strategyFAllocation, entryFilter: strategyFEntryFilter },
+    { slot: "strategyG", selection: strategyG, allocation: strategyGAllocation, entryFilter: strategyGEntryFilter },
+    { slot: "strategyH", selection: strategyH, allocation: strategyHAllocation, entryFilter: strategyHEntryFilter },
+    { slot: "strategyI", selection: strategyI, allocation: strategyIAllocation, entryFilter: strategyIEntryFilter },
+  ] as const;
+  const selections = slotData.map(({ selection }) => selection).filter(
+    (selection): selection is StrategySelection => Boolean(selection),
+  );
+  const hasEquivalentSelections = selections.some(
+    (selection, index) =>
+      selections.slice(index + 1).some(
+        (candidate) =>
+          selection.strategyId === candidate.strategyId ||
+          areStrategiesEquivalent(
+            selection.strategyId,
+            candidate.strategyId,
+          ),
+      ),
+  );
   if (
-    strategyA === undefined ||
-    strategyB === undefined ||
-    (!strategyA && !strategyB) ||
-    (strategyA &&
-      strategyB &&
-      strategyA.strategyId === strategyB.strategyId) ||
-    strategyAAllocation === null ||
-    strategyBAllocation === null ||
-    (!strategyA && strategyAAllocation > 1e-10) ||
-    (!strategyB && strategyBAllocation > 1e-10) ||
-    strategyAAllocation + strategyBAllocation > 1 + 1e-10
+    slotData.some(({ selection, allocation }) =>
+      selection === undefined || allocation === null,
+    ) ||
+    selections.length === 0 ||
+    hasEquivalentSelections ||
+    slotData.some(
+      ({ selection, allocation }) => !selection && (allocation ?? 0) > 1e-10,
+    ) ||
+    slotData.reduce((sum, { allocation }) => sum + (allocation ?? 0), 0) >
+      1 + 1e-10
   ) {
     return null;
   }
-  const singleStrategy = Boolean(strategyA) !== Boolean(strategyB);
-  return {
-    strategyA: copySelection(strategyA),
-    strategyB: copySelection(strategyB),
+  const normalizedStrategyA = strategyA ?? null;
+  const normalizedStrategyB = strategyB ?? null;
+  const normalizedStrategyAAllocation = strategyAAllocation ?? 0;
+  const normalizedStrategyBAllocation = strategyBAllocation ?? 0;
+  const singleStrategy = selections.length === 1;
+  const plan: StrategyAllocationPlan = {
+    strategyA: copySelection(normalizedStrategyA),
+    strategyB: copySelection(normalizedStrategyB),
     strategyAAllocation: singleStrategy
-      ? strategyA
+      ? normalizedStrategyA
         ? 1
         : 0
-      : strategyAAllocation,
+      : normalizedStrategyAAllocation,
     strategyBAllocation: singleStrategy
-      ? strategyB
+      ? normalizedStrategyB
         ? 1
         : 0
-      : strategyBAllocation,
+      : normalizedStrategyBAllocation,
     tacticalMode,
     ...(strategyA && strategyAEntryFilter
       ? {
@@ -609,6 +660,17 @@ function validatePlan(
         }
       : {}),
   };
+  const mutablePlan = plan as unknown as Record<string, unknown>;
+  for (const { slot, selection, allocation, entryFilter } of slotData.slice(2)) {
+    if (!selection) continue;
+    mutablePlan[slot] = copySelection(selection);
+    mutablePlan[`${slot}Allocation`] = singleStrategy ? 1 : allocation;
+    if (entryFilter) {
+      mutablePlan[`${slot}EntryFilter`] =
+        cloneMovingAverageSlopeFilter(entryFilter);
+    }
+  }
+  return plan;
 }
 
 function strategyParametersEqual(
@@ -638,20 +700,34 @@ export function strategyPlansEqual(
   left: StrategyAllocationPlan,
   right: StrategyAllocationPlan,
 ): boolean {
+  const planValue = (
+    plan: StrategyAllocationPlan,
+    key: string,
+  ): unknown => (plan as unknown as Record<string, unknown>)[key];
   return (
-    strategySelectionsEqual(left.strategyA, right.strategyA) &&
-    strategySelectionsEqual(left.strategyB, right.strategyB) &&
-    Math.abs(left.strategyAAllocation - right.strategyAAllocation) < 1e-10 &&
-    Math.abs(left.strategyBAllocation - right.strategyBAllocation) < 1e-10 &&
+    STRATEGY_SLOTS.every((slot) =>
+      strategySelectionsEqual(left[slot] ?? null, right[slot] ?? null),
+    ) &&
+    STRATEGY_SLOTS.every(
+      (slot) =>
+        Math.abs(
+          ((planValue(left, `${slot}Allocation`) as number | undefined) ?? 0) -
+            ((planValue(right, `${slot}Allocation`) as number | undefined) ?? 0),
+        ) < 1e-10,
+    ) &&
     resolveTacticalAllocationMode(left.tacticalMode) ===
       resolveTacticalAllocationMode(right.tacticalMode) &&
-    movingAverageSlopeFiltersEqual(
-      left.strategyAEntryFilter ?? left.entryFilter,
-      right.strategyAEntryFilter ?? right.entryFilter,
-    ) &&
-    movingAverageSlopeFiltersEqual(
-      left.strategyBEntryFilter ?? left.entryFilter,
-      right.strategyBEntryFilter ?? right.entryFilter,
+    STRATEGY_SLOTS.every((slot) =>
+      movingAverageSlopeFiltersEqual(
+        (planValue(left, `${slot}EntryFilter`) as
+          | MovingAverageSlopeFilter
+          | null
+          | undefined) ?? left.entryFilter,
+        (planValue(right, `${slot}EntryFilter`) as
+          | MovingAverageSlopeFilter
+          | null
+          | undefined) ?? right.entryFilter,
+      ),
     )
   );
 }
@@ -673,8 +749,13 @@ export interface StrategyShortcutMatch {
   tacticalModeDifferent: boolean;
 }
 
+export interface StrategyShortcutScope {
+  instrument: MarketInstrument;
+  interval: MarketInterval;
+}
+
 function planSelections(plan: StrategyAllocationPlan): StrategySelection[] {
-  return [plan.strategyA, plan.strategyB].filter(
+  return STRATEGY_SLOTS.map((slot) => plan[slot] ?? null).filter(
     (selection): selection is StrategySelection => selection !== null,
   );
 }
@@ -706,7 +787,12 @@ function shortcutMatchForRecord(
         values.indexOf(strategyId) === index &&
         savedSelections.some((selection) => selection.strategyId === strategyId),
     );
-  if (sharedStrategyIds.length === 0) return null;
+  if (
+    sharedStrategyIds.length !== candidateSelections.length ||
+    savedSelections.length !== candidateSelections.length
+  ) {
+    return null;
+  }
 
   const parameterDifferences: StrategyShortcutParameterDifference[] = [];
   for (const strategyId of sharedStrategyIds) {
@@ -739,20 +825,20 @@ function shortcutMatchForRecord(
     savedBacktestId: saved.id,
     sharedStrategyIds,
     parameterDifferences,
-    allocationDifferent:
-      Math.abs(candidate.strategyAAllocation - saved.plan.strategyAAllocation) >=
-        1e-10 ||
-      Math.abs(candidate.strategyBAllocation - saved.plan.strategyBAllocation) >=
-        1e-10,
-    entryFilterDifferent:
-      !movingAverageSlopeFiltersEqual(
-        candidate.strategyAEntryFilter ?? candidate.entryFilter,
-        saved.plan.strategyAEntryFilter ?? saved.plan.entryFilter,
-      ) ||
-      !movingAverageSlopeFiltersEqual(
-        candidate.strategyBEntryFilter ?? candidate.entryFilter,
-        saved.plan.strategyBEntryFilter ?? saved.plan.entryFilter,
-      ),
+    allocationDifferent: STRATEGY_SLOTS.some(
+      (slot) =>
+        Math.abs(
+          (candidate[`${slot}Allocation`] ?? 0) -
+            (saved.plan[`${slot}Allocation`] ?? 0),
+        ) >= 1e-10,
+    ),
+    entryFilterDifferent: STRATEGY_SLOTS.some(
+      (slot) =>
+        !movingAverageSlopeFiltersEqual(
+          candidate[`${slot}EntryFilter`] ?? candidate.entryFilter,
+          saved.plan[`${slot}EntryFilter`] ?? saved.plan.entryFilter,
+        ),
+    ),
     tacticalModeDifferent:
       resolveTacticalAllocationMode(candidate.tacticalMode) !==
       resolveTacticalAllocationMode(saved.plan.tacticalMode),
@@ -762,8 +848,15 @@ function shortcutMatchForRecord(
 export function findStrategyShortcutMatch(
   candidate: StrategyAllocationPlan,
   savedBacktests: readonly SavedBacktestRecord[],
+  scope: StrategyShortcutScope,
 ): StrategyShortcutMatch | null {
+  const instrumentKey = savedBacktestInstrumentKey(scope.instrument);
   const matches = savedBacktests
+    .filter(
+      (saved) =>
+        savedBacktestInstrumentKey(saved.instrument) === instrumentKey &&
+        saved.interval === scope.interval,
+    )
     .map((saved) => shortcutMatchForRecord(candidate, saved))
     .filter((match): match is StrategyShortcutMatch => match !== null);
   return (
@@ -829,8 +922,16 @@ export function parseStrategyAllocationPlan(
   const hasNewShape =
     "strategyA" in value ||
     "strategyB" in value ||
+    "strategyC" in value ||
+    "strategyD" in value ||
+    "strategyE" in value ||
+    "strategyF" in value ||
+    "strategyG" in value ||
+    "strategyH" in value ||
+    "strategyI" in value ||
     "strategyAAllocation" in value ||
-    "strategyBAllocation" in value;
+    "strategyBAllocation" in value ||
+    "strategyCAllocation" in value;
   if (!hasNewShape) return parseLegacyStrategyAllocationPlan(value);
   const legacyEntryFilter =
     value.entryFilter === undefined || value.entryFilter === null
@@ -853,13 +954,35 @@ export function parseStrategyAllocationPlan(
   const strategyBEntryFilter = parseSlotFilter(
     value.strategyBEntryFilter,
   );
+  const strategyCEntryFilter = parseSlotFilter(
+    value.strategyCEntryFilter,
+  );
+  const strategyDEntryFilter = parseSlotFilter(value.strategyDEntryFilter);
+  const strategyEEntryFilter = parseSlotFilter(value.strategyEEntryFilter);
+  const strategyFEntryFilter = parseSlotFilter(value.strategyFEntryFilter);
+  const strategyGEntryFilter = parseSlotFilter(value.strategyGEntryFilter);
+  const strategyHEntryFilter = parseSlotFilter(value.strategyHEntryFilter);
+  const strategyIEntryFilter = parseSlotFilter(value.strategyIEntryFilter);
   if (
     (value.strategyAEntryFilter !== undefined &&
       value.strategyAEntryFilter !== null &&
       !strategyAEntryFilter) ||
     (value.strategyBEntryFilter !== undefined &&
       value.strategyBEntryFilter !== null &&
-      !strategyBEntryFilter)
+      !strategyBEntryFilter) ||
+    (value.strategyCEntryFilter !== undefined &&
+      value.strategyCEntryFilter !== null &&
+      !strategyCEntryFilter) ||
+    (value.strategyDEntryFilter !== undefined &&
+      value.strategyDEntryFilter !== null &&
+      !strategyDEntryFilter) ||
+    (value.strategyEEntryFilter !== undefined &&
+      value.strategyEEntryFilter !== null &&
+      !strategyEEntryFilter) ||
+    (value.strategyFEntryFilter !== undefined && value.strategyFEntryFilter !== null && !strategyFEntryFilter) ||
+    (value.strategyGEntryFilter !== undefined && value.strategyGEntryFilter !== null && !strategyGEntryFilter) ||
+    (value.strategyHEntryFilter !== undefined && value.strategyHEntryFilter !== null && !strategyHEntryFilter) ||
+    (value.strategyIEntryFilter !== undefined && value.strategyIEntryFilter !== null && !strategyIEntryFilter)
   ) {
     return null;
   }
@@ -881,11 +1004,35 @@ export function parseStrategyAllocationPlan(
     strategyAEntryFilter ?? legacyEntryFilter,
     strategyBEntryFilter ?? legacyEntryFilter,
     tacticalMode,
+    readStrategySelection(value.strategyC ?? null),
+    readFiniteNumber(value.strategyCAllocation ?? 0, 0, 1),
+    strategyCEntryFilter ?? legacyEntryFilter,
+    readStrategySelection(value.strategyD ?? null),
+    readFiniteNumber(value.strategyDAllocation ?? 0, 0, 1),
+    strategyDEntryFilter ?? legacyEntryFilter,
+    readStrategySelection(value.strategyE ?? null),
+    readFiniteNumber(value.strategyEAllocation ?? 0, 0, 1),
+    strategyEEntryFilter ?? legacyEntryFilter,
+    readStrategySelection(value.strategyF ?? null),
+    readFiniteNumber(value.strategyFAllocation ?? 0, 0, 1),
+    strategyFEntryFilter ?? legacyEntryFilter,
+    readStrategySelection(value.strategyG ?? null),
+    readFiniteNumber(value.strategyGAllocation ?? 0, 0, 1),
+    strategyGEntryFilter ?? legacyEntryFilter,
+    readStrategySelection(value.strategyH ?? null),
+    readFiniteNumber(value.strategyHAllocation ?? 0, 0, 1),
+    strategyHEntryFilter ?? legacyEntryFilter,
+    readStrategySelection(value.strategyI ?? null),
+    readFiniteNumber(value.strategyIAllocation ?? 0, 0, 1),
+    strategyIEntryFilter ?? legacyEntryFilter,
   );
 }
 
 function primarySelection(plan: StrategyAllocationPlan): StrategySelection {
-  const selection = plan.strategyA ?? plan.strategyB;
+  const selection =
+    plan.strategyA ?? plan.strategyB ?? plan.strategyC ?? plan.strategyD ??
+    plan.strategyE ?? plan.strategyF ?? plan.strategyG ?? plan.strategyH ??
+    plan.strategyI;
   if (!selection) {
     throw new Error("A saved strategy plan requires one strategy");
   }
@@ -923,8 +1070,39 @@ export function createSaveBacktestInput(
             parameters: { ...plan.strategyB.parameters },
           }
         : null,
+      strategyC: plan.strategyC
+        ? {
+            ...plan.strategyC,
+            parameters: { ...plan.strategyC.parameters },
+          }
+        : null,
+      strategyD: plan.strategyD
+        ? { ...plan.strategyD, parameters: { ...plan.strategyD.parameters } }
+        : null,
+      strategyE: plan.strategyE
+        ? { ...plan.strategyE, parameters: { ...plan.strategyE.parameters } }
+        : null,
+      strategyF: plan.strategyF
+        ? { ...plan.strategyF, parameters: { ...plan.strategyF.parameters } }
+        : null,
+      strategyG: plan.strategyG
+        ? { ...plan.strategyG, parameters: { ...plan.strategyG.parameters } }
+        : null,
+      strategyH: plan.strategyH
+        ? { ...plan.strategyH, parameters: { ...plan.strategyH.parameters } }
+        : null,
+      strategyI: plan.strategyI
+        ? { ...plan.strategyI, parameters: { ...plan.strategyI.parameters } }
+        : null,
       strategyAAllocation: plan.strategyAAllocation,
       strategyBAllocation: plan.strategyBAllocation,
+      strategyCAllocation: plan.strategyCAllocation ?? 0,
+      strategyDAllocation: plan.strategyDAllocation ?? 0,
+      strategyEAllocation: plan.strategyEAllocation ?? 0,
+      strategyFAllocation: plan.strategyFAllocation ?? 0,
+      strategyGAllocation: plan.strategyGAllocation ?? 0,
+      strategyHAllocation: plan.strategyHAllocation ?? 0,
+      strategyIAllocation: plan.strategyIAllocation ?? 0,
       tacticalMode: resolveTacticalAllocationMode(plan.tacticalMode),
       ...((plan.strategyAEntryFilter ?? plan.entryFilter)
         ? {
@@ -939,6 +1117,31 @@ export function createSaveBacktestInput(
               plan.strategyBEntryFilter ?? plan.entryFilter,
             ),
           }
+        : {}),
+      ...((plan.strategyCEntryFilter ?? plan.entryFilter)
+        ? {
+            strategyCEntryFilter: cloneMovingAverageSlopeFilter(
+              plan.strategyCEntryFilter ?? plan.entryFilter,
+            ),
+          }
+        : {}),
+      ...((plan.strategyDEntryFilter ?? plan.entryFilter)
+        ? { strategyDEntryFilter: cloneMovingAverageSlopeFilter(plan.strategyDEntryFilter ?? plan.entryFilter) }
+        : {}),
+      ...((plan.strategyEEntryFilter ?? plan.entryFilter)
+        ? { strategyEEntryFilter: cloneMovingAverageSlopeFilter(plan.strategyEEntryFilter ?? plan.entryFilter) }
+        : {}),
+      ...((plan.strategyFEntryFilter ?? plan.entryFilter)
+        ? { strategyFEntryFilter: cloneMovingAverageSlopeFilter(plan.strategyFEntryFilter ?? plan.entryFilter) }
+        : {}),
+      ...((plan.strategyGEntryFilter ?? plan.entryFilter)
+        ? { strategyGEntryFilter: cloneMovingAverageSlopeFilter(plan.strategyGEntryFilter ?? plan.entryFilter) }
+        : {}),
+      ...((plan.strategyHEntryFilter ?? plan.entryFilter)
+        ? { strategyHEntryFilter: cloneMovingAverageSlopeFilter(plan.strategyHEntryFilter ?? plan.entryFilter) }
+        : {}),
+      ...((plan.strategyIEntryFilter ?? plan.entryFilter)
+        ? { strategyIEntryFilter: cloneMovingAverageSlopeFilter(plan.strategyIEntryFilter ?? plan.entryFilter) }
         : {}),
     },
     indicators: indicators.map((indicator) => ({

@@ -22,8 +22,10 @@ import {
 } from "./strategies";
 import {
   DEFAULT_TACTICAL_ALLOCATION_MODE,
+  STRATEGY_SLOTS,
   resolveTacticalAllocationMode,
   type StrategyAllocationPlan,
+  type StrategySlot,
   type TacticalAllocationMode,
 } from "./strategy-combinations";
 import type {
@@ -62,10 +64,38 @@ export interface ScreeningRunCandidate {
   strategyBId: StrategyId | null;
   strategyBParameters: StrategyParameters | null;
   strategyBEntryFilter: MovingAverageSlopeFilter | null;
+  strategyCId?: StrategyId | null;
+  strategyCParameters?: StrategyParameters | null;
+  strategyCEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyDId?: StrategyId | null;
+  strategyDParameters?: StrategyParameters | null;
+  strategyDEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyEId?: StrategyId | null;
+  strategyEParameters?: StrategyParameters | null;
+  strategyEEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyFId?: StrategyId | null;
+  strategyFParameters?: StrategyParameters | null;
+  strategyFEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyGId?: StrategyId | null;
+  strategyGParameters?: StrategyParameters | null;
+  strategyGEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyHId?: StrategyId | null;
+  strategyHParameters?: StrategyParameters | null;
+  strategyHEntryFilter?: MovingAverageSlopeFilter | null;
+  strategyIId?: StrategyId | null;
+  strategyIParameters?: StrategyParameters | null;
+  strategyIEntryFilter?: MovingAverageSlopeFilter | null;
   strategyAAllocation: number;
   strategyBAllocation: number;
+  strategyCAllocation?: number;
+  strategyDAllocation?: number;
+  strategyEAllocation?: number;
+  strategyFAllocation?: number;
+  strategyGAllocation?: number;
+  strategyHAllocation?: number;
+  strategyIAllocation?: number;
   tacticalMode?: TacticalAllocationMode;
-  relativeLongStrategy: "strategyA" | "strategyB" | null;
+  relativeLongStrategy: StrategySlot | null;
   selectionScore: number | null;
   metrics: ScreeningRunMetrics;
 }
@@ -139,6 +169,27 @@ export function screeningRunCandidateKey(
   result: ScreeningSingleResult | ScreeningCombinationResult,
 ): string {
   if ("strategyAId" in result) {
+    const combination = result as ScreeningCombinationResult &
+      Record<string, unknown>;
+    const higherOrderLegs = STRATEGY_SLOTS.slice(2).flatMap((slot) => {
+      const id = combination[`${slot}Id`] as StrategyId | null | undefined;
+      const parameters = combination[`${slot}Parameters`] as
+        | StrategyParameters
+        | null
+        | undefined;
+      if (!id || !parameters) return [];
+      return [
+        id,
+        stableParameters(parameters),
+        stableFilter(
+          combination[`${slot}EntryFilter`] as
+            | MovingAverageSlopeFilter
+            | null
+            | undefined,
+        ),
+        (combination[`${slot}Allocation`] as number | undefined) ?? 0,
+      ];
+    });
     return [
       "combination",
       result.strategyAId,
@@ -149,6 +200,7 @@ export function screeningRunCandidateKey(
       stableFilter(result.strategyBEntryFilter),
       result.strategyAAllocation,
       result.strategyBAllocation,
+      ...higherOrderLegs,
       ...(resolveTacticalAllocationMode(result.tacticalMode) ===
       DEFAULT_TACTICAL_ALLOCATION_MODE
         ? []
@@ -166,31 +218,51 @@ export function screeningRunCandidateKey(
 export function screeningRunCandidateKeyForPlan(
   plan: StrategyAllocationPlan,
 ): string | null {
-  const strategyA = plan.strategyA;
-  const strategyB = plan.strategyB;
-  if (!strategyA && !strategyB) return null;
-  if (!strategyA || !strategyB) {
-    const selection = strategyA ?? strategyB;
-    const entryFilter = strategyA
-      ? plan.strategyAEntryFilter ?? plan.entryFilter
-      : plan.strategyBEntryFilter ?? plan.entryFilter;
+  const planRecord = plan as StrategyAllocationPlan & Record<string, unknown>;
+  const selected = STRATEGY_SLOTS.map((slot) => ({
+    selection: planRecord[slot] as
+      | StrategyAllocationPlan["strategyA"]
+      | null
+      | undefined,
+    entryFilter:
+      (planRecord[`${slot}EntryFilter`] as
+        | MovingAverageSlopeFilter
+        | null
+        | undefined) ?? plan.entryFilter,
+    allocation:
+      (planRecord[`${slot}Allocation`] as number | undefined) ?? 0,
+  })).filter(
+    (leg): leg is typeof leg & {
+      selection: NonNullable<typeof leg.selection>;
+    } => Boolean(leg.selection),
+  );
+  if (selected.length === 0) return null;
+  if (selected.length === 1) {
+    const { selection, entryFilter } = selected[0];
     return [
       "single",
-      selection!.strategyId,
-      stableParameters(selection!.parameters),
+      selection.strategyId,
+      stableParameters(selection.parameters),
       stableFilter(entryFilter),
     ].join(":");
   }
+  const [primary, secondary] = selected;
   return [
     "combination",
-    strategyA.strategyId,
-    stableParameters(strategyA.parameters),
-    stableFilter(plan.strategyAEntryFilter ?? plan.entryFilter),
-    strategyB.strategyId,
-    stableParameters(strategyB.parameters),
-    stableFilter(plan.strategyBEntryFilter ?? plan.entryFilter),
-    plan.strategyAAllocation,
-    plan.strategyBAllocation,
+    primary.selection.strategyId,
+    stableParameters(primary.selection.parameters),
+    stableFilter(primary.entryFilter),
+    secondary.selection.strategyId,
+    stableParameters(secondary.selection.parameters),
+    stableFilter(secondary.entryFilter),
+    primary.allocation,
+    secondary.allocation,
+    ...selected.slice(2).flatMap((leg) => [
+      leg.selection.strategyId,
+      stableParameters(leg.selection.parameters),
+      stableFilter(leg.entryFilter),
+      leg.allocation,
+    ]),
     ...(resolveTacticalAllocationMode(plan.tacticalMode) ===
     DEFAULT_TACTICAL_ALLOCATION_MODE
       ? []
@@ -277,8 +349,56 @@ function compactCandidate(
       strategyBEntryFilter: cloneMovingAverageSlopeFilter(
         result.strategyBEntryFilter,
       ),
+      strategyCId: result.strategyCId ?? null,
+      strategyCParameters: result.strategyCParameters
+        ? { ...result.strategyCParameters }
+        : null,
+      strategyCEntryFilter: cloneMovingAverageSlopeFilter(
+        result.strategyCEntryFilter,
+      ),
+      strategyDId: result.strategyDId ?? null,
+      strategyDParameters: result.strategyDParameters
+        ? { ...result.strategyDParameters }
+        : null,
+      strategyDEntryFilter: cloneMovingAverageSlopeFilter(
+        result.strategyDEntryFilter,
+      ),
+      strategyEId: result.strategyEId ?? null,
+      strategyEParameters: result.strategyEParameters
+        ? { ...result.strategyEParameters }
+        : null,
+      strategyEEntryFilter: cloneMovingAverageSlopeFilter(
+        result.strategyEEntryFilter,
+      ),
       strategyAAllocation: result.strategyAAllocation,
       strategyBAllocation: result.strategyBAllocation,
+      strategyCAllocation: result.strategyCAllocation ?? 0,
+      strategyDAllocation: result.strategyDAllocation ?? 0,
+      strategyEAllocation: result.strategyEAllocation ?? 0,
+      ...Object.fromEntries(
+        STRATEGY_SLOTS.slice(5).flatMap((slot) => {
+          const resultRecord = result as ScreeningCombinationResult &
+            Record<string, unknown>;
+          const parameters = resultRecord[`${slot}Parameters`] as
+            | StrategyParameters
+            | null
+            | undefined;
+          return [
+            [`${slot}Id`, resultRecord[`${slot}Id`] ?? null],
+            [`${slot}Parameters`, parameters ? { ...parameters } : null],
+            [
+              `${slot}EntryFilter`,
+              cloneMovingAverageSlopeFilter(
+                resultRecord[`${slot}EntryFilter`] as
+                  | MovingAverageSlopeFilter
+                  | null
+                  | undefined,
+              ),
+            ],
+            [`${slot}Allocation`, resultRecord[`${slot}Allocation`] ?? 0],
+          ];
+        }),
+      ),
       tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
       relativeLongStrategy: result.relativeLongStrategy,
       selectionScore: candidateSelectionScore(result),
@@ -297,8 +417,36 @@ function compactCandidate(
     strategyBId: null,
     strategyBParameters: null,
     strategyBEntryFilter: null,
+    strategyCId: null,
+    strategyCParameters: null,
+    strategyCEntryFilter: null,
+    strategyDId: null,
+    strategyDParameters: null,
+    strategyDEntryFilter: null,
+    strategyEId: null,
+    strategyEParameters: null,
+    strategyEEntryFilter: null,
+    strategyFId: null,
+    strategyFParameters: null,
+    strategyFEntryFilter: null,
+    strategyGId: null,
+    strategyGParameters: null,
+    strategyGEntryFilter: null,
+    strategyHId: null,
+    strategyHParameters: null,
+    strategyHEntryFilter: null,
+    strategyIId: null,
+    strategyIParameters: null,
+    strategyIEntryFilter: null,
     strategyAAllocation: 1,
     strategyBAllocation: 0,
+    strategyCAllocation: 0,
+    strategyDAllocation: 0,
+    strategyEAllocation: 0,
+    strategyFAllocation: 0,
+    strategyGAllocation: 0,
+    strategyHAllocation: 0,
+    strategyIAllocation: 0,
     tacticalMode: DEFAULT_TACTICAL_ALLOCATION_MODE,
     relativeLongStrategy: null,
     selectionScore: candidateSelectionScore(result),
@@ -511,22 +659,32 @@ function parseCandidate(
 ): ScreeningRunCandidate | null {
   if (!isRecord(value)) return null;
   const kind = value.kind;
-  const strategyAId = value.strategyAId as StrategyId;
-  const strategyBId =
-    value.strategyBId === null ? null : (value.strategyBId as StrategyId);
-  const strategyAParameters = parseParameters(value.strategyAParameters);
-  const strategyBParameters =
-    value.strategyBParameters === null
-      ? null
-      : parseParameters(value.strategyBParameters);
-  const strategyAEntryFilter =
-    value.strategyAEntryFilter === null
-      ? null
-      : parseMovingAverageSlopeFilter(value.strategyAEntryFilter);
-  const strategyBEntryFilter =
-    value.strategyBEntryFilter === null
-      ? null
-      : parseMovingAverageSlopeFilter(value.strategyBEntryFilter);
+  const slotData = STRATEGY_SLOTS.map((slot, index) => {
+    const rawId = value[`${slot}Id`];
+    const rawParameters = value[`${slot}Parameters`];
+    const rawFilter = value[`${slot}EntryFilter`];
+    const rawAllocation = value[`${slot}Allocation`];
+    return {
+      slot,
+      id:
+        rawId === undefined || rawId === null
+          ? null
+          : (rawId as StrategyId),
+      parameters:
+        rawParameters === undefined || rawParameters === null
+          ? null
+          : parseParameters(rawParameters),
+      entryFilter:
+        rawFilter === undefined || rawFilter === null
+          ? null
+          : parseMovingAverageSlopeFilter(rawFilter),
+      invalidFilter:
+        rawFilter !== undefined && rawFilter !== null &&
+        !parseMovingAverageSlopeFilter(rawFilter),
+      allocation: rawAllocation === undefined && index >= 2 ? 0 : rawAllocation,
+    };
+  });
+  const selectedSlots = slotData.filter(({ id }) => id !== null);
   const metricsValue = parseMetrics(value.metrics);
   const tacticalMode = resolveTacticalAllocationMode(
     value.tacticalMode as TacticalAllocationMode | null | undefined,
@@ -537,47 +695,75 @@ function parseCandidate(
     (value.rank as number) < 1 ||
     (value.rank as number) > MAX_SCREENING_RUN_CANDIDATES ||
     !validString(value.key, 1_000) ||
-    !strategyIds.has(strategyAId) ||
-    !strategyAParameters ||
-    (kind === "single" &&
-      (strategyBId !== null || strategyBParameters !== null)) ||
-    (kind === "combination" &&
-      (!strategyBId ||
-        !strategyIds.has(strategyBId) ||
-        !strategyBParameters)) ||
-    !finiteNumber(value.strategyAAllocation) ||
-    !finiteNumber(value.strategyBAllocation) ||
-    value.strategyAAllocation < 0 ||
-    value.strategyBAllocation < 0 ||
-    value.strategyAAllocation + value.strategyBAllocation > 1 + 1e-10 ||
+    selectedSlots.length < 1 ||
+    (kind === "single" && selectedSlots.length !== 1) ||
+    (kind === "combination" && selectedSlots.length < 2) ||
+    slotData.some(
+      ({ id, parameters, invalidFilter, allocation }, index) =>
+        (id !== null && (!strategyIds.has(id) || !parameters)) ||
+        (id === null && parameters !== null) ||
+        (id === null && index < selectedSlots.length) ||
+        invalidFilter ||
+        !finiteNumber(allocation) ||
+        (allocation as number) < 0 ||
+        (id === null && (allocation as number) > 1e-10),
+    ) ||
+    slotData.reduce((sum, { allocation }) => sum + (allocation as number), 0) >
+      1 + 1e-10 ||
     (value.tacticalMode !== undefined &&
       value.tacticalMode !== DEFAULT_TACTICAL_ALLOCATION_MODE &&
       value.tacticalMode !== "reduce-on-short-exit") ||
     (value.relativeLongStrategy !== null &&
-      value.relativeLongStrategy !== "strategyA" &&
-      value.relativeLongStrategy !== "strategyB") ||
+      !STRATEGY_SLOTS.includes(value.relativeLongStrategy as StrategySlot)) ||
     (value.selectionScore !== null &&
       !finiteNumber(value.selectionScore)) ||
-    !metricsValue ||
-    (value.strategyAEntryFilter !== null && !strategyAEntryFilter) ||
-    (value.strategyBEntryFilter !== null && !strategyBEntryFilter)
+    !metricsValue
   ) {
     return null;
   }
+  const [strategyA, strategyB, strategyC, strategyD, strategyE, strategyF, strategyG, strategyH, strategyI] = slotData;
   return {
     rank: value.rank as number,
     key: value.key,
     kind,
-    strategyAId,
-    strategyAParameters,
-    strategyAEntryFilter,
-    strategyBId,
-    strategyBParameters,
-    strategyBEntryFilter,
-    strategyAAllocation: value.strategyAAllocation,
-    strategyBAllocation: value.strategyBAllocation,
+    strategyAId: strategyA.id as StrategyId,
+    strategyAParameters: strategyA.parameters as StrategyParameters,
+    strategyAEntryFilter: strategyA.entryFilter,
+    strategyBId: strategyB.id,
+    strategyBParameters: strategyB.parameters,
+    strategyBEntryFilter: strategyB.entryFilter,
+    strategyCId: strategyC.id,
+    strategyCParameters: strategyC.parameters,
+    strategyCEntryFilter: strategyC.entryFilter,
+    strategyDId: strategyD.id,
+    strategyDParameters: strategyD.parameters,
+    strategyDEntryFilter: strategyD.entryFilter,
+    strategyEId: strategyE.id,
+    strategyEParameters: strategyE.parameters,
+    strategyEEntryFilter: strategyE.entryFilter,
+    strategyFId: strategyF.id,
+    strategyFParameters: strategyF.parameters,
+    strategyFEntryFilter: strategyF.entryFilter,
+    strategyGId: strategyG.id,
+    strategyGParameters: strategyG.parameters,
+    strategyGEntryFilter: strategyG.entryFilter,
+    strategyHId: strategyH.id,
+    strategyHParameters: strategyH.parameters,
+    strategyHEntryFilter: strategyH.entryFilter,
+    strategyIId: strategyI.id,
+    strategyIParameters: strategyI.parameters,
+    strategyIEntryFilter: strategyI.entryFilter,
+    strategyAAllocation: strategyA.allocation as number,
+    strategyBAllocation: strategyB.allocation as number,
+    strategyCAllocation: strategyC.allocation as number,
+    strategyDAllocation: strategyD.allocation as number,
+    strategyEAllocation: strategyE.allocation as number,
+    strategyFAllocation: strategyF.allocation as number,
+    strategyGAllocation: strategyG.allocation as number,
+    strategyHAllocation: strategyH.allocation as number,
+    strategyIAllocation: strategyI.allocation as number,
     tacticalMode,
-    relativeLongStrategy: value.relativeLongStrategy,
+    relativeLongStrategy: value.relativeLongStrategy as StrategySlot | null,
     selectionScore: value.selectionScore,
     metrics: metricsValue,
   };

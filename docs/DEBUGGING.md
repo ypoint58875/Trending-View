@@ -16,6 +16,13 @@
    directory resets local persistence.
 7. Run `npm ci` if `node_modules` is missing or dependencies are damaged.
 
+If the console previously stopped after `No migrations to apply!`, Wrangler had
+completed the no-op migration but left its Windows process tree alive. The
+launcher now relays migration output and allows a two-second exit grace period
+after that exact terminal message. It then closes only the migration process
+tree and continues startup. A migration that times out without the success
+message remains a hard failure and is never skipped.
+
 The launcher never falls back to the hosted site. The local UI and saved
 records do not require login, but live market-data providers still require
 internet access.
@@ -190,6 +197,21 @@ not deterministic.
    chart updates use component `replaceMerge` and do not recreate tooltip or
    axis-pointer state with `notMerge: true`.
 
+## One-minute chart appears ahead of Shanghai time
+
+1. Compare the final bar's provider epoch with its displayed category. The
+   epoch is authoritative for display; an exchange-local `bar.time` can be one
+   hour ahead for JPX without representing a future bar.
+2. Confirm `PriceChart` receives the active interval and calls
+   `formatPriceChartTime(...)` for one-minute categories and trade markers.
+3. Keep canonical `bar.time` exchange-local. Session grouping, entry cutoffs,
+   and forced session-end exits depend on that internal key.
+4. If the chart is visually sparse, confirm both data-zoom components use a
+   one-minute `minValueSpan` of 120; daily zoom must remain unrestricted.
+5. While the venue refresh policy is enabled, compare the newest epoch with
+   `series.fetchedAt`. A gap of at least three minutes must render the yellow
+   `intraday-delay-warning`; a one- or two-minute normal bar boundary must not.
+
 ## Browser shows an empty pane to the right
 
 The workspace already uses the full webpage viewport. A gray vertical divider
@@ -221,23 +243,24 @@ trade only to make a test pass.
 1. Signal targets intentionally scan complete loaded history so persistent
    strategy state is not reset at an arbitrary warm-up boundary. The selected
    range limits performance measurement, not signal construction.
-2. The first stage intentionally evaluates all 37,182 registered parameter
+2. The first stage intentionally evaluates all 45,196 registered parameter
    combinations. There is no production cap or sampling control.
 3. Confirm only compact metrics and reusable execution state for each eligible
    strategy's top 60 unfiltered
-   candidates survive into the EMA stage. Only the final unique winner per
-   strategy should retain complete execution state for pair replay.
+   candidates survive into the EMA stage. The top three final parameter sets
+   per strategy should retain complete execution state for pair replay.
 4. Confirm the unified run advances through parameter, entry-filter, pair, and allocation
    stages. The single-strategy column is produced by the parameter stage; the
    combination column is available after allocation replay.
 5. Confirm EMA(5-8) runs only for the explicit trend/breakout/momentum family.
    Channel BreakOut and Price Channel must participate; reversal and
    candlestick families must remain unfiltered.
-6. Confirm each pair uses the exact parameters and independent A/B entry
-   filters of its retained standalone results. With 34 unique winners and two
-   equivalent ID pairs excluded, the current maximum is 664 strategy-ID pairs
-   under the 4,096 safety bound. Compare 50/50, 60/40, 40/60, 70/30, and
-   30/70.
+6. Confirm each strategy pair crosses its top three retained parameter sets,
+   uses the exact independent A/B entry filters, and retains the best of all
+   nine crossings before allocation replay. With 57 strategies and two
+   equivalent ID pairs excluded, the current maximum is 1,594 strategy-ID
+   pairs under the 4,096 safety bound. Compare 50/50, 60/40, 40/60, 70/30,
+   and 30/70.
 7. Use the stop action when a run is no longer useful.
 8. Confirm `screening.worker.ts` was emitted by the production build and that
    progress messages continue while the main page remains interactive. The
@@ -279,30 +302,34 @@ trade only to make a test pass.
 
 ## Applied strategy is not visible on the chart
 
-1. For a strategy configured directly in the lab, use the lab's Apply button
+1. A fresh daily or one-minute workspace intentionally starts with Strategy A
+   and Strategy B empty and no strategy applied to the chart. Selecting
+   "Do not use" in both slots and pressing Apply intentionally clears every
+   strategy-linked pane, reference, marker, and latest-guidance calculation.
+2. For a strategy configured directly in the lab, use the lab's Apply button
    and confirm the page scrolls to the main chart. This action must not create
    a saved shortcut.
-2. For a screening result, click the result row and confirm it restored the
+3. For a screening result, click the result row and confirm it restored the
    selectors and scrolled to the main chart. Enter and Space should provide
    the same keyboard action while the row is focused.
-3. Confirm the result's A and B values match the two strategy-lab allocation
+4. Confirm the result's A and B values match the two strategy-lab allocation
    selectors. Dual plans must be 50/50, 60/40, 40/60, 70/30, or 30/70; the two strategy parameter
    sections should sit directly below their own selectors.
-4. Reference lines exist only for strategies with a continuous price
+5. Reference lines exist only for strategies with a continuous price
    reference; a candle/oscillator rule may legitimately add no line.
-5. Confirm both selectors contain the complete strategy registry, duplicate
+6. Confirm both selectors contain the complete strategy registry, duplicate
    IDs are unavailable, and the lab shows A/B as relative long or short based
    on the selected range's average active-run length. Changing dates or
    parameters must recalculate those roles.
-6. Confirm the chart legend prefixes follow the derived relative roles, not
+7. Confirm the chart legend prefixes follow the derived relative roles, not
    the strategy catalog's fixed horizon metadata.
-7. For a partial/combined plan, inspect allocation transition markers rather
+8. For a partial/combined plan, inspect allocation transition markers rather
    than expecting generic round-trip trade markers. The only strategy labels
    are open (relative-long buy), short buy, short sell, and close. A gated final
    clear is one close marker even though its rebalance record retains both exit
    events.
-8. Confirm the selected date range has at least one allocation change.
-9. If markers appear on nearly every bar while the target state is unchanged,
+9. Confirm the selected date range has at least one allocation change.
+10. If markers appear on nearly every bar while the target state is unchanged,
    inspect `plannedAllocation`; ordinary price drift must not trigger a
    maintenance rebalance.
 

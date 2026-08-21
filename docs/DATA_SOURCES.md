@@ -305,6 +305,14 @@ provider reported zero volume for that index series, so the workspace exposes
 volume as unavailable and disables dependent studies. No minute payload is
 committed.
 
+On 2026-08-14 at 09:55 Asia/Shanghai, an uncached strict N225 one-minute
+request was fetched at `2026-08-14T01:55:22.936Z`; its newest bar timestamp was
+`2026-08-14T01:40:25.000Z`, confirming a 15-minute publication lag. Yahoo did
+not return a usable `exchangeDataDelayedBy` value for this response. During an
+active venue session, the workspace therefore estimates minute-data delay from
+the newest bar epoch and the series fetch time, and warns at three minutes or
+more. The raw response is not committed.
+
 For daily output, every accepted bar must have a finite positive
 `adjclose / raw close` before any OHLC row is scaled. If one factor is missing,
 zero, non-finite, or otherwise invalid, every accepted bar retains raw OHLC and
@@ -506,3 +514,17 @@ nine indicators and three long-only host-adapted strategies. Visual-only
 objects, alerts, account sizing, leverage, sessions, and partial exits are not
 copied into application business logic. See `COMMUNITY_IMPORTS.md` for the
 repeatable intake process and compatibility rules.
+
+On 2026-08-20 a second read-only comparison used the public open-source
+TradingView pages for HalfTrend, QQE MOD, Schaff Trend Cycle, Session Volume
+Profile, and Anchored VWAP. The local `strategy.txt` was no longer present, so
+these author pages became the traceable formula baseline. No Pine source or
+page payload is committed; the independent TypeScript ports, parameter
+adaptations, and long-only mapping are recorded in the community catalog and
+`TECH_RESEARCH.md`.
+
+- `https://www.tradingview.com/script/U1SJ8ubc-HalfTrend/`
+- `https://www.tradingview.com/script/TpUW4muw-QQE-MOD/`
+- `https://www.tradingview.com/script/dbxXeuw2-Indicator-Schaff-Trend-Cycle-STC/`
+- `https://www.tradingview.com/script/uDRS8vr5-Session-Volume-Profile-Open-Source-CantoLab/`
+- `https://www.tradingview.com/script/L1tWQjgR-Anchored-VWAP/`

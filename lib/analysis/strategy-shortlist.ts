@@ -16,6 +16,7 @@ import type {
 } from "./strategy-combinations";
 import {
   DEFAULT_TACTICAL_ALLOCATION_MODE,
+  STRATEGY_SLOTS,
   resolveTacticalAllocationMode,
 } from "./strategy-combinations";
 import type { StrategyId } from "./strategies";
@@ -159,50 +160,62 @@ function singleCandidate(
 function combinationCandidate(
   result: StrategyCombinationResult,
 ): StrategyShortlistCandidate {
-  const strategyAEntryFilterKey = filterKey(
-    result.strategyAEntryFilter,
-  );
-  const strategyBEntryFilterKey = filterKey(
-    result.strategyBEntryFilter,
-  );
+  const source = result as unknown as Record<string, unknown>;
+  const legs = STRATEGY_SLOTS.flatMap((slot) => {
+    const strategyId = source[`${slot}Id`] as StrategyId | undefined;
+    const parameters = source[`${slot}Parameters`] as
+      | Record<string, number>
+      | undefined;
+    if (!strategyId || !parameters) return [];
+    return [{
+      slot,
+      strategyId,
+      parameters,
+      allocation: (source[`${slot}Allocation`] as number | undefined) ?? 0,
+      entryFilter: source[`${slot}EntryFilter`] as
+        | StrategyAllocationPlan["strategyAEntryFilter"]
+        | undefined,
+    }];
+  });
+  const first = legs[0]!;
+  const second = legs[1]!;
+  const plan: StrategyAllocationPlan = {
+    strategyA: { strategyId: first.strategyId, parameters: { ...first.parameters } },
+    strategyB: { strategyId: second.strategyId, parameters: { ...second.parameters } },
+    strategyAAllocation: first.allocation,
+    strategyBAllocation: second.allocation,
+    tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
+  };
+  const mutablePlan = plan as unknown as Record<string, unknown>;
+  for (const leg of legs) {
+    mutablePlan[leg.slot] = {
+      strategyId: leg.strategyId,
+      parameters: { ...leg.parameters },
+    };
+    mutablePlan[`${leg.slot}Allocation`] = leg.allocation;
+    mutablePlan[`${leg.slot}EntryFilter`] = leg.entryFilter ?? null;
+  }
+  const entryFilterKeys = legs.map((leg) => filterKey(leg.entryFilter));
   return {
     key: [
       "combination",
-      result.strategyAId,
-      stableParameterKey(result.strategyAParameters),
-      result.strategyBId,
-      stableParameterKey(result.strategyBParameters),
-      result.strategyAAllocation,
-      result.strategyBAllocation,
+      ...legs.flatMap((leg) => [
+        leg.strategyId,
+        stableParameterKey(leg.parameters),
+      ]),
+      ...legs.map((leg) => leg.allocation),
       ...(resolveTacticalAllocationMode(result.tacticalMode) ===
       DEFAULT_TACTICAL_ALLOCATION_MODE
         ? []
         : [resolveTacticalAllocationMode(result.tacticalMode)]),
-      ...(strategyAEntryFilterKey || strategyBEntryFilterKey
-        ? [
-            strategyAEntryFilterKey ?? "none",
-            strategyBEntryFilterKey ?? "none",
-          ]
+      ...(entryFilterKeys.some(Boolean)
+        ? entryFilterKeys.map((key) => key ?? "none")
         : []),
     ].join(":"),
     kind: "combination",
     result,
-    plan: {
-      strategyA: {
-        strategyId: result.strategyAId,
-        parameters: { ...result.strategyAParameters },
-      },
-      strategyB: {
-        strategyId: result.strategyBId,
-        parameters: { ...result.strategyBParameters },
-      },
-      strategyAAllocation: result.strategyAAllocation,
-      strategyBAllocation: result.strategyBAllocation,
-      tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
-      strategyAEntryFilter: result.strategyAEntryFilter ?? null,
-      strategyBEntryFilter: result.strategyBEntryFilter ?? null,
-    },
-    strategyIds: [result.strategyAId, result.strategyBId],
+    plan,
+    strategyIds: legs.map((leg) => leg.strategyId),
     qualityRank: 0,
   };
 }

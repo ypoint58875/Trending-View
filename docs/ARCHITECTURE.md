@@ -88,13 +88,10 @@ on another category, an outside click, or Escape. Each categorized indicator
 has an independent outline-star favorite action. The favorites strip occupies
 its own row, remains directly clickable, and initially contains the confirmed
 support/resistance-break pilot.
-The applied plan is separately projected through
-`buildStrategyLinkedPaneIndicators(...)`; declared lower-pane studies are
-merged with manual configurations and exact duplicates are removed without
-altering saved manual indicator state.
 Each favorite or menu label both focuses and toggles its indicator, while the
 adjacent category-menu star only changes favorite membership. Draft strategy
-changes update the lab backtest without replacing the selected indicator.
+changes, Apply, screening rows, and saved shortcuts never change manual
+indicator visibility or parameters.
 Only Apply, a screening row, or a saved shortcut updates chart references,
 live guidance, and trade markers. Save current strategy snapshots that applied
 chart plan and its matching metrics rather than unapplied lab edits.
@@ -108,13 +105,13 @@ reference series are omitted. Price detail tooltips and crosshair labels share
 a one-decimal formatter. Visible price-axis ticks remain integers when the
 visible candle high exceeds 20 and use at most two decimals when it is 20 or
 less; the same rule applies to daily and one-minute series.
-Saved-backtest snapshots store the ordered visible indicator configurations in
-a nullable JSON column. Opening a shortcut restores those visible indicators
-and parameters without replacing the workspace's shared backtest range. If the
+Saved-backtest snapshots retain the ordered visible indicator configurations
+in a nullable JSON column for backward-compatible provenance, but opening a
+shortcut does not restore or alter indicator visibility or parameters. If the
 shortcut and the successful active series resolve to the same canonical
 instrument, the workspace preserves that exact series and restores only plan,
-parameter, indicator, metric, and marker state. Only a different canonical
-instrument triggers a market reload; legacy rows restore no indicators. For
+parameter, metric, and marker state. Only a different canonical instrument
+triggers a market reload. For
 every active or successfully background-refreshed instrument, daily shortcut
 returns are derived from each saved plan and costs over the latest 128 trading
 sessions. The rolling-update API persists returns without changing legacy rank
@@ -125,26 +122,32 @@ rolling return and then to the creation-time metric. Completed screening runs
 remain a compact backend provenance archive and never mutate shortcuts.
 
 One strategy-screening action sends the complete market snapshot and settings
-to a dedicated module Web Worker, which generates all 37,182 finite parameter
+to a dedicated module Web Worker, which generates all 45,196 finite parameter
 combinations from the shared registry and applies one objective. For each
 explicitly eligible trend, breakout, or momentum strategy, it retains compact
 metrics and raw execution state for the top 60 unfiltered
 parameter sets and compares EMA(5), EMA(6), EMA(7), and EMA(8) at a 0% slope.
-Every strategy then contributes its final winner to normal pair screening;
+Every strategy contributes its top three final parameter sets to normal pair
+screening, which evaluates all nine crossings for each strategy-ID pair and
+keeps the best crossing before allocation replay;
 rolling screening retains the best ten candidates per strategy for window
 aggregation before collapsing back to one displayed winner per strategy. The
 optimizer ranks every unordered pair of non-equivalent retained single results
 and compares 50/50, 60/40, 40/60, 70/30, and 30/70 allocations under both
 base-then-add and full-then-reduce tactical modes. The current
-unique-winner catalog produces 664 strategy-ID pairs. Final
+catalog produces 1,594 non-equivalent strategy-ID pairs. Final
 combination output keeps only the best parameter/allocation result for each
-unique unordered strategy-ID pair. The UI renders standalone and combination
-outputs in equal fixed-layout columns beneath one horizontal control bar and
-does not truncate the retained rows. Stage-local counters drive one monotonic
-four-segment progress bar.
+unique unordered strategy-ID set within each strategy-count category. Pair
+winners seed bounded triple discovery, and each retained count seeds the next
+count through nine strategies. This forward-expansion beam avoids exhaustive
+tuple enumeration. The UI renders nine vertically stacked disclosures and
+independently retains the top 30 rows per one-to-nine strategy category.
+Stage-local counters drive one monotonic eighteen-segment bar.
 Clicking or keyboard-activating a result row applies it directly; the strategy
-A/B columns keep names and horizon labels inline, and the strategy lab remains
-the sole equity-preview surface. Every target is generated from
+A/B columns retain detailed parameters for pair results, while three-to-nine
+strategy results use one compact Strategy-A-led consensus name, a two-line list
+of the remaining names, and aggregate weights. The strategy lab remains the
+sole equity-preview surface. Every target is generated from
 the complete loaded history; only performance is restricted to the selected
 date range. Indicator, target, and order arrays are cached only inside the
 Worker run and are discarded when it terminates. Completed result objects are
@@ -174,7 +177,7 @@ objective. The balanced objective is `0.45 * totalReturn +
 candidate-status evidence only. These modes are recent-adaptive in-sample
 selectors and make no out-of-sample claim.
 
-After both result groups complete, `strategy-shortlist.ts` forms one combined
+After all result groups complete, `strategy-shortlist.ts` forms one combined
 eligible pool. The first candidate under the active screening objective is the
 primary strategy. It recommends up to two deputies only when each candidate
 shares no strategy component with the recommendations already selected and
@@ -193,21 +196,20 @@ measurement remains independent from objective ranking.
 
 Every strategy registry entry retains descriptive `long` or `short` catalog
 metadata, but plans and combinations do not use it as an eligibility rule.
-Strategy A and Strategy B can each hold any different, non-equivalent registry
-entry. Over the selected date range, the target with the longer average active
-run becomes the relative long-cycle gate. A duration tie prefers fewer target
-transitions and then Strategy A. A new relative-long entry establishes its
-assigned allocation and deliberately ignores a relative-short signal already
-active. Only a later fresh relative-short entry adds its allocation; its paired
-exit removes that layer. The alternative full-then-reduce mode establishes
-A+B at the relative-long entry, removes the tactical sleeve at a short-cycle
-exit, and restores it at the next short-cycle entry. Neither mode can produce a
-negative target or short position. The relative-long exit clears both layers. The
-allocation plan uses 100% whenever exactly one strategy is selected; dual
-plans allow 50/50, 60/40, 40/60, 70/30, and 30/70. The allocation backtest applies
-close-confirmed changed states at the next open and causal price-order states
-on the touched bar. Complete-history state initializes any already-active
-position at the first selected open without a transaction or cost. It does not
+Strategy A through optional Strategy E can each hold a different,
+non-equivalent registry entry. A single strategy directly controls the target,
+while dual plans retain the existing core-gate/tactical-sleeve state machine
+and five allocation splits. Three-to-five-leg plans instead treat positive 10%
+allocations as judgment weights: a flat plan enters only when a strict majority
+of strategies are active and their normalized weight reaches 60%; an invested
+plan exits when active weight falls to 40% or less, or active strategy count
+falls below half. The intermediate band preserves the previous state, so the
+portfolio target is always 0% or 100% and individual signal changes do not cause
+partial rebalancing. Close-confirmed consensus changes execute at the next open.
+Individual price-order fills update their leg state but do not execute separate
+portfolio sleeves in a three-to-five-leg plan. Complete-history state initializes
+any already-active position at the first selected open without a transaction or
+cost. It does not
 recenter an unchanged state after price drift and applies costs only to actual
 in-range transitions. It marks the selected-range end to the last close
 without liquidation. Rebalances carry
@@ -364,3 +366,30 @@ begins only after the full source chain fails. The complete shortcut collection
 is refreshed after the manual header action and after each scheduled
 active-instrument update. The inactive-instrument pass remains sequential,
 de-duplicated, cooldown-protected, and does not switch the visible chart.
+## Three-to-five-strategy weighted consensus and comprehensive assessment
+
+Pair screening is the bounded parent stage for triple discovery. The optimizer
+takes the best 128 pair finalists, tries a non-equivalent third finalist at a
+40/30/30 reference allocation, retains up to 256 unique unordered strategy-ID
+triples, and replays all 36 positive tenth-based judgment-weight allocations.
+Triple finalists seed bounded four-strategy reference tests,
+and four-strategy finalists seed bounded five-strategy reference tests. Each
+retained four/five set then replays every positive 10% allocation composition
+once: 84 four-leg candidates and 126 five-leg candidates. Output is capped
+independently at 30 for each strategy count. Progress has ten optimizer segments
+through quintuple allocation.
+
+Strategy A through optional Strategy E may each hold a different,
+non-equivalent registry entry. Three-to-five-leg allocations are normalized
+judgment weights, not tradable sleeves. A strict strategy-count majority plus
+60% active weight opens the single long-only position; 40% or less active
+weight, or fewer than half of the strategies remaining active, closes it. The
+40–60% hysteresis band holds the previous 0%/100% target and suppresses churn.
+The longest-duration leg remains a stable display/reference role only.
+
+`strategy-consensus.ts` is a post-screening reducer. The workspace takes up to
+five diversified shortlist entries, derives each plan's previous and current
+live target through the shared allocation state machine, and applies
+deterministic rank weights. It rounds the aggregate target to a 10% position
+and maps agreement plus directional pressure to
+buy/add/hold/reduce/sell/wait. It cannot alter screening rank or result tables.

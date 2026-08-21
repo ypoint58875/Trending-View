@@ -9,7 +9,7 @@ import type {
   XAxisComponentOption,
   YAxisComponentOption,
 } from "echarts";
-import type { MarketBar } from "@/lib/market/types";
+import type { MarketBar, MarketInterval } from "@/lib/market/types";
 import type { BacktestTrade } from "@/lib/analysis/backtest";
 import {
   buildTradeMarkers,
@@ -51,13 +51,23 @@ import {
 } from "@/lib/analysis/indicators";
 import {
   adaptiveRegressionBreakout,
+  anchoredVwap,
   autoAtrTrendTracker,
+  aroon,
+  choppinessIndex,
+  donchianChannels,
   fractionalEmaKalman,
+  halfTrend,
+  keltnerChannels,
   nadarayaWatsonTrend,
+  qqeMod,
   rsiDivergenceEngine,
   squeezeMomentum,
+  schaffTrendCycle,
+  sessionVolumeProfile,
   supportResistanceSignals,
   trendlineBreaks,
+  trix,
   waveTrend,
 } from "@/lib/analysis/community/indicators";
 import {
@@ -87,9 +97,11 @@ export interface ChartStrategyConfiguration {
 
 interface PriceChartProps {
   bars: MarketBar[];
+  interval: Extract<MarketInterval, "1d" | "1m">;
   trades?: BacktestTrade[];
   tradeMarkers?: TradeMarkers;
   dataKey: string;
+  focusRange?: { startTime: string; endTime: string } | null;
   chartType: "candlestick" | "line";
   visibleIndicators?: readonly ChartIndicatorConfiguration[];
   indicator?: IndicatorId;
@@ -104,6 +116,7 @@ interface PriceChartProps {
     close: string;
     volume: string;
     openPosition: string;
+    carryPosition: string;
     closePosition: string;
     shortBuy: string;
     shortSell: string;
@@ -187,6 +200,39 @@ const tooltipNumberFormatter = new Intl.NumberFormat("zh-CN", {
   maximumFractionDigits: 1,
 });
 
+const intradayChartTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+export function formatPriceChartTime(
+  bar: Pick<MarketBar, "time" | "timestamp">,
+  interval: Extract<MarketInterval, "1d" | "1m">,
+): string {
+  if (interval === "1d" || !Number.isFinite(bar.timestamp)) return bar.time;
+  const parts = intradayChartTimeFormatter.formatToParts(
+    new Date(bar.timestamp),
+  );
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  if (
+    !values.year ||
+    !values.month ||
+    !values.day ||
+    !values.hour ||
+    !values.minute
+  ) {
+    return bar.time;
+  }
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}`;
+}
+
 export function formatPriceChartTooltipValue(value: unknown): string {
   if (Array.isArray(value)) {
     return value.map(formatPriceChartTooltipValue).join(" / ");
@@ -207,6 +253,7 @@ function formatVolumeTooltipValue(value: unknown): string {
 
 interface TradeMarkerLabels {
   openPosition: string;
+  carryPosition: string;
   closePosition: string;
   rangeExit: string;
   shortBuy: string;
@@ -220,6 +267,7 @@ function allocationMarkerLabel(
 ): string {
   const actionLabels = {
     open: labels.openPosition,
+    carry: labels.carryPosition,
     "short-buy": labels.shortBuy,
     "short-sell": labels.shortSell,
     close: labels.closePosition,
@@ -239,6 +287,7 @@ export function buildTradeMarkerSeriesFromMarkers(
   tradeMarkers: TradeMarkers,
   labels: TradeMarkerLabels,
   bars: readonly MarketBar[] = [],
+  interval: Extract<MarketInterval, "1d" | "1m"> = "1d",
 ): SeriesOption[] {
   const barByTime = new Map(bars.map((bar) => [bar.time, bar]));
   return [
@@ -252,9 +301,12 @@ export function buildTradeMarkerSeriesFromMarkers(
           labels.openPosition,
         );
         const bar = barByTime.get(marker.time);
+        const markerTime = bar
+          ? formatPriceChartTime(bar, interval)
+          : marker.time;
         return {
           name: label,
-          value: [marker.time, bar?.low ?? marker.price],
+          value: [markerTime, bar?.low ?? marker.price],
           tradePrice: marker.price,
           label: { formatter: label },
         };
@@ -272,7 +324,7 @@ export function buildTradeMarkerSeriesFromMarkers(
       },
       label: {
         show: true,
-        formatter: labels.openPosition,
+        formatter: "{b}",
         position: "bottom",
         distance: 3,
         color: colors.tradeBuyText,
@@ -294,9 +346,12 @@ export function buildTradeMarkerSeriesFromMarkers(
           labels.closePosition,
         );
         const bar = barByTime.get(marker.time);
+        const markerTime = bar
+          ? formatPriceChartTime(bar, interval)
+          : marker.time;
         return {
           name: label,
-          value: [marker.time, bar?.high ?? marker.price],
+          value: [markerTime, bar?.high ?? marker.price],
           tradePrice: marker.price,
           label: { formatter: label },
         };
@@ -315,7 +370,7 @@ export function buildTradeMarkerSeriesFromMarkers(
       },
       label: {
         show: true,
-        formatter: labels.closePosition,
+        formatter: "{b}",
         position: "top",
         distance: 3,
         color: colors.tradeSellText,
@@ -332,8 +387,11 @@ export function buildTradeMarkerSeriesFromMarkers(
       type: "scatter",
       data: tradeMarkers.rangeExits.map((marker) => {
         const bar = barByTime.get(marker.time);
+        const markerTime = bar
+          ? formatPriceChartTime(bar, interval)
+          : marker.time;
         return {
-          value: [marker.time, bar?.high ?? marker.price],
+          value: [markerTime, bar?.high ?? marker.price],
           tradePrice: marker.price,
         };
       }),
@@ -564,14 +622,20 @@ export function buildIndicatorSeries(
       bars,
       parameters.leftBars,
       parameters.rightBars,
+      parameters.volumeThreshold,
     );
     const pivotName = (name: string) =>
-      configuredName(name, parameters.leftBars, parameters.rightBars);
+      configuredName(
+        name,
+        parameters.leftBars,
+        parameters.rightBars,
+        parameters.volumeThreshold,
+      );
     return [
       indicatorLine(
         pivotName(labels.supportLevel),
         breakLineAtValueChanges(values.support),
-        colors.supportLevel,
+        colors.up,
       ),
       indicatorLine(
         pivotName(labels.resistanceLevel),
@@ -589,6 +653,20 @@ export function buildIndicatorSeries(
         pivotName(labels.bearishBreak),
         values.bearishBreaks,
         colors.down,
+        180,
+        [0, -8],
+      ),
+      markerSeries(
+        pivotName(labels.bullishWick),
+        values.bullishWicks,
+        colors.cyan,
+        0,
+        [0, 8],
+      ),
+      markerSeries(
+        pivotName(labels.bearishWick),
+        values.bearishWicks,
+        "#7f1d1d",
         180,
         [0, -8],
       ),
@@ -740,6 +818,137 @@ export function buildIndicatorSeries(
       indicatorLine(labels.waveTrendOne, values.wt1, colors.up),
       indicatorLine(labels.waveTrendTwo, values.wt2, colors.down),
       indicatorLine(labels.waveTrendDifference, values.difference, colors.cyan),
+    ];
+  }
+  if (indicator === "keltnerChannels") {
+    const values = keltnerChannels(
+      bars,
+      parameters.period,
+      parameters.multiplier,
+    );
+    const name = (label: string) =>
+      configuredName(label, parameters.period, parameters.multiplier);
+    return [
+      indicatorLine(name(labels.keltnerMiddle), values.basis, colors.amber),
+      indicatorLine(name(labels.keltnerUpper), values.upper, colors.down),
+      indicatorLine(name(labels.keltnerLower), values.lower, colors.up),
+    ];
+  }
+  if (indicator === "donchianChannels") {
+    const values = donchianChannels(bars, parameters.period);
+    const name = (label: string) => configuredName(label, parameters.period);
+    return [
+      indicatorLine(name(labels.donchianMiddle), values.middle, colors.amber),
+      indicatorLine(name(labels.donchianUpper), values.upper, colors.down),
+      indicatorLine(name(labels.donchianLower), values.lower, colors.up),
+    ];
+  }
+  if (indicator === "choppinessIndex") {
+    return [
+      indicatorLine(
+        configuredName(labels.choppinessIndex, parameters.period),
+        choppinessIndex(bars, parameters.period),
+        colors.violet,
+      ),
+    ];
+  }
+  if (indicator === "aroon") {
+    const values = aroon(bars, parameters.period);
+    return [
+      indicatorLine(
+        configuredName(labels.aroonUp, parameters.period),
+        values.up,
+        colors.up,
+      ),
+      indicatorLine(
+        configuredName(labels.aroonDown, parameters.period),
+        values.down,
+        colors.down,
+      ),
+    ];
+  }
+  if (indicator === "trix") {
+    const values = trix(bars, parameters.period, parameters.signalPeriod);
+    const name = (label: string) =>
+      configuredName(label, parameters.period, parameters.signalPeriod);
+    return [
+      indicatorLine(name(labels.trix), values.value, colors.cyan),
+      indicatorLine(name(labels.trixSignal), values.signal, colors.down),
+    ];
+  }
+  if (indicator === "halfTrend") {
+    const values = halfTrend(bars, parameters.amplitude, parameters.channelDeviation);
+    return [
+      indicatorLine(labels.halfTrend, values.line, colors.cyan),
+      indicatorLine(labels.halfTrendAtrHigh, values.atrHigh, colors.muted),
+      indicatorLine(labels.halfTrendAtrLow, values.atrLow, colors.muted),
+      markerSeries(labels.halfTrendBullish, values.bullishTurns, colors.up, 0, [0, 8]),
+      markerSeries(labels.halfTrendBearish, values.bearishTurns, colors.down, 180, [0, -8]),
+    ];
+  }
+  if (indicator === "qqeMod") {
+    const values = qqeMod(
+      bars,
+      parameters.rsiPeriod,
+      parameters.smoothingPeriod,
+      parameters.primaryMultiplier,
+      parameters.secondaryMultiplier,
+      parameters.bollingerPeriod,
+      parameters.bollingerMultiplier,
+    );
+    return [
+      indicatorLine(labels.qqePrimary, values.primary, colors.cyan),
+      indicatorLine(labels.qqeSecondary, values.secondary, colors.violet),
+      indicatorLine(labels.qqeUpper, values.upper, colors.up),
+      indicatorLine(labels.qqeLower, values.lower, colors.down),
+    ];
+  }
+  if (indicator === "schaffTrendCycle") {
+    const values = schaffTrendCycle(
+      bars,
+      parameters.cyclePeriod,
+      parameters.fastPeriod,
+      parameters.slowPeriod,
+      parameters.smoothingFactor,
+    );
+    return [indicatorLine(labels.schaffTrendCycle, values.value, colors.amber)];
+  }
+  if (indicator === "sessionVolumeProfile") {
+    const values = sessionVolumeProfile(bars, parameters.rows, parameters.valueAreaPercent);
+    const maximumVolume = Math.max(...values.bins.map((bin) => bin.volume), 1);
+    return [
+      indicatorLine(labels.volumeProfilePoc, values.poc, colors.amber),
+      indicatorLine(labels.volumeProfileVah, values.vah, colors.up),
+      indicatorLine(labels.volumeProfileVal, values.val, colors.down),
+      {
+        name: labels.sessionVolumeProfile,
+        type: "scatter",
+        data: values.bins.map((bin) => ({
+          value: [Math.max(0, bars.length - 1), bin.price, bin.volume],
+          symbolSize: [Math.max(3, (bin.volume / maximumVolume) * 70), 5],
+          itemStyle: {
+            color: bin.isPointOfControl
+              ? "rgba(251,191,36,.85)"
+              : bin.inValueArea
+                ? "rgba(34,211,238,.48)"
+                : "rgba(100,116,139,.32)",
+          },
+        })),
+        symbol: "rect",
+        symbolOffset: [-35, 0],
+        xAxisIndex,
+        yAxisIndex,
+        emphasis: { disabled: true },
+      } as SeriesOption,
+    ];
+  }
+  if (indicator === "anchoredVwap") {
+    return [
+      indicatorLine(
+        labels.anchoredVwap,
+        anchoredVwap(bars, parameters.anchorTimestamp),
+        colors.violet,
+      ),
     ];
   }
   if (indicator === "rsi") {
@@ -1094,8 +1303,12 @@ export function buildPriceChartLayout(
 export function buildPriceDataZoom(
   barsLength: number,
   xAxisIndexes: number[],
+  interval: Extract<MarketInterval, "1d" | "1m"> = "1d",
+  initialWindow: DataZoomWindow = defaultPriceDataZoomWindow(barsLength),
 ): EChartsOption["dataZoom"] {
-  const { start } = defaultPriceDataZoomWindow(barsLength);
+  const { start, end } = initialWindow;
+  const intradayDensityLimit =
+    interval === "1m" ? { minValueSpan: 120 } : {};
 
   return [
     {
@@ -1103,18 +1316,19 @@ export function buildPriceDataZoom(
       type: "inside",
       xAxisIndex: xAxisIndexes,
       start,
-      end: 100,
+      end,
       zoomLock: false,
       zoomOnMouseWheel: true,
       moveOnMouseMove: true,
       moveOnMouseWheel: false,
+      ...intradayDensityLimit,
     },
     {
       id: "price-zoom-slider",
       type: "slider",
       xAxisIndex: xAxisIndexes,
       start,
-      end: 100,
+      end,
       bottom: 2,
       height: 22,
       borderColor: "#263a32",
@@ -1139,6 +1353,7 @@ export function buildPriceDataZoom(
       brushSelect: false,
       realtime: true,
       zoomLock: false,
+      ...intradayDensityLimit,
     },
   ];
 }
@@ -1152,6 +1367,31 @@ export function defaultPriceDataZoomWindow(
       100 - (120 / Math.max(barsLength, 120)) * 100,
     ),
     end: 100,
+  };
+}
+
+export function priceDataZoomWindowForTimeRange(
+  bars: readonly MarketBar[],
+  startTime: string,
+  endTime: string,
+): DataZoomWindow {
+  if (bars.length === 0 || !startTime || !endTime || startTime > endTime) {
+    return defaultPriceDataZoomWindow(bars.length);
+  }
+  const startIndex = bars.findIndex((bar) => bar.time >= startTime);
+  let endIndex = -1;
+  for (let index = bars.length - 1; index >= 0; index -= 1) {
+    if (bars[index].time <= endTime) {
+      endIndex = index;
+      break;
+    }
+  }
+  if (startIndex < 0 || endIndex < startIndex) {
+    return defaultPriceDataZoomWindow(bars.length);
+  }
+  return {
+    start: (startIndex / bars.length) * 100,
+    end: Math.min(100, ((endIndex + 1) / bars.length) * 100),
   };
 }
 
@@ -1211,9 +1451,11 @@ export function buildVisiblePriceAxisRange(
 
 export function PriceChart({
   bars,
+  interval,
   trades = [],
   tradeMarkers,
   dataKey,
+  focusRange,
   chartType,
   visibleIndicators,
   indicator,
@@ -1225,27 +1467,37 @@ export function PriceChart({
   ariaLabel,
   labels,
 }: PriceChartProps) {
+  const zoomDataKey = `${dataKey}:${
+    focusRange?.startTime ?? "latest"
+  }:${focusRange?.endTime ?? "latest"}`;
   const defaultZoomWindow = useMemo(
-    () => defaultPriceDataZoomWindow(bars.length),
-    [bars.length],
+    () =>
+      focusRange
+        ? priceDataZoomWindowForTimeRange(
+            bars,
+            focusRange.startTime,
+            focusRange.endTime,
+          )
+        : defaultPriceDataZoomWindow(bars.length),
+    [bars, focusRange],
   );
   const [zoomState, setZoomState] = useState<{
     dataKey: string;
     window: DataZoomWindow;
-  }>(() => ({ dataKey, window: defaultZoomWindow }));
+  }>(() => ({ dataKey: zoomDataKey, window: defaultZoomWindow }));
   const activeZoomWindow =
-    zoomState.dataKey === dataKey ? zoomState.window : defaultZoomWindow;
+    zoomState.dataKey === zoomDataKey ? zoomState.window : defaultZoomWindow;
   const handleDataZoomChange = useCallback(
     (window: DataZoomWindow) => {
       setZoomState((current) =>
-        current.dataKey === dataKey &&
+        current.dataKey === zoomDataKey &&
         Math.abs(current.window.start - window.start) < 1e-6 &&
         Math.abs(current.window.end - window.end) < 1e-6
           ? current
-          : { dataKey, window },
+          : { dataKey: zoomDataKey, window },
       );
     },
-    [dataKey],
+    [zoomDataKey],
   );
   const chartIndicators = useMemo<readonly ChartIndicatorConfiguration[]>(
     () => {
@@ -1262,7 +1514,7 @@ export function PriceChart({
   );
 
   const chart = useMemo(() => {
-    const times = bars.map((bar) => bar.time);
+    const times = bars.map((bar) => formatPriceChartTime(bar, interval));
     const closes = bars.map((bar) => bar.close);
     const paneCount = chartIndicators.filter(
       (configuredIndicator) =>
@@ -1324,6 +1576,7 @@ export function PriceChart({
         tradeMarkers ?? buildTradeMarkers(trades),
         labels,
         bars,
+        interval,
       ),
     );
 
@@ -1409,12 +1662,15 @@ export function PriceChart({
       dataZoom: buildPriceDataZoom(
         bars.length,
         layout.xAxisIndexes,
+        interval,
+        activeZoomWindow,
       ),
       series,
     };
     return { option, height: layout.height };
   }, [
     bars,
+    interval,
     activeZoomWindow,
     chartIndicators,
     chartType,
@@ -1434,7 +1690,7 @@ export function PriceChart({
       height={chart.height}
       ariaLabel={ariaLabel}
       preserveDataZoom
-      dataZoomResetKey={dataKey}
+      dataZoomResetKey={zoomDataKey}
       onDataZoomChange={handleDataZoomChange}
     />
   );

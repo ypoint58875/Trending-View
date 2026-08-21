@@ -684,8 +684,11 @@ export function ichimoku(
 export interface SupportResistanceBreakSeries {
   support: NumericSeries;
   resistance: NumericSeries;
+  volumeOscillator: NumericSeries;
   bullishBreaks: NumericSeries;
   bearishBreaks: NumericSeries;
+  bullishWicks: NumericSeries;
+  bearishWicks: NumericSeries;
 }
 
 /**
@@ -697,6 +700,7 @@ export function supportResistanceBreaks(
   bars: readonly MarketBar[],
   leftBars = 15,
   rightBars = 15,
+  volumeThreshold = 20,
 ): SupportResistanceBreakSeries {
   const normalizedLeftBars = Math.max(1, Math.floor(leftBars));
   const normalizedRightBars = Math.max(1, Math.floor(rightBars));
@@ -704,6 +708,28 @@ export function supportResistanceBreaks(
   const resistance: NumericSeries = new Array(bars.length).fill(null);
   const bullishBreaks: NumericSeries = new Array(bars.length).fill(null);
   const bearishBreaks: NumericSeries = new Array(bars.length).fill(null);
+  const bullishWicks: NumericSeries = new Array(bars.length).fill(null);
+  const bearishWicks: NumericSeries = new Array(bars.length).fill(null);
+  const volumeEma = (period: number) => {
+    const output: number[] = new Array(bars.length).fill(0);
+    const alpha = 2 / (period + 1);
+    let previous = bars[0]?.volume ?? 0;
+    for (let index = 0; index < bars.length; index += 1) {
+      previous =
+        index === 0
+          ? bars[index].volume
+          : alpha * bars[index].volume + (1 - alpha) * previous;
+      output[index] = previous;
+    }
+    return output;
+  };
+  const shortVolumeEma = volumeEma(5);
+  const longVolumeEma = volumeEma(10);
+  const volumeOscillator: NumericSeries = bars.map((_, index) => {
+    const shortValue = shortVolumeEma[index];
+    const longValue = longVolumeEma[index];
+    return (100 * (shortValue - longValue)) / (longValue === 0 ? 1 : longValue);
+  });
   const pivotRange = rollingHighLow(
     bars,
     normalizedLeftBars + normalizedRightBars + 1,
@@ -714,22 +740,8 @@ export function supportResistanceBreaks(
   for (let confirmationIndex = 0; confirmationIndex < bars.length; confirmationIndex += 1) {
     const bar = bars[confirmationIndex];
     const previousClose = bars[confirmationIndex - 1]?.close;
-    if (
-      currentResistance !== null &&
-      previousClose !== undefined &&
-      previousClose <= currentResistance &&
-      bar.close > currentResistance
-    ) {
-      bullishBreaks[confirmationIndex] = bar.close;
-    }
-    if (
-      currentSupport !== null &&
-      previousClose !== undefined &&
-      previousClose >= currentSupport &&
-      bar.close < currentSupport
-    ) {
-      bearishBreaks[confirmationIndex] = bar.close;
-    }
+    const previousSupport = currentSupport;
+    const previousResistance = currentResistance;
 
     const pivotIndex = confirmationIndex - normalizedRightBars;
     if (pivotIndex >= normalizedLeftBars) {
@@ -742,9 +754,57 @@ export function supportResistanceBreaks(
       }
     }
 
+    const volumeConfirmed =
+      volumeOscillator[confirmationIndex] !== null &&
+      volumeOscillator[confirmationIndex]! > volumeThreshold;
+    if (
+      currentResistance !== null &&
+      previousResistance !== null &&
+      previousClose !== undefined &&
+      previousClose <= previousResistance &&
+      bar.close > currentResistance &&
+      volumeConfirmed
+    ) {
+      bullishBreaks[confirmationIndex] = bar.close;
+    }
+    if (
+      currentSupport !== null &&
+      previousSupport !== null &&
+      previousClose !== undefined &&
+      previousClose >= previousSupport &&
+      bar.close < currentSupport &&
+      volumeConfirmed
+    ) {
+      bearishBreaks[confirmationIndex] = bar.close;
+    }
+    if (
+      currentResistance !== null &&
+      bar.high > currentResistance &&
+      bar.close < currentResistance &&
+      bar.close - bar.low > bar.high - bar.close
+    ) {
+      bullishWicks[confirmationIndex] = bar.low;
+    }
+    if (
+      currentSupport !== null &&
+      bar.low < currentSupport &&
+      bar.close > currentSupport &&
+      bar.high - bar.close > bar.close - bar.low
+    ) {
+      bearishWicks[confirmationIndex] = bar.high;
+    }
+
     support[confirmationIndex] = currentSupport;
     resistance[confirmationIndex] = currentResistance;
   }
 
-  return { support, resistance, bullishBreaks, bearishBreaks };
+  return {
+    support,
+    resistance,
+    volumeOscillator,
+    bullishBreaks,
+    bearishBreaks,
+    bullishWicks,
+    bearishWicks,
+  };
 }

@@ -18,6 +18,11 @@ import {
   resolveMovingAverageEntryAllowedSeries,
   type MovingAverageSlopeFilter,
 } from "./entry-filter";
+import {
+  buildIntradaySessionMetadata,
+  DEFAULT_INTRADAY_ENTRY_CUTOFF_BARS,
+  intradaySessionKey,
+} from "./intraday";
 
 export interface BacktestSettings {
   initialCash: number;
@@ -43,7 +48,7 @@ export interface BacktestTrade {
   entryPrice: number;
   exitPrice: number;
   returnPercent: number;
-  exitReason: "strategy" | "range-end";
+  exitReason: "strategy" | "range-end" | "session-end";
 }
 
 export interface BacktestOpenPosition {
@@ -78,7 +83,7 @@ export interface AllocationRebalance {
   fromAllocation: number;
   targetAllocation: number;
   fillPrice: number;
-  reason: "strategy" | "range-end";
+  reason: "strategy" | "range-end" | "session-end";
   signals?: AllocationSignalEvent[];
 }
 
@@ -90,6 +95,13 @@ export interface AllocationIntrabarExecution {
 
 export interface AllocationBacktestResult extends BacktestPerformance {
   rebalances: AllocationRebalance[];
+  openingPosition?: AllocationOpeningPosition | null;
+}
+
+export interface AllocationOpeningPosition {
+  time: string;
+  price: number;
+  allocation: number;
 }
 
 export type AllocationSignalEvent =
@@ -97,15 +109,6 @@ export type AllocationSignalEvent =
   | "long-exit"
   | "short-entry"
   | "short-exit";
-
-const periodsPerYear: Record<MarketInterval, number> = {
-  "1m": 60_480,
-  "5m": 12_096,
-  "15m": 4_032,
-  "30m": 2_016,
-  "60m": 1_008,
-  "1d": 252,
-};
 
 function standardDeviation(values: number[]) {
   if (values.length < 2) return 0;
@@ -143,22 +146,41 @@ function summarizePerformance(
     point.drawdown = peak === 0 ? 0 : ((point.equity - peak) / peak) * 100;
   });
 
-  const returns = equity
-    .slice(1)
-    .map((point, index) => point.equity / equity[index].equity - 1)
-    .filter(Number.isFinite);
+  const intraday = settings.interval !== "1d";
+  const sessionEndEquity = intraday
+    ? equity.filter(
+        (point, index) =>
+          index === equity.length - 1 ||
+          point.time.slice(0, 10) !== equity[index + 1]!.time.slice(0, 10),
+      )
+    : equity;
+  const returns = intraday
+    ? sessionEndEquity
+        .map((point, index) =>
+          point.equity /
+            (index === 0
+              ? Math.max(settings.initialCash, 1)
+              : sessionEndEquity[index - 1]!.equity) -
+          1,
+        )
+        .filter(Number.isFinite)
+    : equity
+        .slice(1)
+        .map((point, index) => point.equity / equity[index]!.equity - 1)
+        .filter(Number.isFinite);
   const meanReturn =
     returns.reduce((sum, value) => sum + value, 0) / Math.max(returns.length, 1);
   const deviation = standardDeviation(returns);
   const sharpe =
     deviation === 0
       ? 0
-      : (meanReturn / deviation) * Math.sqrt(periodsPerYear[settings.interval]);
+      : (meanReturn / deviation) * Math.sqrt(252);
   const initialCash = Math.max(settings.initialCash, 1);
   const totalReturn = ((finalCash - initialCash) / initialCash) * 100;
-  const elapsedYears =
-    (bars[bars.length - 1].timestamp - bars[0].timestamp) /
-    (365.25 * 24 * 60 * 60 * 1000);
+  const elapsedYears = intraday
+    ? sessionEndEquity.length / 252
+    : (bars[bars.length - 1]!.timestamp - bars[0]!.timestamp) /
+      (365.25 * 24 * 60 * 60 * 1000);
   const annualizedReturn =
     elapsedYears > 0
       ? (Math.pow(
@@ -169,14 +191,40 @@ function summarizePerformance(
         100
       : totalReturn;
   const maxDrawdown = Math.min(...equity.map((point) => point.drawdown));
-  const firstBar = bars[0];
-  const lastBar = bars[bars.length - 1];
+  const firstBar = bars[0]!;
+  const lastBar = bars[bars.length - 1]!;
   const commissionRate = Math.max(settings.commissionRate, 0);
   const slippageRate = Math.max(settings.slippageRate, 0);
-  const benchmarkEntryUnitCost =
-    firstBar.open * (1 + slippageRate) * (1 + commissionRate);
-  const benchmarkReturn =
-    (lastBar.close / benchmarkEntryUnitCost - 1) * 100;
+  let benchmarkReturn: number;
+  if (intraday) {
+    let benchmarkEquity = 1;
+    let sessionStart = 0;
+    for (let index = 1; index <= bars.length; index += 1) {
+      if (
+        index < bars.length &&
+        intradaySessionKey(bars[index]!) ===
+          intradaySessionKey(bars[sessionStart]!)
+      ) {
+        continue;
+      }
+      const sessionFirst = bars[sessionStart]!;
+      const sessionLast = bars[index - 1]!;
+      const entryUnitCost =
+        sessionFirst.open * (1 + slippageRate) * (1 + commissionRate);
+      const units = benchmarkEquity / entryUnitCost;
+      benchmarkEquity =
+        units *
+        sessionLast.close *
+        (1 - slippageRate) *
+        (1 - commissionRate);
+      sessionStart = index;
+    }
+    benchmarkReturn = (benchmarkEquity - 1) * 100;
+  } else {
+    const benchmarkEntryUnitCost =
+      firstBar.open * (1 + slippageRate) * (1 + commissionRate);
+    benchmarkReturn = (lastBar.close / benchmarkEntryUnitCost - 1) * 100;
+  }
   const score =
     totalReturn * 0.45 +
     Math.max(Math.min(sharpe, 5), -5) * 8 +
@@ -239,6 +287,10 @@ export function runAllocationBacktest(
   if (indexedBars.length < 3) {
     throw new Error("Backtest requires at least three bars in the selected range");
   }
+  const intraday = settings.interval !== "1d";
+  const sessionMetadata = buildIntradaySessionMetadata(
+    indexedBars.map(({ bar }) => bar),
+  );
 
   let cash = Math.max(settings.initialCash, 1);
   let units = 0;
@@ -250,7 +302,7 @@ export function runAllocationBacktest(
   const firstIndexedBar = indexedBars[0];
   const priorTargetIndex = firstIndexedBar.originalIndex - 1;
   const openingAllocation =
-    priorTargetIndex >= 0
+    !intraday && priorTargetIndex >= 0
       ? clampAllocation(fullTarget[priorTargetIndex] ?? 0)
       : 0;
   if (openingAllocation > 0) {
@@ -267,6 +319,7 @@ export function runAllocationBacktest(
     marketPrice: number,
     targetAllocation: number,
     signals: readonly AllocationSignalEvent[],
+    reason: AllocationRebalance["reason"] = "strategy",
   ) => {
     const equityAtFill = cash + units * marketPrice;
     if (equityAtFill <= 0 || marketPrice <= 0) return;
@@ -289,7 +342,7 @@ export function runAllocationBacktest(
         fromAllocation,
         targetAllocation,
         fillPrice,
-        reason: "strategy",
+        reason,
         signals: [...signals],
       });
     } else if (unitDelta < -tolerance) {
@@ -303,7 +356,7 @@ export function runAllocationBacktest(
         fromAllocation,
         targetAllocation,
         fillPrice,
-        reason: "strategy",
+        reason,
         signals: [...signals],
       });
     }
@@ -311,9 +364,19 @@ export function runAllocationBacktest(
 
   for (let index = 0; index < indexedBars.length; index += 1) {
     const { bar } = indexedBars[index];
-    if (index > 0) {
+    const session = sessionMetadata[index]!;
+    const sameSessionAsPrevious =
+      index > 0 &&
+      session.sessionKey === sessionMetadata[index - 1]!.sessionKey;
+    const canIncreaseIntraday =
+      !intraday ||
+      session.barsRemaining > DEFAULT_INTRADAY_ENTRY_CUTOFF_BARS;
+    if (index > 0 && (!intraday || sameSessionAsPrevious)) {
       const nextAllocation = indexedBars[index - 1].target;
-      if (Math.abs(nextAllocation - plannedAllocation) > 1e-10) {
+      if (
+        Math.abs(nextAllocation - plannedAllocation) > 1e-10 &&
+        (nextAllocation <= plannedAllocation || canIncreaseIntraday)
+      ) {
         rebalanceAtPrice(
           bar,
           bar.open,
@@ -328,7 +391,8 @@ export function runAllocationBacktest(
       const targetAllocation = clampAllocation(execution.targetAllocation);
       if (
         Number.isFinite(execution.fillPrice) &&
-        Math.abs(targetAllocation - plannedAllocation) > 1e-10
+        Math.abs(targetAllocation - plannedAllocation) > 1e-10 &&
+        (targetAllocation <= plannedAllocation || canIncreaseIntraday)
       ) {
         rebalanceAtPrice(
           bar,
@@ -338,6 +402,17 @@ export function runAllocationBacktest(
         );
         plannedAllocation = targetAllocation;
       }
+    }
+
+    if (intraday && session.isLast && plannedAllocation > 0) {
+      rebalanceAtPrice(
+        bar,
+        bar.close,
+        0,
+        ["long-exit"],
+        "session-end",
+      );
+      plannedAllocation = 0;
     }
 
     const currentEquity = cash + units * bar.close;
@@ -361,6 +436,14 @@ export function runAllocationBacktest(
       settings,
     ),
     rebalances,
+    openingPosition:
+      openingAllocation > 0
+        ? {
+            time: firstIndexedBar.bar.time,
+            price: firstIndexedBar.bar.open,
+            allocation: openingAllocation,
+          }
+        : null,
   };
 }
 
@@ -438,6 +521,10 @@ export function runBacktestFromTarget(
   if (indexedBars.length < 3) {
     throw new Error("Backtest requires at least three bars in the selected range");
   }
+  const intraday = settings.interval !== "1d";
+  const sessionMetadata = buildIntradaySessionMetadata(
+    indexedBars.map(({ bar }) => bar),
+  );
 
   let cash = Math.max(settings.initialCash, 1);
   let units = 0;
@@ -496,6 +583,7 @@ export function runBacktestFromTarget(
   const firstIndexedBar = indexedBars[0];
   const priorTargetIndex = firstIndexedBar.originalIndex - 1;
   if (
+    !intraday &&
     priorTargetIndex >= 0 &&
     (effectiveTarget[priorTargetIndex] ?? 0) > 0
   ) {
@@ -508,11 +596,19 @@ export function runBacktestFromTarget(
 
   for (let index = 0; index < indexedBars.length; index += 1) {
     const { bar, orders, originalIndex } = indexedBars[index];
+    const session = sessionMetadata[index]!;
+    const sameSessionAsPrevious =
+      index > 0 &&
+      session.sessionKey === sessionMetadata[index - 1]!.sessionKey;
+    const canEnterIntraday =
+      !intraday ||
+      session.barsRemaining > DEFAULT_INTRADAY_ENTRY_CUTOFF_BARS;
 
     if (orders) {
       const allowEntry =
-        !entryAllowed ||
-        (originalIndex > 0 && entryAllowed[originalIndex - 1]);
+        canEnterIntraday &&
+        (!entryAllowed ||
+          (originalIndex > 0 && entryAllowed[originalIndex - 1]));
       const fills = resolveStrategyOrderFills(
         bar,
         orders,
@@ -526,13 +622,17 @@ export function runBacktestFromTarget(
           openPosition(fill.fillPrice, bar.time);
         }
       }
-    } else if (index > 0) {
+    } else if (index > 0 && (!intraday || sameSessionAsPrevious)) {
       const priorTarget = indexedBars[index - 1].target;
-      if (priorTarget === 1 && units === 0) {
+      if (priorTarget === 1 && units === 0 && canEnterIntraday) {
         openPosition(bar.open, bar.time);
       } else if (priorTarget === 0 && units > 0) {
         closePosition(bar.open, bar.time);
       }
+    }
+
+    if (intraday && session.isLast && units > 0) {
+      closePosition(bar.close, bar.time, "session-end");
     }
 
     const currentEquity = cash + units * bar.close;

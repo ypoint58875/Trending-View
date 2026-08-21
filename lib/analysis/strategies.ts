@@ -1,4 +1,4 @@
-import type { MarketBar } from "@/lib/market/types";
+import type { MarketBar, MarketInterval } from "@/lib/market/types";
 import type { IndicatorId } from "./indicator-registry";
 import {
   bollingerBands,
@@ -50,6 +50,8 @@ export type StrategyId =
 export const VOLUME_REQUIRED_STRATEGY_IDS = [
   "mfi-reversal",
   "vwap-reversion",
+  "community-volume-weighted-macd",
+  "community-mfi-rsi",
 ] as const satisfies readonly StrategyId[];
 
 const volumeRequiredStrategyIds = new Set<StrategyId>(
@@ -58,6 +60,64 @@ const volumeRequiredStrategyIds = new Set<StrategyId>(
 
 export function strategyRequiresVolume(id: StrategyId): boolean {
   return volumeRequiredStrategyIds.has(id);
+}
+
+export const INTRADAY_STRATEGY_IDS = [
+  "ema-cross",
+  "rsi-reversal",
+  "macd-momentum",
+  "bollinger-reversion",
+  "donchian-intrabar",
+  "kdj-reversal",
+  "supertrend-stop",
+  "mfi-reversal",
+  "roc-momentum",
+  "vwap-reversion",
+  "tv-bar-up-down",
+  "tv-bollinger-bands",
+  "tv-channel-breakout",
+  "tv-consecutive-up-down",
+  "tv-greedy",
+  "tv-inside-bar",
+  "tv-keltner-channels",
+  "tv-macd",
+  "tv-momentum",
+  "tv-outside-bar",
+  "tv-parabolic-sar",
+  "tv-price-channel",
+  "tv-rsi",
+  "tv-stochastic-slow",
+  "tv-supertrend",
+  "tv-volty-expan-close",
+  "community-bollinger-rsi",
+  "community-squeeze-momentum",
+  "community-ut-bot",
+  "community-hull-suite",
+  "community-chandelier-exit",
+  "community-ssl-channel",
+  "community-range-filter",
+  "community-kama-trend",
+  "community-dual-supertrend",
+  "community-alligator-fractal",
+  "community-wave-trend",
+  "community-trendline-break",
+  "community-nadaraya-watson",
+  "community-kalman-velocity",
+  "community-mcginley-dynamic",
+  "community-vortex",
+  "community-volume-weighted-macd",
+  "community-elder-ray",
+  "community-tma-bands",
+  "community-mfi-rsi",
+] as const satisfies readonly StrategyId[];
+
+const intradayStrategyIds = new Set<StrategyId>(INTRADAY_STRATEGY_IDS);
+
+export function strategySupportsInterval(
+  id: StrategyId,
+  interval: MarketInterval,
+): boolean {
+  return interval === "1d" || intradayStrategyIds.has(id);
 }
 
 export interface StrategyParameters {
@@ -607,6 +667,14 @@ export function getStrategiesByHorizon(
   horizon: StrategyHorizon,
 ): StrategyDefinition[] {
   return STRATEGIES.filter((strategy) => strategy.horizon === horizon);
+}
+
+export function getStrategiesForInterval(
+  interval: MarketInterval,
+): StrategyDefinition[] {
+  return STRATEGIES.filter((strategy) =>
+    strategySupportsInterval(strategy.id, interval),
+  );
 }
 
 export function getStrategy(id: StrategyId): StrategyDefinition {
