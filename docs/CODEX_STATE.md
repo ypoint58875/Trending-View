@@ -1,9 +1,15 @@
 # Codex State
 
+## 2026-08-21 latest screening result persistence
+
+- The latest completed one-click screening result is stored as one device-local IndexedDB record and restored after a page refresh for the same canonical instrument and interval. Starting another screening clears the prior temporary record, and successful completion writes its replacement; server-side compact audit archives remain unchanged.
+- Four- through nine-strategy candidate replay now builds indicators and raw strategy targets once over full history for causal warm-up, but slices each combination execution to the selected scoring window plus one preceding bar. A backward consensus-state resolver preserves the exact inherited opening state without rebuilding thousands of out-of-window equity points for every candidate. Full-history replay equivalence covers return, Sharpe, drawdown, and trade count.
+- Strict TypeScript and the complete `npm test` workflow verify the implementation.
+
 ## 2026-08-21 multi-strategy search/display diversity split
 
-- One-click screening now retains the top 20 intermediate candidates for each Strategy A primary inside every three-through-nine-strategy level. Triple parent-pair selection, triple finalists, and higher-order forward-expansion finalists all use this per-primary search pool, with an internal level bound of the registered strategy count multiplied by 20 (1,140 with the current 57 strategies).
-- Final results are handled separately: each three-through-nine-strategy category is globally objective-ranked, retains at most five rows for the same Strategy A primary, and retains at most 30 rows overall. The existing one-best-result-per-unordered-strategy-set rule remains in force. Single- and dual-strategy results, candidate backtests, allocation searches, and consensus thresholds are unchanged.
+- One-click screening now retains the top 16 intermediate candidates for each Strategy A primary inside every three-through-nine-strategy level. Triple parent-pair selection, triple finalists, and higher-order forward-expansion finalists all use this per-primary search pool, with an internal level bound of the registered strategy count multiplied by 16 (912 with the current 57 strategies).
+- Final results are handled separately: each three-through-nine-strategy category is globally objective-ranked, retains at most five rows for the same Strategy A primary, and retains at most 30 rows overall. The existing one-best-result-per-unordered-strategy-set rule remains in force. All retained discovery candidates still receive complete allocation replay, so the display cap cannot hide a candidate before weight optimization. Single- and dual-strategy results, candidate backtests, allocation searches, and consensus thresholds are otherwise unchanged.
 - The complete `npm test` workflow passes: strict TypeScript, all 231 TypeScript tests (including 135 analysis tests and the Windows launcher suite), the production build, and both rendered/source checks. Repository-wide ESLint and `git diff --check` also pass.
 
 ## 2026-08-21 compact multi-strategy presentation and chart-window fix

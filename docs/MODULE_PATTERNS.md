@@ -4,7 +4,8 @@
 
 - Extend multi-leg behavior through the shared `StrategySlot`/`STRATEGY_SLOTS` A–I contract. Persistence, archive keys, shortlist membership, display, and execution must traverse the same ordered slots while accepting missing trailing legacy slots.
 - Keep execution semantics dependent on strategy count: one leg is direct, two legs retain core/tactical hierarchy, and three-to-nine legs produce one weighted-consensus decision. Multi-leg weights must be finite, positive, and sum to one.
-- Discover four-through-nine-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 20 intermediate candidates per Strategy A primary at every three-through-nine-leg level, then rank all completed candidates and cap only the final displayed category at five per primary and 30 total.
+- Discover four-through-nine-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 16 intermediate candidates per Strategy A primary at every three-through-nine-leg level, then rank all completed candidates and cap only the final displayed category at five per primary and 30 total.
+- Build raw strategy targets over complete history for causal indicator warm-up, but execute repeated multi-strategy candidates only over the selected scoring window plus the immediately preceding bar. Resolve the inherited consensus state from the latest decisive pre-window support observation; do not rebuild a full out-of-window equity curve per candidate.
 
 ## Explicit multi-range validation
 

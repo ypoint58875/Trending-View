@@ -335,6 +335,10 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     new URL("../lib/analysis/screening-runs.ts", import.meta.url),
     "utf8",
   );
+  const screeningResultCache = await readFile(
+    new URL("../lib/analysis/screening-result-cache.ts", import.meta.url),
+    "utf8",
+  );
   const screeningRunsRoute = await readFile(
     new URL("../app/api/screening-runs/route.ts", import.meta.url),
     "utf8",
@@ -558,7 +562,7 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(combinations, /THREE_STRATEGY_ALLOCATION_CANDIDATES/);
   assert.match(
     combinations,
-    /MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY = 20/,
+    /MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY = 16/,
   );
   assert.match(
     combinations,
@@ -793,6 +797,11 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.doesNotMatch(workspace, /combination-allocation-ladder/);
   assert.match(workspace, /setScreenResults\(outcome\.singleResults\)/);
   assert.match(workspace, /setScreenResultsObjective\(runObjective\)/);
+  assert.match(workspace, /readLatestScreeningResult\(\)/);
+  assert.match(workspace, /writeLatestScreeningResult\(\{/);
+  assert.match(workspace, /clearLatestScreeningResult\(\)/);
+  assert.match(screeningResultCache, /quantscope-screening-result/);
+  assert.match(screeningResultCache, /LATEST_RESULT_KEY = "latest"/);
   assert.match(
     workspace,
     /intervalResearchSnapshotsRef\.current\[researchInterval\]\s*=\s*captureIntervalResearchSnapshot\(\)/,

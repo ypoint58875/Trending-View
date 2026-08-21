@@ -119,6 +119,7 @@ import {
   buildThreeStrategyPlanTimelineFromTargets,
   buildStrategyCombinationTarget,
   optimizeStrategyCombinations,
+  runStrategyCombinationBacktest,
   resolveRelativeLongStrategy,
   summarizeStrategySignalHorizon,
   type CombinationScreeningProgress,
@@ -4426,7 +4427,7 @@ test("crosses the top three parameter finalists for every strategy pair", async 
 });
 
 test("keeps the top thirty two- through nine-strategy results independently", async () => {
-  assert.equal(MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY, 20);
+  assert.equal(MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY, 16);
   assert.equal(
     MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL,
     STRATEGIES.length * MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
@@ -4455,6 +4456,8 @@ test("keeps the top thirty two- through nine-strategy results independently", as
       commissionRate: 0.0003,
       slippageRate: 0.0002,
       interval: "1d",
+      startTime: bars[80].time,
+      endTime: bars.at(-1)!.time,
     },
     {
       candidates: strategyIds.map((strategyId) => ({
@@ -4499,6 +4502,25 @@ test("keeps the top thirty two- through nine-strategy results independently", as
   );
   assert.equal(outcome.cancelled, false);
   assert.equal(outcome.failedCount, 0);
+  const sevenStrategyResult = resultsByCount.get(7)?.[0];
+  assert.ok(sevenStrategyResult);
+  const fullHistoryReplay = runStrategyCombinationBacktest(
+    bars,
+    sevenStrategyResult,
+    {
+      initialCash: 100_000,
+      commissionRate: 0.0003,
+      slippageRate: 0.0002,
+      interval: "1d",
+      startTime: bars[80].time,
+      endTime: bars.at(-1)!.time,
+      executionPolicy: "next-open",
+    },
+  );
+  assert.equal(sevenStrategyResult.totalReturn, fullHistoryReplay.totalReturn);
+  assert.equal(sevenStrategyResult.sharpe, fullHistoryReplay.sharpe);
+  assert.equal(sevenStrategyResult.maxDrawdown, fullHistoryReplay.maxDrawdown);
+  assert.equal(sevenStrategyResult.tradeCount, fullHistoryReplay.tradeCount);
   for (let count = 2; count <= 9; count += 1) {
     const categoryResults = resultsByCount.get(count) ?? [];
     const categoryCount = categoryResults.length;

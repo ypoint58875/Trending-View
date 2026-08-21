@@ -119,6 +119,11 @@ import {
 } from "@/lib/analysis/screening-validation";
 import { runScreeningInWorker } from "@/lib/analysis/screening-worker-client";
 import {
+  clearLatestScreeningResult,
+  readLatestScreeningResult,
+  writeLatestScreeningResult,
+} from "@/lib/analysis/screening-result-cache";
+import {
   createSaveScreeningRunInput,
   fingerprintMarketSeries,
   type ScreeningRunRecord,
@@ -187,6 +192,7 @@ import {
   type ShortcutMarketRefreshResult,
 } from "@/lib/market/shortcut-refresh";
 import {
+  canonicalMarketInstrumentKey,
   resolveCanonicalMarketProfile,
   type CanonicalMarketSourceDefinition,
 } from "@/lib/market/canonical";
@@ -1333,6 +1339,10 @@ export function MarketWorkspace() {
   const indicatorMenusRef = useRef<HTMLDivElement>(null);
   const chartSectionRef = useRef<HTMLElement>(null);
   const screeningAbortRef = useRef<AbortController | null>(null);
+  const screeningCacheRestoreKeyRef = useRef("");
+  const screenProgressRef = useRef<CombinationScreeningProgress>(
+    emptyCombinationProgress(),
+  );
   const shortcutRefreshAbortRef = useRef<AbortController | null>(null);
   const currentSeriesKeyRef = useRef("");
   const latestSeriesDateRef = useRef("");
@@ -2416,6 +2426,40 @@ export function MarketWorkspace() {
     screeningPreferencesReady,
     screeningValidationMode,
   ]);
+
+  useEffect(() => {
+    if (!series?.bars.length || screening) return;
+    const instrumentKey = canonicalMarketInstrumentKey(series.instrument);
+    const restoreKey = `${instrumentKey}:${researchInterval}`;
+    if (screeningCacheRestoreKeyRef.current === restoreKey) return;
+    screeningCacheRestoreKeyRef.current = restoreKey;
+    let cancelled = false;
+    void readLatestScreeningResult().then((cached) => {
+      if (
+        cancelled ||
+        !cached ||
+        cached.instrumentKey !== instrumentKey ||
+        cached.interval !== researchInterval ||
+        !Array.isArray(cached.singleResults) ||
+        !Array.isArray(cached.combinationResults)
+      ) {
+        return;
+      }
+      setScreenResults(cached.singleResults);
+      setCombinationResults(cached.combinationResults);
+      setScreenResultsObjective(cached.objective);
+      setValidationReport(cached.validationReport);
+      setScreenProgress(cached.progress);
+      setScreeningError("");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [researchInterval, screening, series]);
+
+  useEffect(() => {
+    screenProgressRef.current = screenProgress;
+  }, [screenProgress]);
 
   const loadSavedBacktests = useCallback(
     async (signal?: AbortSignal) => {
@@ -4701,6 +4745,8 @@ export function MarketWorkspace() {
     screeningAbortRef.current?.abort();
     const controller = new AbortController();
     screeningAbortRef.current = controller;
+    screeningCacheRestoreKeyRef.current = `${canonicalMarketInstrumentKey(series.instrument)}:${researchInterval}`;
+    void clearLatestScreeningResult();
     setScreening(true);
     setScreeningError("");
     setScreenResults([]);
@@ -4733,7 +4779,10 @@ export function MarketWorkspace() {
             ? undefined
             : VOLUME_REQUIRED_STRATEGY_IDS,
           signal: controller.signal,
-          onProgress: setScreenProgress,
+          onProgress: (progress) => {
+            screenProgressRef.current = progress;
+            setScreenProgress(progress);
+          },
           onValidationProgress: setValidationProgress,
         },
       );
@@ -4743,12 +4792,22 @@ export function MarketWorkspace() {
       setCombinationResults(outcome.results);
       setScreenResultsObjective(runObjective);
       setValidationReport(outcome.validationReport);
-      setScreenProgress((current) => ({
-        ...current,
+      const completedProgress = {
+        ...screenProgressRef.current,
         completed: outcome.evaluatedCount,
         total: outcome.totalCandidates,
         failed: outcome.failedCount,
-      }));
+      };
+      setScreenProgress(completedProgress);
+      await writeLatestScreeningResult({
+        instrumentKey: canonicalMarketInstrumentKey(series.instrument),
+        interval: researchInterval,
+        objective: runObjective,
+        singleResults: outcome.singleResults,
+        combinationResults: outcome.results,
+        validationReport: outcome.validationReport,
+        progress: completedProgress,
+      });
       try {
         const dataFingerprint = await fingerprintMarketSeries(series);
         if (controller.signal.aborted) return;

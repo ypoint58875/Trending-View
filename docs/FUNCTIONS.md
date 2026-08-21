@@ -463,13 +463,16 @@
   and quintuple beams. Three-, four-, and five-leg allocation replay covers all
   positive 10% judgment-weight compositions once. It retains at most 30
   results independently for each strategy count, with one best result per
-  unordered strategy-ID set. Three-through-nine-leg search retains the top 20
+  unordered strategy-ID set. Three-through-nine-leg search retains the top 16
   intermediate parent/finalist candidates for each Strategy A primary at every
   level, while final result categories separately retain at most five rows per
   primary and 30 total. The current registry creates 1,594 strategy-ID pairs,
   so every pair reaches allocation comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
-  are built from complete loaded history and retained only for finalists.
+  are built once from complete loaded history and retained only for finalists.
+  Four-through-nine-leg candidate execution then slices those causal targets to
+  the scoring window plus one preceding bar; a backward decisive-state scan
+  preserves inherited consensus state without generating out-of-window equity.
   Price-order candidates build their order plan once and derive their target
   from that plan instead of also constructing an unused close target. The
   default optimizers yield before their first evaluation, at every stage
@@ -477,11 +480,11 @@
   boundary so progress state is committed and painted before work resumes.
 - `MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY`: hard-caps one Strategy A primary
   at five rows in each final three-through-nine-strategy result category.
-- `MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY`: retains the top 20 intermediate
+- `MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY`: retains the top 16 intermediate
   candidates for each Strategy A primary at every three-through-nine search
   level before expanding the next strategy count.
 - `MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL`: bounds one intermediate level at
-  the registered strategy count multiplied by the per-primary 20-candidate
+  the registered strategy count multiplied by the per-primary 16-candidate
   allowance.
 - `runScreeningInWorker(...)`: creates a module Worker for one complete
   validation run, forwards typed optimization/validation progress, sends

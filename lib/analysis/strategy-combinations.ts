@@ -75,7 +75,7 @@ export const SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 60;
 export const MAX_COMBINATION_PAIR_FINALISTS = 4_096;
 export const MAX_COMBINATION_RESULTS = MAX_SCREENING_RESULTS_PER_CATEGORY;
 export const MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY = 5;
-export const MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY = 20;
+export const MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY = 16;
 export const MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL =
   MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY * STRATEGIES.length;
 export const MAX_TRIPLE_PARENT_PAIRS =
@@ -570,6 +570,7 @@ interface StrategyGroupFinalist {
   settings: StrategyCombinationBacktestSettings;
 }
 
+
 export function buildStrategyPlanAllocationTarget(
   strategyATarget: readonly number[] | null,
   strategyBTarget: readonly number[] | null,
@@ -787,6 +788,7 @@ function buildHierarchicalStrategyTimeline(
 function buildWeightedConsensusStrategyTimeline(
   legs: readonly StrategyTargetLeg[],
   referenceStrategy: StrategySlot,
+  initialPositionActive = false,
 ): StrategyPlanTimeline {
   const totalWeight = legs.reduce((sum, leg) => sum + leg.allocation, 0);
   if (totalWeight <= 0) {
@@ -794,7 +796,7 @@ function buildWeightedConsensusStrategyTimeline(
   }
   const entrySupportCount = Math.floor(legs.length / 2) + 1;
   const exitSupportCount = Math.ceil(legs.length / 2);
-  let positionActive = false;
+  let positionActive = initialPositionActive;
   const target: number[] = [];
   const signalEvents: AllocationSignalEvent[][] = [];
   const layerStates: StrategyLayerState[] = [];
@@ -897,6 +899,7 @@ function buildMultiStrategyPlanTimelineFromTargets(
   roleTargets: StrategyRoleTargets | undefined,
   fixedCoreStrategy: StrategySlot | undefined,
   tacticalMode: TacticalAllocationMode,
+  initialConsensusPosition = false,
 ): StrategyPlanTimeline {
   const legs = requestedLegs.filter(
     (leg): leg is StrategyTargetLeg => leg !== null,
@@ -918,7 +921,11 @@ function buildMultiStrategyPlanTimelineFromTargets(
     throw new Error("The fixed core strategy must be selected");
   }
   if (legs.length >= 3) {
-    return buildWeightedConsensusStrategyTimeline(legs, coreStrategy);
+    return buildWeightedConsensusStrategyTimeline(
+      legs,
+      coreStrategy,
+      initialConsensusPosition,
+    );
   }
   return buildHierarchicalStrategyTimeline(
     legs,
@@ -2248,6 +2255,59 @@ function allocationForSlot(
   }[slot];
 }
 
+function resolveConsensusPositionBeforeIndex(
+  legs: readonly StrategyTargetLeg[],
+  endExclusive: number,
+): boolean {
+  const totalWeight = legs.reduce((sum, leg) => sum + leg.allocation, 0);
+  const entrySupportCount = Math.floor(legs.length / 2) + 1;
+  const exitSupportCount = Math.ceil(legs.length / 2);
+  for (let index = endExclusive - 1; index >= 0; index -= 1) {
+    let activeCount = 0;
+    let activeWeight = 0;
+    for (const leg of legs) {
+      if ((leg.target[index] ?? 0) > 0) {
+        activeCount += 1;
+        activeWeight += leg.allocation;
+      }
+    }
+    const weightRatio = activeWeight / totalWeight;
+    if (
+      activeCount >= entrySupportCount &&
+      weightRatio >= MULTI_STRATEGY_CONSENSUS_ENTRY_WEIGHT - 1e-10
+    ) {
+      return true;
+    }
+    if (
+      activeCount < exitSupportCount ||
+      weightRatio <= MULTI_STRATEGY_CONSENSUS_EXIT_WEIGHT + 1e-10
+    ) {
+      return false;
+    }
+  }
+  return false;
+}
+
+function screeningExecutionWindow(
+  bars: readonly MarketBar[],
+  settings: Pick<BacktestSettings, "startTime" | "endTime">,
+): { start: number; endExclusive: number } {
+  const startTime = settings.startTime;
+  const selectedStart = startTime
+    ? bars.findIndex((bar) => bar.time >= startTime)
+    : 0;
+  const normalizedSelectedStart = selectedStart < 0 ? 0 : selectedStart;
+  let endExclusive = bars.length;
+  if (settings.endTime) {
+    const firstAfterEnd = bars.findIndex((bar) => bar.time > settings.endTime!);
+    if (firstAfterEnd >= 0) endExclusive = firstAfterEnd;
+  }
+  return {
+    start: Math.max(normalizedSelectedStart - 1, 0),
+    endExclusive,
+  };
+}
+
 function runHigherOrderCombinationCandidate(
   bars: MarketBar[],
   finalists: readonly StrategyFinalist[],
@@ -2258,7 +2318,7 @@ function runHigherOrderCombinationCandidate(
     throw new Error("Higher-order screening requires four to nine strategies");
   }
   const tacticalMode = resolveTacticalAllocationMode(allocation.tacticalMode);
-  const legs = finalists.map((finalist, index) => {
+  const fullLegs = finalists.map((finalist, index) => {
     const slot = STRATEGY_SLOTS[index];
     return {
       slot,
@@ -2266,8 +2326,35 @@ function runHigherOrderCombinationCandidate(
       execution: finalist,
     };
   });
+  const executionWindow = screeningExecutionWindow(bars, settings);
+  const initialConsensusPosition = resolveConsensusPositionBeforeIndex(
+    fullLegs.map((leg) => ({
+      slot: leg.slot,
+      allocation: leg.allocation,
+      target: leg.execution.target,
+    })),
+    executionWindow.start,
+  );
+  const executionBars = bars.slice(
+    executionWindow.start,
+    executionWindow.endExclusive,
+  );
+  const legs = fullLegs.map((leg) => ({
+    ...leg,
+    execution: {
+      ...leg.execution,
+      target: leg.execution.target.slice(
+        executionWindow.start,
+        executionWindow.endExclusive,
+      ),
+      orderFills: leg.execution.orderFills.slice(
+        executionWindow.start,
+        executionWindow.endExclusive,
+      ),
+    },
+  }));
   const roleTargets = Object.fromEntries(
-    legs.map((leg) => [
+    fullLegs.map((leg) => [
       leg.slot,
       selectRoleTargetWindow(bars, leg.execution.target, settings),
     ]),
@@ -2281,12 +2368,13 @@ function runHigherOrderCombinationCandidate(
     roleTargets,
     undefined,
     tacticalMode,
+    initialConsensusPosition,
   );
   if (!timeline.relativeLongStrategy) {
     throw new Error("A strategy group requires a core strategy");
   }
   const performance = runAllocationBacktest(
-    bars,
+    executionBars,
     timeline.target,
     settings,
     timeline.signalEvents,
@@ -2517,10 +2605,7 @@ export async function optimizeStrategyCombinations(
     Math.floor(options.yieldEvery ?? DEFAULT_SCREENING_YIELD_EVERY),
     1,
   );
-  const finalistsByStrategy = new Map<
-    StrategyId,
-    StrategyFinalist[]
-  >();
+  const finalistsByStrategy = new Map<StrategyId, StrategyFinalist[]>();
   const entryFilterCandidatesByStrategy = new Map<
     StrategyId,
     EntryFilterCandidate[]

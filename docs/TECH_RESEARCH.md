@@ -1,5 +1,39 @@
 # Technical Research
 
+## 2026-08-21 resumable screening checkpoints
+
+### Sources
+
+- MDN IndexedDB API, checked 2026-08-21: IndexedDB is available inside Web
+  Workers and stores structured-clone-compatible objects.
+  <https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API>
+- MDN structured clone algorithm, checked 2026-08-21: the same clone model is
+  used by Worker messages and IndexedDB, including arrays, plain objects, and
+  maps, but not functions.
+  <https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm>
+
+### Compared approaches
+
+1. Save only UI progress and completed display rows. This is small and simple,
+   but cannot resume optimization because the next stage needs retained target
+   arrays, order fills, wide discovery finalists, and stage-specific settings.
+2. Save an optimizer checkpoint in IndexedDB from the screening Worker. This
+   can resume from the last atomic stage boundary and keeps large structured
+   state off the UI thread, but requires a versioned checkpoint schema, strict
+   request/data fingerprint validation, quota/error fallback, and explicit
+   stage-transition tests.
+
+### Decision
+
+Use Worker-owned IndexedDB checkpoints for genuine continuation, not a UI-only
+progress snapshot. Commit only after a stage is fully complete; never resume a
+partial stage. Key compatibility by checkpoint schema version, canonical
+instrument, interval, market-data fingerprint, and normalized screening
+settings. A new manual run replaces the prior checkpoint, successful completion
+removes it after writing the final-result cache, and storage failure falls back
+to a normal uninterrupted run. Performance fixes remain independent because a
+checkpoint reduces lost work but does not make an oversized stage faster.
+
 ## 2026-08-21 Six- through nine-strategy screening boundary
 
 Problem:

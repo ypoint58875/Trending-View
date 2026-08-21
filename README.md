@@ -204,9 +204,16 @@ trades or run unattended jobs.
   keeps only compact metrics for each eligible strategy's top 60 unfiltered
   parameter sets. The top three final parameter sets per strategy keep their
   complete execution state for `3 x 3` pair replay.
+- Four-through-nine-strategy screening reuses full-history causal strategy
+  targets but executes each repeated combination only across the selected
+  scoring window plus one preceding bar. Its inherited consensus state is
+  resolved from pre-window support without rebuilding a full historical equity
+  curve for every candidate.
 - Screening runs in a dedicated module Web Worker. Indicator, target, and
   execution arrays are reused only inside that run; completed results are not
-  restored as a calculation cache after refresh.
+  reused as a calculation cache. The latest completed full result is kept in a
+  single device-local IndexedDB record so the matching instrument and interval
+  can restore its tables after refresh; the next run replaces that record.
 - Every completed run writes a compact audit archive containing source,
   optional temporary-quote provider/time provenance, adjustment mode, last
   bar, data fingerprint, screening configuration, retained candidates, and
@@ -258,7 +265,7 @@ trades or run unattended jobs.
   consensus candidates. Every strategy-count category retains at most 30, and
   three-to-nine-strategy categories retain at most five results with the same
   Strategy A primary. Staged search is deliberately wider: every primary keeps
-  its top 20 intermediate candidates at each three-to-nine-strategy level for
+  its top 16 intermediate candidates at each three-to-nine-strategy level for
   the next expansion. The five-result cap is applied only to final display, so
   a strong parent is not removed merely because five same-primary variants
   already rank above it.

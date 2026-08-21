@@ -145,6 +145,11 @@ aliases unrelated data.
   expired by a cleanup job.
 - Screening target, indicator, and order caches exist only for one Worker run
   and are discarded with that Worker.
+- `lib/analysis/screening-result-cache.ts` keeps exactly one device-local
+  IndexedDB record containing the latest completed full screening result. It is
+  restored only for the same canonical instrument and interval, cleared when a
+  replacement run starts, and overwritten when that run completes. Browser
+  site-data controls can remove it.
 
 Future retention limits must be based on measured browser storage use and must
 not silently delete the only canonical copy.
