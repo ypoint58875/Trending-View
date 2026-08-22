@@ -6032,25 +6032,28 @@ export function MarketWorkspace() {
               className="chart-result-navigator"
               aria-label={copy.screening.resultNavigator}
             >
-              <label>
-                <span>{copy.screening.resultGroup}</span>
-                <select
-                  value={selectedChartResultGroup.key}
-                  onChange={(event) => {
-                    const group = availableChartResultGroups.find(
-                      (candidate) => candidate.key === event.target.value,
-                    );
-                    if (group) applyChartResult(group, 0);
-                  }}
-                >
-                  {availableChartResultGroups.map((group) => (
-                    <option key={group.key} value={group.key}>
-                      {group.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
+              <div className="chart-result-group-selector">
+                <label>
+                  <span>{copy.screening.resultGroup}</span>
+                  <select
+                    value={selectedChartResultGroup.key}
+                    onChange={(event) => {
+                      const group = availableChartResultGroups.find(
+                        (candidate) => candidate.key === event.target.value,
+                      );
+                      if (group) applyChartResult(group, 0);
+                    }}
+                  >
+                    {availableChartResultGroups.map((group) => (
+                      <option key={group.key} value={group.key}>
+                        {group.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="chart-result-item-selector">
+                <button
                 type="button"
                 disabled={selectedChartResultIndex === 0}
                 onClick={() =>
@@ -6063,7 +6066,7 @@ export function MarketWorkspace() {
                 title={copy.screening.previousResult}
               >
                 <ChevronUp size={15} />
-              </button>
+                </button>
               <strong title={selectedChartResultTitle}>
                 {selectedChartResultName} · #{selectedChartResultIndex + 1}
               </strong>
@@ -6071,7 +6074,7 @@ export function MarketWorkspace() {
                 {selectedChartResultIndex + 1}/
                 {selectedChartResultGroup.results.length}
               </span>
-              <button
+                <button
                 type="button"
                 disabled={
                   selectedChartResultIndex >=
@@ -6087,7 +6090,8 @@ export function MarketWorkspace() {
                 title={copy.screening.nextResult}
               >
                 <ChevronDown size={15} />
-              </button>
+                </button>
+              </div>
             </nav>
           )}
         </section>
