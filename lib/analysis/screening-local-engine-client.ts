@@ -11,6 +11,10 @@ import {
   type LocalScreeningJobRequest,
   type LocalScreeningJobSnapshot,
 } from "./screening-local-engine-protocol";
+import {
+  LOCAL_SCREENING_BINARY_CONTENT_TYPE,
+  encodeLocalScreeningJobRequest,
+} from "./screening-local-engine-bars";
 
 const HEALTH_TIMEOUT_MS = 800;
 const POLL_INTERVAL_MS = 200;
@@ -93,11 +97,12 @@ export async function runScreeningInLocalEngine(
         : undefined,
     },
   };
+  const requestBody = encodeLocalScreeningJobRequest(request);
   const createJob = () =>
     fetch(`${LOCAL_SCREENING_ENGINE_URL}/screening/jobs`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request),
+      headers: { "Content-Type": LOCAL_SCREENING_BINARY_CONTENT_TYPE },
+      body: requestBody,
       signal: options.signal,
     });
   let response: Response;
@@ -169,8 +174,15 @@ export async function runScreeningInLocalEngine(
           options.onValidationProgress?.(snapshot.validationProgress);
         }
       }
-      if (snapshot.status === "completed" && snapshot.outcome) {
-        return snapshot.outcome;
+      if (snapshot.status === "completed") {
+        const resultResponse = await fetch(`${jobUrl}/result`, {
+          cache: "no-store",
+          signal: options.signal,
+        });
+        if (!resultResponse.ok) {
+          throw new Error("Local screening engine result is unavailable");
+        }
+        return (await resultResponse.json()) as ScreeningValidationOutcome;
       }
       if (snapshot.status === "cancelled") throw abortError();
       if (snapshot.status === "error") {

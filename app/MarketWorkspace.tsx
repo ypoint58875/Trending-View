@@ -30,17 +30,17 @@ import {
 import {
   useCallback,
   useEffect,
+  lazy,
   useMemo,
   useRef,
+  Suspense,
   useState,
   type DragEvent as ReactDragEvent,
 } from "react";
-import { BacktestChart } from "./components/BacktestChart";
-import {
-  PriceChart,
-  type ChartIndicatorConfiguration,
-  type ChartStrategyConfiguration,
-  type StrategyLineLabels,
+import type {
+  ChartIndicatorConfiguration,
+  ChartStrategyConfiguration,
+  StrategyLineLabels,
 } from "./components/PriceChart";
 import { zhCN as copy } from "./i18n/zh-CN";
 import {
@@ -130,6 +130,7 @@ import {
   fingerprintMarketSeries,
   type ScreeningRunRecord,
 } from "@/lib/analysis/screening-runs";
+
 import {
   DEFAULT_STRATEGY_SHORTLIST_DEPUTY_COUNT,
   evaluateRecentStrategyEffectiveness,
@@ -237,6 +238,15 @@ import {
   type MovingAverageSlopeFilter,
   type MovingAverageSlopeType,
 } from "@/lib/analysis/entry-filter";
+
+const PriceChart = lazy(async () => {
+  const chartModule = await import("./components/PriceChart");
+  return { default: chartModule.PriceChart };
+});
+const BacktestChart = lazy(async () => {
+  const chartModule = await import("./components/BacktestChart");
+  return { default: chartModule.BacktestChart };
+});
 
 const defaultInstrument: MarketInstrument = {
   secid: "^N225",
@@ -6013,6 +6023,7 @@ export function MarketWorkspace() {
               </div>
             )}
              {series && (
+              <Suspense fallback={<div className="chart-state" />}>
                <PriceChart
                 bars={series.bars}
                 interval={researchInterval}
@@ -6030,6 +6041,7 @@ export function MarketWorkspace() {
                 ariaLabel={copy.chart.aria}
                 labels={priceChartLabels}
                />
+              </Suspense>
              )}
              {errorCode && series && (
                <div className="chart-refresh-warning" role="status">
@@ -7546,11 +7558,13 @@ export function MarketWorkspace() {
           </div>
 
           {backtest ? (
+            <Suspense fallback={<div className="chart-state" />}>
             <BacktestChart
               result={backtest}
               ariaLabel={copy.chart.backtestAria}
               labels={backtestChartLabels}
             />
+            </Suspense>
           ) : null}
         </aside>
 
@@ -7971,6 +7985,13 @@ export function MarketWorkspace() {
                     {copy.screening.engineRestarts}{copy.common.colon}
                     {screenEngineStatus.restartCount}
                   </span>
+                  {screenEngineStatus.checkpointWriteMilliseconds !== undefined && (
+                    <span>
+                      {copy.screening.engineCheckpoint}{copy.common.colon}
+                      {(screenEngineStatus.checkpointBytes! / 1_048_576).toFixed(1)} MB /{" "}
+                      {screenEngineStatus.checkpointWriteMilliseconds.toFixed(0)} ms
+                    </span>
+                  )}
                 </small>
               )}
             </div>

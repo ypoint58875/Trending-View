@@ -710,12 +710,16 @@ separate guidance card.
   scalar progress, reconnects through a relay restart, and returns `null` only
   when the engine is unavailable before job creation so the Worker can safely
   take over.
+- `encodeLocalScreeningJobRequest(...)`: writes protocol-v3 metadata and times
+  ahead of the lossless Float64 market columns, avoiding browser-side bar JSON.
 - `createScreeningEngineCoordinator(...)`: serializes local jobs, permits one
   disposable compute child at a time, restores deterministic jobs from disk,
   and exposes loopback-only create/status/cancel endpoints.
 - `scripts/screening-engine-child.ts`: runs the unchanged shared validation
   core, atomically persists exact optimizer checkpoints, exits after each
   checkpoint, and writes only the compact completed outcome.
+  Its checkpoint store atomically commits independently mutable sections and
+  reuses request-fingerprinted derived entry-filter eligibility.
 - `createStreamingCombinationTimeline(...)`: produces monotonic allocation,
   signal, and intrabar states without materializing per-candidate timeline
   arrays.

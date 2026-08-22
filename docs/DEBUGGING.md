@@ -10,6 +10,9 @@ heartbeat and resumes `data/state/screening-engine/<job-id>/checkpoint.bin`.
 After three consecutive no-progress restarts it reports an error instead of
 spinning indefinitely. Normal 8,192-evaluation and stage checkpoints can also
 increase the restart count; they never change or skip candidates.
+Protocol-v3 status responses remain small; the completed result is read once
+from `/screening/jobs/<job-id>/result`. `bars.bin`, `derived.bin`, and the
+checkpoint manifest can be inspected independently when diagnosing disk cost.
 
 ## Local launcher does not open QuantScope
 

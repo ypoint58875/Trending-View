@@ -52,3 +52,7 @@
   telemetry, checks 60-second heartbeats, and resumes an unresponsive child at
   most three consecutive times before reporting an explicit error. Exact
   traversal and shared-core equality remain covered by the same process test.
+- Protocol version 3 completes browser binary upload, layered atomic
+  checkpoints, persisted filter derivations, lazy result fetch, adaptive
+  checkpoint/yield cadence, lazy chart chunks, and stalled-child fault
+  injection in `tests/screening-engine-coordinator.test.ts`.

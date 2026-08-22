@@ -30,6 +30,15 @@ bars from the immutable job request rather than retransmitting them. It does
 not reduce candidate count, finalist breadth, parameter grids, objective math,
 or validation windows.
 
+Measured follow-up retained deterministic single-child stage traversal. The
+combination stages mutate bounded finalist sets in original ordinal order; a
+parallel reduction would need to buffer and merge results in that exact order
+to preserve tie behavior, while duplicating large target/finalist graphs across
+workers. Until an ordered shared-memory kernel proves bit-identical output, the
+safe adaptive concurrency value for one screening job remains one. Speed is
+instead improved without ranking risk through binary transport, frozen-section
+checkpoints, derived-filter reuse, and a coarser dedicated-process yield cadence.
+
 ## 2026-08-22 core-satellite positioning with volatility risk caps
 
 ### Sources

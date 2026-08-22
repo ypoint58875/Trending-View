@@ -2,12 +2,15 @@
 
 ## Local screening compute flow
 
-The browser submits normalized bars, settings, validation configuration, and a
-request fingerprint once to the loopback coordinator. A deterministic job
+The browser submits binary columnar bars, settings, validation configuration,
+and a request fingerprint once to the loopback coordinator. A deterministic job
 directory separates compact immutable `request.json`, typed columnar
 `bars.bin`, replaceable `checkpoint.bin`, and compact `result.json`.
 Disposable children read the bars and latest checkpoint from disk;
 child-to-parent messages contain throttled progress and memory scalars only.
+Status polling never carries the result payload. After completion the browser
+performs one compact-result read; chart equity and transactions remain
+selection-time replay data.
 
 Stage ownership is deliberately narrow: parameter evaluation owns transient
 indicator/target/order state; entry-filter evaluation consumes and releases raw

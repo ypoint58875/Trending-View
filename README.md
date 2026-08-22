@@ -301,6 +301,9 @@ For one-click local use, double-click `open-quantscope.bat`. The launcher:
   heavy screening runs in restartable child processes with exact disk
   checkpoints, while the browser Worker remains available if that local engine
   cannot be reached before a job starts;
+- transfers screening bars as lossless Float64 columns, reuses layered
+  checkpoints and derived filter state, and fetches the compact result only
+  after status reports completion;
 - runs QuantScope only at `http://127.0.0.1:3000`;
 - manages the application on port 3000 and the market relay on port 3001
   through one runtime-port registry;

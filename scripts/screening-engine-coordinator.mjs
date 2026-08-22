@@ -18,6 +18,7 @@ const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const CHILD_STALL_TIMEOUT_MS = 60_000;
 const MAX_STALL_RESTARTS = 3;
 const BAR_FIELD_COUNT = 11;
+const BINARY_CONTENT_TYPE = "application/vnd.quantscope.screening+binary";
 
 function packMarketBars(bars) {
   const values = new Float64Array(bars.length * BAR_FIELD_COUNT);
@@ -41,6 +42,10 @@ function packMarketBars(bars) {
 }
 
 async function readJsonBody(request, maximumBytes = MAX_REQUEST_BYTES) {
+  return JSON.parse((await readBodyBuffer(request, maximumBytes)).toString("utf8"));
+}
+
+async function readBodyBuffer(request, maximumBytes = MAX_REQUEST_BYTES) {
   const chunks = [];
   let size = 0;
   for await (const chunk of request) {
@@ -48,7 +53,31 @@ async function readJsonBody(request, maximumBytes = MAX_REQUEST_BYTES) {
     if (size > maximumBytes) throw new Error("Request body is too large");
     chunks.push(chunk);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return Buffer.concat(chunks);
+}
+
+async function readJobBody(request) {
+  if (!request.headers["content-type"]?.startsWith(BINARY_CONTENT_TYPE)) {
+    const payload = await readJsonBody(request);
+    return { payload, packedBars: packMarketBars(payload?.bars ?? []) };
+  }
+  const body = await readBodyBuffer(request);
+  if (body.length < 4) throw new Error("Binary screening request is truncated");
+  const headerLength = body.readUInt32LE(0);
+  const valuesOffset = 4 + headerLength;
+  if (headerLength <= 0 || valuesOffset > body.length) {
+    throw new Error("Binary screening request header is invalid");
+  }
+  const header = JSON.parse(body.subarray(4, valuesOffset).toString("utf8"));
+  const times = Array.isArray(header?.times) ? header.times : [];
+  const expectedBytes = times.length * BAR_FIELD_COUNT * Float64Array.BYTES_PER_ELEMENT;
+  if (body.length - valuesOffset !== expectedBytes) {
+    throw new Error("Binary screening request values are invalid");
+  }
+  const values = new Float64Array(times.length * BAR_FIELD_COUNT);
+  new Uint8Array(values.buffer).set(body.subarray(valuesOffset));
+  const payload = { ...header, times: undefined };
+  return { payload, packedBars: { times, values } };
 }
 
 function jobIdFor(request) {
@@ -98,18 +127,18 @@ function writeJson(request, response, status, payload) {
   response.end(body);
 }
 
-export function createScreeningEngineCoordinator({ rootDirectory }) {
-  const stateDirectory = join(
-    rootDirectory,
-    "data",
-    "state",
-    "screening-engine",
-  );
-  const childScript = join(
-    rootDirectory,
-    "scripts",
-    "screening-engine-child.ts",
-  );
+export function createScreeningEngineCoordinator({
+  rootDirectory,
+  stateDirectoryPath,
+  childScriptPath,
+  stallTimeoutMs = CHILD_STALL_TIMEOUT_MS,
+  watchdogIntervalMs = 5_000,
+  maxStallRestarts = MAX_STALL_RESTARTS,
+}) {
+  const stateDirectory =
+    stateDirectoryPath ?? join(rootDirectory, "data", "state", "screening-engine");
+  const childScript =
+    childScriptPath ?? join(rootDirectory, "scripts", "screening-engine-child.ts");
   const jobs = new Map();
 
   function startNextJob() {
@@ -169,13 +198,13 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
     );
     job.child = child;
     const watchdog = setInterval(() => {
-      if (!job.child || Date.now() - job.lastHeartbeatAt <= CHILD_STALL_TIMEOUT_MS) {
+      if (!job.child || Date.now() - job.lastHeartbeatAt <= stallTimeoutMs) {
         return;
       }
       job.stallRestartRequested = true;
       job.stallRestartCount += 1;
       job.child.kill();
-    }, 5_000);
+    }, watchdogIntervalMs);
     watchdog.unref();
     let stdoutBuffer = "";
     let stderr = "";
@@ -191,7 +220,14 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
         } else if (event.type === "completed") {
           job.status = "completed";
         } else if (event.type === "telemetry") {
-          job.engine = event.status;
+          job.engine = {
+            ...event.status,
+            checkpointBytes:
+              event.status.checkpointBytes ?? job.engine?.checkpointBytes,
+            checkpointWriteMilliseconds:
+              event.status.checkpointWriteMilliseconds ??
+              job.engine?.checkpointWriteMilliseconds,
+          };
         } else if (event.type === "error") {
           job.status = "error";
           job.error = { code: event.code, message: event.message };
@@ -236,7 +272,7 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
       }
       if (job.stallRestartRequested) {
         job.stallRestartRequested = false;
-        if (job.stallRestartCount > MAX_STALL_RESTARTS) {
+        if (job.stallRestartCount > maxStallRestarts) {
           job.status = "error";
           job.error = { message: "Screening child repeatedly stopped making progress" };
           setImmediate(startNextJob);
@@ -261,7 +297,7 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
     });
   }
 
-  async function restoreOrCreateJob(requestPayload) {
+  async function restoreOrCreateJob(requestPayload, packedBars) {
     await mkdir(stateDirectory, { recursive: true });
     await pruneOldJobs();
     const jobId = jobIdFor(requestPayload);
@@ -272,7 +308,7 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
     const temporaryPath = join(directory, `request-${randomUUID()}.tmp`);
     const barsTemporaryPath = join(directory, `bars-${randomUUID()}.tmp`);
     const persistedRequest = { ...requestPayload, bars: undefined };
-    await writeFile(barsTemporaryPath, serialize(packMarketBars(requestPayload.bars)));
+    await writeFile(barsTemporaryPath, serialize(packedBars));
     await rename(barsTemporaryPath, barsPath);
     await writeFile(temporaryPath, JSON.stringify(persistedRequest));
     await rename(temporaryPath, requestPath);
@@ -312,28 +348,11 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
   }
 
   async function snapshot(job) {
-    let outcome;
-    if (job.status === "completed") {
-      try {
-        outcome = JSON.parse(
-          await readFile(join(job.directory, "result.json"), "utf8"),
-        );
-      } catch (error) {
-        job.status = "error";
-        job.error = {
-          message:
-            error instanceof Error
-              ? error.message
-              : "Completed result is unavailable",
-        };
-      }
-    }
     return {
       jobId: job.jobId,
       status: job.status,
       progress: job.progress,
       validationProgress: job.validationProgress,
-      outcome,
       engine: job.engine
         ? { ...job.engine, restartCount: job.restartCount }
         : undefined,
@@ -342,7 +361,7 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
   }
 
   return {
-    health: { screeningEngine: true, screeningEngineVersion: 2 },
+    health: { screeningEngine: true, screeningEngineVersion: 3 },
     async handle(request, response) {
       if (!request.url?.startsWith("/screening/")) return false;
       if (!isLoopbackRequest(request)) {
@@ -355,22 +374,44 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
       }
       if (request.method === "POST" && request.url === "/screening/jobs") {
         try {
-          const payload = await readJsonBody(request);
+          const { payload, packedBars } = await readJobBody(request);
           if (
-            payload?.version !== 2 ||
-            !Array.isArray(payload?.bars) ||
+            payload?.version !== 3 ||
+            !Array.isArray(packedBars?.times) ||
+            packedBars.times.length === 0 ||
             typeof payload?.checkpoint?.key !== "string" ||
             typeof payload?.checkpoint?.signature !== "string"
           ) {
             writeJson(request, response, 400, { error: "INVALID_JOB" });
             return true;
           }
-          const job = await restoreOrCreateJob(payload);
+          const job = await restoreOrCreateJob(payload, packedBars);
           writeJson(request, response, 202, { jobId: job.jobId });
         } catch (error) {
           writeJson(request, response, 500, {
             error: error instanceof Error ? error.message : "JOB_START_FAILED",
           });
+        }
+        return true;
+      }
+      const resultMatch = request.url.match(
+        /^\/screening\/jobs\/([a-f0-9]{24})\/result$/,
+      );
+      if (resultMatch && request.method === "GET") {
+        const job = jobs.get(resultMatch[1]);
+        if (!job || job.status !== "completed") {
+          writeJson(request, response, 404, { error: "RESULT_NOT_FOUND" });
+          return true;
+        }
+        try {
+          writeJson(
+            request,
+            response,
+            200,
+            JSON.parse(await readFile(join(job.directory, "result.json"), "utf8")),
+          );
+        } catch {
+          writeJson(request, response, 500, { error: "RESULT_UNAVAILABLE" });
         }
         return true;
       }

@@ -4,14 +4,13 @@ import type { CombinationScreeningProgress } from "./strategy-combinations";
 import type {
   ScreeningValidationConfig,
   ScreeningValidationErrorCode,
-  ScreeningValidationOutcome,
   ScreeningValidationProgress,
 } from "./screening-validation";
 import type { MovingAverageSlopeFilter } from "./entry-filter";
 import type { StrategyId } from "./strategies";
 import type { MarketBar, MarketInterval } from "@/lib/market/types";
 
-export const LOCAL_SCREENING_ENGINE_VERSION = 2;
+export const LOCAL_SCREENING_ENGINE_VERSION = 3;
 export const LOCAL_SCREENING_ENGINE_URL = "http://127.0.0.1:3001";
 
 export interface LocalScreeningJobRequest {
@@ -37,7 +36,6 @@ export interface LocalScreeningJobSnapshot {
   status: "queued" | "running" | "completed" | "error" | "cancelled";
   progress?: CombinationScreeningProgress;
   validationProgress?: ScreeningValidationProgress;
-  outcome?: ScreeningValidationOutcome;
   engine?: LocalScreeningEngineStatus;
   error?: {
     code?: ScreeningValidationErrorCode;
@@ -52,6 +50,9 @@ export interface LocalScreeningEngineStatus {
   estimatedRemainingSeconds: number | null;
   residentBytes: number;
   heapUsedBytes: number;
+  elapsedSeconds?: number;
+  checkpointBytes?: number;
+  checkpointWriteMilliseconds?: number;
 }
 
 export type LocalScreeningChildEvent =

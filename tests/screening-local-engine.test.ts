@@ -8,7 +8,11 @@ import { serialize } from "node:v8";
 import { runScreeningWithValidation } from "../lib/analysis/screening-validation";
 import type { LocalScreeningJobRequest } from "../lib/analysis/screening-local-engine-protocol";
 import { STRATEGIES } from "../lib/analysis/strategies";
-import { packMarketBars } from "../lib/analysis/screening-worker-bars";
+import {
+  packMarketBars,
+  unpackMarketBars,
+} from "../lib/analysis/screening-worker-bars";
+import { encodeLocalScreeningJobRequest } from "../lib/analysis/screening-local-engine-bars";
 import type { MarketBar } from "../lib/market/types";
 
 function makeBars(length: number): MarketBar[] {
@@ -68,6 +72,7 @@ async function runChild(jobDirectory: string): Promise<number> {
     const code = await runChildOnce(jobDirectory);
     if (code === 0) return restarts;
     restarts += 1;
+    await readFile(join(jobDirectory, "checkpoint", "manifest.json"));
     assert.ok(restarts < 100, "screening child restart loop did not converge");
   }
 }
@@ -79,7 +84,7 @@ test("local screening child matches the shared in-process screening core", async
     (strategy) => strategy.id !== "sma-cross",
   ).map((strategy) => strategy.id);
   const request: LocalScreeningJobRequest = {
-    version: 2,
+    version: 3,
     bars,
     settings: {
       initialCash: 100_000,
@@ -109,6 +114,7 @@ test("local screening child matches the shared in-process screening core", async
     );
     const restarts = await runChild(directory);
     assert.ok(restarts > 0, "test must exercise disk-checkpoint continuation");
+    await readFile(join(directory, "derived.bin"));
     const actual = JSON.parse(
       await readFile(join(directory, "result.json"), "utf8"),
     );
@@ -116,4 +122,34 @@ test("local screening child matches the shared in-process screening core", async
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("local screening upload keeps bars columnar and lossless", () => {
+  const bars = makeBars(12);
+  const request: LocalScreeningJobRequest = {
+    version: 3,
+    bars,
+    settings: {
+      initialCash: 100_000,
+      commissionRate: 0,
+      slippageRate: 0,
+      interval: "1d",
+      executionPolicy: "next-open",
+    },
+    config: { mode: "sample", periods: [{ sessions: 3, weight: 100 }] },
+    checkpoint: { key: "binary", signature: "binary" },
+    options: {},
+  };
+  const encoded = encodeLocalScreeningJobRequest(request);
+  const view = new DataView(encoded);
+  const headerLength = view.getUint32(0, true);
+  const header = JSON.parse(
+    new TextDecoder().decode(new Uint8Array(encoded, 4, headerLength)),
+  ) as { bars?: unknown; times: string[] };
+  assert.equal(header.bars, undefined);
+  const valueBytes = new Uint8Array(encoded, 4 + headerLength);
+  const values = new Float64Array(valueBytes.byteLength / 8);
+  new Uint8Array(values.buffer).set(valueBytes);
+  assert.deepEqual(unpackMarketBars({ times: header.times, values }), bars);
+  assert.ok(encoded.byteLength < JSON.stringify(request).length);
 });

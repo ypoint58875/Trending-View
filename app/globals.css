@@ -3034,6 +3034,11 @@ button {
   font-size: 11px;
 }
 
+.screening-results-stack .results-table tbody tr {
+  content-visibility: auto;
+  contain-intrinsic-size: 42px;
+}
+
 .screening-results .results-table th:nth-child(1) {
   width: 5%;
 }

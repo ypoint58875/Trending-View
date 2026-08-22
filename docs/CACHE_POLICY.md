@@ -160,6 +160,10 @@ aliases unrelated data.
   Incomplete and completed job directories expire after seven days during the
   next coordinator submission. This state is reproducible cache/continuation
   data and is excluded from Git.
+- `checkpoint/manifest.json` atomically commits separately serialized metadata,
+  finalist, entry-filter, pair, triple, higher-order, and result sections.
+  Superseded generations are removed after the manifest swap. `derived.bin`
+  retains request-fingerprinted entry-filter eligibility arrays.
 
 - `lib/analysis/screening-result-cache.ts` keeps exactly one device-local
   IndexedDB record containing the latest completed full screening result. It is

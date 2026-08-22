@@ -478,6 +478,7 @@ export interface OptimizeStrategyCombinationsOptions {
   excludedStrategyIds?: readonly StrategyId[];
   objective?: ScreeningObjective;
   entryFilters?: readonly MovingAverageSlopeFilter[];
+  entryFilterAllowedByKey?: ReadonlyMap<string, readonly boolean[]>;
   allocationCandidates?: readonly TwoStrategyAllocation[];
   tripleAllocationCandidates?: readonly ThreeStrategyAllocation[];
   quadrupleAllocationCandidates?: readonly FourStrategyAllocation[];
@@ -2783,7 +2784,7 @@ function retainStrategyGroupFinalist(
   );
 }
 
-function entryFilterKey(
+export function entryFilterKey(
   filter: MovingAverageSlopeFilter | null | undefined,
 ): string {
   return filter
@@ -3214,7 +3215,8 @@ export async function optimizeStrategyCombinations(
     baseEntryFilter,
     requestedEntryFilters.length > 0
       ? undefined
-      : settings.entryFilterAllowed,
+      : options.entryFilterAllowedByKey?.get(entryFilterKey(baseEntryFilter)) ??
+          settings.entryFilterAllowed,
   );
   const baseSettings: StrategyCombinationBacktestSettings = {
     ...settings,
@@ -3687,10 +3689,12 @@ export async function optimizeStrategyCombinations(
 
     let evaluatedEntryFilterCount = 0;
     entryFilterLoop: for (const entryFilter of requestedEntryFilters) {
-      const entryAllowed = buildMovingAverageEntryAllowedSeries(
-        bars,
-        entryFilter,
+      const cachedEntryAllowed = options.entryFilterAllowedByKey?.get(
+        entryFilterKey(entryFilter),
       );
+      const entryAllowed = cachedEntryAllowed
+        ? [...cachedEntryAllowed]
+        : buildMovingAverageEntryAllowedSeries(bars, entryFilter);
       const filterSettings: StrategyCombinationBacktestSettings = {
         ...settings,
         entryFilter,

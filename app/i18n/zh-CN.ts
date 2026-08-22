@@ -991,6 +991,7 @@ export const zhCN = {
     engineEta: "本阶段预计",
     engineMemory: "计算内存",
     engineRestarts: "续跑次数",
+    engineCheckpoint: "断点写入",
     runError: "本次筛选意外中断，已退出运行状态，可以重新发起筛选。",
     validationErrors: {
       run: "本次筛选意外中断，已退出运行状态，可以重新发起筛选。",

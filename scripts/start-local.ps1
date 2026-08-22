@@ -58,7 +58,7 @@ function Test-QuantScopeMarketRelayReady {
       -TimeoutSec 2
     return $response.ready -eq $true -and
       $response.screeningEngine -eq $true -and
-      $response.screeningEngineVersion -eq 2
+      $response.screeningEngineVersion -eq 3
   } catch {
     return $false
   }

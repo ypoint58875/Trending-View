@@ -1,5 +1,20 @@
 # Codex State
 
+## 2026-08-22 lossless screening pipeline completion
+
+- Protocol version 3 uploads one binary columnar request directly from the
+  browser, eliminating the remaining full market-bar JSON boundary.
+- Exact checkpoints are atomic manifests over independently versioned sections.
+  Frozen entry-filter, standalone, pair, and triple sections are reused during
+  higher-order stages; filter eligibility arrays are derived once and persisted.
+- Polling carries status and telemetry only. The compact outcome has a dedicated
+  one-time result endpoint. Price and backtest charts are lazy client chunks.
+- Checkpoint cadence adapts to physical memory and bar count, and the dedicated
+  child uses a coarser yield cadence than the browser fallback. Candidate
+  enumeration, comparison order, objective values, and rankings are unchanged.
+- Fault injection proves a stalled child restarts and serves its result. The
+  complete suite now contains 241 passing tests.
+
 ## 2026-08-22 screening liveness and transport hardening
 
 - Local engine progress IPC is throttled to four updates per second instead of

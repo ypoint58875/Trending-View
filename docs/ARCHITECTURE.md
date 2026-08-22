@@ -156,8 +156,9 @@ strategy results use one compact Strategy-A-led layered-plan name, a two-line li
 of the remaining names, and aggregate weights. The strategy lab remains the
 sole equity-preview surface. Every target is generated from
 the complete loaded history; only performance is restricted to the selected
-date range. Market bars cross the UI boundary once per job and the coordinator
-converts them to one typed columnar `bars.bin` before starting children. Stage-local
+date range. Market bars cross the UI boundary once per job as protocol-v3
+binary metadata, times, and Float64 columns. The coordinator writes those
+columns directly to `bars.bin` without creating a second JSON bar graph. Stage-local
 indicator, target, order, and fill state stays inside the compute process and
 checkpoint; rejected candidates, display equity, trades, and rebalances never
 pass to the next discovery stage. Entry-filter completion drops raw target and
@@ -169,7 +170,10 @@ a result is shown. Child progress is limited to four IPC updates per second and
 includes throughput, stage ETA, resident memory, and restart count. A
 coordinator watchdog replaces a child after 60 seconds without a heartbeat and
 fails explicitly after three consecutive no-progress recoveries. Exact local
-checkpoints occur every 8,192 evaluations and at every stage boundary.
+checkpoints use an adaptive 4,096/8,192/16,384 cadence and every stage boundary.
+An atomic manifest references independent sections, so frozen earlier-stage
+state is not repeatedly serialized. The completed compact outcome is fetched
+from a separate result endpoint only after status reports completion.
 
 `screening-validation.ts` wraps the same optimizer without duplicating its
 candidate domain or objective rules. Period screening performs the complete
