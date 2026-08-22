@@ -1,5 +1,22 @@
 # Data Pipeline
 
+## Local screening compute flow
+
+The browser submits normalized bars, settings, validation configuration, and a
+request fingerprint once to the loopback coordinator. A deterministic job
+directory separates immutable `request.json`, replaceable `checkpoint.bin`,
+and compact `result.json`. Disposable children read the request and latest
+checkpoint from disk; child-to-parent messages contain progress counters only.
+
+Stage ownership is deliberately narrow: parameter evaluation owns transient
+indicator/target/order state; entry-filter evaluation consumes and releases raw
+target/order state; pair allocation consumes and then releases fill state; the
+three-to-nine-leg stages carry only retained parameters, compressed targets,
+scalar metrics, set keys, and exact cursors. Rejected candidates and display
+equity/trade/rebalance arrays never cross a stage boundary. Only compact ranked
+winners return to the browser, where a selected result is replayed for chart
+detail. This changes storage and transport, not enumeration or ranking.
+
 This file separates QuantScope's current runtime behavior from possible future
 ingestion work. The application has no scheduled server-side market-data job
 or server checkpoint. The local browser does persist canonical series,

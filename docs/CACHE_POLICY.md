@@ -153,6 +153,12 @@ aliases unrelated data.
 - Stage completion waits for the checkpoint transaction before replacing the
   Worker. The next Worker reads the same record and successful end-to-end
   validation removes it.
+- Local screening defaults to `data/state/screening-engine/<job-id>/`. The
+  request snapshot is written once, `checkpoint.bin` is atomically replaced,
+  and `result.json` is compact. A successful child removes its checkpoint.
+  Incomplete and completed job directories expire after seven days during the
+  next coordinator submission. This state is reproducible cache/continuation
+  data and is excluded from Git.
 
 - `lib/analysis/screening-result-cache.ts` keeps exactly one device-local
   IndexedDB record containing the latest completed full screening result. It is

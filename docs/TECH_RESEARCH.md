@@ -1,5 +1,35 @@
 # Technical Research
 
+## 2026-08-22 screening heap isolation
+
+Compared approaches:
+
+1. Keep module Web Workers and rotate them at optimizer checkpoints. This has
+   the lowest transport overhead and remains the compatibility fallback, but
+   every heap still belongs to the browser process tree and a browser-level OOM
+   can terminate the page before continuation is useful.
+2. Run the unchanged shared core in disposable Node child processes behind the
+   existing loopback relay. Node documents `child_process.spawn()` as
+   asynchronous process creation with explicit lifecycle events. Process exit
+   gives the OS a hard heap-reclamation boundary, so this is the selected local
+   default. Source: https://nodejs.org/api/child_process.html
+
+Checkpoint state uses `node:v8` serialization because the optimizer contains
+Maps and typed arrays. Node documents this format as structured-clone
+compatible and backward-compatible for disk storage. Source:
+https://nodejs.org/api/v8.html#serialization-api
+
+The child writes a temporary checkpoint/result and then replaces the stable
+path with `fsPromises.rename()`, rather than exposing a partially written
+destination. Source: https://nodejs.org/api/fs.html#fspromisesrenameoldpath-newpath
+
+The trade-off is one disk serialization and process startup per checkpoint.
+The architecture therefore checkpoints every 4,096 exact evaluations and at
+existing stage boundaries, passes only progress scalars over stdout, and reads
+bars from the immutable job request rather than retransmitting them. It does
+not reduce candidate count, finalist breadth, parameter grids, objective math,
+or validation windows.
+
 ## 2026-08-22 core-satellite positioning with volatility risk caps
 
 ### Sources

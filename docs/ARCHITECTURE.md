@@ -121,9 +121,16 @@ confirmation; unavailable live calculations fall back to the last persisted
 rolling return and then to the creation-time metric. Completed screening runs
 remain a compact backend provenance archive and never mutate shortcuts.
 
-One strategy-screening action sends the complete market snapshot and settings
-to a dedicated module Web Worker, which generates all 45,196 finite parameter
-combinations from the shared registry and applies one objective. For each
+One local strategy-screening action sends the complete market snapshot and
+settings once to the loopback screening coordinator on port 3001. The
+coordinator stores one deterministic job request and runs the shared screening
+core in a disposable Node child process. Every exact checkpoint is serialized
+atomically to `data/state/screening-engine`; the child then exits so its entire
+heap is returned to the OS, and a fresh child resumes the same traversal.
+Only one compute child runs at a time across browser tabs. If the local engine
+is unavailable before a job starts, the existing dedicated module Web Worker
+remains the compatibility fallback. Both paths generate all 45,196 finite
+parameter combinations from the shared registry and apply one objective. For each
 explicitly eligible trend, breakout, or momentum strategy, it retains compact
 metrics and raw execution state for the top 60 unfiltered
 parameter sets and compares EMA(5), EMA(6), EMA(7), and EMA(8) at a 0% slope.
@@ -149,9 +156,15 @@ strategy results use one compact Strategy-A-led layered-plan name, a two-line li
 of the remaining names, and aggregate weights. The strategy lab remains the
 sole equity-preview surface. Every target is generated from
 the complete loaded history; only performance is restricted to the selected
-date range. Indicator, target, and order arrays are cached only inside the
-Worker run and are discarded when it terminates. Completed result objects are
-not loaded as a future calculation cache.
+date range. Market bars cross the UI boundary once per job. Stage-local
+indicator, target, order, and fill state stays inside the compute process and
+checkpoint; rejected candidates, display equity, trades, and rebalances never
+pass to the next discovery stage. Entry-filter completion drops raw target and
+order state, pair completion drops per-leg fills, and higher stages retain only
+parameters, compressed targets, scalar performance, finalist keys, and
+traversal cursors. The engine returns compact ranked winners and validation
+evidence; detailed chart curves and transaction records are replayed only when
+a result is shown.
 
 `screening-validation.ts` wraps the same optimizer without duplicating its
 candidate domain or objective rules. Period screening performs the complete

@@ -56,7 +56,9 @@ function Test-QuantScopeMarketRelayReady {
     $response = Invoke-RestMethod `
       -Uri $marketRelayHealthUrl `
       -TimeoutSec 2
-    return $response.ready -eq $true
+    return $response.ready -eq $true -and
+      $response.screeningEngine -eq $true -and
+      $response.screeningEngineVersion -eq 1
   } catch {
     return $false
   }

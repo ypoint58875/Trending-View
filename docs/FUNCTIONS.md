@@ -706,6 +706,16 @@ separate guidance card.
   request-fingerprinted optimizer continuation record.
 - `packMarketBars(...)` / `unpackMarketBars(...)`: losslessly convert browser
   market-bar objects to and from the transferable screening Worker buffer.
+- `runScreeningInLocalEngine(...)`: submits one compact loopback job, streams
+  scalar progress, reconnects through a relay restart, and returns `null` only
+  when the engine is unavailable before job creation so the Worker can safely
+  take over.
+- `createScreeningEngineCoordinator(...)`: serializes local jobs, permits one
+  disposable compute child at a time, restores deterministic jobs from disk,
+  and exposes loopback-only create/status/cancel endpoints.
+- `scripts/screening-engine-child.ts`: runs the unchanged shared validation
+  core, atomically persists exact optimizer checkpoints, exits after each
+  checkpoint, and writes only the compact completed outcome.
 - `createStreamingCombinationTimeline(...)`: produces monotonic allocation,
   signal, and intrabar states without materializing per-candidate timeline
   arrays.

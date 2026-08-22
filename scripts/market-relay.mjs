@@ -1,7 +1,12 @@
 import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
+import { createScreeningEngineCoordinator } from "./screening-engine-coordinator.mjs";
 
 const host = "127.0.0.1";
 const port = 3001;
+const rootDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const screeningEngine = createScreeningEngineCoordinator({ rootDirectory });
 const allowedTargets = new Map([
   [
     "query1.finance.yahoo.com",
@@ -69,6 +74,7 @@ async function readJsonBody(request) {
 function writeJson(response, status, payload) {
   const body = JSON.stringify(payload);
   response.writeHead(status, {
+    "Access-Control-Allow-Origin": "*",
     "Cache-Control": "no-store",
     "Content-Length": Buffer.byteLength(body),
     "Content-Type": "application/json",
@@ -77,13 +83,23 @@ function writeJson(response, status, payload) {
 }
 
 const server = createServer(async (request, response) => {
+  if (request.method === "OPTIONS") {
+    response.writeHead(204, {
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+      "Access-Control-Allow-Origin": "*",
+    });
+    response.end();
+    return;
+  }
   if (
     request.method === "GET" &&
     request.url === "/health"
   ) {
-    writeJson(response, 200, { ready: true });
+    writeJson(response, 200, { ready: true, ...screeningEngine.health });
     return;
   }
+  if (await screeningEngine.handle(request, response)) return;
   if (request.method !== "POST" || request.url !== "/fetch") {
     writeJson(response, 404, { error: "NOT_FOUND" });
     return;

@@ -1,5 +1,21 @@
 # Codex State
 
+## 2026-08-22 process-isolated local screening engine
+
+- Local one-click screening now defaults to a loopback coordinator attached to
+  the existing market relay. It executes the shared core in disposable Node
+  children, atomically resumes exact disk checkpoints, and limits all browser
+  tabs to one heavy child at a time. The browser Worker remains a pre-start
+  fallback when the loopback engine is unavailable.
+- The browser transfers bars/settings once. Stages retain only state needed by
+  their successors: raw entry state ends after filtering, fill state ends after
+  pair allocation, rejected candidates and chart arrays never enter higher
+  stages, and the UI receives progress scalars plus compact winners.
+- Candidate enumeration, finalist breadth, allocation grids, scoring,
+  validation periods, execution rules, and ranking precision are unchanged.
+  A process-level regression test forces disk continuation and proves the final
+  JSON result equals the original in-process shared core.
+
 ## 2026-08-22 core-satellite multi-strategy positioning
 
 - Three-through-nine-leg plans now use the longest average active-run strategy

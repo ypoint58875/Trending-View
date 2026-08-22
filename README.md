@@ -297,6 +297,10 @@ Requirements: Windows and Node.js 22.13 or newer.
 
 For one-click local use, double-click `open-quantscope.bat`. The launcher:
 
+- starts the loopback screening coordinator with the existing market relay;
+  heavy screening runs in restartable child processes with exact disk
+  checkpoints, while the browser Worker remains available if that local engine
+  cannot be reached before a job starts;
 - runs QuantScope only at `http://127.0.0.1:3000`;
 - manages the application on port 3000 and the market relay on port 3001
   through one runtime-port registry;

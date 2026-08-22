@@ -16,8 +16,9 @@ import {
   SCREENING_POSITIONING_MODEL_VERSION,
   SCREENING_RESULT_MODEL_VERSION,
 } from "./strategy-combinations";
+import { runScreeningInLocalEngine } from "./screening-local-engine-client";
 
-type WorkerScreeningOptions = Pick<
+export type WorkerScreeningOptions = Pick<
   RunScreeningWithValidationOptions,
   | "objective"
   | "entryFilters"
@@ -40,7 +41,7 @@ function hashText(hash: number, value: string): number {
   return next >>> 0;
 }
 
-function buildCheckpointIdentity(
+export function buildCheckpointIdentity(
   bars: readonly MarketBar[],
   settings: Omit<BacktestSettings, "interval"> & {
     interval: MarketInterval;
@@ -77,7 +78,7 @@ function abortError() {
   return new DOMException("Screening cancelled", "AbortError");
 }
 
-export function runScreeningInWorker(
+function runScreeningInBrowserWorker(
   bars: MarketBar[],
   settings: Omit<BacktestSettings, "interval"> & {
     interval: MarketInterval;
@@ -178,4 +179,25 @@ export function runScreeningInWorker(
     options.signal?.addEventListener("abort", onAbort, { once: true });
     startWorker();
   });
+}
+
+export async function runScreeningInWorker(
+  bars: MarketBar[],
+  settings: Omit<BacktestSettings, "interval"> & {
+    interval: MarketInterval;
+  },
+  config: ScreeningValidationConfig,
+  options: WorkerScreeningOptions = {},
+): Promise<ScreeningValidationOutcome> {
+  if (options.signal?.aborted) throw abortError();
+  const checkpoint = buildCheckpointIdentity(bars, settings, config, options);
+  const localOutcome = await runScreeningInLocalEngine(
+    bars,
+    settings,
+    config,
+    options,
+    checkpoint,
+  );
+  if (localOutcome) return localOutcome;
+  return runScreeningInBrowserWorker(bars, settings, config, options);
 }
