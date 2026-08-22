@@ -1,5 +1,7 @@
 import type { MarketBar, MarketInterval } from "@/lib/market/types";
 import {
+  createBacktestExecutionContext,
+  runBacktest,
   runBacktestFromTarget,
   type BacktestPerformance,
   type BacktestResult,
@@ -594,29 +596,30 @@ export function compareScreeningResults(
   right: BacktestPerformance,
   objective: ScreeningObjective,
 ): number {
-  const comparisons = [
-    compareDescending(
-      screeningObjectiveValue(left, objective),
-      screeningObjectiveValue(right, objective),
-    ),
-    compareDescending(
-      finiteOrNegativeInfinity(left.totalReturn),
-      finiteOrNegativeInfinity(right.totalReturn),
-    ),
-    compareDescending(
-      finiteOrNegativeInfinity(left.maxDrawdown),
-      finiteOrNegativeInfinity(right.maxDrawdown),
-    ),
-    compareDescending(
-      finiteOrNegativeInfinity(left.sharpe),
-      finiteOrNegativeInfinity(right.sharpe),
-    ),
-    compareDescending(
-      finiteOrNegativeInfinity(left.score),
-      finiteOrNegativeInfinity(right.score),
-    ),
-  ];
-  return comparisons.find((comparison) => comparison !== 0) ?? 0;
+  let comparison = compareDescending(
+    screeningObjectiveValue(left, objective),
+    screeningObjectiveValue(right, objective),
+  );
+  if (comparison !== 0) return comparison;
+  comparison = compareDescending(
+    finiteOrNegativeInfinity(left.totalReturn),
+    finiteOrNegativeInfinity(right.totalReturn),
+  );
+  if (comparison !== 0) return comparison;
+  comparison = compareDescending(
+    finiteOrNegativeInfinity(left.maxDrawdown),
+    finiteOrNegativeInfinity(right.maxDrawdown),
+  );
+  if (comparison !== 0) return comparison;
+  comparison = compareDescending(
+    finiteOrNegativeInfinity(left.sharpe),
+    finiteOrNegativeInfinity(right.sharpe),
+  );
+  if (comparison !== 0) return comparison;
+  return compareDescending(
+    finiteOrNegativeInfinity(left.score),
+    finiteOrNegativeInfinity(right.score),
+  );
 }
 
 interface CooperativeScheduler {
@@ -644,6 +647,11 @@ export async function optimizeStrategies(
   },
   options: OptimizeStrategiesOptions = {},
 ): Promise<ScreeningOptimizationResult> {
+  settings = { ...settings, summaryOnly: true };
+  settings = {
+    ...settings,
+    executionContext: createBacktestExecutionContext(bars, settings),
+  };
   const entryAllowed = resolveMovingAverageEntryAllowedSeries(
     bars,
     settings.entryFilter,
@@ -721,12 +729,30 @@ export async function optimizeStrategies(
     }
   }
 
-  return {
-    results: [...bestByStrategy.values()]
+  const retainedResults = [...bestByStrategy.values()]
       .sort((left, right) =>
         compareScreeningResults(left, right, objective),
       )
-      .slice(0, MAX_SCREENING_RESULTS_PER_CATEGORY),
+      .slice(0, MAX_SCREENING_RESULTS_PER_CATEGORY)
+      .map((result) =>
+        ({
+          ...runBacktest(
+          bars,
+          result.strategyId,
+          result.parameters,
+          {
+            ...settings,
+            summaryOnly: false,
+            entryFilter: result.entryFilter ?? settings.entryFilter,
+            entryFilterAllowed: undefined,
+          },
+          ),
+          equity: [],
+          trades: [],
+        }),
+      );
+  return {
+    results: retainedResults,
     evaluatedCount,
     totalCandidates: candidates.length,
     failedCount,

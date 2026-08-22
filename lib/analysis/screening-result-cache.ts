@@ -1,4 +1,8 @@
-import type { CombinationScreeningProgress } from "./strategy-combinations";
+import {
+  SCREENING_POSITIONING_MODEL_VERSION,
+  SCREENING_RESULT_MODEL_VERSION,
+  type CombinationScreeningProgress,
+} from "./strategy-combinations";
 import type {
   ScreeningCombinationResult,
   ScreeningSingleResult,
@@ -14,6 +18,8 @@ const LATEST_RESULT_KEY = "latest";
 
 export interface CachedScreeningResult {
   key: typeof LATEST_RESULT_KEY;
+  positioningModelVersion: number;
+  resultModelVersion: number;
   instrumentKey: string;
   interval: MarketInterval;
   completedAt: number;
@@ -69,11 +75,17 @@ export async function readLatestScreeningResult(): Promise<CachedScreeningResult
     transaction.objectStore(RESULT_STORE).get(LATEST_RESULT_KEY) as IDBRequest<CachedScreeningResult>,
   );
   database.close();
-  return result;
+  return result?.positioningModelVersion === SCREENING_POSITIONING_MODEL_VERSION &&
+    result.resultModelVersion === SCREENING_RESULT_MODEL_VERSION
+    ? result
+    : null;
 }
 
 export async function writeLatestScreeningResult(
-  result: Omit<CachedScreeningResult, "key" | "completedAt">,
+  result: Omit<
+    CachedScreeningResult,
+    "key" | "completedAt" | "positioningModelVersion" | "resultModelVersion"
+  >,
 ): Promise<void> {
   const database = await openDatabase();
   if (!database) return;
@@ -81,6 +93,8 @@ export async function writeLatestScreeningResult(
   transaction.objectStore(RESULT_STORE).put({
     ...result,
     key: LATEST_RESULT_KEY,
+    positioningModelVersion: SCREENING_POSITIONING_MODEL_VERSION,
+    resultModelVersion: SCREENING_RESULT_MODEL_VERSION,
     completedAt: Date.now(),
   } satisfies CachedScreeningResult);
   await transactionComplete(transaction);

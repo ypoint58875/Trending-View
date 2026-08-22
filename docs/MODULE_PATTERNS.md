@@ -3,9 +3,14 @@
 ## Multi-strategy plan slots
 
 - Extend multi-leg behavior through the shared `StrategySlot`/`STRATEGY_SLOTS` A–I contract. Persistence, archive keys, shortlist membership, display, and execution must traverse the same ordered slots while accepting missing trailing legacy slots.
-- Keep execution semantics dependent on strategy count: one leg is direct, two legs retain core/tactical hierarchy, and three-to-nine legs produce one weighted-consensus decision. Multi-leg weights must be finite, positive, and sum to one.
-- Discover four-through-nine-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 16 intermediate candidates per Strategy A primary at every three-through-nine-leg level, then rank all completed candidates and cap only the final displayed category at five per primary and 30 total.
-- Build raw strategy targets over complete history for causal indicator warm-up, but execute repeated multi-strategy candidates only over the selected scoring window plus the immediately preceding bar. Resolve the inherited consensus state from the latest decisive pre-window support observation; do not rebuild a full out-of-window equity curve per candidate.
+- Keep execution semantics dependent on strategy count: one leg is direct, two legs retain core/tactical hierarchy, and three-to-nine legs produce one core-satellite decision. The longest-duration leg gates a fixed 60% core; all other positive weights form one tactical-support score. Multi-leg weights must be finite, positive, and sum to one.
+- Discover four-through-nine-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 16 intermediate candidates per Strategy A primary at every three-through-nine-leg level, then rank all completed candidates and cap only the final displayed category at three per primary and 30 total.
+- Maintain the bounded discovery pool incrementally: cache each unordered
+  strategy-set key, keep the pool in stable objective order, and remove only the
+  exact worst member that violates the per-primary or global limit. Do not
+  rebuild or fully sort the complete pool for every candidate; insertion order
+  and all existing objective tie-breaks remain part of the result contract.
+- Build raw strategy targets over complete history for causal indicator warm-up. Summary readers advance the core-satellite and volatility-cap state monotonically from the beginning; detailed finalists may materialize the full target before slicing the scoring window so inherited hysteresis and risk state remain exact.
 
 ## Explicit multi-range validation
 
@@ -314,11 +319,11 @@ declared in the registry rather than inferred from display names. Catalog
 horizon metadata is descriptive and must not filter combination eligibility.
 For two legs, summarize selected-range targets by average active-run length and
 retain the established core/tactical event-driven state machine. For three to
-five legs, normalize positive allocations as judgment weights and drive one
-binary portfolio state with strict-majority plus 60% weighted confirmation for
-entry, and 40% weighted support or insufficient active-count confirmation for
-exit. Hold the prior state between thresholds. Do not translate individual leg
-changes into partial portfolio rebalances.
+nine legs, make the longest-duration target the core gate, normalize non-core
+weights into one tactical support score, and choose only 0%, 60%, 80%, or 100%.
+Use outer decision thresholds, inner hold bands, and delayed volatility-cap
+recovery as no-trade regions. Do not translate individual leg changes into
+independent portfolio rebalances.
 
 Unified screening must reuse one selected objective, candidate domain, and
 tie-breaking contract for both result groups. First evaluate the complete
@@ -574,13 +579,13 @@ internal errors, identifiers, and tests remain English. Provider-defined field
 values may retain their source language when required for parsing.
 ## Multi-leg strategy plan pattern
 
-Represent each selected strategy as a stable `strategyA` through `strategyE`
+Represent each selected strategy as a stable `strategyA` through `strategyI`
 leg with its own selection, judgment weight, entry filter, target, and order
 fills. Target generation branches within the shared `StrategyAllocationPlan`
 contract: one leg is direct, two legs use hierarchical allocation, and three to
-five legs use weighted consensus. Persistence, live guidance, chart indicators,
-and shortcut display must consume that same contract without treating 3–5 leg
-weights as independent tradable sleeves.
+nine legs use core-satellite positioning with a volatility cap. Persistence,
+live guidance, chart indicators, and shortcut display must consume that same
+contract without treating non-core weights as independently tradable sleeves.
 
 Preserve legacy JSON by keeping trailing Strategy C–E fields optional and
 omitting them when absent. Candidate identity must include the complete sorted
@@ -596,3 +601,25 @@ component set.
 Comprehensive assessment is post-screening evidence aggregation. It may consume
 the diversified shortlist and shared live-guidance outputs, but it must not
 modify candidate scores, rankings, backtests, or validation reports.
+# Screening execution and recovery pattern
+
+- Candidate discovery uses `BacktestSettings.summaryOnly` and the same trade
+  execution loop as detailed replay. Summary mode changes collection only; it
+  must never implement separate fill rules.
+- `createBacktestExecutionContext` owns the selected-bar slice and intraday
+  session metadata for one immutable market/range pair and is reused by every
+  replay in that screening window.
+- Displayed finalists are materialized with detailed replay after ranking.
+  Validation folds retain scalar performance and normalized rank only.
+- Optimizer recovery checkpoints are versioned, request-fingerprinted,
+  structured-cloneable snapshots. Reconstructible execution contexts and
+  presentation detail arrays do not belong in a checkpoint.
+- Summary-only combinations expose a monotonic `AllocationTimelineReader`.
+  Readers calculate one bar at a time and may retain scalar state only.
+- Binary targets use `Uint8Array`; sparse event collections use index maps.
+  Detailed array timelines remain available only for manual/applied replay.
+- A completed stage is a Worker lifetime boundary: checkpoint, terminate,
+  recreate, resume. Replayed stage progress must not regress the visible
+  progress bar.
+- Worker market input uses a structure-of-arrays transferable buffer. Result
+  messages remain compact; display curves are generated on application.

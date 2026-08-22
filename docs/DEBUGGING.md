@@ -490,3 +490,40 @@ npm run build
 production build, and rendered/source tests. Minimal local Cloudflare ambient
 types live under `types/` so `npm run typecheck` covers `db/` and `worker/`
 without depending on the deployment build.
+# One-click screening out-of-memory recovery
+
+- Discovery backtests should have empty `equity`, `trades`, and `rebalances`
+  arrays while retaining finite ranking metrics. Displayed finalists should be
+  detailed after materialization.
+- A stopped, crashed, or OOM-terminated Worker leaves its most recently
+  committed checkpoint in `quantscope-screening-checkpoint`. Starting the same
+  instrument/configuration resumes it; any bar, cost, range, mode, objective,
+  filter, or exclusion change invalidates that snapshot.
+- Successful completion deletes the checkpoint. Browser site-data controls can
+  also remove it; the fallback is a clean full run.
+- The Worker process is expected to change after each completed optimization
+  stage. This is deliberate heap isolation, not a crash. Progress must continue
+  at the next stage without replaying completed candidate calculations.
+- If a higher-order discovery stage stops with a multi-gigabyte Edge renderer
+  and no CPU progress, verify that finalist retention uses keyed binary
+  insertion. Reintroducing full-pool sorting per candidate causes extreme
+  temporary allocation without changing the intended top-16-per-primary rule.
+- Screening table results intentionally contain empty detail arrays. Apply the
+  row to regenerate its detailed equity and transaction data.
+# Intra-stage screening OOM
+
+If a long high-order discovery stage advances for a while and then the renderer
+shows `Out of Memory`, check whether the Worker is running a whole stage without
+an intra-stage restart. High-order summary evaluation must use the alternating
+streaming timeline states and persist an exact checkpoint every 4,096 candidate
+evaluations. The Worker then restarts and resumes after the saved ordinal. This
+bounds transient heap pressure without pruning candidates or changing ranking.
+The same retention and restart path is shared by balanced, total-return, and
+Sharpe objectives and by sample, range, multi-range, and rolling validation.
+Objective and validation configuration remain part of the checkpoint signature,
+so state from one scoring method or period cannot be resumed by another.
+Entry-filter discovery data (`rawTarget` and `rawOrders`) must be cleared as
+soon as that stage ends. Per-finalist order-fill maps are required through pair
+allocation replay only; checkpoints at later stages strip them because
+three-through-nine-strategy summary evaluation uses close targets, while final
+detailed results rebuild execution from the retained parameters.

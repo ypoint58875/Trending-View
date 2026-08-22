@@ -145,6 +145,15 @@ aliases unrelated data.
   expired by a cleanup job.
 - Screening target, indicator, and order caches exist only for one Worker run
   and are discarded with that Worker.
+- `quantscope-screening-checkpoint` keeps one overwrite-in-place optimizer
+  checkpoint per instrument/interval namespace. A matching interrupted run
+  resumes it; successful completion deletes it, and a changed request replaces
+  it on the next checkpoint write. It contains compact optimizer state, not raw
+  source data or display equity/trade arrays.
+- Stage completion waits for the checkpoint transaction before replacing the
+  Worker. The next Worker reads the same record and successful end-to-end
+  validation removes it.
+
 - `lib/analysis/screening-result-cache.ts` keeps exactly one device-local
   IndexedDB record containing the latest completed full screening result. It is
   restored only for the same canonical instrument and interval, cleared when a

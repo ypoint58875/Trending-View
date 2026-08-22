@@ -1,5 +1,74 @@
 # Codex State
 
+## 2026-08-22 core-satellite multi-strategy positioning
+
+- Three-through-nine-leg plans now use the longest average active-run strategy
+  as a long-cycle gate for a 60% core position. Remaining positive allocation
+  weights form one tactical-support score that selects 60%, 80%, or 100% with
+  outer thresholds and inner no-trade bands; an inactive core selects 0%.
+- A causal 5-versus-20-bar EWMA true-range ratio caps exposure at 80%, 60%, or
+  0% under elevated, high, or severe volatility. Risk tightening is immediate,
+  so one rebalance may reduce or clear the position; cap recovery needs two
+  consecutive completed bars.
+- Full and summary-only timelines share the same state transition rules. Live
+  shortcut guidance shows actual position, tactical support, core state, and
+  volatility cap. Candidate grids and ranking precision are unchanged.
+- Screening checkpoints and the latest-result cache include positioning model
+  version 2, preventing binary-consensus results from resuming under this model.
+
+## 2026-08-22 exact high-order finalist maintenance
+
+- Three- through nine-strategy discovery no longer copies and fully sorts the
+  retained pool after every evaluated candidate. A keyed index, stable binary
+  insertion, and exact worst-member removal preserve the existing unordered-set
+  deduplication, global limit, per-primary top-16 limit, objective tie-breaks,
+  and traversal semantics.
+- The shared screening comparator now short-circuits scalar comparisons instead
+  of allocating a comparison array. Higher-order summary replay counts active
+  legs and weights in one scalar pass and reuses empty/event constants rather
+  than allocating an active-leg array and state objects for every bar.
+- Candidate counts, finalist limits, allocation grids, performance formulas,
+  execution prices, and displayed results are unchanged.
+
+## 2026-08-22 streaming screening and stage-isolated workers
+
+- Summary-only pair and three-through-nine-strategy candidates now execute from
+  a monotonic allocation reader. They no longer allocate complete target,
+  signal-event, intrabar-execution, layer-state, or higher-order slice arrays.
+- Retained binary strategy targets use `Uint8Array`; price-order fills use a
+  sparse index map; selected-window signal horizons are calculated once per
+  finalist and reused across allocation candidates. Pair finalist insertion
+  uses keyed lookup plus binary sorted insertion instead of repeated full-array
+  scans and sorts.
+- Screening input bars cross the Worker boundary as one transferable
+  `Float64Array` plus times. Ranked results cross back without chart equity,
+  trade, or rebalance arrays; applying a result remains the detailed replay
+  boundary.
+- Multi-range and rolling validation stream normalized-rank totals and retain
+  only scalar per-fold rank maps. The selected report candidate is replayed
+  after selection instead of retaining every candidate result for every fold.
+- Every completed optimization stage atomically writes its compact checkpoint,
+  aborts the stage Worker, and continues in a new Worker. This gives each stage
+  a fresh JavaScript heap while preserving all candidate/finalist limits and
+  exact ranking semantics.
+
+
+## 2026-08-22 OOM-safe screening and stage continuation
+
+- One-click discovery preserves the complete candidate and finalist limits but
+  uses the shared execution engine in summary-only mode. Online drawdown/return
+  statistics replace per-bar equity objects, and complete trade/rebalance
+  objects are omitted until displayed finalists are materialized.
+- Each scoring window reuses one selected-bar and intraday-session execution
+  context. Multi-range and rolling fold retention keeps compact performance and
+  rank evidence rather than full fold curves.
+- The Worker persists versioned optimizer maps and stage ordinals to a
+  request-fingerprinted IndexedDB checkpoint. The same request skips completed
+  evaluations after interruption; changed inputs cannot reuse the checkpoint,
+  and successful completion removes it.
+- Pair/higher-order finalist caps, candidate traversal, fill semantics,
+  objective comparison, and displayed detailed results remain unchanged.
+
 ## 2026-08-21 latest screening result persistence
 
 - The latest completed one-click screening result is stored as one device-local IndexedDB record and restored after a page refresh for the same canonical instrument and interval. Starting another screening clears the prior temporary record, and successful completion writes its replacement; server-side compact audit archives remain unchanged.
@@ -1159,3 +1228,24 @@ Implemented:
 5. Add a licensed ingestion/archive pipeline and an explicit runtime cache
    retention/cleanup implementation if QuantScope moves beyond browser-driven
    public-endpoint refreshes.
+# 2026-08-22 - Bounded high-order screening heap within stages
+
+- Removed the per-bar allocation of core-satellite timeline state objects in
+  summary screening by alternating two reusable state records.
+- Added exact intra-stage optimizer checkpoints and configured the screening
+  Worker to restart every 4,096 evaluations, including during stages 15-18.
+- Candidate order, finalist limits, scoring, and ranking precision are
+  unchanged; a resumed partial-stage run is regression-tested against an
+  uninterrupted run.
+- Maximum-return screening exposed a second allocation-stage hotspot: frequent
+  best-result replacements repeatedly copied and sorted the whole display
+  result pool. Retention now uses a keyed, sorted, bounded in-place index, so
+  objective-dependent replacement frequency no longer multiplies heap usage.
+- Final three-through-nine-strategy categories now show at most three results
+  per Strategy A primary while retaining the same 30-result category limit.
+  The chart includes a compact group/result navigator below its subchart.
+- Entry-filter raw targets/orders are released before pair discovery, and
+  checkpoints after pair allocation strip per-finalist order-fill maps. These
+  objects are not consumed by three-through-nine-strategy summary screening;
+  final detailed replays rebuild them from retained parameters, preserving
+  exact results while reducing live and serialized state.

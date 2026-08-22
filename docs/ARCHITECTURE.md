@@ -145,7 +145,7 @@ independently retains the top 30 rows per one-to-nine strategy category.
 Stage-local counters drive one monotonic eighteen-segment bar.
 Clicking or keyboard-activating a result row applies it directly; the strategy
 A/B columns retain detailed parameters for pair results, while three-to-nine
-strategy results use one compact Strategy-A-led consensus name, a two-line list
+strategy results use one compact Strategy-A-led layered-plan name, a two-line list
 of the remaining names, and aggregate weights. The strategy lab remains the
 sole equity-preview surface. Every target is generated from
 the complete loaded history; only performance is restricted to the selected
@@ -199,15 +199,14 @@ metadata, but plans and combinations do not use it as an eligibility rule.
 Strategy A through optional Strategy E can each hold a different,
 non-equivalent registry entry. A single strategy directly controls the target,
 while dual plans retain the existing core-gate/tactical-sleeve state machine
-and five allocation splits. Three-to-five-leg plans instead treat positive 10%
-allocations as judgment weights: a flat plan enters only when a strict majority
-of strategies are active and their normalized weight reaches 60%; an invested
-plan exits when active weight falls to 40% or less, or active strategy count
-falls below half. The intermediate band preserves the previous state, so the
-portfolio target is always 0% or 100% and individual signal changes do not cause
-partial rebalancing. Close-confirmed consensus changes execute at the next open.
+and five allocation splits. Three-to-nine-leg plans select the longest active-run
+strategy as a 60% core gate and normalize all remaining positive 10% weights as
+one tactical-support score. Support and hysteresis choose 60%, 80%, or 100%,
+while an inactive core selects 0%. A causal fast/slow true-range ratio can cap
+exposure at 80%, 60%, or 0%; tightening is immediate and loosening requires two
+completed bars. Close-confirmed allocation changes execute at the next open.
 Individual price-order fills update their leg state but do not execute separate
-portfolio sleeves in a three-to-five-leg plan. Complete-history state initializes
+portfolio sleeves in a three-to-nine-leg plan. Complete-history state initializes
 any already-active position at the first selected open without a transaction or
 cost. It does not
 recenter an unchanged state after price drift and applies costs only to actual
@@ -366,7 +365,7 @@ begins only after the full source chain fails. The complete shortcut collection
 is refreshed after the manual header action and after each scheduled
 active-instrument update. The inactive-instrument pass remains sequential,
 de-duplicated, cooldown-protected, and does not switch the visible chart.
-## Three-to-five-strategy weighted consensus and comprehensive assessment
+## Three-to-nine-strategy core-satellite positioning and comprehensive assessment
 
 Pair screening is the bounded parent stage for triple discovery. The optimizer
 takes the best 128 pair finalists, tries a non-equivalent third finalist at a
@@ -379,13 +378,14 @@ once: 84 four-leg candidates and 126 five-leg candidates. Output is capped
 independently at 30 for each strategy count. Progress has ten optimizer segments
 through quintuple allocation.
 
-Strategy A through optional Strategy E may each hold a different,
-non-equivalent registry entry. Three-to-five-leg allocations are normalized
-judgment weights, not tradable sleeves. A strict strategy-count majority plus
-60% active weight opens the single long-only position; 40% or less active
-weight, or fewer than half of the strategies remaining active, closes it. The
-40–60% hysteresis band holds the previous 0%/100% target and suppresses churn.
-The longest-duration leg remains a stable display/reference role only.
+Strategy A through optional Strategy I may each hold a different,
+non-equivalent registry entry. Three-to-nine-leg allocations remain judgment
+weights, not independently tradable sleeves. The longest-duration leg gates a
+60% core position. Non-core support uses 30%/70% outer thresholds and 40%/60%
+hold bands to select 60%, 80%, or 100%. Volatility stress may directly reduce
+or clear that target, while delayed cap recovery and the no-trade bands suppress
+churn. The longest-duration leg is therefore both the execution core and the
+stable display/reference role.
 
 `strategy-consensus.ts` is a post-screening reducer. The workspace takes up to
 five diversified shortlist entries, derives each plan's previous and current

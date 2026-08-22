@@ -4,10 +4,14 @@ import type {
   MarketLatestBarStatus,
 } from "@/lib/market/types";
 import {
+  createBacktestExecutionContext,
   runAllocationBacktest,
+  runBacktest,
   runBacktestFromTarget,
   type AllocationIntrabarExecution,
   type AllocationSignalEvent,
+  type AllocationTimelineReader,
+  type AllocationTimelineState,
   type AllocationBacktestResult,
   type BacktestResult,
   type BacktestSettings,
@@ -44,9 +48,18 @@ import {
 
 export const DEFAULT_STRATEGY_A_ALLOCATION = 0.6;
 export const DEFAULT_STRATEGY_B_ALLOCATION = 0.4;
+export const SCREENING_POSITIONING_MODEL_VERSION = 2;
+export const SCREENING_RESULT_MODEL_VERSION = 2;
 export const DEFAULT_TACTICAL_ALLOCATION_MODE = "add-on-short-entry" as const;
-export const MULTI_STRATEGY_CONSENSUS_ENTRY_WEIGHT = 0.6;
-export const MULTI_STRATEGY_CONSENSUS_EXIT_WEIGHT = 0.4;
+export const MULTI_STRATEGY_CORE_ALLOCATION = 0.6;
+export const MULTI_STRATEGY_BALANCED_ALLOCATION = 0.8;
+export const MULTI_STRATEGY_TACTICAL_FULL_SUPPORT = 0.7;
+export const MULTI_STRATEGY_TACTICAL_BASE_SUPPORT = 0.3;
+export const MULTI_STRATEGY_FULL_HOLD_SUPPORT = 0.4;
+export const MULTI_STRATEGY_BASE_HOLD_SUPPORT = 0.6;
+export const MULTI_STRATEGY_VOLATILITY_ELEVATED_RATIO = 1.25;
+export const MULTI_STRATEGY_VOLATILITY_HIGH_RATIO = 1.5;
+export const MULTI_STRATEGY_VOLATILITY_SEVERE_RATIO = 2;
 export const TACTICAL_ALLOCATION_MODES = [
   DEFAULT_TACTICAL_ALLOCATION_MODE,
   "reduce-on-short-exit",
@@ -74,7 +87,7 @@ export const ROLLING_SINGLE_FINALISTS_PER_STRATEGY = 10;
 export const SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 60;
 export const MAX_COMBINATION_PAIR_FINALISTS = 4_096;
 export const MAX_COMBINATION_RESULTS = MAX_SCREENING_RESULTS_PER_CATEGORY;
-export const MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY = 5;
+export const MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY = 3;
 export const MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY = 16;
 export const MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL =
   MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY * STRATEGIES.length;
@@ -484,22 +497,29 @@ export interface OptimizeStrategyCombinationsOptions {
   maxQuintupleFinalists?: number;
   signal?: AbortSignal;
   yieldEvery?: number;
+  /** Persist an exact intra-stage checkpoint after this many evaluations. */
+  checkpointEvery?: number;
   onProgress?: (progress: CombinationScreeningProgress) => void;
+  resumeCheckpoint?: CombinationOptimizationCheckpoint | null;
+  onCheckpoint?: (checkpoint: CombinationOptimizationCheckpoint) => void;
 }
 
-interface StrategyFinalist {
+type NumericTargetSeries = readonly number[] | Uint8Array;
+
+export interface StrategyFinalist {
   result: BacktestResult;
-  target: number[];
-  orderFills: StrategyOrderFill[][];
+  target: Uint8Array;
+  orderFills: ReadonlyMap<number, readonly StrategyOrderFill[]>;
+  screeningHorizon: StrategySignalHorizon;
 }
 
-interface EntryFilterCandidate {
+export interface EntryFilterCandidate {
   result: BacktestResult;
   rawTarget: number[] | null;
   rawOrders?: StrategyOrderSeries;
 }
 
-interface StrategyPairFinalist {
+export interface StrategyPairFinalist {
   strategyA: StrategyFinalist;
   strategyB: StrategyFinalist;
   referenceResult: StrategyCombinationResult;
@@ -543,7 +563,7 @@ export function resolveTacticalAllocationMode(
 }
 
 function assertAlignedTargets(
-  targets: readonly (readonly number[] | null)[],
+  targets: readonly (NumericTargetSeries | null)[],
 ) {
   const aligned = targets.filter(
     (target): target is readonly number[] => target !== null,
@@ -556,7 +576,7 @@ function assertAlignedTargets(
   }
 }
 
-interface StrategyTripleFinalist {
+export interface StrategyTripleFinalist {
   strategyA: StrategyFinalist;
   strategyB: StrategyFinalist;
   strategyC: StrategyFinalist;
@@ -564,11 +584,34 @@ interface StrategyTripleFinalist {
   settings: StrategyCombinationBacktestSettings;
 }
 
-interface StrategyGroupFinalist {
+export interface StrategyGroupFinalist {
   strategies: StrategyFinalist[];
   referenceResult: StrategyCombinationResult;
   settings: StrategyCombinationBacktestSettings;
 }
+
+export interface CombinationOptimizationCheckpoint {
+  version: 1;
+  progress: CombinationScreeningProgress;
+  entryFilterCandidateCount?: number;
+  finalistsByStrategy: Array<[StrategyId, StrategyFinalist[]]>;
+  entryFilterCandidatesByStrategy: Array<[StrategyId, EntryFilterCandidate[]]>;
+  pairFinalists: StrategyPairFinalist[];
+  tripleFinalists: StrategyTripleFinalist[];
+  higherOrderFinalists: Array<[
+    HigherOrderStrategyCount,
+    StrategyGroupFinalist[],
+  ]>;
+  results: StrategyCombinationResult[];
+}
+
+const OPTIMIZATION_STAGE_ORDER: readonly CombinationScreeningStage[] = [
+  "strategies", "entryFilters", "pairs", "allocations", "triples",
+  "tripleAllocations", "quadruples", "quadrupleAllocations",
+  "quintuples", "quintupleAllocations", "sextuples",
+  "sextupleAllocations", "septuples", "septupleAllocations",
+  "octuples", "octupleAllocations", "nonuples", "nonupleAllocations",
+];
 
 
 export function buildStrategyPlanAllocationTarget(
@@ -590,7 +633,7 @@ export function buildStrategyPlanAllocationTarget(
 }
 
 function buildSingleStrategyTimeline(
-  sourceTarget: readonly number[],
+  sourceTarget: NumericTargetSeries,
 ): StrategyPlanTimeline {
   let wasActive = false;
   const target: number[] = [];
@@ -623,7 +666,7 @@ export interface StrategySignalHorizon {
 }
 
 export function summarizeStrategySignalHorizon(
-  sourceTarget: readonly number[],
+  sourceTarget: NumericTargetSeries,
 ): StrategySignalHorizon {
   let activeBars = 0;
   let activeRunCount = 0;
@@ -658,7 +701,7 @@ export function resolveRelativeLongStrategy(
 
 interface StrategyTargetLeg {
   slot: StrategySlot;
-  target: readonly number[];
+  target: NumericTargetSeries;
   allocation: number;
 }
 
@@ -667,7 +710,121 @@ interface StrategyLayerState {
   activeTacticalSlots: StrategySlot[];
 }
 
+interface CoreSatelliteState {
+  targetAllocation: number;
+}
+
 const STRATEGY_SLOT_ORDER = STRATEGY_SLOTS;
+const EMPTY_ALLOCATION_SIGNALS: readonly AllocationSignalEvent[] = [];
+const LONG_ENTRY_SIGNALS: readonly AllocationSignalEvent[] = ["long-entry"];
+const LONG_EXIT_SIGNALS: readonly AllocationSignalEvent[] = ["long-exit"];
+const TACTICAL_ENTRY_SIGNALS: readonly AllocationSignalEvent[] = ["short-entry"];
+const TACTICAL_EXIT_SIGNALS: readonly AllocationSignalEvent[] = ["short-exit"];
+const EMPTY_INTRABAR_EXECUTIONS: readonly AllocationIntrabarExecution[] = [];
+
+const volatilityRiskCapCache = new WeakMap<object, Float64Array>();
+
+export function buildMultiStrategyVolatilityRiskCaps(
+  bars: readonly MarketBar[],
+): Float64Array {
+  const cached = volatilityRiskCapCache.get(bars);
+  if (cached) return cached;
+  const caps = new Float64Array(bars.length);
+  let fastRange = 0;
+  let slowRange = 0;
+  let currentCap = 1;
+  let recoveryCandidate = 1;
+  let recoveryCount = 0;
+  for (let index = 0; index < bars.length; index += 1) {
+    const bar = bars[index]!;
+    const previousClose = index > 0 ? bars[index - 1]!.close : bar.open;
+    const trueRange = Math.max(
+      bar.high - bar.low,
+      Math.abs(bar.high - previousClose),
+      Math.abs(bar.low - previousClose),
+    );
+    const rangePercent = trueRange / Math.max(Math.abs(previousClose), 1e-10);
+    fastRange = index === 0
+      ? rangePercent
+      : fastRange + (rangePercent - fastRange) / 3;
+    slowRange = index === 0
+      ? rangePercent
+      : slowRange + (rangePercent - slowRange) / 10.5;
+    const ratio = slowRange > 1e-12 ? fastRange / slowRange : 1;
+    const rawCap = index < 19
+      ? 1
+      : ratio >= MULTI_STRATEGY_VOLATILITY_SEVERE_RATIO
+        ? 0
+        : ratio >= MULTI_STRATEGY_VOLATILITY_HIGH_RATIO
+          ? MULTI_STRATEGY_CORE_ALLOCATION
+          : ratio >= MULTI_STRATEGY_VOLATILITY_ELEVATED_RATIO
+            ? MULTI_STRATEGY_BALANCED_ALLOCATION
+            : 1;
+    if (rawCap < currentCap) {
+      currentCap = rawCap;
+      recoveryCandidate = rawCap;
+      recoveryCount = 0;
+    } else if (rawCap > currentCap) {
+      if (rawCap === recoveryCandidate) recoveryCount += 1;
+      else {
+        recoveryCandidate = rawCap;
+        recoveryCount = 1;
+      }
+      if (recoveryCount >= 2) {
+        currentCap = rawCap;
+        recoveryCount = 0;
+      }
+    } else {
+      recoveryCandidate = rawCap;
+      recoveryCount = 0;
+    }
+    caps[index] = currentCap;
+  }
+  volatilityRiskCapCache.set(bars, caps);
+  return caps;
+}
+
+function resolveCoreSatelliteTarget(
+  previousTarget: number,
+  coreActive: boolean,
+  tacticalSupport: number,
+  volatilityRiskCap: number,
+): number {
+  if (!coreActive) return 0;
+  let desiredTarget: number;
+  if (tacticalSupport >= MULTI_STRATEGY_TACTICAL_FULL_SUPPORT - 1e-10) {
+    desiredTarget = 1;
+  } else if (
+    tacticalSupport <= MULTI_STRATEGY_TACTICAL_BASE_SUPPORT + 1e-10
+  ) {
+    desiredTarget = MULTI_STRATEGY_CORE_ALLOCATION;
+  } else if (
+    previousTarget >= 1 - 1e-10 &&
+    tacticalSupport > MULTI_STRATEGY_FULL_HOLD_SUPPORT + 1e-10
+  ) {
+    desiredTarget = 1;
+  } else if (
+    previousTarget > 0 &&
+    previousTarget <= MULTI_STRATEGY_CORE_ALLOCATION + 1e-10 &&
+    tacticalSupport < MULTI_STRATEGY_BASE_HOLD_SUPPORT - 1e-10
+  ) {
+    desiredTarget = MULTI_STRATEGY_CORE_ALLOCATION;
+  } else {
+    desiredTarget = MULTI_STRATEGY_BALANCED_ALLOCATION;
+  }
+  return Math.min(desiredTarget, volatilityRiskCap);
+}
+
+function allocationTransitionSignals(
+  previousTarget: number,
+  nextTarget: number,
+): readonly AllocationSignalEvent[] {
+  if (previousTarget <= 0 && nextTarget > 0) return LONG_ENTRY_SIGNALS;
+  if (previousTarget > 0 && nextTarget <= 0) return LONG_EXIT_SIGNALS;
+  if (nextTarget > previousTarget + 1e-10) return TACTICAL_ENTRY_SIGNALS;
+  if (nextTarget < previousTarget - 1e-10) return TACTICAL_EXIT_SIGNALS;
+  return EMPTY_ALLOCATION_SIGNALS;
+}
 
 function resolveCoreStrategy(legs: readonly StrategyTargetLeg[]): StrategySlot {
   return [...legs]
@@ -785,51 +942,61 @@ function buildHierarchicalStrategyTimeline(
   };
 }
 
-function buildWeightedConsensusStrategyTimeline(
+function buildCoreSatelliteStrategyTimeline(
   legs: readonly StrategyTargetLeg[],
-  referenceStrategy: StrategySlot,
-  initialPositionActive = false,
+  coreStrategy: StrategySlot,
+  volatilityRiskCaps?: ArrayLike<number>,
+  initialTargetAllocation = 0,
 ): StrategyPlanTimeline {
-  const totalWeight = legs.reduce((sum, leg) => sum + leg.allocation, 0);
-  if (totalWeight <= 0) {
-    throw new Error("A consensus plan requires positive strategy weights");
+  if (volatilityRiskCaps && volatilityRiskCaps.length !== legs[0].target.length) {
+    throw new Error("Volatility risk caps must align with strategy targets");
   }
-  const entrySupportCount = Math.floor(legs.length / 2) + 1;
-  const exitSupportCount = Math.ceil(legs.length / 2);
-  let positionActive = initialPositionActive;
+  const coreLeg = legs.find((leg) => leg.slot === coreStrategy);
+  if (!coreLeg) throw new Error("A core-satellite plan requires a core strategy");
+  const tacticalLegs = legs.filter((leg) => leg.slot !== coreStrategy);
+  const tacticalWeight = tacticalLegs.reduce(
+    (sum, leg) => sum + leg.allocation,
+    0,
+  );
+  if (tacticalWeight <= 0) {
+    throw new Error("A core-satellite plan requires tactical strategy weight");
+  }
+  const state: CoreSatelliteState = {
+    targetAllocation: initialTargetAllocation,
+  };
   const target: number[] = [];
   const signalEvents: AllocationSignalEvent[][] = [];
   const layerStates: StrategyLayerState[] = [];
 
   legs[0].target.forEach((_, index) => {
-    const activeLegs = legs.filter((leg) => (leg.target[index] ?? 0) > 0);
-    const activeWeight =
-      activeLegs.reduce((sum, leg) => sum + leg.allocation, 0) / totalWeight;
-    const shouldEnter =
-      !positionActive &&
-      activeLegs.length >= entrySupportCount &&
-      activeWeight >= MULTI_STRATEGY_CONSENSUS_ENTRY_WEIGHT - 1e-10;
-    const shouldExit =
-      positionActive &&
-      (activeLegs.length < exitSupportCount ||
-        activeWeight <= MULTI_STRATEGY_CONSENSUS_EXIT_WEIGHT + 1e-10);
-    const events: AllocationSignalEvent[] = [];
-    if (shouldEnter) {
-      positionActive = true;
-      events.push("long-entry");
-    } else if (shouldExit) {
-      positionActive = false;
-      events.push("long-exit");
+    let activeTacticalWeight = 0;
+    const activeTacticalSlots: StrategySlot[] = [];
+    for (const leg of tacticalLegs) {
+      if ((leg.target[index] ?? 0) <= 0) continue;
+      activeTacticalWeight += leg.allocation;
+      activeTacticalSlots.push(leg.slot);
     }
-    target.push(positionActive ? 1 : 0);
-    signalEvents.push(events);
-    layerStates.push({ gateActive: positionActive, activeTacticalSlots: [] });
+    const nextTarget = resolveCoreSatelliteTarget(
+      state.targetAllocation,
+      (coreLeg.target[index] ?? 0) > 0,
+      activeTacticalWeight / tacticalWeight,
+      volatilityRiskCaps?.[index] ?? 1,
+    );
+    signalEvents.push([
+      ...allocationTransitionSignals(state.targetAllocation, nextTarget),
+    ]);
+    target.push(nextTarget);
+    layerStates.push({
+      gateActive: (coreLeg.target[index] ?? 0) > 0,
+      activeTacticalSlots,
+    });
+    state.targetAllocation = nextTarget;
   });
 
   return {
     target,
     signalEvents,
-    relativeLongStrategy: referenceStrategy,
+    relativeLongStrategy: coreStrategy,
     layerStates,
   };
 }
@@ -842,18 +1009,18 @@ export interface StrategyPlanTimeline {
   layerStates?: StrategyLayerState[];
 }
 
-type StrategyRoleTargets = Partial<Record<StrategySlot, readonly number[]>> & {
-  strategyA: readonly number[];
-  strategyB: readonly number[];
+type StrategyRoleTargets = Partial<Record<StrategySlot, NumericTargetSeries>> & {
+  strategyA: NumericTargetSeries;
+  strategyB: NumericTargetSeries;
 };
 
 function selectRoleTargetWindow(
   bars: readonly MarketBar[],
-  target: readonly number[],
+  target: NumericTargetSeries,
   roleWindow?: Pick<BacktestSettings, "startTime" | "endTime">,
 ): number[] {
   if (!roleWindow?.startTime && !roleWindow?.endTime) return [...target];
-  return target.filter((_, index) => {
+  return Array.from(target).filter((_, index) => {
     const time = bars[index].time;
     return (
       (!roleWindow.startTime || time >= roleWindow.startTime) &&
@@ -863,8 +1030,8 @@ function selectRoleTargetWindow(
 }
 
 export function buildStrategyPlanTimelineFromTargets(
-  strategyATarget: readonly number[] | null,
-  strategyBTarget: readonly number[] | null,
+  strategyATarget: NumericTargetSeries | null,
+  strategyBTarget: NumericTargetSeries | null,
   strategyAAllocation: number,
   strategyBAllocation: number,
   roleTargets?: StrategyRoleTargets,
@@ -899,7 +1066,8 @@ function buildMultiStrategyPlanTimelineFromTargets(
   roleTargets: StrategyRoleTargets | undefined,
   fixedCoreStrategy: StrategySlot | undefined,
   tacticalMode: TacticalAllocationMode,
-  initialConsensusPosition = false,
+  volatilityRiskCaps?: ArrayLike<number>,
+  initialTargetAllocation = 0,
 ): StrategyPlanTimeline {
   const legs = requestedLegs.filter(
     (leg): leg is StrategyTargetLeg => leg !== null,
@@ -921,10 +1089,11 @@ function buildMultiStrategyPlanTimelineFromTargets(
     throw new Error("The fixed core strategy must be selected");
   }
   if (legs.length >= 3) {
-    return buildWeightedConsensusStrategyTimeline(
+    return buildCoreSatelliteStrategyTimeline(
       legs,
       coreStrategy,
-      initialConsensusPosition,
+      volatilityRiskCaps,
+      initialTargetAllocation,
     );
   }
   return buildHierarchicalStrategyTimeline(
@@ -935,15 +1104,16 @@ function buildMultiStrategyPlanTimelineFromTargets(
 }
 
 export function buildThreeStrategyPlanTimelineFromTargets(
-  strategyATarget: readonly number[],
-  strategyBTarget: readonly number[],
-  strategyCTarget: readonly number[],
+  strategyATarget: NumericTargetSeries,
+  strategyBTarget: NumericTargetSeries,
+  strategyCTarget: NumericTargetSeries,
   strategyAAllocation: number,
   strategyBAllocation: number,
   strategyCAllocation: number,
   roleTargets?: StrategyRoleTargets,
   fixedCoreStrategy?: StrategySlot,
   tacticalMode: TacticalAllocationMode = DEFAULT_TACTICAL_ALLOCATION_MODE,
+  volatilityRiskCaps?: ArrayLike<number>,
 ): StrategyPlanTimeline {
   return buildMultiStrategyPlanTimelineFromTargets(
     [
@@ -966,6 +1136,7 @@ export function buildThreeStrategyPlanTimelineFromTargets(
     roleTargets,
     fixedCoreStrategy,
     tacticalMode,
+    volatilityRiskCaps,
   );
 }
 
@@ -1080,7 +1251,36 @@ function planAllocation(plan: StrategyAllocationPlan, slot: StrategySlot): numbe
 interface StrategyExecutionLeg {
   slot: StrategySlot;
   allocation: number;
-  execution: StrategyExecutionSeries;
+  execution: {
+    target: NumericTargetSeries | null;
+    orderFills:
+      | readonly (readonly StrategyOrderFill[])[]
+      | ReadonlyMap<number, readonly StrategyOrderFill[]>;
+    screeningHorizon?: StrategySignalHorizon;
+  };
+}
+
+function orderFillsAt(
+  collection: StrategyExecutionLeg["execution"]["orderFills"],
+  index: number,
+): readonly StrategyOrderFill[] {
+  return Array.isArray(collection)
+    ? (collection[index] ?? [])
+    : ((collection as ReadonlyMap<number, readonly StrategyOrderFill[]>).get(index) ?? []);
+}
+
+function compactOrderFills(
+  collection: readonly (readonly StrategyOrderFill[])[],
+): ReadonlyMap<number, readonly StrategyOrderFill[]> {
+  const compact = new Map<number, readonly StrategyOrderFill[]>();
+  collection.forEach((fills, index) => {
+    if (fills.length > 0) compact.set(index, fills);
+  });
+  return compact;
+}
+
+function compactTarget(target: readonly number[]): Uint8Array {
+  return Uint8Array.from(target, (value) => (value > 0 ? 1 : 0));
 }
 
 function buildPlanIntrabarExecutions(
@@ -1090,8 +1290,8 @@ function buildPlanIntrabarExecutions(
 ): AllocationIntrabarExecution[][] {
   if (legs.length === 1) {
     const selectedFills = legs[0].execution.orderFills;
-    return selectedFills.map((fills) =>
-      fills.map((fill) => ({
+    return Array.from({ length: timeline.target.length }, (_, index) =>
+      orderFillsAt(selectedFills, index).map((fill) => ({
         targetAllocation: fill.action === "buy" ? 1 : 0,
         fillPrice: fill.fillPrice,
         signals: [fill.action === "buy" ? "long-entry" : "long-exit"],
@@ -1135,7 +1335,7 @@ function buildPlanIntrabarExecutions(
 
     const orderedFills = legs
       .flatMap((leg) =>
-        (leg.execution.orderFills[index] ?? []).map((fill) => ({
+        orderFillsAt(leg.execution.orderFills, index).map((fill) => ({
           fill,
           leg,
         })),
@@ -1204,6 +1404,339 @@ function buildPlanIntrabarExecutions(
     });
     return executions;
   });
+}
+
+function resolveCoreStrategyForWindow(
+  bars: readonly MarketBar[],
+  legs: readonly StrategyExecutionLeg[],
+  settings: Pick<BacktestSettings, "startTime" | "endTime">,
+): StrategySlot {
+  const summaries = legs.map((leg) => {
+    if (leg.execution.screeningHorizon) {
+      return { slot: leg.slot, ...leg.execution.screeningHorizon };
+    }
+    let activeBars = 0;
+    let activeRunCount = 0;
+    let transitionCount = 0;
+    let wasActive = false;
+    let hasPrevious = false;
+    for (let index = 0; index < bars.length; index += 1) {
+      const time = bars[index]!.time;
+      if (settings.startTime && time < settings.startTime) continue;
+      if (settings.endTime && time > settings.endTime) continue;
+      const active = (leg.execution.target?.[index] ?? 0) > 0;
+      if (active) activeBars += 1;
+      if (active && !wasActive) activeRunCount += 1;
+      if (hasPrevious && active !== wasActive) transitionCount += 1;
+      wasActive = active;
+      hasPrevious = true;
+    }
+    return {
+      slot: leg.slot,
+      averageActiveBars:
+        activeRunCount > 0 ? activeBars / activeRunCount : 0,
+      transitionCount,
+    };
+  });
+  return summaries.sort((left, right) => {
+    const averageDifference =
+      right.averageActiveBars - left.averageActiveBars;
+    if (Math.abs(averageDifference) > 1e-10) return averageDifference;
+    if (left.transitionCount !== right.transitionCount) {
+      return left.transitionCount - right.transitionCount;
+    }
+    return (
+      STRATEGY_SLOT_ORDER.indexOf(left.slot) -
+      STRATEGY_SLOT_ORDER.indexOf(right.slot)
+    );
+  })[0]!.slot;
+}
+
+function summarizeStrategySignalHorizonForWindow(
+  bars: readonly MarketBar[],
+  target: readonly number[],
+  settings: Pick<BacktestSettings, "startTime" | "endTime">,
+): StrategySignalHorizon {
+  let activeBars = 0;
+  let activeRunCount = 0;
+  let transitionCount = 0;
+  let wasActive = false;
+  let hasPrevious = false;
+  for (let index = 0; index < bars.length; index += 1) {
+    const time = bars[index]!.time;
+    if (settings.startTime && time < settings.startTime) continue;
+    if (settings.endTime && time > settings.endTime) continue;
+    const active = (target[index] ?? 0) > 0;
+    if (active) activeBars += 1;
+    if (active && !wasActive) activeRunCount += 1;
+    if (hasPrevious && active !== wasActive) transitionCount += 1;
+    wasActive = active;
+    hasPrevious = true;
+  }
+  return {
+    averageActiveBars:
+      activeRunCount > 0 ? activeBars / activeRunCount : 0,
+    activeRunCount,
+    transitionCount,
+  };
+}
+
+function streamIntrabarExecutionsAtIndex(
+  index: number,
+  previousState: StrategyLayerState | null,
+  legs: readonly StrategyExecutionLeg[],
+  coreSlot: StrategySlot,
+  tacticalMode: TacticalAllocationMode,
+): readonly AllocationIntrabarExecution[] {
+  if (legs.length >= 3) return EMPTY_INTRABAR_EXECUTIONS;
+  const coreLeg = legs.find((leg) => leg.slot === coreSlot);
+  if (!coreLeg) throw new Error("A strategy pair requires a core strategy");
+  const tacticalLegs = legs.filter((leg) => leg.slot !== coreSlot);
+  let gateActive = previousState?.gateActive ?? false;
+  const activeTacticalSlots = new Set(
+    previousState?.activeTacticalSlots ?? [],
+  );
+  const allocationForState = () =>
+    gateActive
+      ? coreLeg.allocation +
+        tacticalLegs.reduce(
+          (sum, leg) =>
+            sum + (activeTacticalSlots.has(leg.slot) ? leg.allocation : 0),
+          0,
+        )
+      : 0;
+  let currentAllocation = allocationForState();
+  const executions: AllocationIntrabarExecution[] = [];
+  const orderedFills = legs
+    .flatMap((leg) =>
+      orderFillsAt(leg.execution.orderFills, index).map((fill) => ({ fill, leg })),
+    )
+    .sort((left, right) => {
+      if (left.fill.action !== right.fill.action) {
+        return left.fill.action === "buy" ? -1 : 1;
+      }
+      const priceDifference =
+        left.fill.action === "buy"
+          ? left.fill.fillPrice - right.fill.fillPrice
+          : right.fill.fillPrice - left.fill.fillPrice;
+      if (Math.abs(priceDifference) > 1e-10) return priceDifference;
+      if (left.leg.slot === coreSlot && right.leg.slot !== coreSlot) return -1;
+      if (right.leg.slot === coreSlot && left.leg.slot !== coreSlot) return 1;
+      return (
+        STRATEGY_SLOT_ORDER.indexOf(left.leg.slot) -
+        STRATEGY_SLOT_ORDER.indexOf(right.leg.slot)
+      );
+    });
+  for (const { fill, leg } of orderedFills) {
+    const signals: AllocationSignalEvent[] = [];
+    if (leg.slot === coreSlot) {
+      if (fill.action === "buy" && !gateActive) {
+        gateActive = true;
+        activeTacticalSlots.clear();
+        if (tacticalMode === "reduce-on-short-exit") {
+          tacticalLegs.forEach((candidate) =>
+            activeTacticalSlots.add(candidate.slot),
+          );
+        }
+        signals.push("long-entry");
+      } else if (fill.action === "sell" && gateActive) {
+        signals.push("long-exit");
+        if (activeTacticalSlots.size > 0) signals.push("short-exit");
+        gateActive = false;
+        activeTacticalSlots.clear();
+      }
+    } else if (
+      gateActive &&
+      fill.action === "buy" &&
+      !activeTacticalSlots.has(leg.slot)
+    ) {
+      activeTacticalSlots.add(leg.slot);
+      signals.push("short-entry");
+    } else if (
+      gateActive &&
+      fill.action === "sell" &&
+      activeTacticalSlots.has(leg.slot)
+    ) {
+      activeTacticalSlots.delete(leg.slot);
+      signals.push("short-exit");
+    }
+    const targetAllocation = allocationForState();
+    if (Math.abs(targetAllocation - currentAllocation) > 1e-10) {
+      executions.push({
+        targetAllocation,
+        fillPrice: fill.fillPrice,
+        signals,
+      });
+      currentAllocation = targetAllocation;
+    }
+  }
+  return executions;
+}
+
+function createStreamingCombinationTimeline(
+  bars: readonly MarketBar[],
+  legs: readonly StrategyExecutionLeg[],
+  settings: Pick<BacktestSettings, "startTime" | "endTime">,
+  tacticalMode: TacticalAllocationMode,
+  initialTargetAllocation = 0,
+): {
+  reader: AllocationTimelineReader;
+  relativeLongStrategy: StrategySlot;
+} {
+  const relativeLongStrategy = resolveCoreStrategyForWindow(
+    bars,
+    legs,
+    settings,
+  );
+  const coreLeg = legs.find((leg) => leg.slot === relativeLongStrategy)!;
+  const tacticalLegs = legs.filter(
+    (leg) => leg.slot !== relativeLongStrategy,
+  );
+  let lastIndex = -1;
+  let lastState: AllocationTimelineState = {
+    targetAllocation: 0,
+    signals: EMPTY_ALLOCATION_SIGNALS,
+    intrabarExecutions: EMPTY_INTRABAR_EXECUTIONS,
+  };
+  const reusableCoreSatelliteStates: [
+    AllocationTimelineState,
+    AllocationTimelineState,
+  ] = [
+    {
+      targetAllocation: 0,
+      signals: EMPTY_ALLOCATION_SIGNALS,
+      intrabarExecutions: EMPTY_INTRABAR_EXECUTIONS,
+    },
+    {
+      targetAllocation: 0,
+      signals: EMPTY_ALLOCATION_SIGNALS,
+      intrabarExecutions: EMPTY_INTRABAR_EXECUTIONS,
+    },
+  ];
+  let previousLayerState: StrategyLayerState | null = null;
+  let coreWasActive = false;
+  const previousTacticalSignals = new Map<StrategySlot, boolean>();
+  const activeTacticalSlots = new Set<StrategySlot>();
+  let coreSatelliteTarget = initialTargetAllocation;
+  const tacticalWeight = tacticalLegs.reduce(
+    (sum, leg) => sum + leg.allocation,
+    0,
+  );
+  const volatilityRiskCaps = buildMultiStrategyVolatilityRiskCaps(bars);
+
+  const advance = (index: number): AllocationTimelineState => {
+    if (legs.length >= 3) {
+      let activeTacticalWeight = 0;
+      for (const leg of tacticalLegs) {
+        if ((leg.execution.target?.[index] ?? 0) <= 0) continue;
+        activeTacticalWeight += leg.allocation;
+      }
+      const nextTarget = resolveCoreSatelliteTarget(
+        coreSatelliteTarget,
+        (coreLeg.execution.target?.[index] ?? 0) > 0,
+        tacticalWeight > 0 ? activeTacticalWeight / tacticalWeight : 0,
+        volatilityRiskCaps[index] ?? 1,
+      );
+      const signals = allocationTransitionSignals(
+        coreSatelliteTarget,
+        nextTarget,
+      );
+      coreSatelliteTarget = nextTarget;
+      // The backtest only retains the previous state. Alternating two mutable
+      // records removes one short-lived object allocation per bar and candidate.
+      const state = reusableCoreSatelliteStates[index & 1];
+      state.targetAllocation = nextTarget;
+      state.signals = signals;
+      state.intrabarExecutions = EMPTY_INTRABAR_EXECUTIONS;
+      return state;
+    }
+
+    const intrabarExecutions = streamIntrabarExecutionsAtIndex(
+      index,
+      previousLayerState,
+      legs,
+      relativeLongStrategy,
+      tacticalMode,
+    );
+    const signals: AllocationSignalEvent[] = [];
+    let targetAllocation = 0;
+    let nextLayerState: StrategyLayerState;
+    {
+      const coreActive = (coreLeg.execution.target?.[index] ?? 0) > 0;
+      if (!coreActive) {
+        if (coreWasActive) {
+          signals.push("long-exit");
+          if (activeTacticalSlots.size > 0) signals.push("short-exit");
+        }
+        activeTacticalSlots.clear();
+      } else if (!coreWasActive) {
+        signals.push("long-entry");
+        activeTacticalSlots.clear();
+        if (tacticalMode === "reduce-on-short-exit") {
+          tacticalLegs.forEach((leg) => activeTacticalSlots.add(leg.slot));
+        }
+      } else {
+        tacticalLegs.forEach((leg) => {
+          const signalActive = (leg.execution.target?.[index] ?? 0) > 0;
+          const signalWasActive =
+            previousTacticalSignals.get(leg.slot) ?? false;
+          const layerActive = activeTacticalSlots.has(leg.slot);
+          const shouldExit =
+            layerActive &&
+            (tacticalMode === "reduce-on-short-exit"
+              ? signalWasActive && !signalActive
+              : !signalActive);
+          if (shouldExit) {
+            activeTacticalSlots.delete(leg.slot);
+            pushUniqueSignal(signals, "short-exit");
+          } else if (!layerActive && !signalWasActive && signalActive) {
+            activeTacticalSlots.add(leg.slot);
+            pushUniqueSignal(signals, "short-entry");
+          }
+        });
+      }
+      targetAllocation = coreActive
+        ? coreLeg.allocation +
+          tacticalLegs.reduce(
+            (sum, leg) =>
+              sum + (activeTacticalSlots.has(leg.slot) ? leg.allocation : 0),
+            0,
+          )
+        : 0;
+      nextLayerState = {
+        gateActive: coreActive,
+        activeTacticalSlots: STRATEGY_SLOT_ORDER.filter((slot) =>
+          activeTacticalSlots.has(slot),
+        ),
+      };
+      coreWasActive = coreActive;
+      tacticalLegs.forEach((leg) => {
+        previousTacticalSignals.set(
+          leg.slot,
+          (leg.execution.target?.[index] ?? 0) > 0,
+        );
+      });
+    }
+    previousLayerState = nextLayerState;
+    return { targetAllocation, signals, intrabarExecutions };
+  };
+
+  return {
+    relativeLongStrategy,
+    reader: {
+      length: bars.length,
+      stateAt(index: number) {
+        if (index < lastIndex) {
+          throw new Error("Streaming timeline indexes must be monotonic");
+        }
+        while (lastIndex < index) {
+          lastIndex += 1;
+          lastState = advance(lastIndex);
+        }
+        return lastState;
+      },
+    },
+  };
 }
 
 export function buildStrategyPlanTarget(
@@ -1283,6 +1816,9 @@ export function buildStrategyPlanTimeline(
     roleTargets,
     fixedRelativeLongStrategy,
     resolveTacticalAllocationMode(plan.tacticalMode),
+    executionLegs.length >= 3
+      ? buildMultiStrategyVolatilityRiskCaps(bars)
+      : undefined,
   );
   const intrabarExecutions = buildPlanIntrabarExecutions(
     timeline,
@@ -1304,6 +1840,12 @@ export interface LiveAllocationGuidance {
   activeWeight: number;
   entrySupportCount: number;
   exitSupportCount: number;
+  coreStrategy: StrategySlot | null;
+  coreActive: boolean;
+  tacticalStrategyCount: number;
+  activeTacticalStrategyCount: number;
+  tacticalSupport: number;
+  volatilityRiskCap: number;
 }
 
 export function buildLiveAllocationGuidance(
@@ -1375,7 +1917,7 @@ export function buildLiveAllocationGuidance(
           ]),
         ) as unknown as StrategyRoleTargets)
       : undefined;
-  const target = buildMultiStrategyPlanTimelineFromTargets(
+  const timeline = buildMultiStrategyPlanTimelineFromTargets(
     liveLegs.map((leg) => ({
       slot: leg.slot,
       target: leg.target ?? [],
@@ -1384,7 +1926,9 @@ export function buildLiveAllocationGuidance(
     roleTargets,
     undefined,
     resolveTacticalAllocationMode(plan.tacticalMode),
-  ).target;
+    liveLegs.length >= 3 ? buildMultiStrategyVolatilityRiskCaps(bars) : undefined,
+  );
+  const target = timeline.target;
   const targetAllocation = target.at(-1) ?? 0;
   const previousAllocation = target.at(-2) ?? 0;
   const action =
@@ -1397,6 +1941,19 @@ export function buildLiveAllocationGuidance(
           : "wait";
   const totalWeight = liveLegs.reduce((sum, leg) => sum + leg.allocation, 0);
   const activeLegs = liveLegs.filter((leg) => (leg.target?.at(-1) ?? 0) > 0);
+  const usesCoreSatellite = liveLegs.length >= 3;
+  const coreStrategy = usesCoreSatellite ? timeline.relativeLongStrategy : null;
+  const coreLeg = liveLegs.find((leg) => leg.slot === coreStrategy);
+  const tacticalLegs = usesCoreSatellite
+    ? liveLegs.filter((leg) => leg.slot !== coreStrategy)
+    : [];
+  const activeTacticalLegs = tacticalLegs.filter(
+    (leg) => (leg.target?.at(-1) ?? 0) > 0,
+  );
+  const tacticalWeight = tacticalLegs.reduce(
+    (sum, leg) => sum + leg.allocation,
+    0,
+  );
   return {
     action,
     previousAllocation,
@@ -1409,6 +1966,19 @@ export function buildLiveAllocationGuidance(
         : 0,
     entrySupportCount: Math.floor(liveLegs.length / 2) + 1,
     exitSupportCount: Math.ceil(liveLegs.length / 2),
+    coreStrategy,
+    coreActive: (coreLeg?.target?.at(-1) ?? 0) > 0,
+    tacticalStrategyCount: tacticalLegs.length,
+    activeTacticalStrategyCount: activeTacticalLegs.length,
+    tacticalSupport:
+      tacticalWeight > 0
+        ? activeTacticalLegs.reduce((sum, leg) => sum + leg.allocation, 0) /
+          tacticalWeight
+        : 0,
+    volatilityRiskCap:
+      liveLegs.length >= 3
+        ? (buildMultiStrategyVolatilityRiskCaps(bars).at(-1) ?? 1)
+        : 1,
   };
 }
 
@@ -1788,52 +2358,104 @@ function retainCombinationResult(
   result: StrategyCombinationResult,
   objective: ScreeningObjective,
 ) {
+  const index = getCombinationResultIndex(results);
   const resultKey = combinationStrategySetKey(result);
-  const existingIndex = results.findIndex(
-    (existing) => combinationStrategySetKey(existing) === resultKey,
-  );
+  const existing = index.byKey.get(resultKey);
   if (
-    existingIndex >= 0 &&
-    compareScreeningResults(result, results[existingIndex], objective) >= 0
+    existing &&
+    compareScreeningResults(result, existing, objective) >= 0
   ) {
     return;
   }
-  if (existingIndex >= 0) {
-    results.splice(existingIndex, 1, result);
-  } else {
-    results.push(result);
+  if (existing) {
+    const existingIndex = results.indexOf(existing);
+    if (existingIndex >= 0) results.splice(existingIndex, 1);
+    index.byKey.delete(resultKey);
   }
-  results.sort((left, right) =>
+  insertSorted(results, result, (left, right) =>
     compareScreeningResults(left, right, objective),
   );
-  const resultStrategyCount = combinationStrategyIds(result).length;
-  const categoryResults = results.filter(
-    (candidate) =>
-      combinationStrategyIds(candidate).length === resultStrategyCount,
-  );
-  const retainedCategoryResults =
-    resultStrategyCount >= 3
-      ? selectPrimaryDiverseCandidates(
-          categoryResults,
-          (candidate) => candidate,
-          objective,
-          MAX_COMBINATION_RESULTS,
-          MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY,
-        )
-      : categoryResults.slice(0, MAX_COMBINATION_RESULTS);
-  results.splice(
-    0,
-    results.length,
-    ...results
-      .filter(
+  index.byKey.set(resultKey, result);
+
+  const resultStrategyCount = combinationStrategyCount(result);
+  if (resultStrategyCount >= 3) {
+    let primaryCount = 0;
+    for (const candidate of results) {
+      if (
+        combinationStrategyCount(candidate) === resultStrategyCount &&
+        candidate.strategyAId === result.strategyAId
+      ) {
+        primaryCount += 1;
+      }
+    }
+    if (primaryCount > MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY) {
+      removeWorstCombinationResult(
+        results,
+        index,
         (candidate) =>
-          combinationStrategyIds(candidate).length !== resultStrategyCount,
-      )
-      .concat(retainedCategoryResults)
-      .sort((left, right) =>
-        compareScreeningResults(left, right, objective),
-      ),
-  );
+          combinationStrategyCount(candidate) === resultStrategyCount &&
+          candidate.strategyAId === result.strategyAId,
+      );
+    }
+  }
+
+  let categoryCount = 0;
+  for (const candidate of results) {
+    if (combinationStrategyCount(candidate) === resultStrategyCount) {
+      categoryCount += 1;
+    }
+  }
+  if (categoryCount > MAX_COMBINATION_RESULTS) {
+    removeWorstCombinationResult(
+      results,
+      index,
+      (candidate) =>
+        combinationStrategyCount(candidate) === resultStrategyCount,
+    );
+  }
+}
+
+function compactCombinationResult(
+  result: StrategyCombinationResult,
+): StrategyCombinationResult {
+  return { ...result, equity: [], rebalances: [] };
+}
+
+interface CombinationResultIndex {
+  byKey: Map<string, StrategyCombinationResult>;
+}
+
+const combinationResultIndexes = new WeakMap<
+  StrategyCombinationResult[],
+  CombinationResultIndex
+>();
+
+function getCombinationResultIndex(
+  results: StrategyCombinationResult[],
+): CombinationResultIndex {
+  let index = combinationResultIndexes.get(results);
+  if (index) return index;
+  index = {
+    byKey: new Map(
+      results.map((result) => [combinationStrategySetKey(result), result]),
+    ),
+  };
+  combinationResultIndexes.set(results, index);
+  return index;
+}
+
+function removeWorstCombinationResult(
+  results: StrategyCombinationResult[],
+  index: CombinationResultIndex,
+  matches: (candidate: StrategyCombinationResult) => boolean,
+): void {
+  for (let candidateIndex = results.length - 1; candidateIndex >= 0; candidateIndex -= 1) {
+    const candidate = results[candidateIndex]!;
+    if (!matches(candidate)) continue;
+    results.splice(candidateIndex, 1);
+    index.byKey.delete(combinationStrategySetKey(candidate));
+    return;
+  }
 }
 
 function combinationStrategySetKey(
@@ -1851,6 +2473,30 @@ function combinationStrategySetKey(
   >,
 ): string {
   return combinationStrategyIds(result).sort().join("|");
+}
+
+function combinationStrategyCount(
+  result: Pick<
+    StrategyCombinationResult,
+    | "strategyAId"
+    | "strategyBId"
+    | "strategyCId"
+    | "strategyDId"
+    | "strategyEId"
+    | "strategyFId"
+    | "strategyGId"
+    | "strategyHId"
+    | "strategyIId"
+  >,
+): number {
+  return 2 +
+    Number(Boolean(result.strategyCId)) +
+    Number(Boolean(result.strategyDId)) +
+    Number(Boolean(result.strategyEId)) +
+    Number(Boolean(result.strategyFId)) +
+    Number(Boolean(result.strategyGId)) +
+    Number(Boolean(result.strategyHId)) +
+    Number(Boolean(result.strategyIId));
 }
 
 function combinationStrategyIds(
@@ -1903,42 +2549,168 @@ function selectPrimaryDiverseCandidates<T>(
   return selected;
 }
 
+function insertSorted<T>(
+  values: T[],
+  value: T,
+  compare: (left: T, right: T) => number,
+): void {
+  let low = 0;
+  let high = values.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (compare(value, values[middle]!) < 0) high = middle;
+    else low = middle + 1;
+  }
+  values.splice(low, 0, value);
+}
+
+interface DiverseFinalistIndex<T> {
+  byKey: Map<string, T>;
+  primaryCounts: Map<StrategyId, number>;
+}
+
+const diverseFinalistIndexes = new WeakMap<
+  object,
+  DiverseFinalistIndex<unknown>
+>();
+
+function getDiverseFinalistIndex<T>(
+  finalists: T[],
+  resultOf: (candidate: T) => StrategyCombinationResult,
+): DiverseFinalistIndex<T> {
+  const cached = diverseFinalistIndexes.get(finalists) as
+    | DiverseFinalistIndex<T>
+    | undefined;
+  if (cached) return cached;
+  const index: DiverseFinalistIndex<T> = {
+    byKey: new Map(),
+    primaryCounts: new Map(),
+  };
+  for (const finalist of finalists) {
+    const result = resultOf(finalist);
+    index.byKey.set(combinationStrategySetKey(result), finalist);
+    index.primaryCounts.set(
+      result.strategyAId,
+      (index.primaryCounts.get(result.strategyAId) ?? 0) + 1,
+    );
+  }
+  diverseFinalistIndexes.set(
+    finalists,
+    index as DiverseFinalistIndex<unknown>,
+  );
+  return index;
+}
+
+function retainPrimaryDiverseFinalist<T>(
+  finalists: T[],
+  finalist: T,
+  resultOf: (candidate: T) => StrategyCombinationResult,
+  objective: ScreeningObjective,
+  limit: number,
+  perPrimaryLimit: number,
+): void {
+  const index = getDiverseFinalistIndex(finalists, resultOf);
+  const result = resultOf(finalist);
+  const key = combinationStrategySetKey(result);
+  const existing = index.byKey.get(key);
+  if (
+    existing &&
+    compareScreeningResults(result, resultOf(existing), objective) >= 0
+  ) {
+    return;
+  }
+  if (existing) {
+    const existingIndex = finalists.indexOf(existing);
+    if (existingIndex >= 0) finalists.splice(existingIndex, 1);
+    const existingPrimary = resultOf(existing).strategyAId;
+    index.primaryCounts.set(
+      existingPrimary,
+      (index.primaryCounts.get(existingPrimary) ?? 1) - 1,
+    );
+  }
+
+  insertSorted(finalists, finalist, (left, right) =>
+    compareScreeningResults(resultOf(left), resultOf(right), objective),
+  );
+  index.byKey.set(key, finalist);
+  const primary = result.strategyAId;
+  const primaryCount = (index.primaryCounts.get(primary) ?? 0) + 1;
+  index.primaryCounts.set(primary, primaryCount);
+
+  if (primaryCount > perPrimaryLimit) {
+    for (let candidateIndex = finalists.length - 1; candidateIndex >= 0; candidateIndex -= 1) {
+      const candidate = finalists[candidateIndex]!;
+      if (resultOf(candidate).strategyAId !== primary) continue;
+      finalists.splice(candidateIndex, 1);
+      index.byKey.delete(combinationStrategySetKey(resultOf(candidate)));
+      index.primaryCounts.set(primary, primaryCount - 1);
+      break;
+    }
+  }
+
+  if (finalists.length > limit) {
+    const removed = finalists.pop()!;
+    const removedResult = resultOf(removed);
+    const removedPrimary = removedResult.strategyAId;
+    index.byKey.delete(combinationStrategySetKey(removedResult));
+    index.primaryCounts.set(
+      removedPrimary,
+      (index.primaryCounts.get(removedPrimary) ?? 1) - 1,
+    );
+  }
+}
+
+const pairFinalistIndexes = new WeakMap<
+  StrategyPairFinalist[],
+  Map<string, StrategyPairFinalist>
+>();
+
 function retainPairFinalist(
   finalists: StrategyPairFinalist[],
   finalist: StrategyPairFinalist,
   objective: ScreeningObjective,
   limit: number,
 ) {
-  const existingIndex = finalists.findIndex(
-    (existing) =>
-      existing.strategyA.result.strategyId ===
-        finalist.strategyA.result.strategyId &&
-      existing.strategyB.result.strategyId ===
-        finalist.strategyB.result.strategyId,
-  );
+  let index = pairFinalistIndexes.get(finalists);
+  if (!index) {
+    index = new Map(
+      finalists.map((existing) => [
+        `${existing.strategyA.result.strategyId}:${existing.strategyB.result.strategyId}`,
+        existing,
+      ]),
+    );
+    pairFinalistIndexes.set(finalists, index);
+  }
+  const key = `${finalist.strategyA.result.strategyId}:${finalist.strategyB.result.strategyId}`;
+  const existing = index.get(key);
   if (
-    existingIndex >= 0 &&
+    existing &&
     compareScreeningResults(
       finalist.referenceResult,
-      finalists[existingIndex].referenceResult,
+      existing.referenceResult,
       objective,
     ) >= 0
   ) {
     return;
   }
-  if (existingIndex >= 0) {
-    finalists.splice(existingIndex, 1, finalist);
-  } else {
-    finalists.push(finalist);
+  if (existing) {
+    const existingIndex = finalists.indexOf(existing);
+    if (existingIndex >= 0) finalists.splice(existingIndex, 1);
   }
-  finalists.sort((left, right) =>
+  insertSorted(finalists, finalist, (left, right) =>
     compareScreeningResults(
       left.referenceResult,
       right.referenceResult,
       objective,
-    ),
+    )
   );
-  if (finalists.length > limit) finalists.length = limit;
+  index.set(key, finalist);
+  if (finalists.length > limit) {
+    const removed = finalists.pop()!;
+    index.delete(
+      `${removed.strategyA.result.strategyId}:${removed.strategyB.result.strategyId}`,
+    );
+  }
 }
 
 function sameAllocation(
@@ -1985,36 +2757,13 @@ function retainTripleFinalist(
   objective: ScreeningObjective,
   limit: number,
 ) {
-  const finalistKey = combinationStrategySetKey(finalist.referenceResult);
-  const existingIndex = finalists.findIndex(
-    (existing) =>
-      combinationStrategySetKey(existing.referenceResult) === finalistKey,
-  );
-  if (
-    existingIndex >= 0 &&
-    compareScreeningResults(
-      finalist.referenceResult,
-      finalists[existingIndex].referenceResult,
-      objective,
-    ) >= 0
-  ) {
-    return;
-  }
-  if (existingIndex >= 0) {
-    finalists.splice(existingIndex, 1, finalist);
-  } else {
-    finalists.push(finalist);
-  }
-  finalists.splice(
-    0,
-    finalists.length,
-    ...selectPrimaryDiverseCandidates(
-      finalists,
-      (candidate) => candidate.referenceResult,
-      objective,
-      limit,
-      MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
-    ),
+  retainPrimaryDiverseFinalist(
+    finalists,
+    finalist,
+    (candidate) => candidate.referenceResult,
+    objective,
+    limit,
+    MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
   );
 }
 
@@ -2024,36 +2773,13 @@ function retainStrategyGroupFinalist(
   objective: ScreeningObjective,
   limit: number,
 ) {
-  const finalistKey = combinationStrategySetKey(finalist.referenceResult);
-  const existingIndex = finalists.findIndex(
-    (existing) =>
-      combinationStrategySetKey(existing.referenceResult) === finalistKey,
-  );
-  if (
-    existingIndex >= 0 &&
-    compareScreeningResults(
-      finalist.referenceResult,
-      finalists[existingIndex].referenceResult,
-      objective,
-    ) >= 0
-  ) {
-    return;
-  }
-  if (existingIndex >= 0) {
-    finalists.splice(existingIndex, 1, finalist);
-  } else {
-    finalists.push(finalist);
-  }
-  finalists.splice(
-    0,
-    finalists.length,
-    ...selectPrimaryDiverseCandidates(
-      finalists,
-      (candidate) => candidate.referenceResult,
-      objective,
-      limit,
-      MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
-    ),
+  retainPrimaryDiverseFinalist(
+    finalists,
+    finalist,
+    (candidate) => candidate.referenceResult,
+    objective,
+    limit,
+    MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
   );
 }
 
@@ -2072,6 +2798,44 @@ function runCombinationCandidate(
   allocation: TwoStrategyAllocation,
   settings: StrategyCombinationBacktestSettings,
 ): StrategyCombinationResult {
+  const tacticalMode = resolveTacticalAllocationMode(allocation.tacticalMode);
+  if (settings.summaryOnly) {
+    const legs: StrategyExecutionLeg[] = [
+      {
+        slot: "strategyA",
+        allocation: allocation.strategyAAllocation,
+        execution: strategyAFinalist,
+      },
+      {
+        slot: "strategyB",
+        allocation: allocation.strategyBAllocation,
+        execution: strategyBFinalist,
+      },
+    ];
+    const stream = createStreamingCombinationTimeline(
+      bars,
+      legs,
+      settings,
+      tacticalMode,
+    );
+    return {
+      ...runAllocationBacktest(bars, stream.reader, settings),
+      strategyAId: strategyAFinalist.result.strategyId,
+      strategyAParameters: strategyAFinalist.result.parameters,
+      strategyBId: strategyBFinalist.result.strategyId,
+      strategyBParameters: strategyBFinalist.result.parameters,
+      strategyAAllocation: allocation.strategyAAllocation,
+      strategyBAllocation: allocation.strategyBAllocation,
+      tacticalMode,
+      relativeLongStrategy: stream.relativeLongStrategy,
+      strategyAEntryFilter: cloneMovingAverageSlopeFilter(
+        strategyAFinalist.result.entryFilter,
+      ),
+      strategyBEntryFilter: cloneMovingAverageSlopeFilter(
+        strategyBFinalist.result.entryFilter,
+      ),
+    };
+  }
   const roleTargets = {
     strategyA: selectRoleTargetWindow(
       bars,
@@ -2091,7 +2855,7 @@ function runCombinationCandidate(
     allocation.strategyBAllocation,
     roleTargets,
     undefined,
-    resolveTacticalAllocationMode(allocation.tacticalMode),
+    tacticalMode,
   );
   const performance = runAllocationBacktest(
     bars,
@@ -2118,7 +2882,7 @@ function runCombinationCandidate(
           },
         },
       ],
-      resolveTacticalAllocationMode(allocation.tacticalMode),
+      tacticalMode,
     ),
   );
   if (!timeline.relativeLongStrategy) {
@@ -2132,7 +2896,7 @@ function runCombinationCandidate(
     strategyBParameters: strategyBFinalist.result.parameters,
     strategyAAllocation: allocation.strategyAAllocation,
     strategyBAllocation: allocation.strategyBAllocation,
-    tacticalMode: resolveTacticalAllocationMode(allocation.tacticalMode),
+    tacticalMode,
     relativeLongStrategy: timeline.relativeLongStrategy,
     strategyAEntryFilter: cloneMovingAverageSlopeFilter(
       strategyAFinalist.result.entryFilter,
@@ -2151,6 +2915,39 @@ function runTripleCombinationCandidate(
   allocation: ThreeStrategyAllocation,
   settings: StrategyCombinationBacktestSettings,
 ): StrategyCombinationResult {
+  const tacticalMode = resolveTacticalAllocationMode(
+    allocation.tacticalMode,
+  );
+  if (settings.summaryOnly) {
+    const legs: StrategyExecutionLeg[] = [
+      { slot: "strategyA", allocation: allocation.strategyAAllocation, execution: strategyAFinalist },
+      { slot: "strategyB", allocation: allocation.strategyBAllocation, execution: strategyBFinalist },
+      { slot: "strategyC", allocation: allocation.strategyCAllocation, execution: strategyCFinalist },
+    ];
+    const stream = createStreamingCombinationTimeline(
+      bars,
+      legs,
+      settings,
+      tacticalMode,
+    );
+    return {
+      ...runAllocationBacktest(bars, stream.reader, settings),
+      strategyAId: strategyAFinalist.result.strategyId,
+      strategyAParameters: strategyAFinalist.result.parameters,
+      strategyBId: strategyBFinalist.result.strategyId,
+      strategyBParameters: strategyBFinalist.result.parameters,
+      strategyCId: strategyCFinalist.result.strategyId,
+      strategyCParameters: strategyCFinalist.result.parameters,
+      strategyAAllocation: allocation.strategyAAllocation,
+      strategyBAllocation: allocation.strategyBAllocation,
+      strategyCAllocation: allocation.strategyCAllocation,
+      tacticalMode,
+      relativeLongStrategy: stream.relativeLongStrategy,
+      strategyAEntryFilter: cloneMovingAverageSlopeFilter(strategyAFinalist.result.entryFilter),
+      strategyBEntryFilter: cloneMovingAverageSlopeFilter(strategyBFinalist.result.entryFilter),
+      strategyCEntryFilter: cloneMovingAverageSlopeFilter(strategyCFinalist.result.entryFilter),
+    };
+  }
   const roleTargets: StrategyRoleTargets = {
     strategyA: selectRoleTargetWindow(
       bars,
@@ -2168,9 +2965,6 @@ function runTripleCombinationCandidate(
       settings,
     ),
   };
-  const tacticalMode = resolveTacticalAllocationMode(
-    allocation.tacticalMode,
-  );
   const timeline = buildThreeStrategyPlanTimelineFromTargets(
     strategyAFinalist.target,
     strategyBFinalist.target,
@@ -2181,6 +2975,7 @@ function runTripleCombinationCandidate(
     roleTargets,
     undefined,
     tacticalMode,
+    buildMultiStrategyVolatilityRiskCaps(bars),
   );
   const performance = runAllocationBacktest(
     bars,
@@ -2255,39 +3050,6 @@ function allocationForSlot(
   }[slot];
 }
 
-function resolveConsensusPositionBeforeIndex(
-  legs: readonly StrategyTargetLeg[],
-  endExclusive: number,
-): boolean {
-  const totalWeight = legs.reduce((sum, leg) => sum + leg.allocation, 0);
-  const entrySupportCount = Math.floor(legs.length / 2) + 1;
-  const exitSupportCount = Math.ceil(legs.length / 2);
-  for (let index = endExclusive - 1; index >= 0; index -= 1) {
-    let activeCount = 0;
-    let activeWeight = 0;
-    for (const leg of legs) {
-      if ((leg.target[index] ?? 0) > 0) {
-        activeCount += 1;
-        activeWeight += leg.allocation;
-      }
-    }
-    const weightRatio = activeWeight / totalWeight;
-    if (
-      activeCount >= entrySupportCount &&
-      weightRatio >= MULTI_STRATEGY_CONSENSUS_ENTRY_WEIGHT - 1e-10
-    ) {
-      return true;
-    }
-    if (
-      activeCount < exitSupportCount ||
-      weightRatio <= MULTI_STRATEGY_CONSENSUS_EXIT_WEIGHT + 1e-10
-    ) {
-      return false;
-    }
-  }
-  return false;
-}
-
 function screeningExecutionWindow(
   bars: readonly MarketBar[],
   settings: Pick<BacktestSettings, "startTime" | "endTime">,
@@ -2308,6 +3070,25 @@ function screeningExecutionWindow(
   };
 }
 
+function buildHigherOrderStrategyFields(
+  finalists: readonly StrategyFinalist[],
+  allocation: HigherOrderStrategyAllocation,
+  cloneEntryFilters: boolean,
+): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  for (let index = 0; index < finalists.length; index += 1) {
+    const finalist = finalists[index]!;
+    const slot = STRATEGY_SLOTS[index];
+    fields[`${slot}Id`] = finalist.result.strategyId;
+    fields[`${slot}Parameters`] = finalist.result.parameters;
+    fields[`${slot}Allocation`] = allocationForSlot(allocation, slot);
+    fields[`${slot}EntryFilter`] = cloneEntryFilters
+      ? cloneMovingAverageSlopeFilter(finalist.result.entryFilter)
+      : finalist.result.entryFilter;
+  }
+  return fields;
+}
+
 function runHigherOrderCombinationCandidate(
   bars: MarketBar[],
   finalists: readonly StrategyFinalist[],
@@ -2326,79 +3107,74 @@ function runHigherOrderCombinationCandidate(
       execution: finalist,
     };
   });
+  if (settings.summaryOnly) {
+    const stream = createStreamingCombinationTimeline(
+      bars,
+      fullLegs,
+      settings,
+      tacticalMode,
+    );
+    const strategyFields = buildHigherOrderStrategyFields(
+      finalists,
+      allocation,
+      false,
+    );
+    return {
+      ...runAllocationBacktest(bars, stream.reader, settings),
+      ...strategyFields,
+      tacticalMode,
+      relativeLongStrategy: stream.relativeLongStrategy,
+    } as StrategyCombinationResult;
+  }
   const executionWindow = screeningExecutionWindow(bars, settings);
-  const initialConsensusPosition = resolveConsensusPositionBeforeIndex(
-    fullLegs.map((leg) => ({
-      slot: leg.slot,
-      allocation: leg.allocation,
-      target: leg.execution.target,
-    })),
-    executionWindow.start,
+  const relativeLongStrategy = resolveCoreStrategyForWindow(
+    bars,
+    fullLegs,
+    settings,
   );
   const executionBars = bars.slice(
     executionWindow.start,
     executionWindow.endExclusive,
   );
-  const legs = fullLegs.map((leg) => ({
-    ...leg,
-    execution: {
-      ...leg.execution,
-      target: leg.execution.target.slice(
-        executionWindow.start,
-        executionWindow.endExclusive,
-      ),
-      orderFills: leg.execution.orderFills.slice(
-        executionWindow.start,
-        executionWindow.endExclusive,
-      ),
-    },
-  }));
-  const roleTargets = Object.fromEntries(
-    fullLegs.map((leg) => [
-      leg.slot,
-      selectRoleTargetWindow(bars, leg.execution.target, settings),
-    ]),
-  ) as unknown as StrategyRoleTargets;
-  const timeline = buildMultiStrategyPlanTimelineFromTargets(
-    legs.map((leg) => ({
+  const fullTimeline = buildMultiStrategyPlanTimelineFromTargets(
+    fullLegs.map((leg) => ({
       slot: leg.slot,
       target: leg.execution.target,
       allocation: leg.allocation,
     })),
-    roleTargets,
     undefined,
+    relativeLongStrategy,
     tacticalMode,
-    initialConsensusPosition,
+    buildMultiStrategyVolatilityRiskCaps(bars),
   );
-  if (!timeline.relativeLongStrategy) {
+  if (!fullTimeline.relativeLongStrategy) {
     throw new Error("A strategy group requires a core strategy");
   }
+  const target = fullTimeline.target.slice(
+    executionWindow.start,
+    executionWindow.endExclusive,
+  );
+  const signalEvents = fullTimeline.signalEvents.slice(
+    executionWindow.start,
+    executionWindow.endExclusive,
+  );
   const performance = runAllocationBacktest(
     executionBars,
-    timeline.target,
+    target,
     settings,
-    timeline.signalEvents,
-    buildPlanIntrabarExecutions(timeline, legs, tacticalMode),
+    signalEvents,
+    Array.from({ length: target.length }, () => []),
   );
-  const strategyFields = Object.fromEntries(
-    finalists.flatMap((finalist, index) => {
-      const slot = STRATEGY_SLOTS[index];
-      return [
-        [`${slot}Id`, finalist.result.strategyId],
-        [`${slot}Parameters`, finalist.result.parameters],
-        [`${slot}Allocation`, allocationForSlot(allocation, slot)],
-        [
-          `${slot}EntryFilter`,
-          cloneMovingAverageSlopeFilter(finalist.result.entryFilter),
-        ],
-      ];
-    }),
+  const strategyFields = buildHigherOrderStrategyFields(
+    finalists,
+    allocation,
+    true,
   );
   return {
     ...performance,
     ...strategyFields,
     tacticalMode,
-    relativeLongStrategy: timeline.relativeLongStrategy,
+    relativeLongStrategy: fullTimeline.relativeLongStrategy,
   } as StrategyCombinationResult;
 }
 
@@ -2409,6 +3185,11 @@ export async function optimizeStrategyCombinations(
   },
   options: OptimizeStrategyCombinationsOptions = {},
 ): Promise<CombinationOptimizationResult> {
+  settings = { ...settings, summaryOnly: true };
+  settings = {
+    ...settings,
+    executionContext: createBacktestExecutionContext(bars, settings),
+  };
   const candidates = options.candidates
     ? [...options.candidates]
     : buildScreeningCandidates(
@@ -2605,24 +3386,172 @@ export async function optimizeStrategyCombinations(
     Math.floor(options.yieldEvery ?? DEFAULT_SCREENING_YIELD_EVERY),
     1,
   );
-  const finalistsByStrategy = new Map<StrategyId, StrategyFinalist[]>();
+  const checkpointEvery = Number.isFinite(options.checkpointEvery)
+    ? Math.max(Math.floor(options.checkpointEvery!), 1)
+    : Number.POSITIVE_INFINITY;
+  const resumeCheckpoint =
+    options.resumeCheckpoint?.version === 1
+      ? options.resumeCheckpoint
+      : null;
+  const finalistsByStrategy = new Map<StrategyId, StrategyFinalist[]>(
+    resumeCheckpoint?.finalistsByStrategy ?? [],
+  );
   const entryFilterCandidatesByStrategy = new Map<
     StrategyId,
     EntryFilterCandidate[]
-  >();
-  const pairFinalists: StrategyPairFinalist[] = [];
-  const tripleFinalists: StrategyTripleFinalist[] = [];
+  >(resumeCheckpoint?.entryFilterCandidatesByStrategy ?? []);
+  let entryFilterCandidateCount =
+    resumeCheckpoint?.entryFilterCandidateCount ?? 0;
+  const pairFinalists: StrategyPairFinalist[] =
+    resumeCheckpoint?.pairFinalists.map((finalist) => ({
+      ...finalist,
+      settings: { ...finalist.settings, executionContext: settings.executionContext },
+    })) ?? [];
+  const tripleFinalists: StrategyTripleFinalist[] =
+    resumeCheckpoint?.tripleFinalists.map((finalist) => ({
+      ...finalist,
+      settings: { ...finalist.settings, executionContext: settings.executionContext },
+    })) ?? [];
   const higherOrderFinalists = new Map<
     HigherOrderStrategyCount,
     StrategyGroupFinalist[]
+  >(
+    resumeCheckpoint?.higherOrderFinalists.map(([count, finalists]) => [
+      count,
+      finalists.map((finalist) => ({
+        ...finalist,
+        settings: {
+          ...finalist.settings,
+          executionContext: settings.executionContext,
+        },
+      })),
+    ]) ?? [],
+  );
+  const results: StrategyCombinationResult[] =
+    resumeCheckpoint?.results ?? [];
+  const pendingCombinationResults = new Map<
+    string,
+    StrategyCombinationResult
   >();
-  const results: StrategyCombinationResult[] = [];
+  const retainPendingCombinationResult = (
+    result: StrategyCombinationResult,
+  ) => {
+    const key = combinationStrategySetKey(result);
+    const pending = pendingCombinationResults.get(key);
+    const retained = getCombinationResultIndex(results).byKey.get(key);
+    const current = pending ?? retained;
+    if (
+      current &&
+      compareScreeningResults(result, current, objective) >= 0
+    ) {
+      return;
+    }
+    pendingCombinationResults.set(key, result);
+  };
+  const flushPendingCombinationResults = () => {
+    for (const result of pendingCombinationResults.values()) {
+      retainCombinationResult(results, result, objective);
+    }
+    pendingCombinationResults.clear();
+  };
   let evaluatedCount = 0;
   let failedCount = 0;
   const strategyCandidateCount = candidates.length;
   let totalCandidates = candidates.length;
 
-  options.onProgress?.({
+  const resumeStageIndex = resumeCheckpoint
+    ? OPTIMIZATION_STAGE_ORDER.indexOf(resumeCheckpoint.progress.stage)
+    : -1;
+  const shouldSkipCheckpointedEvaluation = (
+    stage: CombinationScreeningStage,
+    ordinal: number,
+  ): boolean => {
+    if (!resumeCheckpoint) return false;
+    const stageIndex = OPTIMIZATION_STAGE_ORDER.indexOf(stage);
+    return (
+      stageIndex < resumeStageIndex ||
+      (stageIndex === resumeStageIndex &&
+        ordinal <= resumeCheckpoint.progress.stageCompleted)
+    );
+  };
+  const originalOnProgress = options.onProgress;
+  const reportProgress = (progress: CombinationScreeningProgress) => {
+    const progressStageIndex = OPTIMIZATION_STAGE_ORDER.indexOf(progress.stage);
+    const isReplayedCheckpoint = Boolean(
+      resumeCheckpoint &&
+        (progressStageIndex < resumeStageIndex ||
+          (progressStageIndex === resumeStageIndex &&
+            progress.stageCompleted <=
+              resumeCheckpoint.progress.stageCompleted)),
+    );
+    if (isReplayedCheckpoint) return;
+    originalOnProgress?.(progress);
+    const isStageBoundary =
+      progress.stageTotal > 0 &&
+      progress.stageCompleted === progress.stageTotal;
+    const isCheckpointBoundary =
+      progress.stageCompleted > 0 &&
+      progress.stageCompleted % checkpointEvery === 0;
+    if (!isStageBoundary && !isCheckpointBoundary) return;
+    flushPendingCombinationResults();
+    const entryFilterStageIndex = OPTIMIZATION_STAGE_ORDER.indexOf("entryFilters");
+    const allocationStageIndex = OPTIMIZATION_STAGE_ORDER.indexOf("allocations");
+    const entryFiltersComplete =
+      progressStageIndex > entryFilterStageIndex ||
+      (progress.stage === "entryFilters" && isStageBoundary);
+    const canDiscardOrderFills =
+      progressStageIndex > allocationStageIndex ||
+      (progress.stage === "allocations" && isStageBoundary);
+    const compactedFinalists = new Map<StrategyFinalist, StrategyFinalist>();
+    const checkpointFinalist = (finalist: StrategyFinalist) => {
+      if (!canDiscardOrderFills) return finalist;
+      const cached = compactedFinalists.get(finalist);
+      if (cached) return cached;
+      const compacted = { ...finalist, orderFills: new Map() };
+      compactedFinalists.set(finalist, compacted);
+      return compacted;
+    };
+    options.onCheckpoint?.({
+      version: 1,
+      progress,
+      entryFilterCandidateCount,
+      finalistsByStrategy: [...finalistsByStrategy].map(
+        ([strategyId, finalists]) => [
+          strategyId,
+          finalists.map(checkpointFinalist),
+        ],
+      ),
+      entryFilterCandidatesByStrategy: entryFiltersComplete
+        ? []
+        : [...entryFilterCandidatesByStrategy],
+      pairFinalists: pairFinalists.map((finalist) => ({
+        ...finalist,
+        strategyA: checkpointFinalist(finalist.strategyA),
+        strategyB: checkpointFinalist(finalist.strategyB),
+        settings: { ...finalist.settings, executionContext: undefined },
+      })),
+      tripleFinalists: tripleFinalists.map((finalist) => ({
+        ...finalist,
+        strategyA: checkpointFinalist(finalist.strategyA),
+        strategyB: checkpointFinalist(finalist.strategyB),
+        strategyC: checkpointFinalist(finalist.strategyC),
+        settings: { ...finalist.settings, executionContext: undefined },
+      })),
+      higherOrderFinalists: [...higherOrderFinalists].map(
+        ([count, finalists]) => [
+          count,
+          finalists.map((finalist) => ({
+            ...finalist,
+            strategies: finalist.strategies.map(checkpointFinalist),
+            settings: { ...finalist.settings, executionContext: undefined },
+          })),
+        ],
+      ),
+      results,
+    });
+  };
+
+  reportProgress({
     completed: 0,
     total: totalCandidates,
     stageCompleted: 0,
@@ -2636,6 +3565,10 @@ export async function optimizeStrategyCombinations(
 
   for (const candidate of candidates) {
     if (options.signal?.aborted) break;
+    if (shouldSkipCheckpointedEvaluation("strategies", evaluatedCount + 1)) {
+      evaluatedCount += 1;
+      continue;
+    }
     try {
       const selection = {
         strategyId: candidate.strategyId,
@@ -2669,8 +3602,13 @@ export async function optimizeStrategyCombinations(
         finalistsByStrategy,
         {
           result,
-          target,
-          orderFills: execution.orderFills,
+          target: compactTarget(target),
+          orderFills: compactOrderFills(execution.orderFills),
+          screeningHorizon: summarizeStrategySignalHorizonForWindow(
+            bars,
+            target,
+            settings,
+          ),
         },
         objective,
         retainedSinglesPerStrategy,
@@ -2698,7 +3636,7 @@ export async function optimizeStrategyCombinations(
       evaluatedCount % yieldEvery === 0 ||
       evaluatedCount === strategyCandidateCount
     ) {
-      options.onProgress?.({
+  reportProgress({
         completed: evaluatedCount,
         total: totalCandidates,
         stageCompleted: evaluatedCount,
@@ -2712,19 +3650,30 @@ export async function optimizeStrategyCombinations(
     }
   }
 
-  if (
-    !options.signal?.aborted &&
-    requestedEntryFilters.length > 0
-  ) {
-    const entryFilterCandidateCount =
+  if (entryFilterCandidateCount === 0) {
+    entryFilterCandidateCount =
       requestedEntryFilters.length *
       [...entryFilterCandidatesByStrategy.values()].reduce(
         (sum, candidatesForStrategy) =>
           sum + candidatesForStrategy.length,
         0,
       );
+  }
+  const entryFilterStageIndex = OPTIMIZATION_STAGE_ORDER.indexOf("entryFilters");
+  const entryFilterStageAlreadyComplete = Boolean(
+    resumeCheckpoint &&
+      (resumeStageIndex > entryFilterStageIndex ||
+        (resumeStageIndex === entryFilterStageIndex &&
+          resumeCheckpoint.progress.stageCompleted ===
+            resumeCheckpoint.progress.stageTotal)),
+  );
+  if (
+    !options.signal?.aborted &&
+    requestedEntryFilters.length > 0 &&
+    !entryFilterStageAlreadyComplete
+  ) {
     totalCandidates += entryFilterCandidateCount;
-    options.onProgress?.({
+  reportProgress({
       completed: evaluatedCount,
       total: totalCandidates,
       stageCompleted: 0,
@@ -2751,6 +3700,16 @@ export async function optimizeStrategyCombinations(
         entryFilterCandidatesByStrategy) {
         for (const candidate of candidatesForStrategy) {
           if (options.signal?.aborted) break entryFilterLoop;
+          if (
+            shouldSkipCheckpointedEvaluation(
+              "entryFilters",
+              evaluatedEntryFilterCount + 1,
+            )
+          ) {
+            evaluatedCount += 1;
+            evaluatedEntryFilterCount += 1;
+            continue;
+          }
           try {
             const selection = {
               strategyId,
@@ -2775,8 +3734,13 @@ export async function optimizeStrategyCombinations(
                   filterSettings,
                   execution.orders,
                 ),
-                target,
-                orderFills: execution.orderFills,
+                target: compactTarget(target),
+                orderFills: compactOrderFills(execution.orderFills),
+                screeningHorizon: summarizeStrategySignalHorizonForWindow(
+                  bars,
+                  target,
+                  settings,
+                ),
               },
               objective,
               retainedSinglesPerStrategy,
@@ -2791,7 +3755,7 @@ export async function optimizeStrategyCombinations(
             evaluatedCount % yieldEvery === 0 ||
             evaluatedEntryFilterCount === entryFilterCandidateCount
           ) {
-            options.onProgress?.({
+  reportProgress({
               completed: evaluatedCount,
               total: totalCandidates,
               stageCompleted: evaluatedEntryFilterCount,
@@ -2807,6 +3771,10 @@ export async function optimizeStrategyCombinations(
       }
     }
   }
+  if (entryFilterStageAlreadyComplete) {
+    evaluatedCount += entryFilterCandidateCount;
+  }
+  entryFilterCandidatesByStrategy.clear();
 
   const singleFinalists = STRATEGIES.map(
     (strategy) => finalistsByStrategy.get(strategy.id)?.[0],
@@ -2841,17 +3809,9 @@ export async function optimizeStrategyCombinations(
         )
       : 0;
     totalCandidates = strategyCandidateCount + pairCount;
-    if (requestedEntryFilters.length > 0) {
-      totalCandidates +=
-        requestedEntryFilters.length *
-        [...entryFilterCandidatesByStrategy.values()].reduce(
-          (sum, candidatesForStrategy) =>
-            sum + candidatesForStrategy.length,
-          0,
-        );
-    }
+    totalCandidates += entryFilterCandidateCount;
 
-    options.onProgress?.({
+  reportProgress({
       completed: evaluatedCount,
       total: totalCandidates,
       stageCompleted: 0,
@@ -2886,6 +3846,13 @@ export async function optimizeStrategyCombinations(
         if (strategyAId === strategyBId) continue;
         if (areStrategiesEquivalent(strategyAId, strategyBId)) continue;
         if (options.signal?.aborted || !referenceAllocation) break pairLoop;
+        if (
+          shouldSkipCheckpointedEvaluation("pairs", evaluatedPairCount + 1)
+        ) {
+          evaluatedCount += 1;
+          evaluatedPairCount += 1;
+          continue;
+        }
         try {
           const referenceResult = runCombinationCandidate(
             bars,
@@ -2915,7 +3882,7 @@ export async function optimizeStrategyCombinations(
           evaluatedCount % yieldEvery === 0 ||
           evaluatedPairCount === pairCount
         ) {
-          options.onProgress?.({
+  reportProgress({
             completed: evaluatedCount,
             total: totalCandidates,
             stageCompleted: evaluatedPairCount,
@@ -2932,7 +3899,7 @@ export async function optimizeStrategyCombinations(
 
     if (!options.signal?.aborted) {
       totalCandidates += pairFinalists.length * remainingAllocations.length;
-      options.onProgress?.({
+  reportProgress({
         completed: evaluatedCount,
         total: totalCandidates,
         stageCompleted: 0,
@@ -2947,16 +3914,21 @@ export async function optimizeStrategyCombinations(
       let evaluatedAllocationCount = 0;
 
       allocationLoop: for (const finalist of pairFinalists) {
-        retainCombinationResult(
-          results,
-          finalist.referenceResult,
-          objective,
-        );
+        retainPendingCombinationResult(finalist.referenceResult);
         for (const allocation of remainingAllocations) {
           if (options.signal?.aborted) break allocationLoop;
+          if (
+            shouldSkipCheckpointedEvaluation(
+              "allocations",
+              evaluatedAllocationCount + 1,
+            )
+          ) {
+            evaluatedCount += 1;
+            evaluatedAllocationCount += 1;
+            continue;
+          }
           try {
-            retainCombinationResult(
-              results,
+            retainPendingCombinationResult(
               runCombinationCandidate(
                 bars,
                 finalist.strategyA,
@@ -2964,7 +3936,6 @@ export async function optimizeStrategyCombinations(
                 allocation,
                 finalist.settings,
               ),
-              objective,
             );
           } catch {
             failedCount += 1;
@@ -2976,7 +3947,7 @@ export async function optimizeStrategyCombinations(
             evaluatedCount % yieldEvery === 0 ||
             evaluatedCount === totalCandidates
           ) {
-            options.onProgress?.({
+  reportProgress({
               completed: evaluatedCount,
               total: totalCandidates,
               stageCompleted: evaluatedAllocationCount,
@@ -2989,6 +3960,14 @@ export async function optimizeStrategyCombinations(
             });
             await yieldForScreening();
           }
+        }
+      }
+    }
+
+    if (!options.signal?.aborted && includeTriples) {
+      for (const finalists of finalistsByStrategy.values()) {
+        for (const finalist of finalists) {
+          finalist.orderFills = new Map();
         }
       }
     }
@@ -3028,7 +4007,7 @@ export async function optimizeStrategyCombinations(
         0,
       );
       totalCandidates += tripleCount;
-      options.onProgress?.({
+  reportProgress({
         completed: evaluatedCount,
         total: totalCandidates,
         stageCompleted: 0,
@@ -3046,6 +4025,16 @@ export async function optimizeStrategyCombinations(
         for (const strategyCFinalist of pairingFinalists) {
           if (!isEligibleThirdStrategy(parent, strategyCFinalist)) continue;
           if (options.signal?.aborted) break tripleLoop;
+          if (
+            shouldSkipCheckpointedEvaluation(
+              "triples",
+              evaluatedTripleCount + 1,
+            )
+          ) {
+            evaluatedCount += 1;
+            evaluatedTripleCount += 1;
+            continue;
+          }
           try {
             const referenceResult = runTripleCombinationCandidate(
               bars,
@@ -3076,7 +4065,7 @@ export async function optimizeStrategyCombinations(
             evaluatedCount % yieldEvery === 0 ||
             evaluatedTripleCount === tripleCount
           ) {
-            options.onProgress?.({
+  reportProgress({
               completed: evaluatedCount,
               total: totalCandidates,
               stageCompleted: evaluatedTripleCount,
@@ -3096,7 +4085,7 @@ export async function optimizeStrategyCombinations(
         const tripleAllocationCount =
           tripleFinalists.length * remainingTripleAllocations.length;
         totalCandidates += tripleAllocationCount;
-        options.onProgress?.({
+  reportProgress({
           completed: evaluatedCount,
           total: totalCandidates,
           stageCompleted: 0,
@@ -3111,16 +4100,21 @@ export async function optimizeStrategyCombinations(
         let evaluatedTripleAllocationCount = 0;
 
         tripleAllocationLoop: for (const finalist of tripleFinalists) {
-          retainCombinationResult(
-            results,
-            finalist.referenceResult,
-            objective,
-          );
+          retainPendingCombinationResult(finalist.referenceResult);
           for (const allocation of remainingTripleAllocations) {
             if (options.signal?.aborted) break tripleAllocationLoop;
+            if (
+              shouldSkipCheckpointedEvaluation(
+                "tripleAllocations",
+                evaluatedTripleAllocationCount + 1,
+              )
+            ) {
+              evaluatedCount += 1;
+              evaluatedTripleAllocationCount += 1;
+              continue;
+            }
             try {
-              retainCombinationResult(
-                results,
+              retainPendingCombinationResult(
                 runTripleCombinationCandidate(
                   bars,
                   finalist.strategyA,
@@ -3129,7 +4123,6 @@ export async function optimizeStrategyCombinations(
                   allocation,
                   finalist.settings,
                 ),
-                objective,
               );
             } catch {
               failedCount += 1;
@@ -3140,7 +4133,7 @@ export async function optimizeStrategyCombinations(
               evaluatedCount % yieldEvery === 0 ||
               evaluatedTripleAllocationCount === tripleAllocationCount
             ) {
-              options.onProgress?.({
+  reportProgress({
                 completed: evaluatedCount,
                 total: totalCandidates,
                 stageCompleted: evaluatedTripleAllocationCount,
@@ -3225,7 +4218,7 @@ export async function optimizeStrategyCombinations(
           0,
           higherOrderParentLimits.get(strategyCount),
         );
-        const finalists: StrategyGroupFinalist[] = [];
+        const finalists = higherOrderFinalists.get(strategyCount) ?? [];
         higherOrderFinalists.set(strategyCount, finalists);
         const discoveryCount = parents.reduce(
           (count, parent) =>
@@ -3236,7 +4229,7 @@ export async function optimizeStrategyCombinations(
           0,
         );
         totalCandidates += discoveryCount;
-        options.onProgress?.({
+  reportProgress({
           completed: evaluatedCount,
           total: totalCandidates,
           stageCompleted: 0,
@@ -3253,6 +4246,16 @@ export async function optimizeStrategyCombinations(
             if (!isEligibleNextStrategy(parent.strategies, candidate)) continue;
             if (options.signal?.aborted) break higherOrderLoop;
             const strategies = [...parent.strategies, candidate];
+            if (
+              shouldSkipCheckpointedEvaluation(
+                stages.discovery,
+                evaluatedDiscoveryCount + 1,
+              )
+            ) {
+              evaluatedCount += 1;
+              evaluatedDiscoveryCount += 1;
+              continue;
+            }
             try {
               const referenceResult = runHigherOrderCombinationCandidate(
                 bars,
@@ -3276,7 +4279,7 @@ export async function optimizeStrategyCombinations(
               evaluatedCount % yieldEvery === 0 ||
               evaluatedDiscoveryCount === discoveryCount
             ) {
-              options.onProgress?.({
+  reportProgress({
                 completed: evaluatedCount,
                 total: totalCandidates,
                 stageCompleted: evaluatedDiscoveryCount,
@@ -3295,7 +4298,7 @@ export async function optimizeStrategyCombinations(
           higherOrderRemainingAllocations.get(strategyCount) ?? [];
         const allocationCount = finalists.length * remainingAllocations.length;
         totalCandidates += allocationCount;
-        options.onProgress?.({
+  reportProgress({
           completed: evaluatedCount,
           total: totalCandidates,
           stageCompleted: 0,
@@ -3308,23 +4311,27 @@ export async function optimizeStrategyCombinations(
         let evaluatedAllocationCount = 0;
 
         for (const finalist of finalists) {
-          retainCombinationResult(
-            results,
-            finalist.referenceResult,
-            objective,
-          );
+          retainPendingCombinationResult(finalist.referenceResult);
           for (const allocation of remainingAllocations) {
             if (options.signal?.aborted) break higherOrderLoop;
+            if (
+              shouldSkipCheckpointedEvaluation(
+                stages.allocations,
+                evaluatedAllocationCount + 1,
+              )
+            ) {
+              evaluatedCount += 1;
+              evaluatedAllocationCount += 1;
+              continue;
+            }
             try {
-              retainCombinationResult(
-                results,
+              retainPendingCombinationResult(
                 runHigherOrderCombinationCandidate(
                   bars,
                   finalist.strategies,
                   allocation,
                   finalist.settings,
                 ),
-                objective,
               );
             } catch {
               failedCount += 1;
@@ -3335,7 +4342,7 @@ export async function optimizeStrategyCombinations(
               evaluatedCount % yieldEvery === 0 ||
               evaluatedAllocationCount === allocationCount
             ) {
-              options.onProgress?.({
+  reportProgress({
                 completed: evaluatedCount,
                 total: totalCandidates,
                 stageCompleted: evaluatedAllocationCount,
@@ -3353,9 +4360,43 @@ export async function optimizeStrategyCombinations(
     }
   }
 
+  flushPendingCombinationResults();
+  const detailedSettings = { ...settings, summaryOnly: false };
+  const materializedSingles = options.signal?.aborted
+    ? singleFinalists.map((finalist) => compactBacktestResult(finalist.result))
+    : singleFinalists.map((finalist) =>
+        compactBacktestResult(
+          runBacktest(
+            bars,
+            finalist.result.strategyId,
+            finalist.result.parameters,
+            {
+              ...detailedSettings,
+              entryFilter: finalist.result.entryFilter ?? null,
+              entryFilterAllowed: undefined,
+            },
+          ),
+        ),
+      );
+  const materializedResults = options.signal?.aborted
+    ? results.map(compactCombinationResult)
+    : results.map((result) =>
+        compactCombinationResult(
+          runStrategyCombinationBacktest(
+            bars,
+            result,
+            {
+              ...detailedSettings,
+              entryFilter: null,
+              entryFilterAllowed: undefined,
+            },
+            result.relativeLongStrategy,
+          ),
+        ),
+      );
+
   return {
-    singleResults: singleFinalists
-      .map((finalist) => finalist.result)
+    singleResults: materializedSingles
       .sort((left, right) =>
         compareScreeningResults(left, right, objective),
       )
@@ -3366,7 +4407,7 @@ export async function optimizeStrategyCombinations(
       .sort((left, right) =>
         compareScreeningResults(left, right, objective),
       ),
-    results,
+    results: materializedResults,
     evaluatedCount,
     totalCandidates,
     failedCount,

@@ -22,6 +22,7 @@ import {
   buildIntradaySessionMetadata,
   DEFAULT_INTRADAY_ENTRY_CUTOFF_BARS,
   intradaySessionKey,
+  type IntradaySessionMetadata,
 } from "./intraday";
 
 export interface BacktestSettings {
@@ -34,6 +35,32 @@ export interface BacktestSettings {
   executionPolicy?: "hybrid" | "next-open";
   entryFilter?: MovingAverageSlopeFilter | null;
   entryFilterAllowed?: readonly boolean[];
+  /** Skip chart/trade detail allocation while preserving execution metrics. */
+  summaryOnly?: boolean;
+  executionContext?: BacktestExecutionContext;
+}
+
+export interface BacktestExecutionContext {
+  bars: MarketBar[];
+  selectedBars: MarketBar[];
+  startIndex: number;
+  sessionMetadata: IntradaySessionMetadata[];
+}
+
+export function createBacktestExecutionContext(
+  bars: MarketBar[],
+  settings: Pick<BacktestSettings, "startTime" | "endTime">,
+): BacktestExecutionContext {
+  const selectedBars = filterRange(bars, settings.startTime, settings.endTime);
+  const startIndex = selectedBars.length > 0
+    ? bars.indexOf(selectedBars[0]!)
+    : 0;
+  return {
+    bars,
+    selectedBars,
+    startIndex,
+    sessionMetadata: buildIntradaySessionMetadata(selectedBars),
+  };
 }
 
 export interface EquityPoint {
@@ -110,6 +137,23 @@ export type AllocationSignalEvent =
   | "short-entry"
   | "short-exit";
 
+export interface AllocationTimelineState {
+  targetAllocation: number;
+  signals: readonly AllocationSignalEvent[];
+  intrabarExecutions: readonly AllocationIntrabarExecution[];
+}
+
+export interface AllocationTimelineReader {
+  length: number;
+  stateAt(index: number): AllocationTimelineState;
+}
+
+function isAllocationTimelineReader(
+  value: readonly number[] | AllocationTimelineReader,
+): value is AllocationTimelineReader {
+  return !Array.isArray(value);
+}
+
 function standardDeviation(values: number[]) {
   if (values.length < 2) return 0;
   const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
@@ -117,6 +161,31 @@ function standardDeviation(values: number[]) {
     values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
     (values.length - 1);
   return Math.sqrt(variance);
+}
+
+interface OnlineReturnStatistics {
+  count: number;
+  mean: number;
+  m2: number;
+}
+
+function addOnlineReturn(
+  statistics: OnlineReturnStatistics,
+  value: number,
+): void {
+  if (!Number.isFinite(value)) return;
+  statistics.count += 1;
+  const delta = value - statistics.mean;
+  statistics.mean += delta / statistics.count;
+  statistics.m2 += delta * (value - statistics.mean);
+}
+
+function onlineSharpe(statistics: OnlineReturnStatistics): number {
+  if (statistics.count < 2) return 0;
+  const deviation = Math.sqrt(statistics.m2 / (statistics.count - 1));
+  return deviation === 0
+    ? 0
+    : (statistics.mean / deviation) * Math.sqrt(252);
 }
 
 function filterRange(bars: MarketBar[], startTime?: string, endTime?: string) {
@@ -131,6 +200,40 @@ function filterRange(bars: MarketBar[], startTime?: string, endTime?: string) {
     const time = normalize(bar.time);
     return (!start || time >= start) && (!end || time <= end);
   });
+}
+
+function calculateBenchmarkReturn(
+  bars: MarketBar[],
+  settings: BacktestSettings,
+): number {
+  const intraday = settings.interval !== "1d";
+  const commissionRate = Math.max(settings.commissionRate, 0);
+  const slippageRate = Math.max(settings.slippageRate, 0);
+  if (intraday) {
+    let benchmarkEquity = 1;
+    let sessionStart = 0;
+    for (let index = 1; index <= bars.length; index += 1) {
+      if (
+        index < bars.length &&
+        intradaySessionKey(bars[index]!) ===
+          intradaySessionKey(bars[sessionStart]!)
+      ) continue;
+      const sessionFirst = bars[sessionStart]!;
+      const sessionLast = bars[index - 1]!;
+      const unitCost =
+        sessionFirst.open * (1 + slippageRate) * (1 + commissionRate);
+      benchmarkEquity =
+        (benchmarkEquity / unitCost) *
+        sessionLast.close *
+        (1 - slippageRate) *
+        (1 - commissionRate);
+      sessionStart = index;
+    }
+    return (benchmarkEquity - 1) * 100;
+  }
+  const unitCost =
+    bars[0]!.open * (1 + slippageRate) * (1 + commissionRate);
+  return (bars.at(-1)!.close / unitCost - 1) * 100;
 }
 
 function summarizePerformance(
@@ -250,13 +353,19 @@ function clampAllocation(value: number): number {
 
 export function runAllocationBacktest(
   allBars: MarketBar[],
-  fullTarget: number[],
+  fullTarget: readonly number[] | AllocationTimelineReader,
   settings: BacktestSettings,
   fullSignalEvents?: readonly (readonly AllocationSignalEvent[])[],
   fullIntrabarExecutions?: readonly (
     readonly AllocationIntrabarExecution[]
   )[],
 ): AllocationBacktestResult {
+  const timelineReader = isAllocationTimelineReader(fullTarget)
+    ? fullTarget
+    : null;
+  const arrayTarget = timelineReader
+    ? null
+    : (fullTarget as readonly number[]);
   if (fullTarget.length !== allBars.length) {
     throw new Error("Allocation target must align with market bars");
   }
@@ -270,46 +379,58 @@ export function runAllocationBacktest(
     throw new Error("Allocation intrabar executions must align with market bars");
   }
 
-  const indexedBars = allBars
-    .map((bar, index) => ({
-      bar,
-      originalIndex: index,
-      target: clampAllocation(fullTarget[index] ?? 0),
-      signals: fullSignalEvents?.[index] ?? [],
-      intrabarExecutions:
-        settings.executionPolicy === "next-open"
-          ? []
-          : (fullIntrabarExecutions?.[index] ?? []),
-    }))
-    .filter(({ bar }) =>
-      filterRange([bar], settings.startTime, settings.endTime).length,
-    );
-  if (indexedBars.length < 3) {
+  const context =
+    settings.executionContext?.bars === allBars
+      ? settings.executionContext
+      : createBacktestExecutionContext(allBars, settings);
+  const selectedBars = context.selectedBars;
+  if (selectedBars.length < 3) {
     throw new Error("Backtest requires at least three bars in the selected range");
   }
   const intraday = settings.interval !== "1d";
-  const sessionMetadata = buildIntradaySessionMetadata(
-    indexedBars.map(({ bar }) => bar),
-  );
+  const sessionMetadata = context.sessionMetadata;
 
   let cash = Math.max(settings.initialCash, 1);
   let units = 0;
   let peak = cash;
   const commissionRate = Math.max(settings.commissionRate, 0);
   const slippageRate = Math.max(settings.slippageRate, 0);
+  const summaryOnly = Boolean(settings.summaryOnly);
   const equity: EquityPoint[] = [];
   const rebalances: AllocationRebalance[] = [];
-  const firstIndexedBar = indexedBars[0];
-  const priorTargetIndex = firstIndexedBar.originalIndex - 1;
+  let rebalanceCount = 0;
+  let maxDrawdown = 0;
+  let previousReturnEquity = Math.max(settings.initialCash, 1);
+  let sessionCount = 0;
+  const returnStatistics: OnlineReturnStatistics = {
+    count: 0,
+    mean: 0,
+    m2: 0,
+  };
+  const firstBar = selectedBars[0]!;
+  const priorTargetIndex = context.startIndex - 1;
+  const timelineStateAt = (index: number): AllocationTimelineState =>
+    timelineReader
+      ? timelineReader.stateAt(index)
+      : {
+          targetAllocation: clampAllocation(arrayTarget?.[index] ?? 0),
+          signals: fullSignalEvents?.[index] ?? [],
+          intrabarExecutions:
+            settings.executionPolicy === "next-open"
+              ? []
+              : (fullIntrabarExecutions?.[index] ?? []),
+        };
+  let previousTimelineState =
+    priorTargetIndex >= 0 ? timelineStateAt(priorTargetIndex) : null;
   const openingAllocation =
     !intraday && priorTargetIndex >= 0
-      ? clampAllocation(fullTarget[priorTargetIndex] ?? 0)
+      ? clampAllocation(previousTimelineState?.targetAllocation ?? 0)
       : 0;
   if (openingAllocation > 0) {
     const openingEquity = cash;
     units =
       (openingEquity * openingAllocation) /
-      firstIndexedBar.bar.open;
+      firstBar.open;
     cash = openingEquity * (1 - openingAllocation);
   }
   let plannedAllocation = openingAllocation;
@@ -337,7 +458,8 @@ export function runAllocationBacktest(
       if (boughtUnits <= tolerance) return;
       cash -= boughtUnits * unitCost;
       units += boughtUnits;
-      rebalances.push({
+      rebalanceCount += 1;
+      if (!summaryOnly) rebalances.push({
         time: bar.time,
         fromAllocation,
         targetAllocation,
@@ -351,7 +473,8 @@ export function runAllocationBacktest(
       if (soldUnits <= tolerance) return;
       cash += soldUnits * fillPrice * (1 - commissionRate);
       units -= soldUnits;
-      rebalances.push({
+      rebalanceCount += 1;
+      if (!summaryOnly) rebalances.push({
         time: bar.time,
         fromAllocation,
         targetAllocation,
@@ -362,8 +485,10 @@ export function runAllocationBacktest(
     }
   };
 
-  for (let index = 0; index < indexedBars.length; index += 1) {
-    const { bar } = indexedBars[index];
+  for (let index = 0; index < selectedBars.length; index += 1) {
+    const bar = selectedBars[index]!;
+    const originalIndex = context.startIndex + index;
+    const currentTimelineState = timelineStateAt(originalIndex);
     const session = sessionMetadata[index]!;
     const sameSessionAsPrevious =
       index > 0 &&
@@ -372,7 +497,9 @@ export function runAllocationBacktest(
       !intraday ||
       session.barsRemaining > DEFAULT_INTRADAY_ENTRY_CUTOFF_BARS;
     if (index > 0 && (!intraday || sameSessionAsPrevious)) {
-      const nextAllocation = indexedBars[index - 1].target;
+      const nextAllocation = clampAllocation(
+        previousTimelineState?.targetAllocation ?? 0,
+      );
       if (
         Math.abs(nextAllocation - plannedAllocation) > 1e-10 &&
         (nextAllocation <= plannedAllocation || canIncreaseIntraday)
@@ -381,13 +508,16 @@ export function runAllocationBacktest(
           bar,
           bar.open,
           nextAllocation,
-          indexedBars[index - 1].signals,
+          previousTimelineState?.signals ?? [],
         );
         plannedAllocation = nextAllocation;
       }
     }
 
-    for (const execution of indexedBars[index].intrabarExecutions) {
+    const intrabarExecutions = settings.executionPolicy === "next-open"
+      ? []
+      : currentTimelineState.intrabarExecutions;
+    for (const execution of intrabarExecutions) {
       const targetAllocation = clampAllocation(execution.targetAllocation);
       if (
         Number.isFinite(execution.fillPrice) &&
@@ -417,33 +547,102 @@ export function runAllocationBacktest(
 
     const currentEquity = cash + units * bar.close;
     peak = Math.max(peak, currentEquity);
-    equity.push({
-      time: bar.time,
-      equity: currentEquity,
-      drawdown: peak === 0 ? 0 : ((currentEquity - peak) / peak) * 100,
-    });
+    const drawdown = peak === 0 ? 0 : ((currentEquity - peak) / peak) * 100;
+    maxDrawdown = Math.min(maxDrawdown, drawdown);
+    if (!summaryOnly) {
+      equity.push({ time: bar.time, equity: currentEquity, drawdown });
+    }
+    const recordsReturn = intraday ? session.isLast : index > 0;
+    if (recordsReturn) {
+      addOnlineReturn(
+        returnStatistics,
+        currentEquity / previousReturnEquity - 1,
+      );
+    }
+    if (intraday ? session.isLast : true) {
+      previousReturnEquity = currentEquity;
+      if (intraday) sessionCount += 1;
+    }
+    previousTimelineState = currentTimelineState;
   }
 
-  const lastBar = indexedBars[indexedBars.length - 1].bar;
+  const lastBar = selectedBars.at(-1)!;
   const finalEquity = cash + units * lastBar.close;
 
+  const performance = summaryOnly
+    ? summarizePerformanceOnline(
+        finalEquity,
+        selectedBars[0]!,
+        selectedBars.at(-1)!,
+        sessionCount,
+        maxDrawdown,
+        onlineSharpe(returnStatistics),
+        rebalanceCount,
+        calculateBenchmarkReturn(selectedBars, settings),
+        settings,
+      )
+    : summarizePerformance(
+        finalEquity,
+        equity,
+        selectedBars,
+        rebalanceCount,
+        settings,
+      );
   return {
-    ...summarizePerformance(
-      finalEquity,
-      equity,
-      indexedBars.map(({ bar }) => bar),
-      rebalances.length,
-      settings,
-    ),
+    ...performance,
     rebalances,
     openingPosition:
       openingAllocation > 0
         ? {
-            time: firstIndexedBar.bar.time,
-            price: firstIndexedBar.bar.open,
+            time: firstBar.time,
+            price: firstBar.open,
             allocation: openingAllocation,
           }
         : null,
+  };
+}
+
+function summarizePerformanceOnline(
+  finalCash: number,
+  firstBar: MarketBar,
+  lastBar: MarketBar,
+  sessionCount: number,
+  maxDrawdown: number,
+  sharpe: number,
+  tradeCount: number,
+  benchmarkReturn: number,
+  settings: BacktestSettings,
+): BacktestPerformance {
+  const initialCash = Math.max(settings.initialCash, 1);
+  const totalReturn = ((finalCash - initialCash) / initialCash) * 100;
+  const intraday = settings.interval !== "1d";
+  const elapsedYears = intraday
+    ? sessionCount / 252
+    : (lastBar.timestamp - firstBar.timestamp) /
+      (365.25 * 24 * 60 * 60 * 1000);
+  const annualizedReturn =
+    elapsedYears > 0
+      ? (Math.pow(
+          Math.max(finalCash / initialCash, 0.0001),
+          1 / elapsedYears,
+        ) -
+          1) *
+        100
+      : totalReturn;
+  const score =
+    totalReturn * 0.45 +
+    Math.max(Math.min(sharpe, 5), -5) * 8 +
+    maxDrawdown * 0.35;
+  return {
+    totalReturn,
+    annualizedReturn,
+    benchmarkReturn,
+    maxDrawdown,
+    sharpe,
+    tradeCount,
+    finalEquity: finalCash,
+    score,
+    equity: [],
   };
 }
 
@@ -509,22 +708,16 @@ export function runBacktestFromTarget(
   const effectiveTarget = fullOrders
     ? fullTarget
     : applyMovingAverageSlopeEntryFilter(fullTarget, entryAllowed);
-  const indexedBars = allBars
-    .map((bar, index) => ({
-      bar,
-      originalIndex: index,
-      target: (effectiveTarget[index] ?? 0) > 0 ? 1 : 0,
-      orders: fullOrders?.[index],
-    }))
-    .filter(({ bar }) => filterRange([bar], settings.startTime, settings.endTime).length);
-
-  if (indexedBars.length < 3) {
+  const context =
+    settings.executionContext?.bars === allBars
+      ? settings.executionContext
+      : createBacktestExecutionContext(allBars, settings);
+  const selectedBars = context.selectedBars;
+  if (selectedBars.length < 3) {
     throw new Error("Backtest requires at least three bars in the selected range");
   }
   const intraday = settings.interval !== "1d";
-  const sessionMetadata = buildIntradaySessionMetadata(
-    indexedBars.map(({ bar }) => bar),
-  );
+  const sessionMetadata = context.sessionMetadata;
 
   let cash = Math.max(settings.initialCash, 1);
   let units = 0;
@@ -534,9 +727,22 @@ export function runBacktestFromTarget(
   let inheritedPosition = false;
   const commissionRate = Math.max(settings.commissionRate, 0);
   const slippageRate = Math.max(settings.slippageRate, 0);
+  const summaryOnly = Boolean(settings.summaryOnly);
   let peak = cash;
   const trades: BacktestTrade[] = [];
   const equity: EquityPoint[] = [];
+  let tradeCount = 0;
+  let winningTradeCount = 0;
+  let grossProfit = 0;
+  let grossLoss = 0;
+  let maxDrawdown = 0;
+  let previousReturnEquity = Math.max(settings.initialCash, 1);
+  let sessionCount = 0;
+  const returnStatistics: OnlineReturnStatistics = {
+    count: 0,
+    mean: 0,
+    m2: 0,
+  };
 
   const closePosition = (
     marketPrice: number,
@@ -550,13 +756,21 @@ export function runBacktestFromTarget(
     const fee = proceeds * commissionRate;
     cash += proceeds - fee;
     if (!inheritedPosition) {
-      trades.push({
+      const returnPercent =
+        ((proceeds - fee - entryCost) / Math.max(entryCost, 1)) * 100;
+      tradeCount += 1;
+      if (returnPercent > 0) {
+        winningTradeCount += 1;
+        grossProfit += returnPercent;
+      } else if (returnPercent < 0) {
+        grossLoss += Math.abs(returnPercent);
+      }
+      if (!summaryOnly) trades.push({
         entryTime,
         exitTime,
         entryPrice,
         exitPrice: fillPrice,
-        returnPercent:
-          ((proceeds - fee - entryCost) / Math.max(entryCost, 1)) * 100,
+        returnPercent,
         exitReason,
       });
     }
@@ -580,22 +794,24 @@ export function runBacktestFromTarget(
     inheritedPosition = false;
   };
 
-  const firstIndexedBar = indexedBars[0];
-  const priorTargetIndex = firstIndexedBar.originalIndex - 1;
+  const firstBar = selectedBars[0]!;
+  const priorTargetIndex = context.startIndex - 1;
   if (
     !intraday &&
     priorTargetIndex >= 0 &&
     (effectiveTarget[priorTargetIndex] ?? 0) > 0
   ) {
-    entryPrice = firstIndexedBar.bar.open;
+    entryPrice = firstBar.open;
     entryCost = cash;
-    units = cash / firstIndexedBar.bar.open;
+    units = cash / firstBar.open;
     cash = 0;
     inheritedPosition = true;
   }
 
-  for (let index = 0; index < indexedBars.length; index += 1) {
-    const { bar, orders, originalIndex } = indexedBars[index];
+  for (let index = 0; index < selectedBars.length; index += 1) {
+    const bar = selectedBars[index]!;
+    const originalIndex = context.startIndex + index;
+    const orders = fullOrders?.[originalIndex];
     const session = sessionMetadata[index]!;
     const sameSessionAsPrevious =
       index > 0 &&
@@ -623,7 +839,7 @@ export function runBacktestFromTarget(
         }
       }
     } else if (index > 0 && (!intraday || sameSessionAsPrevious)) {
-      const priorTarget = indexedBars[index - 1].target;
+      const priorTarget = (effectiveTarget[originalIndex - 1] ?? 0) > 0 ? 1 : 0;
       if (priorTarget === 1 && units === 0 && canEnterIntraday) {
         openPosition(bar.open, bar.time);
       } else if (priorTarget === 0 && units > 0) {
@@ -637,39 +853,53 @@ export function runBacktestFromTarget(
 
     const currentEquity = cash + units * bar.close;
     peak = Math.max(peak, currentEquity);
-    equity.push({
-      time: bar.time,
-      equity: currentEquity,
-      drawdown: peak === 0 ? 0 : ((currentEquity - peak) / peak) * 100,
-    });
+    const drawdown = peak === 0 ? 0 : ((currentEquity - peak) / peak) * 100;
+    maxDrawdown = Math.min(maxDrawdown, drawdown);
+    if (!summaryOnly) {
+      equity.push({ time: bar.time, equity: currentEquity, drawdown });
+    }
+    const recordsReturn = intraday ? session.isLast : index > 0;
+    if (recordsReturn) {
+      addOnlineReturn(
+        returnStatistics,
+        currentEquity / previousReturnEquity - 1,
+      );
+    }
+    if (intraday ? session.isLast : true) {
+      previousReturnEquity = currentEquity;
+      if (intraday) sessionCount += 1;
+    }
   }
 
-  const lastBar = indexedBars[indexedBars.length - 1].bar;
+  const lastBar = selectedBars.at(-1)!;
   const finalEquity = cash + units * lastBar.close;
 
-  const winningTrades = trades.filter((trade) => trade.returnPercent > 0);
-  const losingTrades = trades.filter((trade) => trade.returnPercent < 0);
-  const grossProfit = winningTrades.reduce(
-    (sum, trade) => sum + trade.returnPercent,
-    0,
-  );
-  const grossLoss = Math.abs(
-    losingTrades.reduce((sum, trade) => sum + trade.returnPercent, 0),
-  );
-  const performance = summarizePerformance(
-    finalEquity,
-    equity,
-    indexedBars.map(({ bar }) => bar),
-    trades.length,
-    settings,
-  );
+  const performance = summaryOnly
+    ? summarizePerformanceOnline(
+        finalEquity,
+        selectedBars[0]!,
+        selectedBars.at(-1)!,
+        sessionCount,
+        maxDrawdown,
+        onlineSharpe(returnStatistics),
+        tradeCount,
+        calculateBenchmarkReturn(selectedBars, settings),
+        settings,
+      )
+    : summarizePerformance(
+        finalEquity,
+        equity,
+        selectedBars,
+        tradeCount,
+        settings,
+      );
 
   return {
     strategyId,
     parameters,
     ...performance,
     winRate:
-      trades.length === 0 ? 0 : (winningTrades.length / trades.length) * 100,
+      tradeCount === 0 ? 0 : (winningTradeCount / tradeCount) * 100,
     profitFactor:
       grossLoss === 0 ? (grossProfit > 0 ? 99 : 0) : grossProfit / grossLoss,
     trades,

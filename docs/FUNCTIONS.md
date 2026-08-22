@@ -407,16 +407,19 @@
 - `buildStrategyPlanTimeline(...)`: rejects duplicate or declared equivalent
   strategy IDs and builds an aligned allocation timeline. One leg is direct;
   two legs retain the relative core/tactical state machine and causal intrabar
-  executions. Three-to-five legs use normalized allocation values as judgment
-  weights and return only a binary 0%/100% portfolio target. Entry requires a
-  strict active-strategy majority and at least 60% active weight; exit occurs at
-  40% or less active weight or when fewer than half the legs remain active. The
-  intermediate band holds the prior state. Individual intrabar leg fills do not
-  become portfolio executions for these consensus plans.
+  executions. Three-to-nine legs select the longest-duration target as a 60%
+  core gate and normalize all remaining allocation values as tactical judgment
+  weights. Tactical support and hysteresis select 60%, 80%, or 100%; an inactive
+  core selects 0%. A causal fast/slow true-range ratio caps exposure at 80%, 60%,
+  or 0% during volatility stress, with immediate tightening and two-bar recovery.
+  Individual intrabar leg fills do not become separate portfolio executions.
 - `buildStrategyPlanTarget(...)`: returns the target portion of the same
   timeline contract.
 - `buildLiveAllocationGuidance(...)`: reports the newest previous/target
-  allocation and increase, reduce, hold, or wait action.
+  allocation and increase, reduce, hold, or wait action, plus core state,
+  tactical support, and the current volatility risk cap.
+- `buildMultiStrategyVolatilityRiskCaps(...)`: builds causal per-bar exposure
+  caps from 5-versus-20-bar EWMA true-range pressure. It uses no future bars.
 - `MarketWorkspace.applyCurrentStrategyToChart()`: clones the current lab draft
   into the applied chart plan and moves the viewport to the trend chart.
   Draft selector/parameter edits do not alter chart lines, markers, or latest
@@ -465,21 +468,25 @@
   results independently for each strategy count, with one best result per
   unordered strategy-ID set. Three-through-nine-leg search retains the top 16
   intermediate parent/finalist candidates for each Strategy A primary at every
-  level, while final result categories separately retain at most five rows per
-  primary and 30 total. The current registry creates 1,594 strategy-ID pairs,
+  level, while final result categories separately retain at most three rows per
+  primary and 30 total. Intermediate pools use cached unordered-set keys and
+  stable binary insertion; this is result-equivalent to sorting the complete
+  pool after every candidate but avoids that repeated allocation. The current
+  registry creates 1,594 strategy-ID pairs,
   so every pair reaches allocation comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
   are built once from complete loaded history and retained only for finalists.
   Four-through-nine-leg candidate execution then slices those causal targets to
   the scoring window plus one preceding bar; a backward decisive-state scan
-  preserves inherited consensus state without generating out-of-window equity.
+  preserves inherited core-satellite and volatility state without generating
+  per-candidate out-of-window equity.
   Price-order candidates build their order plan once and derive their target
   from that plan instead of also constructing an unused close target. The
   default optimizers yield before their first evaluation, at every stage
   transition, and after every 128 evaluations. Browser cooperative yields are followed by a timer-task
   boundary so progress state is committed and painted before work resumes.
 - `MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY`: hard-caps one Strategy A primary
-  at five rows in each final three-through-nine-strategy result category.
+  at three rows in each final three-through-nine-strategy result category.
 - `MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY`: retains the top 16 intermediate
   candidates for each Strategy A primary at every three-through-nine search
   level before expanding the next strategy count.
@@ -691,3 +698,14 @@ separate guidance card.
   `halfTrend`, `qqeMod`, and `schaffTrendCycle` expose aligned recursive state;
   `sessionVolumeProfile` returns aligned POC/VAH/VAL plus latest-session bins;
   `anchoredVwap` begins HLC3-volume accumulation at an absolute timestamp.
+- `createBacktestExecutionContext(...)`: selects one immutable scoring window
+  and precomputes its intraday session metadata for reuse across candidate
+  backtests.
+- `readScreeningCheckpoint(...)`, `writeScreeningCheckpoint(...)`, and
+  `clearScreeningCheckpoint(...)`: maintain the single device-local,
+  request-fingerprinted optimizer continuation record.
+- `packMarketBars(...)` / `unpackMarketBars(...)`: losslessly convert browser
+  market-bar objects to and from the transferable screening Worker buffer.
+- `createStreamingCombinationTimeline(...)`: produces monotonic allocation,
+  signal, and intrabar states without materializing per-candidate timeline
+  arrays.

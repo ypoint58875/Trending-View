@@ -368,7 +368,7 @@ test("multi-range screening evaluates and equally ranks every selected interval"
     outcome.singleResults[0].screeningValidation?.foldCount,
     2,
   );
-  assert.equal(outcome.singleResults[0].equity[0]?.time, "2006-01-01");
+  assert.equal(outcome.singleResults[0].equity.length, 0);
 });
 
 test("keeps native one-minute ranges exact within the same trading day", () => {
@@ -483,10 +483,7 @@ test("period screening ranks and reports only the selected window", async () => 
       outcome.validationReport.selectionScore <= 100,
   );
   assert.ok(outcome.singleResults.length > 0);
-  assert.equal(
-    outcome.singleResults[0].equity[0]?.time,
-    selectedBars[0].time,
-  );
+  assert.equal(outcome.singleResults[0].equity.length, 0);
   const displayedSingle = outcome.singleResults[0];
   const directSingle = runBacktest(
     bars,
@@ -686,7 +683,7 @@ test("range screening uses one custom interval for selection and metrics", async
     );
   }
   for (const result of outcome.results) {
-    assert.ok(result.equity[0]?.time.startsWith("2005-"));
+    assert.equal(result.equity.length, 0);
     assert.equal(
       result.relativeLongStrategy,
       result.screeningValidation?.rankingPerformance &&
@@ -786,11 +783,11 @@ test("rolling screening equally aggregates configured-window ranks", async () =>
       endTime: "2005-06-01",
     },
   );
-  assert.ok(
-    outcome.validationReport.folds
-      .at(-1)
-      ?.performance.equity[0]?.time.startsWith("2003-"),
-  );
+  const finalFoldPerformance =
+    outcome.validationReport.folds.at(-1)?.performance;
+  assert.ok(finalFoldPerformance);
+  assert.equal(finalFoldPerformance.equity.length, 0);
+  assert.ok(Number.isFinite(finalFoldPerformance.totalReturn));
   assert.ok(
     Math.abs(
       outcome.validationReport.selectionScore -

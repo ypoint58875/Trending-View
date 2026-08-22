@@ -7,6 +7,7 @@ import {
   CandlestickChart,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   Eye,
   EyeOff,
   FlaskConical,
@@ -1297,6 +1298,8 @@ export function MarketWorkspace() {
   const [combinationResults, setCombinationResults] = useState<
     ScreeningCombinationResult[]
   >([]);
+  const [chartResultGroupKey, setChartResultGroupKey] = useState("single");
+  const [chartResultIndex, setChartResultIndex] = useState(0);
   const [strategyAAllocationPercent, setStrategyAAllocationPercent] = useState(
     DEFAULT_STRATEGY_A_ALLOCATION * 100,
   );
@@ -3350,6 +3353,7 @@ export function MarketWorkspace() {
     nextParameters?: StrategyParameters,
     entryFilter?: MovingAverageSlopeFilter | null,
     screeningWindows?: ScreeningDateWindow[],
+    shouldScrollToChart = true,
   ) => {
     const next = getStrategy(nextStrategyId);
     const mergedParameters = {
@@ -3395,7 +3399,7 @@ export function MarketWorkspace() {
         ? { kind: "screening", windows: screeningWindows }
         : { kind: "workspace" },
     );
-    scrollToStrategyChart();
+    if (shouldScrollToChart) scrollToStrategyChart();
   };
 
   const selectStrategyA = (nextStrategyId: StrategyId | "") => {
@@ -3625,6 +3629,7 @@ export function MarketWorkspace() {
   const applyCombinationResult = (
     result: StrategyCombinationResult,
     screeningWindows?: ScreeningDateWindow[],
+    shouldScrollToChart = true,
   ) => {
     setStrategyAId(result.strategyAId);
     setStrategyAParameters({ ...result.strategyAParameters });
@@ -3663,7 +3668,7 @@ export function MarketWorkspace() {
         ? { kind: "screening", windows: screeningWindows }
         : { kind: "workspace" },
     );
-    scrollToStrategyChart();
+    if (shouldScrollToChart) scrollToStrategyChart();
   };
 
   const selectStrategyCAllocation = (nextStrategyCAllocation: number) => {
@@ -4772,6 +4777,7 @@ export function MarketWorkspace() {
         validationConfig,
         {
           objective: runObjective,
+          checkpointNamespace: `${canonicalMarketInstrumentKey(series.instrument)}:${researchInterval}`,
           entryFilters: screeningEntryFilterDraft.enabled
             ? buildScreeningMovingAverageSlopeFilters()
             : undefined,
@@ -5085,6 +5091,11 @@ export function MarketWorkspace() {
         activeStrategyCount: number;
         activeWeight: number;
         exitSupportCount: number;
+        coreActive: boolean;
+        tacticalStrategyCount: number;
+        activeTacticalStrategyCount: number;
+        tacticalSupport: number;
+        volatilityRiskCap: number;
         orderPrices: Array<{
           slot: string;
           entryPrice: number | null;
@@ -5147,6 +5158,12 @@ export function MarketWorkspace() {
             activeStrategyCount: allocation.activeStrategyCount,
             activeWeight: allocation.activeWeight,
             exitSupportCount: allocation.exitSupportCount,
+            coreActive: allocation.coreActive,
+            tacticalStrategyCount: allocation.tacticalStrategyCount,
+            activeTacticalStrategyCount:
+              allocation.activeTacticalStrategyCount,
+            tacticalSupport: allocation.tacticalSupport,
+            volatilityRiskCap: allocation.volatilityRiskCap,
             orderPrices,
           });
         } catch {
@@ -5401,6 +5418,85 @@ export function MarketWorkspace() {
       ] as const;
     }),
   );
+  const chartResultGroups = [
+    {
+      key: "single",
+      title: copy.screening.singleResultsTitle,
+      kind: "single" as const,
+      results: screenResults,
+    },
+    ...Array.from({ length: 8 }, (_, index) => {
+      const strategyCount = index + 2;
+      const titles = [
+        copy.screening.dualResultsTitle,
+        copy.screening.tripleResultsTitle,
+        copy.screening.quadrupleResultsTitle,
+        copy.screening.quintupleResultsTitle,
+        copy.screening.sextupleResultsTitle,
+        copy.screening.septupleResultsTitle,
+        copy.screening.octupleResultsTitle,
+        copy.screening.nonupleResultsTitle,
+      ];
+      return {
+        key: String(strategyCount),
+        title: titles[index]!,
+        kind: "combination" as const,
+        results: combinationResultsByCount.get(strategyCount) ?? [],
+      };
+    }),
+  ];
+  const availableChartResultGroups = chartResultGroups.filter(
+    (group) => group.results.length > 0,
+  );
+  const selectedChartResultGroup =
+    availableChartResultGroups.find(
+      (group) => group.key === chartResultGroupKey,
+    ) ?? availableChartResultGroups[0] ?? null;
+  const selectedChartResultIndex = selectedChartResultGroup
+    ? Math.min(chartResultIndex, selectedChartResultGroup.results.length - 1)
+    : 0;
+  const selectedChartResult = selectedChartResultGroup
+    ? selectedChartResultGroup.results[selectedChartResultIndex]
+    : null;
+  const selectedChartResultName = !selectedChartResult
+    ? ""
+    : "strategyId" in selectedChartResult
+      ? copy.strategies[selectedChartResult.strategyId].name
+      : copy.strategies[selectedChartResult.strategyAId].name;
+  const selectedChartResultTitle = !selectedChartResult
+    ? ""
+    : "strategyId" in selectedChartResult
+      ? selectedChartResultName
+      : strategyPlanPresentation(
+          combinationResultPlan(selectedChartResult),
+          selectedChartResult.relativeLongStrategy,
+        ).fullName;
+  const applyChartResult = (
+    group: (typeof chartResultGroups)[number],
+    index: number,
+  ) => {
+    const result = group.results[index];
+    if (!result) return;
+    setChartResultGroupKey(group.key);
+    setChartResultIndex(index);
+    if (group.kind === "single") {
+      const single = result as ScreeningSingleResult;
+      applySingleStrategy(
+        single.strategyId,
+        single.parameters,
+        single.entryFilter,
+        resolveScreeningResultChartWindows(single, validationReport),
+        false,
+      );
+      return;
+    }
+    const combination = result as ScreeningCombinationResult;
+    applyCombinationResult(
+      combination,
+      resolveScreeningResultChartWindows(combination, validationReport),
+      false,
+    );
+  };
 
   return (
     <main className="workspace-shell">
@@ -5931,6 +6027,69 @@ export function MarketWorkspace() {
                </div>
              )}
            </div>
+          {selectedChartResultGroup && selectedChartResult && (
+            <nav
+              className="chart-result-navigator"
+              aria-label={copy.screening.resultNavigator}
+            >
+              <label>
+                <span>{copy.screening.resultGroup}</span>
+                <select
+                  value={selectedChartResultGroup.key}
+                  onChange={(event) => {
+                    const group = availableChartResultGroups.find(
+                      (candidate) => candidate.key === event.target.value,
+                    );
+                    if (group) applyChartResult(group, 0);
+                  }}
+                >
+                  {availableChartResultGroups.map((group) => (
+                    <option key={group.key} value={group.key}>
+                      {group.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                disabled={selectedChartResultIndex === 0}
+                onClick={() =>
+                  applyChartResult(
+                    selectedChartResultGroup,
+                    selectedChartResultIndex - 1,
+                  )
+                }
+                aria-label={copy.screening.previousResult}
+                title={copy.screening.previousResult}
+              >
+                <ChevronUp size={15} />
+              </button>
+              <strong title={selectedChartResultTitle}>
+                {selectedChartResultName} · #{selectedChartResultIndex + 1}
+              </strong>
+              <span>
+                {selectedChartResultIndex + 1}/
+                {selectedChartResultGroup.results.length}
+              </span>
+              <button
+                type="button"
+                disabled={
+                  selectedChartResultIndex >=
+                  selectedChartResultGroup.results.length - 1
+                }
+                onClick={() =>
+                  applyChartResult(
+                    selectedChartResultGroup,
+                    selectedChartResultIndex + 1,
+                  )
+                }
+                aria-label={copy.screening.nextResult}
+                title={copy.screening.nextResult}
+              >
+                <ChevronDown size={15} />
+              </button>
+            </nav>
+          )}
         </section>
 
         <aside className="saved-shortcuts-panel panel">
@@ -6601,24 +6760,26 @@ export function MarketWorkspace() {
                                       {shortcutGuidance.strategyCount >= 3 ? (
                                         <>
                                           <small>
-                                            <span>{copy.savedBacktests.currentConsensus}：</span>
+                                            <span>{copy.savedBacktests.currentPosition}：</span>
                                             <b className={`position-value ${shortcutGuidance.targetAllocation > 0 ? "positive" : "negative"}`}>
-                                              {shortcutGuidance.targetAllocation > 0
-                                                ? copy.savedBacktests.holdingConsensus
-                                                : copy.savedBacktests.flatConsensus}
+                                              {Math.round(shortcutGuidance.targetAllocation * 100)}%
                                             </b>
                                           </small>
                                           <small>
                                             <span>{copy.savedBacktests.supportStrength}：</span>
-                                            <b>{shortcutGuidance.activeStrategyCount}/{shortcutGuidance.strategyCount} · {copy.savedBacktests.supportWeight} {Math.round(shortcutGuidance.activeWeight * 100)}%</b>
+                                            <b>{shortcutGuidance.activeTacticalStrategyCount}/{shortcutGuidance.tacticalStrategyCount} · {copy.savedBacktests.supportWeight} {Math.round(shortcutGuidance.tacticalSupport * 100)}%</b>
                                           </small>
                                           <small>
                                             <span>{copy.savedBacktests.currentAction}：</span>
                                             <b>
                                               {shortcutGuidance.action === "increase"
-                                                ? copy.savedBacktests.establishPosition
+                                                ? shortcutGuidance.targetAllocation >= 1
+                                                  ? copy.savedBacktests.establishPosition
+                                                  : copy.savedBacktests.increasePosition
                                                 : shortcutGuidance.action === "reduce"
-                                                  ? copy.savedBacktests.clearPosition
+                                                  ? shortcutGuidance.targetAllocation <= 0
+                                                    ? copy.savedBacktests.clearPosition
+                                                    : copy.savedBacktests.reducePosition
                                                   : shortcutGuidance.targetAllocation > 0
                                                     ? copy.savedBacktests.continueHolding
                                                     : copy.savedBacktests.continueWaiting}
@@ -6626,7 +6787,7 @@ export function MarketWorkspace() {
                                           </small>
                                           <small>
                                             <span>{copy.savedBacktests.exitCondition}：</span>
-                                            <b>{copy.savedBacktests.supportWeight} ≤ 40% {copy.savedBacktests.insufficientStrategies} {shortcutGuidance.exitSupportCount} {copy.savedBacktests.strategyUnit}</b>
+                                            <b>{shortcutGuidance.coreActive ? copy.savedBacktests.coreHolding : copy.savedBacktests.coreFlat} · {copy.savedBacktests.volatilityCap} {Math.round(shortcutGuidance.volatilityRiskCap * 100)}%</b>
                                           </small>
                                         </>
                                       ) : (

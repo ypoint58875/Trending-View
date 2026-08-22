@@ -942,3 +942,23 @@ longest-duration leg only as a stable primary reference for display and identity
 This decision supersedes D-046's independent-sleeve execution semantics for
 plans with three or more strategies; its staged search and persistence choices
 remain in force.
+
+## D-048: Core-satellite multi-strategy exposure
+
+Replace D-047's binary execution for three-through-nine-leg plans with one
+horizon-selected core and one aggregated tactical sleeve. The longest average
+active-run strategy is the core gate. An inactive core targets 0%; an active
+core retains a 60% floor and the remaining strategies' normalized judgment
+weight selects 60%, 80%, or 100%. Outer 30%/70% thresholds choose the base or
+full target, while 40%/60% hold bands create a no-trade region.
+
+Apply a causal fast/slow true-range stress ratio as an exposure cap. Elevated,
+high, and severe stress cap the target at 80%, 60%, and 0%. Tightening applies
+immediately so a plan may reduce or clear in one transaction; loosening needs
+two completed bars. Close-derived target changes continue to execute at the
+next open. Keep the existing weight grids as tactical judgment weights and do
+not add positioning parameters to screening. Version Worker checkpoints and
+the latest-result cache so binary-consensus state cannot mix with this model.
+
+This decision supersedes D-047's 0%/100% execution rule. Its single-decision,
+non-independent-sleeve design and staged candidate search remain in force.

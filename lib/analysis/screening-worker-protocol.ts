@@ -11,16 +11,21 @@ import type {
 } from "./screening-validation";
 import type { MovingAverageSlopeFilter } from "./entry-filter";
 import type { StrategyId } from "./strategies";
-import type { MarketBar, MarketInterval } from "@/lib/market/types";
+import type { MarketInterval } from "@/lib/market/types";
+import type { PackedMarketBars } from "./screening-worker-bars";
 
 export interface ScreeningWorkerRunRequest {
   type: "run";
   requestId: string;
-  bars: MarketBar[];
+  bars: PackedMarketBars;
   settings: Omit<BacktestSettings, "interval"> & {
     interval: MarketInterval;
   };
   config: ScreeningValidationConfig;
+  checkpoint: {
+    key: string;
+    signature: string;
+  };
   options: {
     objective?: ScreeningObjective;
     entryFilters?: MovingAverageSlopeFilter[];
@@ -38,6 +43,10 @@ export type ScreeningWorkerRequest =
   | ScreeningWorkerCancelRequest;
 
 export type ScreeningWorkerResponse =
+  | {
+      type: "restart";
+      requestId: string;
+    }
   | {
       type: "optimization-progress";
       requestId: string;

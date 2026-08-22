@@ -1,5 +1,45 @@
 # Technical Research
 
+## 2026-08-22 core-satellite positioning with volatility risk caps
+
+### Sources
+
+- Moreira and Muir, *Volatility Managed Portfolios*, NBER Working Paper 22208,
+  checked 2026-08-22. The paper finds that reducing risk when volatility is high
+  can improve risk-adjusted outcomes because expected return does not generally
+  rise in proportion to volatility. <https://www.nber.org/papers/w22208>
+- Gennotte and Jung, *Investment Strategies under Transaction Costs: The Finite
+  Horizon Case*, Management Science 40(3), checked 2026-08-22. The paper
+  describes a no-transaction region and trading to a boundary only after the
+  portfolio leaves that region.
+  <https://pubsonline.informs.org/doi/10.1287/mnsc.40.3.385>
+- Muhle-Karbe, Reppen, and Soner, *A Primer on Portfolio Choice with Small
+  Transaction Costs*, checked 2026-08-22. The survey develops the same
+  no-trade-region principle for proportional costs.
+  <https://arxiv.org/abs/1612.01302>
+
+### Compared approaches
+
+1. Keep binary weighted consensus and change only its entry/exit thresholds.
+   This remains low-turnover but cannot retain a long-cycle core while tactical
+   evidence weakens.
+2. Give every strategy an independently tradable sleeve. This reflects every
+   signal but turns short-cycle disagreement into frequent small rebalances.
+3. Use one horizon-selected core plus one aggregated tactical sleeve, discrete
+   exposure levels, hysteresis bands, and a causal volatility cap. This permits
+   immediate large risk changes without trading on every individual signal.
+
+### Decision
+
+Use option 3 for three-through-nine-leg plans. The longest average active-run
+leg is the core gate. When it is inactive the target is zero; when active the
+core floor is 60%, while normalized non-core judgment weight selects 60%, 80%,
+or 100% through 30%/70% outer thresholds and 40%/60% hold bands. A causal
+5-versus-20-bar EWMA true-range ratio caps exposure at 80%, 60%, or 0% under
+elevated, high, or severe volatility. Risk reductions apply immediately;
+loosening a cap requires two consecutive completed bars. This is a fixed
+execution policy, not another screening grid, so candidate counts do not grow.
+
 ## 2026-08-21 resumable screening checkpoints
 
 ### Sources
@@ -2457,3 +2497,50 @@ Primary research references:
   Asset Allocation*: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3099895
 - *Grammatical Evolution-based ensembles for algorithmic trading*:
   https://doi.org/10.1016/j.asoc.2019.105713
+# 2026-08-22 OOM-safe screening and optimizer checkpoints
+
+The one-click optimizer was allocating a complete equity object for every bar
+of every candidate, rebuilding the same selected-bar/session index on every
+replay, and retaining complete fold results during validation. The dedicated
+Worker reduced main-thread blocking but did not reduce the Worker's heap.
+
+Two memory approaches were compared:
+
+1. Reduce pair and higher-order finalist limits. This lowers work, but changes
+   the search space and can change the winning strategy. It was rejected.
+2. Preserve every candidate and execution rule, but run discovery with online
+   return/drawdown statistics, reuse one execution context per scoring window,
+   retain scalar fold evidence, and materialize complete chart/trade details
+   only for displayed finalists. This preserves the optimization space and was
+   selected.
+
+Two recovery approaches were also compared:
+
+1. Save progress counters and restart the current stage from zero. This is
+   small, but is not a real continuation and repeats expensive work.
+2. Save the optimizer's compact finalist maps, pair/group finalists, retained
+   results, and exact stage ordinal in IndexedDB. On restart, validate a
+   fingerprint covering instrument namespace, every input bar, settings,
+   validation mode, objective, filters, and exclusions; replay only the cheap
+   deterministic loop structure and skip every completed evaluation. This was
+   selected. One record is atomically overwritten during progress, retained on
+   cancellation/failure, and deleted after successful completion.
+
+IndexedDB is available inside Web Workers and stores structured-cloneable
+objects transactionally. Worker messages also use structured cloning, so the
+checkpoint deliberately omits the reconstructible market execution context
+and all equity/trade/rebalance arrays.
+
+Primary references accessed 2026-08-22:
+
+- https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API
+- https://developer.mozilla.org/en-US/docs/Web/API/WorkerGlobalScope/indexedDB
+- https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Structured_clone_algorithm
+- https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction
+- https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects
+
+Follow-up implementation selected a structure-of-arrays `Float64Array`
+transport, monotonic timeline readers, sparse order-event maps, compact result
+messages, streaming Fold rank accumulation, and one Worker lifetime per
+completed optimization stage. These are exact execution/storage changes; no
+candidate, pair, allocation, or higher-order finalist limit is reduced.

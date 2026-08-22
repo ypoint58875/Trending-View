@@ -206,12 +206,15 @@ trades or run unattended jobs.
   complete execution state for `3 x 3` pair replay.
 - Four-through-nine-strategy screening reuses full-history causal strategy
   targets but executes each repeated combination only across the selected
-  scoring window plus one preceding bar. Its inherited consensus state is
-  resolved from pre-window support without rebuilding a full historical equity
-  curve for every candidate.
-- Screening runs in a dedicated module Web Worker. Indicator, target, and
-  execution arrays are reused only inside that run; completed results are not
-  reused as a calculation cache. The latest completed full result is kept in a
+  scoring window plus one preceding bar. Its streaming core-satellite state and
+  causal volatility cap advance from complete history, preserving inherited
+  exposure without building an equity curve for every candidate.
+- Screening runs in stage-isolated module Web Workers. Each completed stage
+  writes a compact continuation checkpoint and the next stage starts in a fresh
+  Worker heap. Binary targets and sparse order events remain internal; ranked
+  result messages omit chart/trade detail and applying a row regenerates it.
+  Completed results are not reused as a calculation cache. The latest completed
+  compact result is kept in a
   single device-local IndexedDB record so the matching instrument and interval
   can restore its tables after refresh; the next run replaces that record.
 - Every completed run writes a compact audit archive containing source,
@@ -262,17 +265,20 @@ trades or run unattended jobs.
   lacks enough recent executions. Exact and same-type shortcut matches are
   labelled with parameter/allocation/filter differences.
 - Pair winners seed bounded forward expansion through three-to-nine-strategy
-  consensus candidates. Every strategy-count category retains at most 30, and
-  three-to-nine-strategy categories retain at most five results with the same
+  core-satellite candidates. Every strategy-count category retains at most 30, and
+  three-to-nine-strategy categories retain at most three results with the same
   Strategy A primary. Staged search is deliberately wider: every primary keeps
   its top 16 intermediate candidates at each three-to-nine-strategy level for
-  the next expansion. The five-result cap is applied only to final display, so
-  a strong parent is not removed merely because five same-primary variants
+  the next expansion. The three-result cap is applied only to final display, so
+  a strong parent is not removed merely because three same-primary variants
   already rank above it.
   Three-to-nine-strategy result rows use the concise
-  `Strategy A name · N-strategy consensus` label, keep the remaining strategy
+  `Strategy A name · N-strategy layered` label, keep the remaining strategy
   names in a compact two-line summary, and omit per-leg parameters; full names
   remain available through accessible labels and hover text.
+- A compact result navigator below the chart selects the single- through
+  nine-strategy result group and moves through adjacent ranked results without
+  duplicating the full result tables.
 - A post-screening primary/deputy shortlist combines the standalone and
   combination result pools. The highest eligible candidate under the selected
   objective becomes the primary strategy. Up to two deputies must share no

@@ -626,8 +626,35 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     screeningWorkerClient,
     /type: "cancel",[\s\S]*?worker\.postMessage\(cancelRequest\)/,
   );
+  assert.match(screeningWorkerClient, /response\.type === "restart"/);
+  assert.match(
+    screeningWorkerClient,
+    /worker\.postMessage\(request, \[request\.bars\.values\.buffer\]\)/,
+  );
   assert.match(screeningWorker, /runScreeningWithValidation/);
   assert.match(screeningWorker, /const controller = new AbortController\(\)/);
+  assert.match(screeningWorker, /stageRestartRequested/);
+  assert.match(combinations, /createStreamingCombinationTimeline/);
+  assert.match(combinations, /Uint8Array\.from/);
+  assert.match(combinations, /MULTI_STRATEGY_CORE_ALLOCATION = 0\.6/);
+  assert.match(combinations, /buildMultiStrategyVolatilityRiskCaps/);
+  assert.match(combinations, /resolveCoreSatelliteTarget/);
+  assert.match(
+    screeningWorkerClient,
+    /positioningModelVersion: SCREENING_POSITIONING_MODEL_VERSION/,
+  );
+  assert.match(
+    screeningWorkerClient,
+    /resultModelVersion: SCREENING_RESULT_MODEL_VERSION/,
+  );
+  assert.match(combinations, /getCombinationResultIndex/);
+  assert.match(combinations, /removeWorstCombinationResult/);
+  assert.doesNotMatch(combinations, /combinationStrategySetKeyCache/);
+  assert.match(combinations, /entryFilterCandidatesByStrategy\.clear\(\)/);
+  assert.match(
+    combinations,
+    /canDiscardOrderFills[\s\S]*?orderFills: new Map\(\)/,
+  );
   assert.doesNotMatch(workspace, /await yieldForScreening\(\)/);
   assert.match(strategies, /"donchian-intrabar"/);
   assert.match(strategies, /"supertrend-stop"/);
@@ -727,7 +754,7 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /copy\.combinationScreening\.strategyGroup/);
   assert.match(workspace, /resultPresentation\.shortName/);
   assert.match(workspace, /className="multi-strategy-other-names"/);
-  assert.match(locale, /consensusShortName: "\{name\} · \{count\}策共识"/);
+  assert.match(locale, /consensusShortName: "\{name\} · \{count\}策分层"/);
   assert.match(locale, /"multi-range": "\u591a\u5468\u671f\u7b5b\u9009"/);
   assert.doesNotMatch(locale, /\u591a\u5468\u671f\u56de\u6d4b/);
   assert.ok((workspace.match(/className="strategy-name-line"/g)?.length ?? 0) >= 3);
@@ -802,6 +829,16 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /clearLatestScreeningResult\(\)/);
   assert.match(screeningResultCache, /quantscope-screening-result/);
   assert.match(screeningResultCache, /LATEST_RESULT_KEY = "latest"/);
+  assert.match(
+    screeningResultCache,
+    /result\?\.positioningModelVersion === SCREENING_POSITIONING_MODEL_VERSION/,
+  );
+  assert.match(
+    screeningResultCache,
+    /result\.resultModelVersion === SCREENING_RESULT_MODEL_VERSION/,
+  );
+  assert.match(workspace, /shortcutGuidance\.tacticalSupport/);
+  assert.match(workspace, /shortcutGuidance\.volatilityRiskCap/);
   assert.match(
     workspace,
     /intervalResearchSnapshotsRef\.current\[researchInterval\]\s*=\s*captureIntervalResearchSnapshot\(\)/,
@@ -917,6 +954,17 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     /const strategyRoleLabel = \(slot: StrategySlot\)[\s\S]{0,500}resultGroup\.strategyCount >= 3[\s\S]{0,300}copy\.combinationScreening\.primarySignal[\s\S]{0,150}copy\.combinationScreening\.supportingSignal[\s\S]{0,250}copy\.strategyHorizons\.long[\s\S]{0,100}copy\.strategyHorizons\.short/,
   );
   assert.match(workspace, /className="saved-shortcuts-save"/);
+  assert.match(workspace, /className="chart-result-navigator"/);
+  assert.match(
+    workspace,
+    /availableChartResultGroups[\s\S]*?copy\.screening\.previousResult[\s\S]*?copy\.screening\.nextResult/,
+  );
+  assert.match(
+    workspace,
+    /const applyChartResult = \([\s\S]*?applySingleStrategy\([\s\S]*?false[\s\S]*?applyCombinationResult\([\s\S]*?false/,
+  );
+  assert.match(styles, /\.chart-result-navigator\s*\{/);
+  assert.match(locale, /resultNavigator: "回测结果快捷导航"/);
   assert.match(workspace, /className="saved-shortcut-group-delete"/);
   assert.match(workspace, /copy\.savedBacktests\.removeGroupConfirm/);
   assert.doesNotMatch(workspace, /copy\.savedBacktests\.rankHistory/);

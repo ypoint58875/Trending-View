@@ -3,6 +3,7 @@ import type {
   MarketInterval,
 } from "@/lib/market/types";
 import {
+  createBacktestExecutionContext,
   runBacktest,
   type BacktestPerformance,
   type BacktestResult,
@@ -740,6 +741,11 @@ async function evaluateFrozenCandidates(
   failedCount: number;
   cancelled: boolean;
 }> {
+  settings = { ...settings, summaryOnly: true };
+  settings = {
+    ...settings,
+    executionContext: createBacktestExecutionContext(bars, settings),
+  };
   const total = singleResults.length + combinationResults.length;
   const evaluatedSingles: ScreeningSingleResult[] = [];
   const evaluatedCombinations: ScreeningCombinationResult[] = [];
@@ -811,20 +817,6 @@ async function evaluateFrozenCandidates(
     failedCount,
     cancelled: Boolean(signal?.aborted),
   };
-}
-
-function findEvaluatedCandidate(
-  key: string,
-  singleResults: readonly ScreeningSingleResult[],
-  combinationResults: readonly ScreeningCombinationResult[],
-): ScreeningSingleResult | ScreeningCombinationResult | null {
-  return (
-    singleResults.find((result) => singleKey(result) === key) ??
-    combinationResults.find(
-      (result) => combinationKey(result) === key,
-    ) ??
-    null
-  );
 }
 
 function candidateKey(
@@ -1104,6 +1096,32 @@ async function runRangeValidation(
   };
 }
 
+function evaluateCandidatePerformance(
+  bars: MarketBar[],
+  settings: BacktestSettings,
+  result: BacktestResult | StrategyCombinationResult,
+): BacktestPerformance {
+  if ("strategyId" in result) {
+    return runBacktest(bars, result.strategyId, result.parameters, {
+      ...settings,
+      summaryOnly: true,
+      entryFilter: result.entryFilter ?? null,
+      entryFilterAllowed: undefined,
+    });
+  }
+  return runStrategyCombinationBacktest(
+    bars,
+    result,
+    {
+      ...settings,
+      summaryOnly: true,
+      entryFilter: null,
+      entryFilterAllowed: undefined,
+    },
+    result.relativeLongStrategy,
+  );
+}
+
 async function runMultiRangeValidation(
   bars: MarketBar[],
   settings: Omit<BacktestSettings, "interval"> & {
@@ -1161,12 +1179,15 @@ async function runMultiRangeValidation(
       : optimization.singleResults;
   const candidateCount =
     singleCandidatePool.length + optimization.results.length;
-  const evaluations: Array<{
+  let latestEvaluation: {
     range: ScreeningDateWindow;
     singleResults: ScreeningSingleResult[];
     combinationResults: ScreeningCombinationResult[];
     rankScores: Map<string, number>;
-  }> = [];
+  } | null = null;
+  const rankScoreTotals = new Map<string, number>();
+  const rankScoreCounts = new Map<string, number>();
+  const foldRankScores: Map<string, number>[] = [];
   let evaluatedCount = optimization.evaluatedCount;
   let failedCount = optimization.failedCount;
 
@@ -1210,30 +1231,34 @@ async function runMultiRangeValidation(
         validationReport: null,
       };
     }
-    evaluations.push({
+    const rankScores = normalizedRankScores(
+      evaluation.singleResults,
+      evaluation.combinationResults,
+      objective,
+    );
+    for (const [key, score] of rankScores) {
+      rankScoreTotals.set(key, (rankScoreTotals.get(key) ?? 0) + score);
+      rankScoreCounts.set(key, (rankScoreCounts.get(key) ?? 0) + 1);
+    }
+    foldRankScores.push(rankScores);
+    latestEvaluation = {
       range,
       singleResults: evaluation.singleResults,
       combinationResults: evaluation.combinationResults,
-      rankScores: normalizedRankScores(
-        evaluation.singleResults,
-        evaluation.combinationResults,
-        objective,
-      ),
-    });
+      rankScores,
+    };
   }
 
   const selectionScoreFor = (
     result: BacktestResult | StrategyCombinationResult,
   ): number | null => {
     const key = candidateKey(result);
-    const scores = evaluations.map((evaluation) =>
-      evaluation.rankScores.get(key),
-    );
-    if (scores.some((score) => score === undefined)) return null;
-    return scores.reduce<number>((sum, score) => sum + (score ?? 0), 0) /
-      scores.length;
+    const count = rankScoreCounts.get(key) ?? 0;
+    return count === ranges.length
+      ? (rankScoreTotals.get(key) ?? 0) / count
+      : null;
   };
-  const latestEvaluation = evaluations.at(-1)!;
+  if (!latestEvaluation) throw new Error("Multi-range evaluation is empty");
   const singleResults: ScreeningSingleResult[] = [];
   for (const candidate of singleCandidatePool) {
     const selectionScore = selectionScoreFor(candidate);
@@ -1306,20 +1331,16 @@ async function runMultiRangeValidation(
     compareScores,
   )[0];
   const folds: ScreeningValidationFoldReport[] = selected
-    ? evaluations.map((evaluation) => {
-        const key = candidateKey(selected);
-        const performance = findEvaluatedCandidate(
-          key,
-          evaluation.singleResults,
-          evaluation.combinationResults,
-        )!;
-        return {
-          window: evaluation.range,
-          partial: false,
-          performance,
-          rankScore: evaluation.rankScores.get(key) ?? 0,
-        };
-      })
+    ? ranges.map((range, index) => ({
+        window: range,
+        partial: false,
+        performance: evaluateCandidatePerformance(
+          bars,
+          withWindow(settings, range),
+          selected,
+        ),
+        rankScore: foldRankScores[index]?.get(candidateKey(selected)) ?? 0,
+      }))
     : [];
   const report =
     selected && folds.length === ranges.length
@@ -1349,9 +1370,39 @@ async function runMultiRangeValidation(
         }
       : null;
 
+  const displayBaseSettings = {
+    ...withWindow(settings, latestEvaluation.range),
+    summaryOnly: false,
+  };
+  const displaySettings = {
+    ...displayBaseSettings,
+    executionContext: createBacktestExecutionContext(bars, displayBaseSettings),
+  };
+  const detailedSingleResults = retainedSingleResults.map((result) => ({
+    ...runBacktest(bars, result.strategyId, result.parameters, {
+      ...displaySettings,
+      entryFilter: result.entryFilter ?? null,
+      entryFilterAllowed: undefined,
+    }),
+    screeningValidation: result.screeningValidation,
+    equity: [],
+    trades: [],
+  }));
+  const detailedCombinationResults = combinationResults.map((result) => ({
+    ...runStrategyCombinationBacktest(
+      bars,
+      result,
+      { ...displaySettings, entryFilter: null, entryFilterAllowed: undefined },
+      result.relativeLongStrategy,
+    ),
+    screeningValidation: result.screeningValidation,
+    equity: [],
+    rebalances: [],
+  }));
+
   return {
-    singleResults: retainedSingleResults,
-    results: combinationResults,
+    singleResults: detailedSingleResults,
+    results: detailedCombinationResults,
     evaluatedCount,
     totalCandidates:
       optimization.totalCandidates + candidateCount * ranges.length,
@@ -1426,12 +1477,9 @@ async function runRollingValidation(
       validationReport: null,
     };
   }
-  const evaluations: Array<{
-    fold: ScreeningRollingValidationFold;
-    singleResults: ScreeningSingleResult[];
-    combinationResults: ScreeningCombinationResult[];
-    rankScores: Map<string, number>;
-  }> = [];
+  const rankScoreTotals = new Map<string, number>();
+  const rankScoreCounts = new Map<string, number>();
+  const foldRankScores: Map<string, number>[] = [];
   let evaluatedCount = optimization.evaluatedCount;
   let failedCount = optimization.failedCount;
   const rollingSingleCandidatePool =
@@ -1482,31 +1530,26 @@ async function runRollingValidation(
         validationReport: null,
       };
     }
-    evaluations.push({
-      fold,
-      singleResults: evaluation.singleResults,
-      combinationResults: evaluation.combinationResults,
-      rankScores: normalizedRankScores(
-        evaluation.singleResults,
-        evaluation.combinationResults,
-        objective,
-      ),
-    });
+    const rankScores = normalizedRankScores(
+      evaluation.singleResults,
+      evaluation.combinationResults,
+      objective,
+    );
+    for (const [key, score] of rankScores) {
+      rankScoreTotals.set(key, (rankScoreTotals.get(key) ?? 0) + score);
+      rankScoreCounts.set(key, (rankScoreCounts.get(key) ?? 0) + 1);
+    }
+    foldRankScores.push(rankScores);
   }
 
   const selectionScoreFor = (
     result: BacktestResult | StrategyCombinationResult,
   ): number | null => {
     const key = candidateKey(result);
-    const scores = evaluations.map((evaluation) =>
-      evaluation.rankScores.get(key),
-    );
-    let total = 0;
-    for (const score of scores) {
-      if (score === undefined) return null;
-      total += score;
-    }
-    return total / scores.length;
+    const count = rankScoreCounts.get(key) ?? 0;
+    return count === folds.length
+      ? (rankScoreTotals.get(key) ?? 0) / count
+      : null;
   };
   const singleResults: ScreeningSingleResult[] =
     rollingSingleCandidatePool
@@ -1583,25 +1626,17 @@ async function runRollingValidation(
     compareRollingScores,
   )[0];
   const reports: ScreeningValidationFoldReport[] = selected
-    ? evaluations
-        .map((evaluation) => {
-          const key = candidateKey(selected);
-          const performance = findEvaluatedCandidate(
-            key,
-            evaluation.singleResults,
-            evaluation.combinationResults,
-          );
-          const rankScore = evaluation.rankScores.get(key);
-          return performance && rankScore !== undefined
-            ? {
-                window: evaluation.fold.window,
-                partial: evaluation.fold.partial,
-                performance,
-                rankScore,
-              }
-            : null;
-        })
-        .filter((report) => report !== null)
+    ? folds.map((fold, index) => ({
+        window: fold.window,
+        partial: fold.partial,
+        performance: evaluateCandidatePerformance(
+          bars,
+          withWindow(settings, fold.window),
+          selected,
+        ),
+        rankScore:
+          foldRankScores[index]?.get(candidateKey(selected)) ?? 0,
+      }))
     : [];
   const report =
     selected && reports.length === folds.length
