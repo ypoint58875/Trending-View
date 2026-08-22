@@ -10,10 +10,35 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join } from "node:path";
+import { serialize } from "node:v8";
 
 const MAX_REQUEST_BYTES = 64 * 1024 * 1024;
 const RESTART_EXIT_CODE = 75;
 const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const CHILD_STALL_TIMEOUT_MS = 60_000;
+const MAX_STALL_RESTARTS = 3;
+const BAR_FIELD_COUNT = 11;
+
+function packMarketBars(bars) {
+  const values = new Float64Array(bars.length * BAR_FIELD_COUNT);
+  const times = new Array(bars.length);
+  bars.forEach((bar, index) => {
+    times[index] = bar.time;
+    const offset = index * BAR_FIELD_COUNT;
+    values[offset] = bar.timestamp;
+    values[offset + 1] = bar.open;
+    values[offset + 2] = bar.close;
+    values[offset + 3] = bar.high;
+    values[offset + 4] = bar.low;
+    values[offset + 5] = bar.volume;
+    values[offset + 6] = bar.amount;
+    values[offset + 7] = bar.amplitude;
+    values[offset + 8] = bar.changePercent;
+    values[offset + 9] = bar.change;
+    values[offset + 10] = bar.turnoverRate;
+  });
+  return { times, values };
+}
 
 async function readJsonBody(request, maximumBytes = MAX_REQUEST_BYTES) {
   const chunks = [];
@@ -132,6 +157,7 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
     }
     job.status = "running";
     job.updatedAt = Date.now();
+    job.lastHeartbeatAt = Date.now();
     const child = spawn(
       process.execPath,
       ["--import", "tsx", childScript, job.directory],
@@ -142,6 +168,15 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
       },
     );
     job.child = child;
+    const watchdog = setInterval(() => {
+      if (!job.child || Date.now() - job.lastHeartbeatAt <= CHILD_STALL_TIMEOUT_MS) {
+        return;
+      }
+      job.stallRestartRequested = true;
+      job.stallRestartCount += 1;
+      job.child.kill();
+    }, 5_000);
+    watchdog.unref();
     let stdoutBuffer = "";
     let stderr = "";
     const consumeLine = (line) => {
@@ -150,15 +185,19 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
         const event = JSON.parse(line);
         if (event.type === "optimization-progress") {
           job.progress = event.progress;
+          job.stallRestartCount = 0;
         } else if (event.type === "validation-progress") {
           job.validationProgress = event.progress;
         } else if (event.type === "completed") {
           job.status = "completed";
+        } else if (event.type === "telemetry") {
+          job.engine = event.status;
         } else if (event.type === "error") {
           job.status = "error";
           job.error = { code: event.code, message: event.message };
         }
         job.updatedAt = Date.now();
+        job.lastHeartbeatAt = job.updatedAt;
       } catch {
         // Ignore non-protocol child output while retaining stderr diagnostics.
       }
@@ -178,6 +217,7 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
       stderr = `${stderr}${chunk}`.slice(-8_192);
     });
     child.on("error", (error) => {
+      clearInterval(watchdog);
       job.child = null;
       job.status = "error";
       job.error = { message: error.message };
@@ -185,6 +225,7 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
       setImmediate(startNextJob);
     });
     child.on("exit", (code) => {
+      clearInterval(watchdog);
       consumeLine(stdoutBuffer);
       job.child = null;
       job.updatedAt = Date.now();
@@ -193,7 +234,20 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
         setImmediate(startNextJob);
         return;
       }
+      if (job.stallRestartRequested) {
+        job.stallRestartRequested = false;
+        if (job.stallRestartCount > MAX_STALL_RESTARTS) {
+          job.status = "error";
+          job.error = { message: "Screening child repeatedly stopped making progress" };
+          setImmediate(startNextJob);
+          return;
+        }
+        job.restartCount += 1;
+        setImmediate(() => startChild(job));
+        return;
+      }
       if (code === RESTART_EXIT_CODE) {
+        job.restartCount += 1;
         setImmediate(() => startChild(job));
         return;
       }
@@ -214,8 +268,13 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
     const directory = join(stateDirectory, jobId);
     await mkdir(directory, { recursive: true });
     const requestPath = join(directory, "request.json");
+    const barsPath = join(directory, "bars.bin");
     const temporaryPath = join(directory, `request-${randomUUID()}.tmp`);
-    await writeFile(temporaryPath, JSON.stringify(requestPayload));
+    const barsTemporaryPath = join(directory, `bars-${randomUUID()}.tmp`);
+    const persistedRequest = { ...requestPayload, bars: undefined };
+    await writeFile(barsTemporaryPath, serialize(packMarketBars(requestPayload.bars)));
+    await rename(barsTemporaryPath, barsPath);
+    await writeFile(temporaryPath, JSON.stringify(persistedRequest));
     await rename(temporaryPath, requestPath);
     let job = jobs.get(jobId);
     if (!job) {
@@ -235,6 +294,11 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
         error: undefined,
         child: null,
         cancelled: false,
+        restartCount: 0,
+        stallRestartCount: 0,
+        stallRestartRequested: false,
+        lastHeartbeatAt: Date.now(),
+        engine: undefined,
         updatedAt: Date.now(),
       };
       jobs.set(jobId, job);
@@ -270,12 +334,15 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
       progress: job.progress,
       validationProgress: job.validationProgress,
       outcome,
+      engine: job.engine
+        ? { ...job.engine, restartCount: job.restartCount }
+        : undefined,
       error: job.error,
     };
   }
 
   return {
-    health: { screeningEngine: true, screeningEngineVersion: 1 },
+    health: { screeningEngine: true, screeningEngineVersion: 2 },
     async handle(request, response) {
       if (!request.url?.startsWith("/screening/")) return false;
       if (!isLoopbackRequest(request)) {
@@ -290,7 +357,7 @@ export function createScreeningEngineCoordinator({ rootDirectory }) {
         try {
           const payload = await readJsonBody(request);
           if (
-            payload?.version !== 1 ||
+            payload?.version !== 2 ||
             !Array.isArray(payload?.bars) ||
             typeof payload?.checkpoint?.key !== "string" ||
             typeof payload?.checkpoint?.signature !== "string"

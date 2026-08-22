@@ -119,6 +119,7 @@ import {
   type ScreeningValidationReport,
 } from "@/lib/analysis/screening-validation";
 import { runScreeningInWorker } from "@/lib/analysis/screening-worker-client";
+import type { LocalScreeningEngineStatus } from "@/lib/analysis/screening-local-engine-protocol";
 import {
   clearLatestScreeningResult,
   readLatestScreeningResult,
@@ -672,6 +673,17 @@ function combinationResultPlan(
     ),
     tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
   } as StrategyAllocationPlan;
+}
+
+function formatScreeningDuration(seconds: number | null): string {
+  if (seconds === null || !Number.isFinite(seconds)) return "--";
+  const rounded = Math.max(Math.round(seconds), 0);
+  const hours = Math.floor(rounded / 3_600);
+  const minutes = Math.floor((rounded % 3_600) / 60);
+  const remainingSeconds = rounded % 60;
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`
+    : `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 function combinationResultSlotData(
@@ -1295,6 +1307,8 @@ export function MarketWorkspace() {
     useState<ScreeningValidationReport | null>(null);
   const [screenProgress, setScreenProgress] =
     useState<CombinationScreeningProgress>(emptyCombinationProgress);
+  const [screenEngineStatus, setScreenEngineStatus] =
+    useState<LocalScreeningEngineStatus | null>(null);
   const [combinationResults, setCombinationResults] = useState<
     ScreeningCombinationResult[]
   >([]);
@@ -3835,6 +3849,7 @@ export function MarketWorkspace() {
     setScreenResults([]);
     setCombinationResults([]);
     setValidationProgress(null);
+    setScreenEngineStatus(null);
     setValidationReport(null);
     setScreenProgress(emptyCombinationProgress());
   };
@@ -3922,6 +3937,7 @@ export function MarketWorkspace() {
     setScreenProgress({ ...snapshot.screenProgress });
     setScreeningError("");
     setValidationProgress(null);
+    setScreenEngineStatus(null);
   };
 
   const clearMarketSeries = () => {
@@ -4754,6 +4770,7 @@ export function MarketWorkspace() {
     void clearLatestScreeningResult();
     setScreening(true);
     setScreeningError("");
+    setScreenEngineStatus(null);
     setScreenResults([]);
     setCombinationResults([]);
     setValidationProgress(null);
@@ -4790,6 +4807,7 @@ export function MarketWorkspace() {
             setScreenProgress(progress);
           },
           onValidationProgress: setValidationProgress,
+          onEngineStatus: setScreenEngineStatus,
         },
       );
 
@@ -7933,6 +7951,28 @@ export function MarketWorkspace() {
                 max={screeningProgressBar.maximum}
                 value={screeningProgressBar.value}
               />
+              {screening && screenEngineStatus && (
+                <small className="screening-engine-status">
+                  <span>
+                    {copy.screening.engineSpeed}{copy.common.colon}
+                    {Math.round(screenEngineStatus.evaluationsPerSecond)} /s
+                  </span>
+                  <span>
+                    {copy.screening.engineEta}{copy.common.colon}
+                    {formatScreeningDuration(
+                      screenEngineStatus.estimatedRemainingSeconds,
+                    )}
+                  </span>
+                  <span>
+                    {copy.screening.engineMemory}{copy.common.colon}
+                    {(screenEngineStatus.residentBytes / 1_048_576).toFixed(0)} MB
+                  </span>
+                  <span>
+                    {copy.screening.engineRestarts}{copy.common.colon}
+                    {screenEngineStatus.restartCount}
+                  </span>
+                </small>
+              )}
             </div>
           )}
         </div>

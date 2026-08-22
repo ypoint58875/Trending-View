@@ -4,9 +4,10 @@
 
 The browser submits normalized bars, settings, validation configuration, and a
 request fingerprint once to the loopback coordinator. A deterministic job
-directory separates immutable `request.json`, replaceable `checkpoint.bin`,
-and compact `result.json`. Disposable children read the request and latest
-checkpoint from disk; child-to-parent messages contain progress counters only.
+directory separates compact immutable `request.json`, typed columnar
+`bars.bin`, replaceable `checkpoint.bin`, and compact `result.json`.
+Disposable children read the bars and latest checkpoint from disk;
+child-to-parent messages contain throttled progress and memory scalars only.
 
 Stage ownership is deliberately narrow: parameter evaluation owns transient
 indicator/target/order state; entry-filter evaluation consumes and releases raw

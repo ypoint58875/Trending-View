@@ -47,3 +47,8 @@
   `scripts/market-relay.mjs`. One child runs at a time; the browser Worker is
   retained only as a pre-start fallback. Exact core/process equivalence and
   disk-checkpoint restart are covered by `tests/screening-local-engine.test.ts`.
+- Engine liveness and bounded transport: protocol version 2 stores typed
+  columnar bars once, rate-limits progress IPC, exposes throughput/ETA/memory
+  telemetry, checks 60-second heartbeats, and resumes an unresponsive child at
+  most three consecutive times before reporting an explicit error. Exact
+  traversal and shared-core equality remain covered by the same process test.

@@ -154,6 +154,7 @@ export async function runScreeningInLocalEngine(
       }
       reconnectAttempts = 0;
       const snapshot = (await statusResponse.json()) as LocalScreeningJobSnapshot;
+      if (snapshot.engine) options.onEngineStatus?.(snapshot.engine);
       if (snapshot.progress) {
         const serialized = JSON.stringify(snapshot.progress);
         if (serialized !== lastProgress) {

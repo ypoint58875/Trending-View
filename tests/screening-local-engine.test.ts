@@ -4,9 +4,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { serialize } from "node:v8";
 import { runScreeningWithValidation } from "../lib/analysis/screening-validation";
 import type { LocalScreeningJobRequest } from "../lib/analysis/screening-local-engine-protocol";
 import { STRATEGIES } from "../lib/analysis/strategies";
+import { packMarketBars } from "../lib/analysis/screening-worker-bars";
 import type { MarketBar } from "../lib/market/types";
 
 function makeBars(length: number): MarketBar[] {
@@ -77,7 +79,7 @@ test("local screening child matches the shared in-process screening core", async
     (strategy) => strategy.id !== "sma-cross",
   ).map((strategy) => strategy.id);
   const request: LocalScreeningJobRequest = {
-    version: 1,
+    version: 2,
     bars,
     settings: {
       initialCash: 100_000,
@@ -91,7 +93,14 @@ test("local screening child matches the shared in-process screening core", async
     options: { objective: "totalReturn", excludedStrategyIds },
   };
   try {
-    await writeFile(join(directory, "request.json"), JSON.stringify(request));
+    await writeFile(
+      join(directory, "request.json"),
+      JSON.stringify({ ...request, bars: undefined }),
+    );
+    await writeFile(
+      join(directory, "bars.bin"),
+      serialize(packMarketBars(request.bars)),
+    );
     const expected = await runScreeningWithValidation(
       request.bars,
       request.settings,

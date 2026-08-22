@@ -987,6 +987,10 @@ export const zhCN = {
     stop: "停止筛选",
     stopped: "已停止，可查看当前结果",
     completed: "筛选完成",
+    engineSpeed: "计算速度",
+    engineEta: "本阶段预计",
+    engineMemory: "计算内存",
+    engineRestarts: "续跑次数",
     runError: "本次筛选意外中断，已退出运行状态，可以重新发起筛选。",
     validationErrors: {
       run: "本次筛选意外中断，已退出运行状态，可以重新发起筛选。",

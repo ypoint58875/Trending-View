@@ -6,10 +6,12 @@ import {
   runScreeningWithValidation,
 } from "../lib/analysis/screening-validation";
 import type { CombinationOptimizationCheckpoint } from "../lib/analysis/strategy-combinations";
+import type { CombinationScreeningProgress } from "../lib/analysis/strategy-combinations";
 import type {
   LocalScreeningChildEvent,
   LocalScreeningJobRequest,
 } from "../lib/analysis/screening-local-engine-protocol";
+import { unpackMarketBars } from "../lib/analysis/screening-worker-bars";
 
 const RESTART_EXIT_CODE = 75;
 const jobDirectory = process.argv[2];
@@ -19,6 +21,8 @@ const checkpointPath = join(jobDirectory, "checkpoint.bin");
 const checkpointTemporaryPath = join(jobDirectory, "checkpoint.tmp");
 const resultPath = join(jobDirectory, "result.json");
 const resultTemporaryPath = join(jobDirectory, "result.tmp");
+const barsPath = join(jobDirectory, "bars.bin");
+const PROGRESS_EMIT_INTERVAL_MS = 250;
 
 function emit(event: LocalScreeningChildEvent): void {
   process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -52,21 +56,63 @@ async function writeCheckpoint(
 async function main(): Promise<void> {
   const request = JSON.parse(
     await readFile(requestPath, "utf8"),
-  ) as LocalScreeningJobRequest;
+  ) as LocalScreeningJobRequest & { bars?: LocalScreeningJobRequest["bars"] };
+  const bars = request.bars ?? unpackMarketBars(deserialize(await readFile(barsPath)));
   const resumeCheckpoint = await readCheckpoint(request.checkpoint.signature);
   const controller = new AbortController();
   let restartRequested = false;
   let checkpointWrite = Promise.resolve();
+  let lastOptimizationEmitAt = 0;
+  let lastValidationEmitAt = 0;
+  let lastTelemetryAt = Date.now();
+  let lastTelemetryStage = "";
+  let lastTelemetryCompleted = 0;
+  const emitOptimizationProgress = (
+    progress: CombinationScreeningProgress,
+  ) => {
+    const now = Date.now();
+    if (
+      now - lastOptimizationEmitAt < PROGRESS_EMIT_INTERVAL_MS &&
+      progress.stageCompleted !== progress.stageTotal
+    ) return;
+    lastOptimizationEmitAt = now;
+    emit({ type: "optimization-progress", progress });
+    const sameStage = lastTelemetryStage === progress.stage;
+    const elapsedSeconds = Math.max((now - lastTelemetryAt) / 1_000, 0.001);
+    const completedDelta = sameStage
+      ? Math.max(progress.stageCompleted - lastTelemetryCompleted, 0)
+      : 0;
+    const evaluationsPerSecond = completedDelta / elapsedSeconds;
+    const memory = process.memoryUsage();
+    emit({
+      type: "telemetry",
+      status: {
+        updatedAt: now,
+        restartCount: 0,
+        evaluationsPerSecond,
+        estimatedRemainingSeconds:
+          evaluationsPerSecond > 0
+            ? Math.max(progress.stageTotal - progress.stageCompleted, 0) /
+              evaluationsPerSecond
+            : null,
+        residentBytes: memory.rss,
+        heapUsedBytes: memory.heapUsed,
+      },
+    });
+    lastTelemetryAt = now;
+    lastTelemetryStage = progress.stage;
+    lastTelemetryCompleted = progress.stageCompleted;
+  };
   let outcome;
   try {
     outcome = await runScreeningWithValidation(
-      request.bars,
+      bars,
       request.settings,
       request.config,
       {
         ...request.options,
         resumeCheckpoint,
-        checkpointEvery: 4_096,
+        checkpointEvery: 8_192,
         signal: controller.signal,
         onCheckpoint: (checkpoint) => {
           checkpointWrite = writeCheckpoint(
@@ -76,10 +122,16 @@ async function main(): Promise<void> {
           restartRequested = true;
           controller.abort();
         },
-        onProgress: (progress) =>
-          emit({ type: "optimization-progress", progress }),
-        onValidationProgress: (progress) =>
-          emit({ type: "validation-progress", progress }),
+        onProgress: emitOptimizationProgress,
+        onValidationProgress: (progress) => {
+          const now = Date.now();
+          if (
+            now - lastValidationEmitAt < PROGRESS_EMIT_INTERVAL_MS &&
+            progress.completed !== progress.total
+          ) return;
+          lastValidationEmitAt = now;
+          emit({ type: "validation-progress", progress });
+        },
       },
     );
   } catch (error) {

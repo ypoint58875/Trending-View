@@ -17,6 +17,7 @@ import {
   SCREENING_RESULT_MODEL_VERSION,
 } from "./strategy-combinations";
 import { runScreeningInLocalEngine } from "./screening-local-engine-client";
+import type { LocalScreeningEngineStatus } from "./screening-local-engine-protocol";
 
 export type WorkerScreeningOptions = Pick<
   RunScreeningWithValidationOptions,
@@ -28,6 +29,7 @@ export type WorkerScreeningOptions = Pick<
 > & {
   signal?: AbortSignal;
   checkpointNamespace?: string;
+  onEngineStatus?: (status: LocalScreeningEngineStatus) => void;
 };
 
 let nextScreeningWorkerRequestId = 0;

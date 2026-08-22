@@ -1,5 +1,16 @@
 # Debugging
 
+## One-click screening appears stuck
+
+Check the engine telemetry below the progress bar first. A changing candidate
+count, non-zero evaluations/second, or updating memory value means the current
+high-order stage is active even when its percentage moves slowly. The local
+coordinator restarts a child automatically after 60 seconds without any
+heartbeat and resumes `data/state/screening-engine/<job-id>/checkpoint.bin`.
+After three consecutive no-progress restarts it reports an error instead of
+spinning indefinitely. Normal 8,192-evaluation and stage checkpoints can also
+increase the restart count; they never change or skip candidates.
+
 ## Local launcher does not open QuantScope
 
 1. Confirm `node --version` reports 22.13.0 or newer and `npm --version`

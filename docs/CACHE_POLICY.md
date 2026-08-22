@@ -154,7 +154,8 @@ aliases unrelated data.
   Worker. The next Worker reads the same record and successful end-to-end
   validation removes it.
 - Local screening defaults to `data/state/screening-engine/<job-id>/`. The
-  request snapshot is written once, `checkpoint.bin` is atomically replaced,
+  compact request metadata and typed `bars.bin` are written once,
+  `checkpoint.bin` is atomically replaced,
   and `result.json` is compact. A successful child removes its checkpoint.
   Incomplete and completed job directories expire after seven days during the
   next coordinator submission. This state is reproducible cache/continuation

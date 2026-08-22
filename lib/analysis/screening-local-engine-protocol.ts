@@ -11,7 +11,7 @@ import type { MovingAverageSlopeFilter } from "./entry-filter";
 import type { StrategyId } from "./strategies";
 import type { MarketBar, MarketInterval } from "@/lib/market/types";
 
-export const LOCAL_SCREENING_ENGINE_VERSION = 1;
+export const LOCAL_SCREENING_ENGINE_VERSION = 2;
 export const LOCAL_SCREENING_ENGINE_URL = "http://127.0.0.1:3001";
 
 export interface LocalScreeningJobRequest {
@@ -38,15 +38,26 @@ export interface LocalScreeningJobSnapshot {
   progress?: CombinationScreeningProgress;
   validationProgress?: ScreeningValidationProgress;
   outcome?: ScreeningValidationOutcome;
+  engine?: LocalScreeningEngineStatus;
   error?: {
     code?: ScreeningValidationErrorCode;
     message: string;
   };
 }
 
+export interface LocalScreeningEngineStatus {
+  updatedAt: number;
+  restartCount: number;
+  evaluationsPerSecond: number;
+  estimatedRemainingSeconds: number | null;
+  residentBytes: number;
+  heapUsedBytes: number;
+}
+
 export type LocalScreeningChildEvent =
   | { type: "optimization-progress"; progress: CombinationScreeningProgress }
   | { type: "validation-progress"; progress: ScreeningValidationProgress }
+  | { type: "telemetry"; status: LocalScreeningEngineStatus }
   | { type: "restart" }
   | { type: "completed" }
   | {

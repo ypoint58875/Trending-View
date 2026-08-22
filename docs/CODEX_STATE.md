@@ -1,5 +1,20 @@
 # Codex State
 
+## 2026-08-22 screening liveness and transport hardening
+
+- Local engine progress IPC is throttled to four updates per second instead of
+  emitting optimization and validation JSON for every candidate. The UI now
+  shows stage throughput, stage ETA, child resident memory, and exact restart
+  count so a long high-order stage is distinguishable from a stalled process.
+- A 60-second no-heartbeat watchdog terminates and resumes a child from its
+  latest exact checkpoint. Three consecutive no-progress recoveries become an
+  explicit error instead of an indefinite spinner.
+- Immutable market bars are stored once as a typed columnar `bars.bin`; every
+  resumed child reads that file rather than reparsing the original JSON object
+  graph. Local checkpoints now cover 8,192 evaluations plus every stage
+  boundary, halving full-state serialization/restart frequency without changing
+  traversal, rankings, or completed output.
+
 ## 2026-08-22 process-isolated local screening engine
 
 - Local one-click screening now defaults to a loopback coordinator attached to

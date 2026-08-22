@@ -2912,6 +2912,15 @@ button {
   user-select: none;
 }
 
+.screening-engine-status {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  color: var(--subtle);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+}
+
 .results-heading::-webkit-details-marker {
   display: none;
 }
