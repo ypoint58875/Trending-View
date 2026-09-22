@@ -160,6 +160,14 @@ aliases unrelated data.
   Incomplete and completed job directories expire after seven days during the
   next coordinator submission. This state is reproducible cache/continuation
   data and is excluded from Git.
+- Strategy-cycle validation may pre-submit up to its bounded 512 units to this
+  same directory. The coordinator executes only one child at a time; queued
+  requests reference one immutable batch-scoped columnar bar file plus their
+  exact prefix count instead of duplicating one `bars.bin` per unit. Same-
+  decision jobs share one entry-filter derivation file. Active queued/running
+  references protect the batch directory from cleanup; after completion it
+  follows the existing seven-day retention. Explicit Pause cancels computation
+  but keeps reproducible requests/checkpoints for deterministic Continue.
 - `checkpoint/manifest.json` atomically commits separately serialized metadata,
   finalist, entry-filter, pair, triple, higher-order, and result sections.
   Superseded generations are removed after the manifest swap. `derived.bin`

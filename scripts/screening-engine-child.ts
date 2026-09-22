@@ -28,8 +28,7 @@ const checkpointManifestPath = join(checkpointDirectory, "manifest.json");
 const resultPath = join(jobDirectory, "result.json");
 const resultTemporaryPath = join(jobDirectory, "result.tmp");
 const barsPath = join(jobDirectory, "bars.bin");
-const derivedPath = join(jobDirectory, "derived.bin");
-const derivedTemporaryPath = join(jobDirectory, "derived.tmp");
+const localDerivedPath = join(jobDirectory, "derived.bin");
 const PROGRESS_EMIT_INTERVAL_MS = 250;
 const processStartedAt = Date.now();
 const CHECKPOINT_SECTIONS = [
@@ -173,15 +172,31 @@ async function writeCheckpoint(
 async function main(): Promise<void> {
   const request = JSON.parse(
     await readFile(requestPath, "utf8"),
-  ) as LocalScreeningJobRequest & { bars?: LocalScreeningJobRequest["bars"] };
-  const bars = request.bars ?? unpackMarketBars(deserialize(await readFile(barsPath)));
+  ) as LocalScreeningJobRequest & {
+    bars?: LocalScreeningJobRequest["bars"];
+    barCount?: number;
+    sharedBarsPath?: string;
+    sharedDerivedPath?: string;
+  };
+  const bars = request.bars ?? unpackMarketBars(
+    deserialize(await readFile(request.sharedBarsPath ?? barsPath)),
+    request.barCount,
+  );
+  const derivedPath = request.sharedDerivedPath ?? localDerivedPath;
+  const derivedTemporaryPath = `${derivedPath}.${process.pid}.tmp`;
+  const derivedSignature = JSON.stringify({
+    barCount: bars.length,
+    lastTime: bars.at(-1)?.time,
+    entryFilter: request.settings.entryFilter ?? null,
+    entryFilters: request.options.entryFilters ?? [],
+  });
   let entryFilterAllowedByKey = new Map<string, readonly boolean[]>();
   try {
     const stored = deserialize(await readFile(derivedPath)) as {
       signature?: string;
       entryFilterAllowedByKey?: Array<[string, boolean[]]>;
     };
-    if (stored.signature === request.checkpoint.signature) {
+    if (stored.signature === derivedSignature) {
       entryFilterAllowedByKey = new Map(stored.entryFilterAllowedByKey ?? []);
     }
   } catch {
@@ -196,7 +211,7 @@ async function main(): Promise<void> {
     await writeFile(
       derivedTemporaryPath,
       serialize({
-        signature: request.checkpoint.signature,
+        signature: derivedSignature,
         entryFilterAllowedByKey: [...entryFilterAllowedByKey],
       }),
     );

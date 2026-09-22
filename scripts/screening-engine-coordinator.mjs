@@ -9,10 +9,12 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { availableParallelism, totalmem } from "node:os";
 import { serialize } from "node:v8";
 
 const MAX_REQUEST_BYTES = 64 * 1024 * 1024;
+const MAX_BATCH_JOBS = 512;
 const RESTART_EXIT_CODE = 75;
 const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const CHILD_STALL_TIMEOUT_MS = 60_000;
@@ -20,6 +22,29 @@ const MAX_STALL_RESTARTS = 3;
 const MAX_UNEXPECTED_RESTARTS = 3;
 const BAR_FIELD_COUNT = 11;
 const BINARY_CONTENT_TYPE = "application/vnd.quantscope.screening+binary";
+const MAX_AUTO_CONCURRENCY = 8;
+const MEMORY_PER_CHILD_BYTES = 4 * 1024 * 1024 * 1024;
+const MIN_SYSTEM_MEMORY_RESERVE_BYTES = 2 * 1024 * 1024 * 1024;
+
+export function recommendedScreeningConcurrency({
+  availableCpuCount = availableParallelism(),
+  totalMemoryBytes = totalmem(),
+} = {}) {
+  const cpuCount = Math.max(1, Math.floor(availableCpuCount));
+  const memoryBytes = Math.max(0, Math.floor(totalMemoryBytes));
+  const cpuLimit = Math.max(1, cpuCount - 1);
+  const reservedMemoryBytes = Math.max(
+    MIN_SYSTEM_MEMORY_RESERVE_BYTES,
+    Math.floor(memoryBytes * 0.25),
+  );
+  const memoryLimit = Math.max(
+    1,
+    Math.floor(
+      Math.max(memoryBytes - reservedMemoryBytes, 0) / MEMORY_PER_CHILD_BYTES,
+    ),
+  );
+  return Math.max(1, Math.min(cpuLimit, memoryLimit, MAX_AUTO_CONCURRENCY));
+}
 
 function packMarketBars(bars) {
   const values = new Float64Array(bars.length * BAR_FIELD_COUNT);
@@ -136,25 +161,40 @@ export function createScreeningEngineCoordinator({
   watchdogIntervalMs = 5_000,
   maxStallRestarts = MAX_STALL_RESTARTS,
   maxUnexpectedRestarts = MAX_UNEXPECTED_RESTARTS,
+  maximumConcurrency = recommendedScreeningConcurrency(),
 }) {
   const stateDirectory =
     stateDirectoryPath ?? join(rootDirectory, "data", "state", "screening-engine");
   const childScript =
     childScriptPath ?? join(rootDirectory, "scripts", "screening-engine-child.ts");
   const jobs = new Map();
+  const concurrency = Math.max(1, Math.floor(maximumConcurrency));
 
-  function startNextJob() {
-    const next = [...jobs.values()].find(
-      (candidate) =>
-        candidate.status === "queued" &&
-        !candidate.child &&
-        !candidate.cancelled,
-    );
-    if (next) startChild(next);
+  function activeChildCount() {
+    return [...jobs.values()].filter((candidate) => candidate.child).length;
+  }
+
+  function startQueuedJobs() {
+    while (activeChildCount() < concurrency) {
+      const next = [...jobs.values()].find(
+        (candidate) =>
+          candidate.status === "queued" &&
+          !candidate.child &&
+          !candidate.cancelled,
+      );
+      if (!next) return;
+      startChild(next);
+    }
   }
 
   async function pruneOldJobs() {
     const now = Date.now();
+    const activeSharedDirectories = new Set(
+      [...jobs.values()]
+        .filter((job) => job.child || job.status === "queued" || job.status === "running")
+        .map((job) => job.sharedDirectory)
+        .filter(Boolean),
+    );
     for (const [jobId, job] of jobs) {
       if (job.child || now - job.updatedAt <= JOB_RETENTION_MS) continue;
       jobs.delete(jobId);
@@ -167,7 +207,11 @@ export function createScreeningEngineCoordinator({
       return;
     }
     for (const entry of entries) {
-      if (!entry.isDirectory() || jobs.has(entry.name)) continue;
+      if (
+        !entry.isDirectory() ||
+        jobs.has(entry.name) ||
+        activeSharedDirectories.has(join(stateDirectory, entry.name))
+      ) continue;
       const directory = join(stateDirectory, entry.name);
       try {
         const metadata = await stat(directory);
@@ -182,7 +226,7 @@ export function createScreeningEngineCoordinator({
 
   function startChild(job) {
     if (job.child || job.cancelled) return;
-    if ([...jobs.values()].some((candidate) => candidate.child)) {
+    if (activeChildCount() >= concurrency) {
       job.status = "queued";
       return;
     }
@@ -261,7 +305,7 @@ export function createScreeningEngineCoordinator({
       job.status = "error";
       job.error = { message: error.message };
       job.updatedAt = Date.now();
-      setImmediate(startNextJob);
+      setImmediate(startQueuedJobs);
     });
     child.on("exit", (code) => {
       clearInterval(watchdog);
@@ -270,7 +314,7 @@ export function createScreeningEngineCoordinator({
       job.updatedAt = Date.now();
       if (job.cancelled) {
         job.status = "cancelled";
-        setImmediate(startNextJob);
+        setImmediate(startQueuedJobs);
         return;
       }
       if (job.stallRestartRequested) {
@@ -278,7 +322,7 @@ export function createScreeningEngineCoordinator({
         if (job.stallRestartCount > maxStallRestarts) {
           job.status = "error";
           job.error = { message: "Screening child repeatedly stopped making progress" };
-          setImmediate(startNextJob);
+          setImmediate(startQueuedJobs);
           return;
         }
         job.restartCount += 1;
@@ -302,11 +346,16 @@ export function createScreeningEngineCoordinator({
           message: stderr.trim() || `Screening child exited with code ${code}`,
         };
       }
-      setImmediate(startNextJob);
+      setImmediate(startQueuedJobs);
     });
   }
 
-  async function restoreOrCreateJob(requestPayload, packedBars) {
+  async function restoreOrCreateJob(
+    requestPayload,
+    packedBars,
+    sharedBarsPath,
+    sharedDerivedPath,
+  ) {
     await mkdir(stateDirectory, { recursive: true });
     await pruneOldJobs();
     const jobId = jobIdFor(requestPayload);
@@ -315,10 +364,17 @@ export function createScreeningEngineCoordinator({
     const requestPath = join(directory, "request.json");
     const barsPath = join(directory, "bars.bin");
     const temporaryPath = join(directory, `request-${randomUUID()}.tmp`);
-    const barsTemporaryPath = join(directory, `bars-${randomUUID()}.tmp`);
-    const persistedRequest = { ...requestPayload, bars: undefined };
-    await writeFile(barsTemporaryPath, serialize(packedBars));
-    await rename(barsTemporaryPath, barsPath);
+    const persistedRequest = {
+      ...requestPayload,
+      bars: undefined,
+      sharedBarsPath,
+      sharedDerivedPath,
+    };
+    if (!sharedBarsPath) {
+      const barsTemporaryPath = join(directory, `bars-${randomUUID()}.tmp`);
+      await writeFile(barsTemporaryPath, serialize(packedBars));
+      await rename(barsTemporaryPath, barsPath);
+    }
     await writeFile(temporaryPath, JSON.stringify(persistedRequest));
     await rename(temporaryPath, requestPath);
     let job = jobs.get(jobId);
@@ -345,9 +401,13 @@ export function createScreeningEngineCoordinator({
         stallRestartRequested: false,
         lastHeartbeatAt: Date.now(),
         engine: undefined,
+        sharedDirectory: sharedBarsPath ? dirname(sharedBarsPath) : undefined,
         updatedAt: Date.now(),
       };
       jobs.set(jobId, job);
+    }
+    if (sharedBarsPath) {
+      job.sharedDirectory = dirname(sharedBarsPath);
     }
     if (job.status !== "completed" && !job.child) {
       job.cancelled = false;
@@ -371,7 +431,11 @@ export function createScreeningEngineCoordinator({
   }
 
   return {
-    health: { screeningEngine: true, screeningEngineVersion: 3 },
+    health: {
+      screeningEngine: true,
+      screeningEngineVersion: 3,
+      screeningConcurrency: concurrency,
+    },
     async handle(request, response) {
       if (!request.url?.startsWith("/screening/")) return false;
       if (!isLoopbackRequest(request)) {
@@ -400,6 +464,68 @@ export function createScreeningEngineCoordinator({
         } catch (error) {
           writeJson(request, response, 500, {
             error: error instanceof Error ? error.message : "JOB_START_FAILED",
+          });
+        }
+        return true;
+      }
+      if (request.method === "POST" && request.url === "/screening/job-batches") {
+        try {
+          const { payload, packedBars } = await readJobBody(request);
+          if (
+            payload?.version !== 3 ||
+            !Array.isArray(packedBars?.times) ||
+            packedBars.times.length === 0 ||
+            !Array.isArray(payload?.jobs) ||
+            payload.jobs.length === 0 ||
+            payload.jobs.length > MAX_BATCH_JOBS
+          ) {
+            writeJson(request, response, 400, { error: "INVALID_JOB_BATCH" });
+            return true;
+          }
+          for (const unit of payload.jobs) {
+            if (
+              unit?.version !== 3 ||
+              !Number.isInteger(unit?.barCount) ||
+              unit.barCount <= 0 ||
+              unit.barCount > packedBars.times.length ||
+              typeof unit?.checkpoint?.key !== "string" ||
+              typeof unit?.checkpoint?.signature !== "string"
+            ) {
+              writeJson(request, response, 400, { error: "INVALID_JOB_BATCH_UNIT" });
+              return true;
+            }
+          }
+          const batchId = createHash("sha256")
+            .update(
+              payload.jobs
+                .map((unit) => `${unit.checkpoint.key}|${unit.checkpoint.signature}`)
+                .join("\n"),
+            )
+            .digest("hex")
+            .slice(0, 24);
+          const batchDirectory = join(stateDirectory, `batch-${batchId}`);
+          await mkdir(batchDirectory, { recursive: true });
+          const sharedBarsPath = join(batchDirectory, "bars.bin");
+          const sharedBarsTemporaryPath = join(
+            batchDirectory,
+            `bars-${randomUUID()}.tmp`,
+          );
+          await writeFile(sharedBarsTemporaryPath, serialize(packedBars));
+          await rename(sharedBarsTemporaryPath, sharedBarsPath);
+          const jobIds = [];
+          for (const unit of payload.jobs) {
+            const job = await restoreOrCreateJob(
+              unit,
+              undefined,
+              sharedBarsPath,
+              join(batchDirectory, `derived-${unit.barCount}.bin`),
+            );
+            jobIds.push(job.jobId);
+          }
+          writeJson(request, response, 202, { jobIds });
+        } catch (error) {
+          writeJson(request, response, 500, {
+            error: error instanceof Error ? error.message : "JOB_BATCH_START_FAILED",
           });
         }
         return true;

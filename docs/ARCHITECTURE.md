@@ -39,6 +39,11 @@ Browser UI
   -> /api/saved-backtests
   -> hosted email or fixed loopback owner key
   -> hosted or project-local D1 saved backtest snapshots
+  -> /strategy-validation
+     -> shortcut-bar instrument selection
+     -> point-in-time screening snapshots
+     -> IndexedDB unit checkpoints
+     -> continuous-account window/interval matrix
 ```
 
 ## Boundaries
@@ -53,6 +58,32 @@ Browser UI
 
 The API routes return normalized data and do not expose provider-specific row
 formats to the browser.
+
+The strategy-cycle page is a separate orchestration boundary over the existing
+market, screening, and allocation engines. For a historical decision index it
+passes only the prefix ending at that close to screening. A `(decision,
+screeningWindow)` result is shared by every compatible update interval. Matrix
+evaluation then splices the selected plans into one complete target/event
+timeline and invokes one allocation backtest per cell; it does not reset cash
+or positions at update boundaries. The browser persists one latest task after
+each complete unit with a signature over instrument, latest bar, configuration,
+and costs. A matching signature resumes idempotently. Before result collection,
+the local page submits every incomplete bounded unit in one full-series batch
+to the loopback screening coordinator and persists its deterministic job ID.
+The coordinator slices each causal prefix before child execution and owns
+bounded parallel execution after submission, so background-tab suspension or
+page closure does not stop the next unit. IndexedDB remains the browser-side report and unit-map
+boundary; explicit Pause cancels the submitted queue, while closing the page
+only detaches progress polling.
+
+The cycle batch stores the uploaded columnar market series once in a
+batch-scoped immutable `bars.bin`. Unit requests retain only `barCount` and the
+shared path; `unpackMarketBars(...)` constructs objects only through that count,
+so later bars never reach the optimizer. Jobs with the same decision prefix
+also share a range-independent entry-filter derivation file. The browser hashes
+that prefix once and reuses the hash across its screening windows. Window-
+specific finalist ranking and all combination/allocation stages remain
+independent because their candidate beams can diverge.
 
 Saved backtests use one owner key in every query. Hosted requests use the
 authenticated ChatGPT email header. Requests to `localhost` or `127.0.0.1`
@@ -127,9 +158,16 @@ coordinator stores one deterministic job request and runs the shared screening
 core in a disposable Node child process. Every exact checkpoint is serialized
 atomically to `data/state/screening-engine`; the child then exits so its entire
 heap is returned to the OS, and a fresh child resumes the same traversal.
-Only one compute child runs at a time across browser tabs. If the local engine
-is unavailable before a job starts, the existing dedicated module Web Worker
-remains the compatibility fallback. Both paths generate all 45,196 finite
+Independent queued jobs may occupy multiple child-process slots. The coordinator
+derives the slot count from `os.availableParallelism()` and physical memory,
+reserving one logical CPU and 25% of memory (at least 2 GiB), budgeting 4 GiB
+per child, and capping the pool at eight. One job's stage traversal remains
+single-child and deterministic; the pool parallelizes jobs, not ranking
+reductions inside a job.
+The detected pool is shared across browser tabs; each individual job occupies
+at most one compute child. If the local engine is unavailable before a job
+starts, the existing dedicated module Web Worker remains the compatibility
+fallback. Both paths generate all 45,196 finite
 parameter combinations from the shared registry and apply one objective. For each
 explicitly eligible trend, breakout, or momentum strategy, it retains compact
 metrics and raw execution state for the top 60 unfiltered

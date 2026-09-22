@@ -30,6 +30,7 @@ export type WorkerScreeningOptions = Pick<
   signal?: AbortSignal;
   checkpointNamespace?: string;
   onEngineStatus?: (status: LocalScreeningEngineStatus) => void;
+  preserveLocalJobOnAbort?: boolean;
 };
 
 let nextScreeningWorkerRequestId = 0;
@@ -43,14 +44,7 @@ function hashText(hash: number, value: string): number {
   return next >>> 0;
 }
 
-export function buildCheckpointIdentity(
-  bars: readonly MarketBar[],
-  settings: Omit<BacktestSettings, "interval"> & {
-    interval: MarketInterval;
-  },
-  config: ScreeningValidationConfig,
-  options: WorkerScreeningOptions,
-) {
+export function hashMarketBars(bars: readonly MarketBar[]): string {
   let hash = 2_166_136_261;
   for (const bar of bars) {
     hash = hashText(
@@ -58,11 +52,23 @@ export function buildCheckpointIdentity(
       `${bar.time}|${bar.open}|${bar.high}|${bar.low}|${bar.close}|${bar.volume};`,
     );
   }
+  return hash.toString(16);
+}
+
+export function buildCheckpointIdentity(
+  bars: readonly MarketBar[],
+  settings: Omit<BacktestSettings, "interval"> & {
+    interval: MarketInterval;
+  },
+  config: ScreeningValidationConfig,
+  options: WorkerScreeningOptions,
+  precomputedBarsHash?: string,
+) {
   const signature = JSON.stringify({
     positioningModelVersion: SCREENING_POSITIONING_MODEL_VERSION,
     resultModelVersion: SCREENING_RESULT_MODEL_VERSION,
     namespace: options.checkpointNamespace ?? "default",
-    barsHash: hash.toString(16),
+    barsHash: precomputedBarsHash ?? hashMarketBars(bars),
     barCount: bars.length,
     settings,
     config,

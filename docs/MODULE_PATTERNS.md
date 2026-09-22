@@ -1,5 +1,35 @@
 # Module Patterns
 
+## Historical strategy-cycle tasks
+
+- A historical selection decision may consume only the inclusive bar prefix
+  ending at its decision close. Keep this boundary in
+  `barsAvailableAtCycleDecision(...)` and test it directly.
+- Optimize each `(decision index, screening window)` once. Reuse that immutable
+  winner across every update interval whose schedule includes the decision.
+- Compare update policies with one continuous backtest timeline per matrix
+  cell. Strategy changes take effect through the existing next-bar execution
+  rules; never concatenate independently funded interval backtests.
+- Persist only complete optimization units. The task signature includes the
+  canonical instrument, latest market boundary, periods, objective, and costs, so
+  replay is idempotent and stale snapshots cannot silently join a new run.
+- Bound one task to eight screening windows, eight update intervals, and 512
+  optimization units. Keep at most one latest task record. Submit every
+  incomplete local unit before awaiting results and persist deterministic job
+  IDs with the task. The loopback coordinator owns CPU- and memory-bounded
+  parallel execution across independent jobs; browser
+  teardown may stop polling but must not cancel jobs. Only explicit Pause or
+  reset cancels the submitted queue.
+- Store one immutable columnar market payload per cycle batch. Unit metadata
+  carries a validated prefix count, and the child must materialize only that
+  prefix. Share only derivations independent of the scoring window; keep
+  finalist ranking, combination beams, and allocation replay isolated per
+  window so performance optimization cannot change results.
+- Keep one screening job's candidate traversal single-child and ordered. Scale
+  across independent queued units with disposable processes sized from
+  available parallelism and physical memory; retain CPU and memory headroom for
+  the browser and operating system.
+
 ## Screening ownership and memory policy
 
 - A screening run owns the immutable market series, canonical instrument key,

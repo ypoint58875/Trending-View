@@ -26,8 +26,16 @@ export function packMarketBars(bars: readonly MarketBar[]): PackedMarketBars {
   return { times: bars.map((bar) => bar.time), values };
 }
 
-export function unpackMarketBars(packed: PackedMarketBars): MarketBar[] {
-  return packed.times.map((time, index) => {
+export function unpackMarketBars(
+  packed: PackedMarketBars,
+  requestedCount = packed.times.length,
+): MarketBar[] {
+  const count = Math.min(
+    Math.max(Math.floor(requestedCount), 0),
+    packed.times.length,
+    Math.floor(packed.values.length / FIELD_COUNT),
+  );
+  return packed.times.slice(0, count).map((time, index) => {
     const offset = index * FIELD_COUNT;
     return {
       time,

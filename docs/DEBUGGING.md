@@ -1,5 +1,31 @@
 # Debugging
 
+## Strategy-cycle validation does not resume or exceeds its limit
+
+The page stores one versioned task in the
+`quantscope-strategy-cycle-validation` IndexedDB database after each complete
+decision/window optimization. Resume requires the same canonical instrument,
+latest market bar and bar count, screening windows, update intervals,
+evaluation length, objective, and cost settings. A changed signature starts a
+new task deliberately. Task version 2 also stores every deterministic local
+job ID. All incomplete units are submitted before result collection, so the
+loopback coordinator continues them without browser polling. Reopen the page
+and press Continue to collect completed results and rebuild the report.
+
+If progress stops overnight, check `http://127.0.0.1:3001/health` and the
+matching directories under `data/state/screening-engine/`. A queued or running
+job with changing checkpoint timestamps means computation is continuing even
+if the page is asleep. Explicit Pause cancels all submitted unfinished jobs;
+closing the tab does not. Restarting the local relay requires reopening the
+page and pressing Continue so the persisted job requests are re-registered.
+
+If the page reports too many units, reduce the evaluation length, remove a
+screening window, or increase update intervals. It rejects schedules above 512
+units before screening and keeps no unbounded queue. Clearing the task cancels
+its submitted jobs and removes the device-local validation record. If a task cannot be read, inspect
+whether browser site-data policy disabled or cleared IndexedDB; saved backtest
+shortcuts and market sources use separate persistence boundaries.
+
 ## Browser memory grows during an otherwise bounded screening run
 
 First compare the local-engine memory shown in the screening status with the

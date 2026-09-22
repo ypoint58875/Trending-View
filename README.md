@@ -17,6 +17,17 @@ trades or run unattended jobs.
 - One daily research workspace. Intraday intervals are not exposed by the UI
   or market API, and no synthetic resampling is performed. Legacy non-daily
   saved records remain readable provenance and reopen against daily bars.
+- A separate strategy-cycle validation page selects an instrument from the
+  saved-backtest shortcut bar, repeats historical screening with only the bars
+  visible at each decision, and compares screening windows with update
+  intervals on one continuous account. One compact batch request pre-submits
+  every bounded optimization unit to the loopback coordinator, which continues
+  a CPU- and memory-bounded parallel queue while the tab is sleeping or closed.
+  One immutable columnar bar file is shared by the queued units; each child
+  materializes only its causal prefix,
+  and windows at the same decision share range-independent entry-filter
+  derivations. Unit mappings and completed selections remain in device-local
+  IndexedDB for report recovery.
 - Daily history requests start at 2000-01-01 with a 10,000-bar safety cap.
   Instruments launched later begin at their first provider-available bar.
 - Candlestick and line chart modes with volume and synchronized zoom.
@@ -300,7 +311,10 @@ For one-click local use, double-click `open-quantscope.bat`. The launcher:
 - starts the loopback screening coordinator with the existing market relay;
   heavy screening runs in restartable child processes with exact disk
   checkpoints, while the browser Worker remains available if that local engine
-  cannot be reached before a job starts;
+  cannot be reached before a job starts. Independent queued jobs use an
+  automatically detected multi-CPU process pool that reserves one logical CPU,
+  25% of physical memory (at least 2 GiB), budgets 4 GiB per child, and never
+  exceeds eight children;
 - transfers screening bars as lossless Float64 columns, reuses layered
   checkpoints and derived filter state, and fetches the compact result only
   after status reports completion;

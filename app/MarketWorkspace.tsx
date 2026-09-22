@@ -37,6 +37,7 @@ import {
   useState,
   type DragEvent as ReactDragEvent,
 } from "react";
+import Link from "next/link";
 import type {
   ChartIndicatorConfiguration,
   ChartStrategyConfiguration,
@@ -120,6 +121,10 @@ import {
   type ScreeningValidationReport,
 } from "@/lib/analysis/screening-validation";
 import { runScreeningInWorker } from "@/lib/analysis/screening-worker-client";
+import {
+  combinationScreeningResultPlan as combinationResultPlan,
+  singleScreeningResultPlan as singleResultPlan,
+} from "@/lib/analysis/screening-plan";
 import type { LocalScreeningEngineStatus } from "@/lib/analysis/screening-local-engine-protocol";
 import {
   clearLatestScreeningResult,
@@ -658,44 +663,6 @@ function formatStabilityEvidenceReason(
     return `${copy.stability.evidenceReasons.insufficientTrades} ${evidence.tradeCount} / ${evidence.minimumTradeCount}`;
   }
   return copy.stability.evidenceReasons.noNearbyVariants;
-}
-
-function singleResultPlan(result: ScreeningSingleResult): StrategyAllocationPlan {
-  return {
-    strategyA: {
-      strategyId: result.strategyId,
-      parameters: { ...result.parameters },
-    },
-    strategyB: null,
-    strategyAAllocation: 1,
-    strategyBAllocation: 0,
-    strategyAEntryFilter: result.entryFilter ?? null,
-    strategyBEntryFilter: null,
-  };
-}
-
-function combinationResultPlan(
-  result: ScreeningCombinationResult,
-): StrategyAllocationPlan {
-  const resultRecord = result as ScreeningCombinationResult &
-    Record<string, unknown>;
-  return {
-    ...Object.fromEntries(
-      STRATEGY_SLOTS.flatMap((slot) => {
-        const id = resultRecord[`${slot}Id`] as StrategyId | null | undefined;
-        const parameters = resultRecord[`${slot}Parameters`] as
-          | StrategyParameters
-          | null
-          | undefined;
-        return [
-          [slot, id && parameters ? { strategyId: id, parameters: { ...parameters } } : null],
-          [`${slot}Allocation`, resultRecord[`${slot}Allocation`] ?? 0],
-          [`${slot}EntryFilter`, resultRecord[`${slot}EntryFilter`] ?? null],
-        ];
-      }),
-    ),
-    tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
-  } as StrategyAllocationPlan;
 }
 
 interface ShortcutBatchProgress {
@@ -5988,9 +5955,15 @@ export function MarketWorkspace() {
           )}
         </div>
 
-        <div className="source-pill">
-          <span className="live-dot" />
-          {copy.marketDelayed}
+        <div className="topbar-actions">
+          <Link className="cycle-validation-link" href="/strategy-validation">
+            <FlaskConical size={15} />
+            {copy.cycleValidation.openPage}
+          </Link>
+          <div className="source-pill">
+            <span className="live-dot" />
+            {copy.marketDelayed}
+          </div>
         </div>
       </header>
 

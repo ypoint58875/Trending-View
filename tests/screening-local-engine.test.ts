@@ -154,12 +154,20 @@ test("local screening child matches the shared in-process screening core", async
     options: { objective: "totalReturn", excludedStrategyIds },
   };
   try {
+    const sharedBarsPath = join(directory, "shared-bars.bin");
+    const sharedDerivedPath = join(directory, "shared-derived.bin");
     await writeFile(
       join(directory, "request.json"),
-      JSON.stringify({ ...request, bars: undefined }),
+      JSON.stringify({
+        ...request,
+        bars: undefined,
+        barCount: request.bars.length,
+        sharedBarsPath,
+        sharedDerivedPath,
+      }),
     );
     await writeFile(
-      join(directory, "bars.bin"),
+      sharedBarsPath,
       serialize(packMarketBars(request.bars)),
     );
     const expected = await runScreeningWithValidation(
@@ -170,7 +178,7 @@ test("local screening child matches the shared in-process screening core", async
     );
     const restarts = await runChild(directory);
     assert.ok(restarts > 0, "test must exercise disk-checkpoint continuation");
-    await readFile(join(directory, "derived.bin"));
+    await readFile(sharedDerivedPath);
     const actual = JSON.parse(
       await readFile(join(directory, "result.json"), "utf8"),
     );
@@ -207,5 +215,9 @@ test("local screening upload keeps bars columnar and lossless", () => {
   const values = new Float64Array(valueBytes.byteLength / 8);
   new Uint8Array(values.buffer).set(valueBytes);
   assert.deepEqual(unpackMarketBars({ times: header.times, values }), bars);
+  assert.deepEqual(
+    unpackMarketBars({ times: header.times, values }, 5),
+    bars.slice(0, 5),
+  );
   assert.ok(encoded.byteLength < JSON.stringify(request).length);
 });

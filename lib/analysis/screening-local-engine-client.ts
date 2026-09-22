@@ -8,11 +8,13 @@ import type { WorkerScreeningOptions } from "./screening-worker-client";
 import {
   LOCAL_SCREENING_ENGINE_URL,
   LOCAL_SCREENING_ENGINE_VERSION,
+  type LocalScreeningJobBatchUnit,
   type LocalScreeningJobRequest,
   type LocalScreeningJobSnapshot,
 } from "./screening-local-engine-protocol";
 import {
   LOCAL_SCREENING_BINARY_CONTENT_TYPE,
+  encodeLocalScreeningJobBatchRequest,
   encodeLocalScreeningJobRequest,
 } from "./screening-local-engine-bars";
 
@@ -24,7 +26,7 @@ function abortError() {
   return new DOMException("Screening cancelled", "AbortError");
 }
 
-async function localEngineAvailable(): Promise<boolean> {
+export async function localScreeningEngineAvailable(): Promise<boolean> {
   if (
     typeof window === "undefined" ||
     !["127.0.0.1", "localhost"].includes(window.location.hostname)
@@ -48,6 +50,108 @@ async function localEngineAvailable(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export function screeningJobRequest(
+  bars: MarketBar[],
+  settings: Omit<BacktestSettings, "interval"> & {
+    interval: MarketInterval;
+  },
+  config: ScreeningValidationConfig,
+  options: WorkerScreeningOptions,
+  checkpoint: { key: string; signature: string },
+): LocalScreeningJobRequest {
+  const { executionContext: _executionContext, ...serializableSettings } =
+    settings;
+  void _executionContext;
+  return {
+    version: LOCAL_SCREENING_ENGINE_VERSION,
+    bars,
+    settings: serializableSettings,
+    config,
+    checkpoint,
+    options: {
+      objective: options.objective,
+      entryFilters: options.entryFilters
+        ? [...options.entryFilters]
+        : undefined,
+      excludedStrategyIds: options.excludedStrategyIds
+        ? [...options.excludedStrategyIds]
+        : undefined,
+    },
+  };
+}
+
+export async function enqueueScreeningBatchInLocalEngine(
+  bars: MarketBar[],
+  jobs: LocalScreeningJobBatchUnit[],
+  signal?: AbortSignal,
+): Promise<string[] | null> {
+  if (signal?.aborted) throw abortError();
+  const requestBody = encodeLocalScreeningJobBatchRequest({
+    version: LOCAL_SCREENING_ENGINE_VERSION,
+    bars,
+    jobs,
+  });
+  try {
+    const response = await fetch(
+      `${LOCAL_SCREENING_ENGINE_URL}/screening/job-batches`,
+      {
+        method: "POST",
+        headers: { "Content-Type": LOCAL_SCREENING_BINARY_CONTENT_TYPE },
+        body: requestBody,
+        signal,
+      },
+    );
+    if (!response.ok) return null;
+    const created = (await response.json()) as { jobIds?: string[] };
+    return created.jobIds?.length === jobs.length ? created.jobIds : null;
+  } catch (error) {
+    if ((error as Error).name === "AbortError") throw error;
+    return null;
+  }
+}
+
+export async function enqueueScreeningInLocalEngine(
+  bars: MarketBar[],
+  settings: Omit<BacktestSettings, "interval"> & {
+    interval: MarketInterval;
+  },
+  config: ScreeningValidationConfig,
+  options: WorkerScreeningOptions,
+  checkpoint: { key: string; signature: string },
+): Promise<string | null> {
+  if (options.signal?.aborted) throw abortError();
+  const requestBody = encodeLocalScreeningJobRequest(
+    screeningJobRequest(bars, settings, config, options, checkpoint),
+  );
+  try {
+    const response = await fetch(`${LOCAL_SCREENING_ENGINE_URL}/screening/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": LOCAL_SCREENING_BINARY_CONTENT_TYPE },
+      body: requestBody,
+      signal: options.signal,
+    });
+    if (!response.ok) return null;
+    const created = (await response.json()) as { jobId?: string };
+    return created.jobId ?? null;
+  } catch (error) {
+    if ((error as Error).name === "AbortError") throw error;
+    return null;
+  }
+}
+
+export async function cancelScreeningInLocalEngine(
+  jobIds: readonly string[],
+): Promise<void> {
+  await Promise.allSettled(
+    [...new Set(jobIds)].map((jobId) =>
+      fetch(`${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${jobId}`, {
+        method: "DELETE",
+        keepalive: true,
+      }),
+    ),
+  );
 }
 
 function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
@@ -77,50 +181,27 @@ export async function runScreeningInLocalEngine(
   options: WorkerScreeningOptions,
   checkpoint: { key: string; signature: string },
 ): Promise<ScreeningValidationOutcome | null> {
-  if (!(await localEngineAvailable())) return null;
+  if (!(await localScreeningEngineAvailable())) return null;
   if (options.signal?.aborted) throw abortError();
-  const { executionContext: _executionContext, ...serializableSettings } =
-    settings;
-  void _executionContext;
-  const request: LocalScreeningJobRequest = {
-    version: LOCAL_SCREENING_ENGINE_VERSION,
-    bars,
-    settings: serializableSettings,
-    config,
-    checkpoint,
-    options: {
-      objective: options.objective,
-      entryFilters: options.entryFilters
-        ? [...options.entryFilters]
-        : undefined,
-      excludedStrategyIds: options.excludedStrategyIds
-        ? [...options.excludedStrategyIds]
-        : undefined,
-    },
-  };
-  const requestBody = encodeLocalScreeningJobRequest(request);
   const createJob = () =>
-    fetch(`${LOCAL_SCREENING_ENGINE_URL}/screening/jobs`, {
-      method: "POST",
-      headers: { "Content-Type": LOCAL_SCREENING_BINARY_CONTENT_TYPE },
-      body: requestBody,
-      signal: options.signal,
-    });
-  let response: Response;
-  try {
-    response = await createJob();
-  } catch (error) {
-    if ((error as Error).name === "AbortError") throw error;
-    return null;
-  }
-  if (!response.ok) return null;
-  const created = (await response.json()) as { jobId?: string };
-  if (!created.jobId) return null;
-  let jobUrl = `${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${created.jobId}`;
+    enqueueScreeningInLocalEngine(bars, settings, config, options, checkpoint);
+  const jobId = await createJob();
+  if (!jobId) return null;
+  return waitForScreeningInLocalEngine(jobId, options, createJob);
+}
+
+export async function waitForScreeningInLocalEngine(
+  jobId: string,
+  options: WorkerScreeningOptions,
+  restoreJob?: () => Promise<string | null>,
+): Promise<ScreeningValidationOutcome> {
+  let jobUrl = `${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${jobId}`;
   const cancel = () => {
     void fetch(jobUrl, { method: "DELETE", keepalive: true }).catch(() => {});
   };
-  options.signal?.addEventListener("abort", cancel, { once: true });
+  if (!options.preserveLocalJobOnAbort) {
+    options.signal?.addEventListener("abort", cancel, { once: true });
+  }
   let lastProgress = "";
   let lastValidationProgress = "";
   let reconnectAttempts = 0;
@@ -144,14 +225,9 @@ export async function runScreeningInLocalEngine(
         }
         await delay(500, options.signal);
         try {
-          const restoredResponse = await createJob();
-          if (restoredResponse.ok) {
-            const restored = (await restoredResponse.json()) as {
-              jobId?: string;
-            };
-            if (restored.jobId) {
-              jobUrl = `${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${restored.jobId}`;
-            }
+          const restoredJobId = await restoreJob?.();
+          if (restoredJobId) {
+            jobUrl = `${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${restoredJobId}`;
           }
         } catch (error) {
           if ((error as Error).name === "AbortError") throw error;
@@ -207,6 +283,8 @@ export async function runScreeningInLocalEngine(
       await delay(POLL_INTERVAL_MS, options.signal);
     }
   } finally {
-    options.signal?.removeEventListener("abort", cancel);
+    if (!options.preserveLocalJobOnAbort) {
+      options.signal?.removeEventListener("abort", cancel);
+    }
   }
 }

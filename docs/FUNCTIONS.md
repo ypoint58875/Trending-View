@@ -1,5 +1,39 @@
 # Function Map
 
+## 2026-09-22 strategy-cycle validation
+
+- `barsAvailableAtCycleDecision(bars, decisionIndex)`: returns the inclusive
+  historical prefix and rejects an invalid decision index, preventing future
+  bars from reaching the optimizer.
+- `normalizeCycleValues(...)`: de-duplicates, sorts, bounds, and caps user
+  screening-window or update-interval values.
+- `buildStrategyCycleSchedule(...)`: forms the union of required historical
+  decision dates so compatible update intervals share optimization work.
+- `runStrategyCycleConfiguration(...)`: replays selected plans through one
+  continuous allocation account with next-bar execution and no synthetic
+  update-boundary reset.
+- `buildStrategyCycleMatrix(...)`: evaluates every normalized window/interval
+  pair from persisted selection snapshots.
+- `evaluateStrategyCycleEffectiveness(...)`: summarizes median return,
+  positive rate, and median benchmark excess at fixed forward horizons.
+- `readLatestStrategyCycleValidationTask(...)`,
+  `writeStrategyCycleValidationTask(...)`, and
+  `clearStrategyCycleValidationTask(...)`: manage the single versioned,
+  transactional IndexedDB task record, including version-2 queued local job
+  mappings and version-1 migration.
+- `enqueueScreeningBatchInLocalEngine(...)`, `enqueueScreeningInLocalEngine(...)`, and
+  `waitForScreeningInLocalEngine(...)`: separate durable local job submission
+  from browser result polling so a bounded cycle queue runs while the page is
+  suspended. `cancelScreeningInLocalEngine(...)` implements explicit Pause and
+  reset across all submitted units.
+- `hashMarketBars(...)`: computes one deterministic prefix hash that every
+  screening window at the same historical decision reuses.
+- `unpackMarketBars(packed, requestedCount)`: materializes only the validated
+  causal prefix from a shared columnar batch file, bounding per-child object
+  allocation without copying a file per unit.
+- `screeningResultPlan(...)`: converts single or combination screening winners
+  to the shared allocation-plan representation for both workspaces.
+
 ## 2026-08-20 additions
 
 - `supportResistanceBreaks(...)`: confirmation-bar levels, EMA(5)/EMA(10) volume-oscillator filtering, close crossovers, and both wick conditions without backpainting.
@@ -745,9 +779,13 @@ separate guidance card.
   take over.
 - `encodeLocalScreeningJobRequest(...)`: writes protocol-v3 metadata and times
   ahead of the lossless Float64 market columns, avoiding browser-side bar JSON.
-- `createScreeningEngineCoordinator(...)`: serializes local jobs, permits one
-  disposable compute child at a time, restores deterministic jobs from disk,
-  and exposes loopback-only create/status/cancel endpoints.
+- `recommendedScreeningConcurrency(...)`: derives a conservative process-pool
+  size from available logical CPU capacity and physical memory while retaining
+  desktop headroom.
+- `createScreeningEngineCoordinator(...)`: queues local jobs, fills the bounded
+  disposable-child pool, restores deterministic jobs from disk, and exposes
+  loopback-only create/status/cancel endpoints plus detected concurrency in
+  relay health.
 - `scripts/screening-engine-child.ts`: runs the unchanged shared validation
   core, atomically persists exact optimizer checkpoints, exits after each
   checkpoint, and writes only the compact completed outcome.

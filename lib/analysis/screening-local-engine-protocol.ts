@@ -31,6 +31,17 @@ export interface LocalScreeningJobRequest {
   };
 }
 
+export interface LocalScreeningJobBatchUnit
+  extends Omit<LocalScreeningJobRequest, "bars"> {
+  barCount: number;
+}
+
+export interface LocalScreeningJobBatchRequest {
+  version: typeof LOCAL_SCREENING_ENGINE_VERSION;
+  bars: MarketBar[];
+  jobs: LocalScreeningJobBatchUnit[];
+}
+
 export interface LocalScreeningJobSnapshot {
   jobId: string;
   status: "queued" | "running" | "completed" | "error" | "cancelled";

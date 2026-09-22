@@ -259,6 +259,17 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 
+test("server-renders the strategy cycle validation route", async () => {
+  const response = await render("/strategy-validation");
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
+
+  const html = await response.text();
+  assert.match(html, /\u7b56\u7565\u5468\u671f\u9a8c\u8bc1/);
+  assert.match(html, /\u7b5b\u9009\u7a97\u53e3 \u00d7 \u66f4\u65b0\u95f4\u9694/);
+  assert.match(html, /\u8fd4\u56de\u7814\u7a76\u53f0/);
+});
+
 test("rejects removed intraday market intervals", async () => {
   const response = await render("/api/market?interval=1m");
   assert.equal(response.status, 400);

@@ -1,5 +1,135 @@
 # Technical Research
 
+## 2026-09-23 adaptive multi-CPU screening
+
+The cycle-validation batch contains independent `(decision, screening window)`
+optimization jobs, but the coordinator previously ran only one child process.
+Two parallelization boundaries were compared:
+
+1. Split one optimizer traversal across Worker threads. Node documents Worker
+   threads as appropriate for CPU-intensive JavaScript and capable of shared
+   memory, but QuantScope's later stages mutate ranked finalist beams in stable
+   ordinal order. Parallel reduction would require a new deterministic merge
+   kernel and would weaken the existing disposable-process heap boundary.
+2. Keep each job's exact traversal unchanged and run independent queued jobs
+   in separate Node child processes. This reuses the existing checkpoints,
+   watchdog, cancellation, and OS-level heap reclamation while allowing the OS
+   to schedule work across CPUs.
+
+Option 2 was selected. The pool uses `os.availableParallelism()` rather than
+`os.cpus().length`; Node explicitly recommends the former for application
+parallelism. It reserves one logical CPU, reserves 25% of physical memory with
+a 2 GiB floor, assigns a conservative 4 GiB budget to each child, and caps the
+automatic pool at eight. The resulting policy stays at one child on an 8 GiB
+host, selects three on a 16 GiB host even with many CPUs, and selects seven on
+an 8-CPU/64-GiB host. These are startup resource bounds, not claims that every
+stage scales linearly; shared disk bandwidth and unequal job durations can
+reduce speedup.
+
+Primary references, accessed 2026-09-23:
+
+- Node.js `os.availableParallelism()` and guidance not to use CPU-array length:
+  `https://nodejs.org/api/os.html#osavailableparallelism`
+- Node.js child-process isolation and per-process V8 memory:
+  `https://nodejs.org/api/child_process.html#child_processforkmodulepath-args-options`
+- Node.js Worker threads for CPU-intensive JavaScript and shared memory:
+  `https://nodejs.org/api/worker_threads.html`
+
+## 2026-09-23 background-safe strategy-cycle scheduling
+
+The original browser loop submitted one optimization only after the preceding
+result returned. Background-tab suspension therefore left the local engine
+idle between units even though each individual optimization was resumable.
+
+Two corrections were compared. A new server-owned cycle-analysis service
+could select winners and build reports without a browser, but it would move
+TypeScript analysis semantics into a second runtime boundary and require a new
+durable task/result protocol. The smaller alternative is to pre-submit the
+already bounded set of independent `(decision, screening window)` jobs to the
+existing loopback coordinator in one compact full-series batch. It already
+provides durable execution, checkpoint restarts, cancellation, and seven-day
+retention. The second option
+was selected: it changes scheduling ownership without duplicating selection or
+portfolio logic. IndexedDB stores deterministic job IDs so the page can later
+collect results; report construction remains in the shared browser analysis
+modules.
+
+The queue is still local-machine work. A local relay restart pauses automatic
+advancement until the page is reopened and Continue re-registers the persisted
+requests. Cross-device and hosted unattended execution remain out of scope.
+
+### Exact compute and memory reuse
+
+The first batch implementation uploaded bars once but wrote a sliced
+`bars.bin` into every unit directory. Three exact alternatives were compared:
+
+1. Hard-link one file into every unit. Node supports `fsPromises.link`, but the
+   links still expose the complete series to every child and couple retention
+   to platform-specific link behavior.
+2. Use `SharedArrayBuffer` or parallel Workers. Shared memory avoids copies
+   within one agent cluster, but cycle computation uses disposable Node child
+   processes for heap reclamation; shared-memory synchronization would weaken
+   that isolation and does not survive restarts.
+3. Keep one immutable batch file and place a validated prefix count in each
+   unit request. The child deserializes the columnar buffer and constructs only
+   prefix bar objects. This preserves process isolation, checkpoint recovery,
+   and future-bar exclusion while reducing bar-input disk use from approximately
+   `O(units * history)` to `O(history + unit metadata)`; independent result and
+   checkpoint files remain per unit.
+
+Option 3 was selected. The same-decision windows also reuse the four
+range-independent EMA entry-filter eligibility arrays, and checkpoint identity
+hashes the decision prefix once. A joint multi-window optimizer was not used:
+after standalone ranking, each window can retain different parameter finalists
+and therefore different pair and higher-order beams. Sharing those window-
+specific stages would change results; holding every raw target for later reuse
+would also trade CPU for an unbounded cache. The exact bounded design shares
+only immutable inputs and range-independent derivations.
+
+Primary references, accessed 2026-09-23:
+
+- Node.js `fsPromises.link`:
+  `https://nodejs.org/api/fs.html#fspromiseslinkexistingpath-newpath`
+- MDN transferable objects and zero-copy `ArrayBuffer` ownership transfer:
+  `https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Transferable_objects`
+- MDN `SharedArrayBuffer` synchronization and sharing semantics:
+  `https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer`
+
+## 2026-09-22 strategy-cycle validation orchestration
+
+The feature must repeatedly select a strategy using only information available
+at a historical decision date, then measure how long that selection remains
+useful. Walk-forward analysis and time-series cross-validation both preserve
+chronological order; random folds would leak future regimes into selection.
+QuantConnect's walk-forward overview describes periodic re-optimization, while
+scikit-learn's `TimeSeriesSplit` documents expanding chronological training
+sets and a gap option. QuantScope therefore uses inclusive historical prefixes
+and next-bar execution at every decision.
+
+Two implementation options were compared. A browser page can reuse the current
+screening client/local engine, needs no schema migration, and can checkpoint
+after each expensive unit, but it schedules new units only while open. A new
+server-side queue could continue after page closure and coordinate across
+devices, but it would require durable job/result schemas, ownership, service
+lifecycle, cancellation, retention, and migration work. The browser
+orchestrator was selected for this first version because it keeps selection
+semantics identical to one-click screening and is reversible. Its limitation
+is explicit in the UI and docs; unattended orchestration remains a separate
+future feature.
+
+The comparison grid shares each historical `(date, window)` winner across all
+update intervals, then evaluates every cell as one continuous allocation
+account. This preserves transaction costs and position state. A 512-unit cap,
+eight-value limits, serial optimization, and one latest IndexedDB task bound
+memory, queue size, and retained state.
+
+Primary references, accessed 2026-09-22:
+
+- QuantConnect walk-forward optimization:
+  `https://www.quantconnect.com/docs/v2/writing-algorithms/optimization/walk-forward-optimization`
+- scikit-learn time-series split:
+  `https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html`
+
 ## 2026-09-21 Stable 164824, TOPIX availability, and KS11 memory
 
 Problem: `164824` switched through an unstable Eastmoney primary, exact TOPIX

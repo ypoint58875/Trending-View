@@ -1,5 +1,67 @@
 # Codex State
 
+## 2026-09-23 adaptive multi-CPU screening queue
+
+- The loopback screening coordinator now runs independent queued optimization
+  units in parallel Node child processes. Each unit retains its existing exact
+  checkpoint, watchdog, restart, cancellation, and process-level heap isolation.
+- Pool size is detected at relay startup from Node's available parallelism and
+  physical memory. It reserves one logical CPU, reserves 25% of memory with a
+  2 GiB minimum, budgets 4 GiB for each active child, and caps concurrency at
+  eight. Low-memory and low-core machines safely remain at one child.
+- Parallelism is intentionally between independent jobs. Candidate traversal
+  inside one screening job remains ordered and single-child, preserving exact
+  tie behavior and avoiding duplicated finalist graphs.
+- Focused verification covers 8/16/64/128 GiB policy cases and observes a
+  two-slot coordinator completing a three-job batch with exactly two children
+  active at peak.
+
+## 2026-09-23 unattended strategy-cycle queue
+
+- Strategy-cycle validation now pre-submits every incomplete bounded unit in
+  one compact full-series request to the existing loopback screening
+  coordinator before collecting results. The coordinator materializes each
+  causal prefix and continues its bounded child-process queue without browser
+  polling, so a sleeping, backgrounded, or closed tab no longer blocks the
+  next unit.
+- IndexedDB task version 2 stores deterministic local job IDs alongside
+  completed selection snapshots. Reopening and pressing Continue reattaches to
+  completed/running jobs; an explicit Pause cancels all submitted unfinished
+  jobs, while component teardown leaves them running.
+- Cycle batches now retain one immutable columnar bar file instead of one copy
+  per optimization unit. Each request stores a causal prefix count, each child
+  constructs only that prefix, same-decision windows reuse entry-filter
+  derivations, and the browser hashes their shared prefix once. Window-specific
+  ranking and combination beams remain isolated, preserving exact results.
+- Verification passed strict TypeScript, all 264 TypeScript tests (including a
+  three-job no-browser-polling and causal-prefix regression), the production
+  build, all four rendered route/API tests, and lint with only two pre-existing
+  `MarketWorkspace` unused-variable warnings.
+
+## 2026-09-22 strategy-cycle validation workspace
+
+- Added `/strategy-validation`, reachable from the research workspace. It
+  selects canonical instruments already present in the saved-backtest shortcut
+  bar and jointly compares configurable screening windows and strategy update
+  intervals.
+- Every historical screening request receives only bars through its decision
+  close. Shared decision snapshots avoid rerunning the same window for each
+  update interval, and every matrix cell uses one continuous allocation
+  backtest so update boundaries retain holdings and transaction costs.
+- The latest task is stored in the
+  `quantscope-strategy-cycle-validation` IndexedDB database after every
+  completed decision/window unit. Matching market/configuration signatures
+  resume without duplicate work. This initial page-driven scheduling boundary
+  was superseded by the 2026-09-23 coordinator queue above.
+- Input counts are capped at eight windows and eight intervals, and a schedule
+  above 512 optimization units is rejected before execution. Default values
+  are 64/128/256 screening sessions, 5/10/20/40/60 update sessions, and 504
+  evaluation sessions.
+- Verification passed the complete 263-test TypeScript suite, four rendered
+  route/API tests, strict TypeScript, production build, lint with only two
+  pre-existing workspace warnings, and live in-app-browser rendering with
+  eight shortcut instruments.
+
 ## 2026-09-21 bounded chart memory during screening progress
 
 - Screening progress no longer rebuilds the full price-chart option when no
