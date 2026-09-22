@@ -17,6 +17,7 @@ const RESTART_EXIT_CODE = 75;
 const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const CHILD_STALL_TIMEOUT_MS = 60_000;
 const MAX_STALL_RESTARTS = 3;
+const MAX_UNEXPECTED_RESTARTS = 3;
 const BAR_FIELD_COUNT = 11;
 const BINARY_CONTENT_TYPE = "application/vnd.quantscope.screening+binary";
 
@@ -134,6 +135,7 @@ export function createScreeningEngineCoordinator({
   stallTimeoutMs = CHILD_STALL_TIMEOUT_MS,
   watchdogIntervalMs = 5_000,
   maxStallRestarts = MAX_STALL_RESTARTS,
+  maxUnexpectedRestarts = MAX_UNEXPECTED_RESTARTS,
 }) {
   const stateDirectory =
     stateDirectoryPath ?? join(rootDirectory, "data", "state", "screening-engine");
@@ -215,6 +217,7 @@ export function createScreeningEngineCoordinator({
         if (event.type === "optimization-progress") {
           job.progress = event.progress;
           job.stallRestartCount = 0;
+          job.unexpectedRestartCount = 0;
         } else if (event.type === "validation-progress") {
           job.validationProgress = event.progress;
         } else if (event.type === "completed") {
@@ -288,6 +291,12 @@ export function createScreeningEngineCoordinator({
         return;
       }
       if (job.status !== "completed" && job.status !== "error") {
+        if (job.unexpectedRestartCount < maxUnexpectedRestarts) {
+          job.unexpectedRestartCount += 1;
+          job.restartCount += 1;
+          setImmediate(() => startChild(job));
+          return;
+        }
         job.status = "error";
         job.error = {
           message: stderr.trim() || `Screening child exited with code ${code}`,
@@ -332,6 +341,7 @@ export function createScreeningEngineCoordinator({
         cancelled: false,
         restartCount: 0,
         stallRestartCount: 0,
+        unexpectedRestartCount: 0,
         stallRestartRequested: false,
         lastHeartbeatAt: Date.now(),
         engine: undefined,

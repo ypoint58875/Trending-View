@@ -17,14 +17,7 @@ import { classifyMarketProviderError } from "@/lib/market/provider-errors";
 
 export const dynamic = "force-dynamic";
 
-const allowedIntervals = new Set<MarketInterval>([
-  "1m",
-  "5m",
-  "15m",
-  "30m",
-  "60m",
-  "1d",
-]);
+const allowedIntervals = new Set<MarketInterval>(["1d"]);
 const allowedProviders = new Set<MarketDataProvider>(
   MARKET_DATA_PROVIDERS,
 );
@@ -45,6 +38,12 @@ export async function GET(request: Request) {
     "index") as MarketAssetType;
   const requestedInterval = (url.searchParams.get("interval") ||
     "1d") as MarketInterval;
+  if (!allowedIntervals.has(requestedInterval)) {
+    return NextResponse.json(
+      { error: "UNSUPPORTED_INTERVAL" },
+      { status: 400 },
+    );
+  }
   const interval = allowedIntervals.has(requestedInterval)
     ? requestedInterval
     : "1d";

@@ -56,6 +56,7 @@ export default defineConfig(async () => {
 
   return {
     server: {
+      strictPort: true,
       watch: {
         ignored: ["**/.wrangler/**"],
         ...(isCodexSeatbeltSandbox

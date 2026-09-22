@@ -1,7 +1,7 @@
 # QuantScope
 
-QuantScope is a daily and native one-minute workspace for researching one
-global index, ETF, or commodity futures quote proxy at a time. It
+QuantScope is a daily workspace for researching one global index, ETF, or
+commodity futures quote proxy at a time. It
 combines filtered asset search,
 dividend/split-adjusted price charts when the selected source supports them,
 technical indicators, strategy backtests, parameter sensitivity diagnostics,
@@ -14,11 +14,9 @@ trades or run unattended jobs.
   proxies; individual equities are excluded from results. A deterministic
   catalog includes gold (`GC=F`), silver (`SI=F`), crude oil (`CL=F`), and
   copper (`HG=F`).
-- Two explicit research tabs: daily and provider-native one minute. There is no
-  5/15/30/60-minute UI and no synthetic resampling. Data, latest-bar state,
-  ranges, indicators, strategies, backtests, screening requests, fingerprints,
-  source health, saved plans, and chart reset keys retain the selected interval.
-  One-minute history is bounded to 1,500 bars and uses precise minute ranges.
+- One daily research workspace. Intraday intervals are not exposed by the UI
+  or market API, and no synthetic resampling is performed. Legacy non-daily
+  saved records remain readable provenance and reopen against daily bars.
 - Daily history requests start at 2000-01-01 with a 10,000-bar safety cap.
   Instruments launched later begin at their first provider-available bar.
 - Candlestick and line chart modes with volume and synchronized zoom.
@@ -33,14 +31,10 @@ trades or run unattended jobs.
   failure immediately tries ordered backups; only a
   complete chain failure starts 15-, 30-, then 60-minute backoff. Completed
   OHLC bars are locked; a same-source refresh may fill a cached zero volume for
-  the same date without changing its prices. Chinese index/ETF recovery tries
-  the no-key Tencent current
-  quote first and reserves the 50-call/day Juhe product for the final
-  quote-only attempt; neither quote source becomes canonical history.
-  One-minute mode refreshes the visible instrument once per minute during the
-  venue session, uses only its configured primary provider, and does not run
-  daily backup/reference audits. If that provider publishes no intraday volume,
-  volume-dependent indicators and strategies are explicitly unavailable.
+  the same date without changing its prices. Chinese index/ETF recovery uses
+  no-key Tencent raw daily history when a canonical base is unavailable and
+  its current quote for latest-only refreshes. The 50-call/day Juhe product is
+  reserved for the final quote-only attempt.
   Initial history, latest refreshes, fallbacks, and temporary quotes are
   deduplicated and ordered by canonical trading date rather than provider
   timestamp, preventing adjacent daily bars from swapping across sources.
@@ -135,7 +129,8 @@ trades or run unattended jobs.
   advice card is removed. The
   scrollable list shows one collapsed row per instrument; expanding it reveals
   the saved strategy/indicator snapshots. Instrument groups and snapshots can
-  be reordered by drag and drop or keyboard arrows, and that order persists.
+  be reordered by drag and drop or keyboard arrows, and that order persists;
+  nested strategy rows no longer intercept instrument-group drops.
   Owner-scoped, renameable folders organize instrument groups at the first
   level and strategy snapshots inside each instrument. Moving a row uses a
   folder selector; deleting a folder only returns its contents to the unfiled
@@ -171,6 +166,11 @@ trades or run unattended jobs.
   traverses all 45,196 finite registered parameter combinations; there is no
   per-strategy sampling control or hidden cap. One shared objective drives the
   complete single-and-combination workflow.
+  A second period-derived action (128 days by default) processes every saved
+  shortcut instrument sequentially, including indexes, ETFs, funds, and
+  commodity proxies, and resumes after interruption from its last fully
+  saved instrument, and files the current-objective winner into an instrument
+  strategy folder named for that period, such as `128日`.
 - Three focused screening targets: balanced score, maximum return, and maximum
   Sharpe. Balanced score is `0.45 * current-window total return +
   8 * clamp(current-window Sharpe, -5, 5) + 0.35 * current-window maximum
@@ -193,7 +193,7 @@ trades or run unattended jobs.
   out-of-sample proof. Bars before an active scoring boundary remain available
   only for causal indicator and position-state continuity; their transactions
   and performance never enter the active-window objective.
-- Monotonic segmented eighteen-stage progress, cancellation, and unexpected-run
+- Monotonic segmented sixteen-stage progress, cancellation, and unexpected-run
   recovery. The first result column keeps
   only the best parameter set for each standalone strategy. Screening
   builds every candidate signal over the complete loaded history and limits
@@ -204,7 +204,7 @@ trades or run unattended jobs.
   keeps only compact metrics for each eligible strategy's top 60 unfiltered
   parameter sets. The top three final parameter sets per strategy keep their
   complete execution state for `3 x 3` pair replay.
-- Four-through-nine-strategy screening reuses full-history causal strategy
+- Four-through-eight-strategy screening reuses full-history causal strategy
   targets but executes each repeated combination only across the selected
   scoring window plus one preceding bar. Its streaming core-satellite state and
   causal volatility cap advance from complete history, preserving inherited
@@ -264,20 +264,20 @@ trades or run unattended jobs.
   remains favorable, has conflicting short/mid-term evidence, needs review, or
   lacks enough recent executions. Exact and same-type shortcut matches are
   labelled with parameter/allocation/filter differences.
-- Pair winners seed bounded forward expansion through three-to-nine-strategy
+- Pair winners seed bounded forward expansion through three-to-eight-strategy
   core-satellite candidates. Every strategy-count category retains at most 30, and
-  three-to-nine-strategy categories retain at most three results with the same
+  three-to-eight-strategy categories retain at most three results with the same
   Strategy A primary. Staged search is deliberately wider: every primary keeps
-  its top 16 intermediate candidates at each three-to-nine-strategy level for
+  its top 16 intermediate candidates at each three-to-eight-strategy level for
   the next expansion. The three-result cap is applied only to final display, so
   a strong parent is not removed merely because three same-primary variants
   already rank above it.
-  Three-to-nine-strategy result rows use the concise
+  Three-to-eight-strategy result rows use the concise
   `Strategy A name · N-strategy layered` label, keep the remaining strategy
   names in a compact two-line summary, and omit per-leg parameters; full names
   remain available through accessible labels and hover text.
 - A compact result navigator below the chart selects the single- through
-  nine-strategy result group and moves through adjacent ranked results without
+  eight-strategy result group and moves through adjacent ranked results without
   duplicating the full result tables.
 - A post-screening primary/deputy shortlist combines the standalone and
   combination result pools. The highest eligible candidate under the selected
@@ -304,12 +304,14 @@ For one-click local use, double-click `open-quantscope.bat`. The launcher:
 - transfers screening bars as lossless Float64 columns, reuses layered
   checkpoints and derived filter state, and fetches the compact result only
   after status reports completion;
-- runs QuantScope only at `http://127.0.0.1:3000`;
+- runs QuantScope only at `http://127.0.0.1:3000`, with strict-port startup so
+  the development server cannot silently move to 3002 or another origin;
 - manages the application on port 3000 and the market relay on port 3001
   through one runtime-port registry;
 - initializes the project-local saved-backtest database and safely recovers
   when Wrangler reports that no migrations are pending but fails to exit;
-- opens a new maximized Edge window when Edge is available; and
+- opens a new maximized Edge window as soon as port 3000 begins listening when
+  Edge is available; and
 - never requires a ChatGPT or other account.
 
 Keep the `QuantScope Local Server` window open while using the application.
@@ -321,7 +323,11 @@ start: the application on `127.0.0.1:3000` and the loopback-only,
 source-allowlisted relay on `127.0.0.1:3001`. A healthy QuantScope listener is
 reused. An unhealthy listener is stopped only when its Node command, fixed
 arguments, and absolute project path identify this exact checkout. An active
-unrelated listener is left untouched and reported with its PID. When
+unrelated listener is left untouched and reported with its PID. The same exact
+identity check also removes an older current-checkout server that Vite had
+previously moved to a fallback port. Readiness uses the small
+`/api/health` contract instead of rendering the complete workspace. A failed
+startup stops its launched process tree and checks for verified leftovers. When
 `HTTP_PROXY` or `HTTPS_PROXY` is configured, only the relay process receives
 those values; proxy addresses never enter application bindings or logs.
 Development mode also defaults to the fixed loopback relay URL so an ordinary
@@ -353,10 +359,11 @@ indexes or ETFs with a verified Yahoo symbol mapping. An instrument without a
 verified Yahoo mapping keeps its selected provider. Eastmoney, Nasdaq, the
 official Nikkei CSV, and optional credentialed EODHD, Twelve Data, Financial
 Modeling Prep, Alpha Vantage, Marketstack, and Zhitu definitions are ordered
-backups where supported. Tencent supplies a no-key Chinese index/ETF session
-quote: after validation it may add only an in-memory current-day bar while the
-locked historical series and persistent canonical cache remain unchanged. FRED
-is a close-only N225 reference. Secrets stay in
+backups where supported. Tencent supplies no-key Chinese index/ETF raw daily
+history, bounded at 2,000 requested rows, plus a session quote. History can
+recover an empty chart under verified exchange identity; latest-only refreshes
+still treat the one-bar quote as an in-memory overlay. FRED is a close-only
+N225 reference. Secrets stay in
 `.env.local` or a hosted secret store. Public website endpoints have no
 published stability or commercial-use SLA.
 
@@ -448,7 +455,10 @@ next open; a qualifying opposite gap at that open can replace that direction.
 Editing strategy-lab plans, dates, cash, or cost settings and saving a backtest
 do not clear the current page's completed one-click screening results. They
 remain visible until another screening starts or the instrument changes, but
-are not loaded from a calculation cache after refresh. Compact D1 run archives
+changing the visible instrument or opening another saved strategy does not
+cancel the original screening job. Its result remains owned by the original
+instrument and is never rendered against the newly viewed series. Completed
+results are not loaded from the compact D1 archive after refresh. Compact D1 run archives
 exist only for provenance and week-to-week comparison. Local D1 state writes
 are excluded from the development file watcher.
 

@@ -19,6 +19,9 @@ import {
 const SEARCH_ENDPOINT = "https://searchapi.eastmoney.com/api/suggest/get";
 const KLINE_ENDPOINT =
   "https://push2his.eastmoney.com/api/qt/stock/kline/get";
+const KLINE_BACKUP_HOST = "push2.eastmoney.com";
+const REQUEST_DEADLINE_MS = 24_000;
+const REQUEST_ATTEMPT_TIMEOUT_MS = 8_000;
 const SEARCH_TOKEN = "D43BF722C8E33BDC906FB84D85E326E8";
 const DEFAULT_HEADERS = {
   Accept: "application/json,text/plain,*/*",
@@ -144,26 +147,43 @@ async function fetchJson<T>(
   fetchImpl: typeof fetch = fetch,
   requestCache: RequestCache = "default",
 ): Promise<T> {
-  const candidates: Array<URL | Request> = [url];
+  const directCandidates: URL[] = [url];
   if (
     url.protocol === "https:" &&
     url.hostname === "push2his.eastmoney.com"
   ) {
     const directFallback = new URL(url);
     directFallback.protocol = "http:";
-    candidates.push(directFallback);
+    directCandidates.push(directFallback);
+
+    const alternateHost = new URL(url);
+    alternateHost.hostname = KLINE_BACKUP_HOST;
+    directCandidates.push(alternateHost);
   }
-  const relayRequest = createLocalMarketRelayRequest(url, DEFAULT_HEADERS);
-  if (relayRequest) candidates.push(relayRequest);
+  const candidates: Array<URL | Request> = [];
+  directCandidates.forEach((candidate) => {
+    candidates.push(candidate);
+    if (candidate.protocol !== "https:") return;
+    const relayRequest = createLocalMarketRelayRequest(
+      candidate,
+      DEFAULT_HEADERS,
+    );
+    if (relayRequest) candidates.push(relayRequest);
+  });
 
   let lastError: unknown = null;
+  const deadline = Date.now() + REQUEST_DEADLINE_MS;
   for (const candidate of candidates) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
     try {
       const response = await fetchImpl(candidate, {
         ...(candidate instanceof Request
           ? {}
           : { headers: DEFAULT_HEADERS }),
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(
+          Math.min(REQUEST_ATTEMPT_TIMEOUT_MS, remainingMs),
+        ),
         ...(requestCache === "no-store" ? { cache: requestCache } : {}),
       });
       if (!response.ok) {
@@ -237,10 +257,14 @@ export async function fetchEastmoneySeries(
   requestCache: RequestCache = "default",
 ): Promise<MarketSeries> {
   const limit = clampMarketSeriesLimit(requestedLimit, interval);
+  const usesRawLofHistory =
+    interval === "1d" &&
+    instrument.assetType === "etf" &&
+    /\bLOF\b/i.test(instrument.name);
   const url = new URL(KLINE_ENDPOINT);
   url.searchParams.set("secid", instrument.secid);
   url.searchParams.set("klt", intervalToKlineType[interval]);
-  url.searchParams.set("fqt", "1");
+  url.searchParams.set("fqt", usesRawLofHistory ? "0" : "1");
   url.searchParams.set("lmt", String(limit));
   if (requestsExtendedDailyHistory(interval, requestedLimit)) {
     url.searchParams.set("beg", DAILY_HISTORY_START_COMPACT);
@@ -284,7 +308,9 @@ export async function fetchEastmoneySeries(
       exchange,
     },
     interval,
-    priceAdjustment: "corporate-action-adjusted",
+    priceAdjustment: usesRawLofHistory
+      ? "raw"
+      : "corporate-action-adjusted",
     previousClose: Number(data.preKPrice) || bars[0].open,
     bars,
     latestBarStatus:

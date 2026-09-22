@@ -23,9 +23,16 @@ const directory = process.argv[2];
 const marker = join(directory, "stalled-once");
 try {
   await access(marker);
-  await writeFile(join(directory, "result.json"), JSON.stringify({ ok: true }));
-  process.stdout.write(JSON.stringify({ type: "telemetry", status: { updatedAt: Date.now(), restartCount: 0, evaluationsPerSecond: 1, estimatedRemainingSeconds: 0, residentBytes: 1, heapUsedBytes: 1 } }) + "\\n");
-  process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
+  const unexpectedMarker = join(directory, "unexpected-once");
+  try {
+    await access(unexpectedMarker);
+    await writeFile(join(directory, "result.json"), JSON.stringify({ ok: true }));
+    process.stdout.write(JSON.stringify({ type: "telemetry", status: { updatedAt: Date.now(), restartCount: 0, evaluationsPerSecond: 1, estimatedRemainingSeconds: 0, residentBytes: 1, heapUsedBytes: 1 } }) + "\\n");
+    process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
+  } catch {
+    await writeFile(unexpectedMarker, "1");
+    process.exitCode = 1;
+  }
 } catch {
   await writeFile(marker, "1");
   setInterval(() => {}, 1000);
@@ -100,11 +107,24 @@ try {
       if (snapshot.status === "completed") break;
     }
     assert.equal(snapshot.status, "completed", JSON.stringify(snapshot));
-    assert.equal(snapshot.engine?.restartCount, 1);
+    assert.equal(snapshot.engine?.restartCount, 2);
     const result = await fetch(
       `${baseUrl}/screening/jobs/${created.jobId}/result`,
     ).then((response) => response.json());
     assert.deepEqual(result, { ok: true });
+
+    const cachedResponse = await fetch(`${baseUrl}/screening/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": LOCAL_SCREENING_BINARY_CONTENT_TYPE },
+      body: encodeLocalScreeningJobRequest(request),
+    });
+    assert.equal(cachedResponse.status, 202);
+    const cached = (await cachedResponse.json()) as { jobId: string };
+    assert.equal(cached.jobId, created.jobId);
+    const cachedSnapshot = await fetch(
+      `${baseUrl}/screening/jobs/${cached.jobId}`,
+    ).then((response) => response.json());
+    assert.equal(cachedSnapshot.status, "completed");
   } finally {
     await new Promise<void>((resolvePromise, reject) =>
       server.close((error) => (error ? reject(error) : resolvePromise())),

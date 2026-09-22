@@ -962,3 +962,19 @@ the latest-result cache so binary-consensus state cannot mix with this model.
 
 This decision supersedes D-047's 0%/100% execution rule. Its single-decision,
 non-independent-sleeve design and staged candidate search remain in force.
+
+## D-049: Independent Tencent daily recovery for Chinese instruments
+
+Retain Eastmoney as the canonical primary for verified LOFs, but bound each
+history request to 24 seconds across the primary history host, its HTTP
+transport fallback, the alternate history host, and available loopback relay
+routes. A same-provider retry alone cannot recover a sustained Eastmoney
+outage.
+
+For SSE/SZSE indexes and ETFs, allow Tencent's independent no-key daily endpoint
+to return at most 2,000 requested raw bars under verified exchange identity.
+Use it as a promotable history backup when the primary cannot establish a
+canonical base. Keep the Tencent one-bar quote path for latest-only refreshes;
+it remains an in-memory overlay when canonical history already exists. Never
+rewrite confirmed canonical bars or combine raw and adjusted scales outside the
+existing promotion gates. Juhe remains the final quote-only fallback.

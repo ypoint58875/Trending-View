@@ -49,7 +49,7 @@ import {
 export const DEFAULT_STRATEGY_A_ALLOCATION = 0.6;
 export const DEFAULT_STRATEGY_B_ALLOCATION = 0.4;
 export const SCREENING_POSITIONING_MODEL_VERSION = 2;
-export const SCREENING_RESULT_MODEL_VERSION = 2;
+export const SCREENING_RESULT_MODEL_VERSION = 3;
 export const DEFAULT_TACTICAL_ALLOCATION_MODE = "add-on-short-entry" as const;
 export const MULTI_STRATEGY_CORE_ALLOCATION = 0.6;
 export const MULTI_STRATEGY_BALANCED_ALLOCATION = 0.8;
@@ -441,9 +441,7 @@ export type CombinationScreeningStage =
   | "septuples"
   | "septupleAllocations"
   | "octuples"
-  | "octupleAllocations"
-  | "nonuples"
-  | "nonupleAllocations";
+  | "octupleAllocations";
 
 export interface CombinationScreeningProgress {
   completed: number;
@@ -486,7 +484,6 @@ export interface OptimizeStrategyCombinationsOptions {
   sextupleAllocationCandidates?: readonly SixStrategyAllocation[];
   septupleAllocationCandidates?: readonly SevenStrategyAllocation[];
   octupleAllocationCandidates?: readonly EightStrategyAllocation[];
-  nonupleAllocationCandidates?: readonly NineStrategyAllocation[];
   includeTriples?: boolean;
   retainedSinglesPerStrategy?: number;
   maxPairFinalists?: number;
@@ -611,7 +608,7 @@ const OPTIMIZATION_STAGE_ORDER: readonly CombinationScreeningStage[] = [
   "tripleAllocations", "quadruples", "quadrupleAllocations",
   "quintuples", "quintupleAllocations", "sextuples",
   "sextupleAllocations", "septuples", "septupleAllocations",
-  "octuples", "octupleAllocations", "nonuples", "nonupleAllocations",
+  "octuples", "octupleAllocations",
 ];
 
 
@@ -3276,7 +3273,6 @@ export async function optimizeStrategyCombinations(
     [6, options.sextupleAllocationCandidates ?? SIX_STRATEGY_ALLOCATION_CANDIDATES],
     [7, options.septupleAllocationCandidates ?? SEVEN_STRATEGY_ALLOCATION_CANDIDATES],
     [8, options.octupleAllocationCandidates ?? EIGHT_STRATEGY_ALLOCATION_CANDIDATES],
-    [9, options.nonupleAllocationCandidates ?? NINE_STRATEGY_ALLOCATION_CANDIDATES],
   ]);
   const higherOrderReferenceAllocations = new Map<
     HigherOrderStrategyCount,
@@ -3392,7 +3388,8 @@ export async function optimizeStrategyCombinations(
     ? Math.max(Math.floor(options.checkpointEvery!), 1)
     : Number.POSITIVE_INFINITY;
   const resumeCheckpoint =
-    options.resumeCheckpoint?.version === 1
+    options.resumeCheckpoint?.version === 1 &&
+    OPTIMIZATION_STAGE_ORDER.includes(options.resumeCheckpoint.progress.stage)
       ? options.resumeCheckpoint
       : null;
   const finalistsByStrategy = new Map<StrategyId, StrategyFinalist[]>(
@@ -4155,7 +4152,7 @@ export async function optimizeStrategyCombinations(
       }
 
       const higherOrderStageNames: Record<
-        HigherOrderStrategyCount,
+        Exclude<HigherOrderStrategyCount, 9>,
         {
           discovery: CombinationScreeningStage;
           allocations: CombinationScreeningStage;
@@ -4166,7 +4163,6 @@ export async function optimizeStrategyCombinations(
         6: { discovery: "sextuples", allocations: "sextupleAllocations" },
         7: { discovery: "septuples", allocations: "septupleAllocations" },
         8: { discovery: "octuples", allocations: "octupleAllocations" },
-        9: { discovery: "nonuples", allocations: "nonupleAllocations" },
       };
       const progressStrategyIds = (
         strategies: readonly StrategyFinalist[] = [],
@@ -4212,7 +4208,7 @@ export async function optimizeStrategyCombinations(
         }),
       );
 
-      higherOrderLoop: for (const strategyCount of [4, 5, 6, 7, 8, 9] as const) {
+      higherOrderLoop: for (const strategyCount of [4, 5, 6, 7, 8] as const) {
         if (options.signal?.aborted) break;
         const referenceAllocation =
           higherOrderReferenceAllocations.get(strategyCount);

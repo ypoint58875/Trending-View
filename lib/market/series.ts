@@ -1,4 +1,5 @@
 import {
+  canonicalSeriesNeedsFullHistoryReplacement,
   canonicalMarketInstrumentKey,
   type CanonicalMarketSourceDefinition,
   type CanonicalMarketProfile,
@@ -145,10 +146,16 @@ export function mergeCanonicalMarketSeries(
       "Existing market series does not match the canonical market profile",
     );
   }
+  if (existing.priceAdjustment !== primary.priceAdjustment) {
+    return {
+      ...primary,
+      instrument: profile.primary.instrument,
+      bars: normalizeMarketBars(primary.bars, limit),
+    };
+  }
 
   const mutableDate =
-    existing.latestBarStatus !== "complete" ||
-    primary.source === existing.source
+    existing.latestBarStatus !== "complete"
       ? latestMarketBar(existing.bars)?.time ?? null
       : null;
   const barsByTime = new Map(
@@ -265,6 +272,14 @@ function isPromotableFallback(
 
   const quality = fallbackOverlapQuality(existing, series);
   if (
+    definition.promotionPolicy === "verified-identity" &&
+    canonicalSeriesNeedsFullHistoryReplacement(profile, existing) &&
+    !canonicalSeriesNeedsFullHistoryReplacement(profile, series) &&
+    series.bars.length >= existing.bars.length
+  ) {
+    return true;
+  }
+  if (
     existing.instrument.assetType === "etf" &&
     existing.priceAdjustment !== series.priceAdjustment &&
     (quality.count < 10 || quality.meanCloseErrorPercent > 1)
@@ -290,7 +305,7 @@ export function mergeVerifiedFallbackMarketSeries(
   fallback: MarketSeries,
   limit: number,
 ): MarketSeries {
-  if (!existing) {
+  if (!existing || existing.priceAdjustment !== fallback.priceAdjustment) {
     return {
       ...fallback,
       bars: normalizeMarketBars(fallback.bars, limit),

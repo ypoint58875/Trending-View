@@ -498,21 +498,6 @@ button {
   gap: 3px;
 }
 
-.chart-interval-tabs {
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: rgba(4, 10, 7, 0.72);
-}
-
-.chart-interval-tabs button {
-  height: 26px;
-  min-width: 48px;
-  justify-content: center;
-  padding: 0 10px;
-}
-
 .interval-workspace-badge {
   color: var(--cyan);
   font-size: 11px;
@@ -824,6 +809,14 @@ button {
 .price-chart {
   width: 100%;
   min-height: 520px;
+}
+
+.price-chart canvas {
+  cursor: grab;
+}
+
+.price-chart canvas:active {
+  cursor: grabbing;
 }
 
 .chart-state {
@@ -1344,11 +1337,6 @@ button {
   color: var(--subtle);
   font-family: var(--font-geist-mono), monospace;
   font-size: 10px;
-}
-
-.chart-meta .intraday-delay-warning {
-  color: #ffcc33;
-  font-weight: 700;
 }
 
 .saved-shortcut-group-toggle b {
@@ -2912,6 +2900,33 @@ button {
   user-select: none;
 }
 
+.screening-action-buttons {
+  display: grid;
+  width: calc(200% + 8px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-left: calc(-100% - 8px);
+}
+
+.screening-action-buttons .primary-action {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.primary-action.batch {
+  border-color: var(--cyan);
+  background: rgba(34, 211, 238, 0.14);
+  color: var(--cyan);
+}
+
+.screening-progress.batch progress {
+  accent-color: var(--cyan);
+}
+
+.screening-progress.batch progress::-webkit-progress-value {
+  background: var(--cyan);
+}
+
 .screening-engine-status {
   display: flex;
   justify-content: flex-end;
@@ -3621,6 +3636,12 @@ button {
   .screening-action-field {
     grid-column: 1;
     grid-row: auto;
+  }
+
+  .screening-action-buttons {
+    width: 100%;
+    grid-template-columns: 1fr;
+    margin-left: 0;
   }
 
   .strategy-shortlist-heading {

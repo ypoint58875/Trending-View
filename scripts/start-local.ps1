@@ -17,6 +17,7 @@ $runtimePorts = [ordered]@{
 $applicationRuntime = $runtimePorts.Application
 $marketRelayRuntime = $runtimePorts.MarketRelay
 $localUrl = "http://${runtimeHost}:$($applicationRuntime.Port)"
+$applicationHealthUrl = "$localUrl/api/health"
 $marketRelayHealthUrl = (
   "http://${runtimeHost}:$($marketRelayRuntime.Port)/health"
 )
@@ -30,14 +31,88 @@ function Stop-WithError {
   exit 1
 }
 
+function Invoke-QuantScopeLoopbackGet {
+  param(
+    [Parameter(Mandatory = $true)][string]$Uri,
+    [int]$TimeoutSeconds = 10
+  )
+
+  $target = [Uri]$Uri
+  if ($target.Scheme -ne "http" -or $target.Host -ne $runtimeHost) {
+    throw "Only the registered QuantScope loopback host can be probed."
+  }
+
+  $timeoutMilliseconds = [Math]::Max(1, $TimeoutSeconds) * 1000
+  $probeScript = @"
+const http = require("node:http");
+const target = process.argv[3];
+const timeout = Number(process.argv[4]);
+const request = http.get(target, { agent: false }, (response) => {
+  let content = "";
+  response.setEncoding("utf8");
+  response.on("data", (chunk) => {
+    content += chunk;
+    if (content.length > 1048576) request.destroy(new Error("too large"));
+  });
+  response.on("end", () => process.stdout.write(JSON.stringify({
+    statusCode: response.statusCode,
+    content,
+  })));
+});
+request.setTimeout(timeout, () => request.destroy(new Error("timeout")));
+request.on("error", () => { process.exitCode = 2; });
+"@
+  $encodedProbeScript = [Convert]::ToBase64String(
+    [Text.Encoding]::UTF8.GetBytes($probeScript)
+  )
+  $probeBootstrap = (
+    "eval(Buffer.from(process.argv[1],process.argv[2]).toString())"
+  )
+  $previousErrorActionPreference = $ErrorActionPreference
+  $previousNoProxy = $env:NO_PROXY
+  $previousNoProxyLower = $env:no_proxy
+  try {
+    $ErrorActionPreference = "Continue"
+    $env:NO_PROXY = "$runtimeHost,localhost"
+    $env:no_proxy = $env:NO_PROXY
+    $rawResponse = & node.exe `
+      -e $probeBootstrap `
+      $encodedProbeScript `
+      "base64" `
+      $Uri `
+      ([string]$timeoutMilliseconds) `
+      2>$null
+    $probeExitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+    if ($null -eq $previousNoProxy) {
+      Remove-Item Env:NO_PROXY -ErrorAction SilentlyContinue
+    } else {
+      $env:NO_PROXY = $previousNoProxy
+    }
+    if ($null -eq $previousNoProxyLower) {
+      Remove-Item Env:no_proxy -ErrorAction SilentlyContinue
+    } else {
+      $env:no_proxy = $previousNoProxyLower
+    }
+  }
+  if ($probeExitCode -ne 0) {
+    throw "The QuantScope loopback probe failed (exit $probeExitCode)."
+  }
+
+  return ([string]$rawResponse | ConvertFrom-Json)
+}
+
 function Test-QuantScopeReady {
   try {
-    $response = Invoke-WebRequest `
-      -UseBasicParsing `
-      -Uri $localUrl `
-      -TimeoutSec 10
+    $response = Invoke-QuantScopeLoopbackGet `
+      -Uri $applicationHealthUrl `
+      -TimeoutSeconds 2
+    $health = $response.Content | ConvertFrom-Json
     return $response.StatusCode -eq 200 -and
-      $response.Content -match "<title>QuantScope"
+      $health.ready -eq $true -and
+      $health.role -eq "application" -and
+      $health.version -eq 1
   } catch {
     return $false
   }
@@ -53,9 +128,10 @@ function Test-LocalPortInUse {
 
 function Test-QuantScopeMarketRelayReady {
   try {
-    $response = Invoke-RestMethod `
+    $relayResponse = Invoke-QuantScopeLoopbackGet `
       -Uri $marketRelayHealthUrl `
-      -TimeoutSec 2
+      -TimeoutSeconds 2
+    $response = $relayResponse.Content | ConvertFrom-Json
     return $response.ready -eq $true -and
       $response.screeningEngine -eq $true -and
       $response.screeningEngineVersion -eq 3
@@ -418,8 +494,62 @@ function Test-DependenciesReady {
   }
 }
 
+function Remove-StrayQuantScopeApplicationProcesses {
+  param(
+    [string]$Root = $projectRoot,
+    [scriptblock]$ProcessCandidates = {
+      return @(
+        Get-CimInstance `
+          -ClassName Win32_Process `
+          -Filter "Name = 'node.exe'" `
+          -ErrorAction SilentlyContinue
+      )
+    },
+    [scriptblock]$ProcessStopper = {
+      param([int]$TargetProcessId)
+      $targetProcess = Get-Process `
+        -Id $TargetProcessId `
+        -ErrorAction SilentlyContinue
+      if ($null -ne $targetProcess) {
+        Stop-QuantScopeProcessTree -Process $targetProcess
+      }
+    }
+  )
+
+  $candidates = @(& $ProcessCandidates)
+  foreach ($candidate in $candidates) {
+    if (
+      $null -eq $candidate -or
+      -not (Test-QuantScopeApplicationProcess `
+        -Process $candidate `
+        -Root $Root `
+        -Port $applicationRuntime.Port)
+    ) {
+      continue
+    }
+
+    $processId = [int]$candidate.ProcessId
+    if ($processId -le 0) {
+      continue
+    }
+
+    Write-Host (
+      "Stopping a stale current-checkout QuantScope application process " +
+      "(PID $processId)..."
+    ) -ForegroundColor Yellow
+    & $ProcessStopper $processId
+  }
+}
+
 function Stop-QuantScopeProcessTree {
-  param([Parameter(Mandatory = $true)]$Process)
+  param(
+    [Parameter(Mandatory = $true)]$Process,
+    [scriptblock]$ProcessTreeStopper = {
+      param([int]$TargetProcessId)
+      & taskkill.exe /PID ([string]$TargetProcessId) /T /F *> $null
+      return $LASTEXITCODE
+    }
+  )
 
   try {
     $Process.Refresh()
@@ -430,12 +560,36 @@ function Stop-QuantScopeProcessTree {
     return
   }
 
-  & taskkill.exe /PID ([string]$Process.Id) /T /F *> $null
+  $taskkillExitCode = 0
+  $previousErrorActionPreference = $ErrorActionPreference
+  try {
+    # taskkill can report a child-process race after the requested root process
+    # has already exited. Inspect the root process after the command instead of
+    # allowing native stderr to turn that successful cleanup into a fatal error.
+    $ErrorActionPreference = "Continue"
+    $taskkillExitCode = [int](& $ProcessTreeStopper ([int]$Process.Id))
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
   try {
     $null = $Process.WaitForExit(5000)
   } catch {
     # The exact process tree was already requested to stop.
   }
+
+  try {
+    $Process.Refresh()
+    if ($Process.HasExited) {
+      return
+    }
+  } catch {
+    return
+  }
+
+  throw (
+    "The verified QuantScope process tree could not be stopped " +
+    "(taskkill exit code $taskkillExitCode)."
+  )
 }
 
 function Invoke-QuantScopeLocalMigrations {
@@ -578,22 +732,86 @@ function Wait-QuantScopeStartup {
   param(
     [Parameter(Mandatory = $true)]$ServerProcess,
     [scriptblock]$ReadyProbe = { Test-QuantScopeReady },
+    [scriptblock]$PortInUseProbe = {
+      Test-LocalPortInUse -Port $applicationRuntime.Port
+    },
+    [scriptblock]$OnListening = {},
     [int]$TimeoutMilliseconds = 60000,
+    [int]$ListeningGraceMilliseconds = 120000,
     [int]$PollMilliseconds = 500
   )
 
   $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMilliseconds)
-  while ([DateTime]::UtcNow -lt $deadline) {
+  $listeningGraceStarted = $false
+  $listeningReported = $false
+  while ($true) {
     if ([bool](& $ReadyProbe)) {
       return "Ready"
     }
     if ($ServerProcess.HasExited) {
       return "Exited"
     }
+    $isListening = [bool](& $PortInUseProbe)
+    if ($isListening -and -not $listeningReported) {
+      $listeningReported = $true
+      & $OnListening
+    }
+    if ([DateTime]::UtcNow -ge $deadline) {
+      if (
+        -not $listeningGraceStarted -and
+        $ListeningGraceMilliseconds -gt 0 -and
+        $isListening
+      ) {
+        $listeningGraceStarted = $true
+        $deadline = [DateTime]::UtcNow.AddMilliseconds(
+          $ListeningGraceMilliseconds
+        )
+        $graceSeconds = [Math]::Ceiling(
+          $ListeningGraceMilliseconds / 1000
+        )
+        Write-Host (
+          "The local server is listening but still compiling; " +
+          "waiting up to $graceSeconds more seconds..."
+        ) -ForegroundColor Yellow
+        continue
+      }
+      return "TimedOut"
+    }
     Start-Sleep -Milliseconds $PollMilliseconds
   }
+}
 
-  return "TimedOut"
+function Remove-FailedQuantScopeStartup {
+  param(
+    [Parameter(Mandatory = $true)]$ServerProcess,
+    [string]$Root = $projectRoot
+  )
+
+  $cleanupSucceeded = $true
+  try {
+    Stop-QuantScopeProcessTree -Process $ServerProcess
+  } catch {
+    $cleanupSucceeded = $false
+    Write-Host (
+      "Warning: the launcher process tree could not be fully stopped: " +
+      $_.Exception.Message
+    ) -ForegroundColor Yellow
+  }
+
+  try {
+    Remove-StrayQuantScopeApplicationProcesses -Root $Root
+  } catch {
+    $cleanupSucceeded = $false
+    Write-Host (
+      "Warning: a verified stale application process could not be stopped: " +
+      $_.Exception.Message
+    ) -ForegroundColor Yellow
+  }
+
+  if (-not (Wait-LocalPortAvailable -Port $applicationRuntime.Port)) {
+    $cleanupSucceeded = $false
+  }
+  return $cleanupSucceeded
 }
 
 function Open-QuantScope {
@@ -709,6 +927,8 @@ if (Test-QuantScopeReady) {
   exit 0
 }
 
+Remove-StrayQuantScopeApplicationProcesses -Root $projectRoot
+
 $applicationPortAvailable = Confirm-QuantScopeRuntimePortAvailable `
   -Runtime $applicationRuntime `
   -Root $projectRoot
@@ -804,19 +1024,54 @@ $serverProcess = Start-Process `
   -WindowStyle Normal `
   -PassThru
 
-$startupStatus = Wait-QuantScopeStartup -ServerProcess $serverProcess
+$browserState = [pscustomobject]@{ Opened = $false }
+$openBrowserOnce = {
+  if (-not $browserState.Opened) {
+    $browserState.Opened = $true
+    try {
+      Open-QuantScope
+    } catch {
+      Write-Host (
+        "The server is ready, but the browser could not be opened: " +
+        $_.Exception.Message
+      ) -ForegroundColor Yellow
+    }
+  }
+}
+$startupStatus = Wait-QuantScopeStartup `
+  -ServerProcess $serverProcess `
+  -OnListening $openBrowserOnce
 switch ($startupStatus) {
   "Ready" {
     Write-Host "QuantScope is ready at $localUrl."
-    Open-QuantScope
+    & $openBrowserOnce
     exit 0
   }
   "Exited" {
-    Stop-WithError "The local server exited before it became ready."
+    $cleanupSucceeded = Remove-FailedQuantScopeStartup `
+      -ServerProcess $serverProcess `
+      -Root $projectRoot
+    $cleanupMessage = if ($cleanupSucceeded) {
+      ""
+    } else {
+      " Automatic cleanup was incomplete; check the Local Server window."
+    }
+    Stop-WithError (
+      "The local server exited before it became ready." + $cleanupMessage
+    )
   }
   default {
+    $cleanupSucceeded = Remove-FailedQuantScopeStartup `
+      -ServerProcess $serverProcess `
+      -Root $projectRoot
+    $cleanupMessage = if ($cleanupSucceeded) {
+      " The failed server process was stopped safely."
+    } else {
+      " Automatic cleanup was incomplete; check the Local Server window."
+    }
     Stop-WithError (
-      "The local server did not become ready within 60 seconds. Check the QuantScope Local Server window."
+      "The local server did not become ready after the 60-second startup " +
+      "window and 120-second listening grace period." + $cleanupMessage
     )
   }
 }

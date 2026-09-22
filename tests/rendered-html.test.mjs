@@ -37,10 +37,9 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(html, /\u7b56\u7565\u5b9e\u9a8c\u5ba4/);
   assert.match(html, /\u6307\u6807\u8bbe\u7f6e/);
   assert.match(html, /\u6062\u590d\u9ed8\u8ba4/);
-  assert.match(html, />\s*\u65e5\u7ebf\s*</);
-  assert.match(html, />\s*1 \u5206\u949f\s*</);
-  assert.doesNotMatch(html, />\s*(?:5|15|30|60) \u5206\s*</);
-  assert.match(html, /chart-interval-tabs/);
+  assert.match(html, /\u65e5\u7ebf\u72ec\u7acb\u7b56\u7565\u677f\u5757/);
+  assert.doesNotMatch(html, />\s*(?:1|5|15|30|60) \u5206\s*</);
+  assert.doesNotMatch(html, /chart-interval-tabs/);
 
   const indicatorGroup = html.match(
     /<div\b[^>]*class="[^"]*\bindicator-favorites\b[^"]*"[^>]*>/,
@@ -260,6 +259,12 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/i);
 });
 
+test("rejects removed intraday market intervals", async () => {
+  const response = await render("/api/market?interval=1m");
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "UNSUPPORTED_INTERVAL" });
+});
+
 test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in source", async () => {
   const workspace = await readFile(
     new URL("../app/MarketWorkspace.tsx", import.meta.url),
@@ -280,6 +285,15 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   const echart = await readFile(
     new URL("../app/components/EChart.tsx", import.meta.url),
     "utf8",
+  );
+  assert.match(
+    workspace,
+    /const EMPTY_PRICE_CHART_TRADES: BacktestTrade\[\] = \[\];/,
+  );
+  assert.match(workspace, /: EMPTY_PRICE_CHART_TRADES\s*\}/);
+  assert.doesNotMatch(
+    workspace,
+    /<PriceChart[\s\S]*?trades=\{[\s\S]*?: \[\][\s\S]*?\}/,
   );
   const backtestChart = await readFile(
     new URL("../app/components/BacktestChart.tsx", import.meta.url),
@@ -433,13 +447,16 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.doesNotMatch(workspace, /promoted:\s*null/);
   assert.match(workspace, /canonicalSeriesRef/);
   assert.match(marketRoute, /strictProvider/);
+  assert.match(
+    marketRoute,
+    /const allowedIntervals = new Set<MarketInterval>\(\["1d"\]\)/,
+  );
+  assert.match(marketRoute, /error: "UNSUPPORTED_INTERVAL"/);
   assert.match(marketRoute, /classifyMarketProviderError/);
   assert.match(providerErrors, /PROVIDER_CREDENTIAL_INVALID/);
   assert.match(workspace, /source-credential-warning/);
-  assert.match(workspace, /intraday-delay-warning/);
-  assert.match(workspace, /estimateIntradayDataDelayMinutes/);
-  assert.match(locale, /intradayDelayEstimate/);
-  assert.match(styles, /\.chart-meta \.intraday-delay-warning/);
+  assert.doesNotMatch(workspace, /intraday-delay-warning/);
+  assert.doesNotMatch(workspace, /estimateIntradayDataDelayMinutes/);
   assert.doesNotMatch(workspace, /className=\{`live-guidance-card/);
   assert.match(
     marketRoute,
@@ -491,11 +508,28 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(marketExchanges, /FTSE: "LSE"/);
   assert.match(workspace, /copy\.intervals\[saved\.interval\]/);
   assert.match(workspace, /saved\.interval !== DAILY_INTERVAL/);
-  assert.match(workspace, /copy\.intervals\[DAILY_INTERVAL\]/);
-  assert.match(workspace, /copy\.intervals\[INTRADAY_INTERVAL\]/);
-  assert.match(workspace, /setResearchInterval\(savedWorkspaceInterval\)/);
+  assert.match(workspace, /copy\.chart\.dailyWorkspace/);
+  assert.doesNotMatch(workspace, /copy\.intervals\[INTRADAY_INTERVAL\]/);
+  assert.match(workspace, /const savedWorkspaceInterval = DAILY_INTERVAL/);
   assert.match(workspace, /interval: researchInterval/);
   assert.match(workspace, /runScreeningInWorker/);
+  assert.match(workspace, /const runShortcutBatchScreening = async/);
+  assert.match(workspace, /const shortcutGroups = savedBacktestGroups;/);
+  assert.doesNotMatch(workspace, /const indexGroups = savedBacktestGroups\.filter/);
+  assert.match(workspace, /className=\{`screening-progress \$\{/);
+  assert.match(styles, /\.screening-progress\.batch progress/);
+  assert.match(workspace, /const shortcutBatchContinuousProgress = Math\.min/);
+  assert.match(workspace, /SHORTCUT_BATCH_CHECKPOINT_KEY/);
+  assert.match(workspace, /selectBestShortcutScreeningResult/);
+  assert.match(workspace, /name: folderName/);
+  assert.match(workspace, /const assignedSavedBacktest =/);
+  assert.match(workspace, /strategyFolderId: resolvedFolder\.id/);
+  assert.match(workspace, /const lastInstrumentIndex = current\.findLastIndex/);
+  assert.match(
+    savedBacktestRoute,
+    /displayOrder:\s*existingInstrumentRow\?\.displayOrder/,
+  );
+  assert.match(locale, /batchAction: "一键\{sessions\}日"/);
   assert.match(workspace, /SCREENING_VALIDATION_MODES/);
   assert.match(screeningValidation, /optimizeStrategyCombinations/);
   assert.match(
@@ -505,6 +539,10 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(
     screeningValidation,
     /DEFAULT_SAMPLE_VALIDATION_SESSIONS = 128[\s\S]*DEFAULT_SAMPLE_VALIDATION_PERIODS = \[[\s\S]*sessions: DEFAULT_SAMPLE_VALIDATION_SESSIONS, weight: 100/,
+  );
+  assert.match(
+    workspace,
+    /Number\.isFinite\(requestedSessions\)[\s\S]*?: DEFAULT_SAMPLE_VALIDATION_SESSIONS/,
   );
   assert.match(
     locale,
@@ -534,6 +572,16 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /const updateSharedRangeFromSessions/);
   assert.match(workspace, /const savedBacktestRollingGroups = useMemo/);
   assert.match(workspace, /SAVED_BACKTEST_ROLLING_SESSIONS/);
+  assert.match(
+    workspace,
+    /relativeLongStrategy: buildStrategyPlanTimeline\([\s\S]*?startTime: rollingRange\.startTime,[\s\S]*?endTime: rollingRange\.endTime/,
+  );
+  assert.match(
+    workspace,
+    /buildLiveAllocationGuidance\(\s*group\.marketSeries\.bars,\s*saved\.plan,\s*group\.rollingRange/,
+  );
+  assert.doesNotMatch(workspace, /startTime: saved\.startDate/);
+  assert.doesNotMatch(workspace, /endTime: saved\.endDate/);
   assert.match(workspace, /method: "PUT"/);
   assert.doesNotMatch(workspace, /savedBacktestEvaluations/);
   assert.match(workspace, /runStrategyPlanRangeBacktest/);
@@ -581,8 +629,6 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     "septupleAllocations",
     "octuples",
     "octupleAllocations",
-    "nonuples",
-    "nonupleAllocations",
   ]) {
     assert.match(combinations, new RegExp(`"${stage}"`));
   }
@@ -724,7 +770,11 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     /const openSavedBacktest = \(saved: SavedBacktestRecord\) => \{[\s\S]*?\n  \};/,
   )?.[0];
   assert.ok(openSavedBacktestSource);
-  assert.match(openSavedBacktestSource, /resetScreening/);
+  assert.doesNotMatch(openSavedBacktestSource, /resetScreening|\.abort\(\)/);
+  assert.match(
+    openSavedBacktestSource,
+    /clearScreeningPresentationForInstrumentChange/,
+  );
   assert.match(
     openSavedBacktestSource,
     /canReuseSavedBacktestMarketSeries/,
@@ -734,6 +784,15 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     /setStartDate\(saved\.startDate\)|setEndDate\(saved\.endDate\)/,
   );
   assert.match(openSavedBacktestSource, /kind: "saved-recent"/);
+  const chooseInstrumentSource = workspace.match(
+    /const chooseInstrument = \(nextInstrument: MarketInstrument\) => \{[\s\S]*?\n  \};/,
+  )?.[0];
+  assert.ok(chooseInstrumentSource);
+  assert.doesNotMatch(chooseInstrumentSource, /\.abort\(\)|resetScreening/);
+  assert.match(
+    workspace,
+    /visibleInstrumentKeyRef\.current === runInstrumentKey/,
+  );
   assert.doesNotMatch(workspace, /getStrategiesByHorizon/);
   assert.match(combinations, /resolveRelativeLongStrategy/);
   assert.match(combinations, /strategyBIndex = strategyAIndex \+ 1/);
@@ -744,6 +803,10 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   );
   assert.match(workspace, /resolveScreeningResultChartWindows/);
   assert.match(workspace, /focusRange=\{appliedChartFocusRange\}/);
+  assert.match(
+    workspace,
+    /appliedChartRange\.kind === "screening"[\s\S]*?encompassingScreeningWindow\(appliedChartWindows\)[\s\S]*?: null/,
+  );
   assert.match(
     workspace,
     /onClick=\{\(\) =>\s*applySingleStrategy\(/,
@@ -760,6 +823,14 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.ok((workspace.match(/className="strategy-name-line"/g)?.length ?? 0) >= 3);
   assert.doesNotMatch(workspace, /className="strategy-pair-cell"/);
   assert.match(workspace, /className="screening-action-field"/);
+  assert.match(
+    styles,
+    /\.screening-action-buttons\s*\{[\s\S]*?width: calc\(200% \+ 8px\);[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+  );
+  assert.match(
+    styles,
+    /\.screening-action-buttons \.primary-action\s*\{[\s\S]*?white-space: nowrap;/,
+  );
   assert.match(styles, /\.screening-panel\s*\{\s*display: flex;/);
   assert.match(workspace, /className="strategy-shortlist"/);
   assert.match(workspace, /className="strategy-consensus"/);
@@ -804,7 +875,7 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /const combinationResultsByCount = new Map\(/);
   assert.match(locale, /quadrupleResultsTitle: "四策略结果"/);
   assert.match(locale, /quintupleResultsTitle: "五策略结果"/);
-  assert.match(locale, /nonupleResultsTitle: "九策略结果"/);
+  assert.doesNotMatch(locale, /nonupleResultsTitle/);
   assert.doesNotMatch(
     styles,
     /\.quadruple-strategy-results \.results-table-wrap,[\s\S]*?overflow-x: auto;/,
@@ -839,14 +910,8 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   );
   assert.match(workspace, /shortcutGuidance\.tacticalSupport/);
   assert.match(workspace, /shortcutGuidance\.volatilityRiskCap/);
-  assert.match(
-    workspace,
-    /intervalResearchSnapshotsRef\.current\[researchInterval\]\s*=\s*captureIntervalResearchSnapshot\(\)/,
-  );
-  assert.match(
-    workspace,
-    /restoreIntervalResearchSnapshot\(\s*intervalResearchSnapshotsRef\.current\[nextInterval\]/,
-  );
+  assert.doesNotMatch(workspace, /chooseResearchInterval/);
+  assert.doesNotMatch(workspace, /setResearchInterval/);
   assert.doesNotMatch(
     workspace,
     /copy\.screening\.resultSnapshotNotice/,
@@ -1147,10 +1212,31 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /aria-expanded=\{folderExpanded\}/);
   assert.match(workspace, /aria-expanded=\{strategyFolderExpanded\}/);
   assert.match(workspace, /className="saved-shortcut-group-toggle"/);
+  assert.match(workspace, /const openSavedBacktestGroup =/);
+  assert.match(workspace, /openSavedBacktestGroup\(group\)/);
+  assert.match(workspace, /setAppliedStrategyPlan\(null\)/);
+  assert.match(workspace, /copy\.savedBacktests\.openCleanChart/);
+  assert.match(locale, /openCleanChart: "打开无策略行情图"/);
   assert.match(workspace, /aria-expanded=\{expanded\}/);
   assert.match(workspace, /draggable=\{!savedBacktestOrderSaving\}/);
+  assert.match(
+    workspace,
+    /if \(savedBacktestDrag\?\.kind !== "record"\) return;[\s\S]*?event\.stopPropagation\(\)/,
+  );
+  assert.match(
+    workspace,
+    /if \(savedBacktestDrag\?\.kind !== "group"\) return;[\s\S]*?event\.stopPropagation\(\)/,
+  );
   assert.match(workspace, /className="saved-shortcut-group-records"/);
   assert.match(workspace, /persistSavedBacktestOrder/);
+  assert.match(
+    savedBacktestRoute,
+    /const SAVED_BACKTEST_ORDER_UPDATE_CHUNK_SIZE = 25;/,
+  );
+  assert.match(
+    savedBacktestRoute,
+    /offset \+= SAVED_BACKTEST_ORDER_UPDATE_CHUNK_SIZE[\s\S]*?inArray\(savedBacktests\.id, chunkIds\)/,
+  );
   assert.doesNotMatch(workspace, /saved-shortcuts-summary/);
   assert.doesNotMatch(workspace, /saved-shortcuts-pagination/);
   assert.doesNotMatch(workspace, /savedBacktestTotalPages/);

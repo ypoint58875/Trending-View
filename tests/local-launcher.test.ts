@@ -11,6 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { GET as getApplicationHealth } from "../app/api/health/route";
 
 const projectRoot = new URL("../", import.meta.url);
 const launcherPath = fileURLToPath(
@@ -79,7 +80,7 @@ test("proxy relay command preserves the Start-Process parameters", () => {
 
 test("runtime port registry contains every persistent loopback listener", () => {
   const result = runLauncherFunction(
-    `Write-Output "$($runtimePorts.Application.Role):$($runtimePorts.Application.Port)"; Write-Output "$($runtimePorts.MarketRelay.Role):$($runtimePorts.MarketRelay.Port)"; Write-Output $localUrl; Write-Output $marketRelayHealthUrl`,
+    `Write-Output "$($runtimePorts.Application.Role):$($runtimePorts.Application.Port)"; Write-Output "$($runtimePorts.MarketRelay.Role):$($runtimePorts.MarketRelay.Port)"; Write-Output $localUrl; Write-Output $applicationHealthUrl; Write-Output $marketRelayHealthUrl`,
   );
 
   assert.equal(result.status, 0, result.stderr);
@@ -87,8 +88,20 @@ test("runtime port registry contains every persistent loopback listener", () => 
     "Application:3000",
     "MarketRelay:3001",
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:3000/api/health",
     "http://127.0.0.1:3001/health",
   ]);
+});
+
+test("application health route returns the lightweight launcher contract", async () => {
+  const response = getApplicationHealth();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    ready: true,
+    role: "application",
+    version: 1,
+  });
 });
 
 test("application identity requires this checkout and its fixed runtime arguments", () => {
@@ -150,6 +163,32 @@ test("unhealthy application cleanup preserves an unrelated port owner", () => {
   assert.equal(result.stdout.trim().split(/\r?\n/).at(-1), "201");
 });
 
+test("stray application cleanup finds fixed-command servers on fallback ports", () => {
+  const rootPath = fileURLToPath(projectRoot);
+  const root = quotePowerShell(rootPath);
+  const vinextPath = join(
+    rootPath,
+    "node_modules",
+    ".bin",
+    "..",
+    "vinext",
+    "dist",
+    "cli.js",
+  );
+  const currentCommand = quotePowerShell(
+    `node.exe "${vinextPath}" dev -p 3000 -H 127.0.0.1`,
+  );
+  const unrelatedCommand = quotePowerShell(
+    "node.exe C:\\other\\server.js --port 3002",
+  );
+  const result = runLauncherFunction(
+    `$candidates = @([pscustomobject]@{ ProcessId = 301; Name = 'node.exe'; CommandLine = ${currentCommand}; ParentProcessId = 901 }, [pscustomobject]@{ ProcessId = 302; Name = 'node.exe'; CommandLine = ${unrelatedCommand}; ParentProcessId = 902 }); $script:stopped = @(); Remove-StrayQuantScopeApplicationProcesses -Root ${root} -ProcessCandidates { $candidates }.GetNewClosure() -ProcessStopper { param($processId) $script:stopped += [int]$processId }; Write-Output ($script:stopped -join ',')`,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim().split(/\r?\n/).at(-1), "301");
+});
+
 test("stale relay identity requires the QuantScope Node command and no live parent", () => {
   const relayPath = join(
     fileURLToPath(projectRoot),
@@ -193,6 +232,7 @@ test("local package commands pin loopback and persistent D1 state", () => {
     scripts: Record<string, string>;
   };
   const wranglerSource = readProjectFile("wrangler.local.jsonc");
+  const viteConfig = readProjectFile("vite.config.ts");
 
   assert.equal(
     packageJson.scripts["local:dev"],
@@ -203,6 +243,7 @@ test("local package commands pin loopback and persistent D1 state", () => {
     "wrangler d1 migrations apply DB --local --config wrangler.local.jsonc --persist-to .wrangler/state",
   );
   assert.notEqual(wranglerSource, "");
+  assert.match(viteConfig, /server:\s*\{\s*strictPort: true,/);
 
   const wrangler = JSON.parse(wranglerSource) as {
     d1_databases: Array<{
@@ -239,7 +280,22 @@ test("PowerShell launcher validates, migrates, verifies, and opens localhost", (
   assert.match(launcher, /Get-Command `\r?\n\s+\$resolvedNpmCommand/);
   assert.match(launcher, /No migrations to apply!/);
   assert.match(launcher, /Stop-QuantScopeProcessTree -Process \$process/);
-  assert.match(launcher, /-Uri \$localUrl `\r?\n\s+-TimeoutSec 10/);
+  assert.match(launcher, /function Invoke-QuantScopeLoopbackGet/);
+  assert.match(launcher, /require\("node:http"\)/);
+  assert.match(launcher, /content\.length > 1048576/);
+  assert.match(launcher, /http\.get\(target, \{ agent: false \}/);
+  assert.match(launcher, /ToBase64String/);
+  assert.match(launcher, /eval\(Buffer\.from\(process\.argv\[1\]/);
+  assert.match(launcher, /\$env:NO_PROXY = "\$runtimeHost,localhost"/);
+  assert.match(launcher, /\$env:no_proxy = \$env:NO_PROXY/);
+  assert.match(
+    launcher,
+    /-Uri \$applicationHealthUrl `\r?\n\s+-TimeoutSeconds 2/,
+  );
+  assert.match(
+    launcher,
+    /-Uri \$marketRelayHealthUrl `\r?\n\s+-TimeoutSeconds 2/,
+  );
   assert.match(launcher, /\$runtimeHost = "127\.0\.0\.1"/);
   assert.match(launcher, /Application = \[pscustomobject\]@\{/);
   assert.match(launcher, /MarketRelay = \[pscustomobject\]@\{/);
@@ -260,6 +316,8 @@ test("PowerShell launcher validates, migrates, verifies, and opens localhost", (
   assert.match(launcher, /function Test-QuantScopeApplicationProcess/);
   assert.match(launcher, /function Test-QuantScopeRuntimeProcess/);
   assert.match(launcher, /function Remove-UnhealthyQuantScopeRuntimeListener/);
+  assert.match(launcher, /function Remove-StrayQuantScopeApplicationProcesses/);
+  assert.match(launcher, /function Remove-FailedQuantScopeStartup/);
   assert.match(launcher, /function Confirm-QuantScopeRuntimePortAvailable/);
   assert.match(
     launcher,
@@ -282,6 +340,12 @@ test("PowerShell launcher validates, migrates, verifies, and opens localhost", (
   );
   assert.match(launcher, /npm\.cmd run local:dev/);
   assert.match(launcher, /TimeoutMilliseconds = 60000/);
+  assert.match(launcher, /ListeningGraceMilliseconds = 120000/);
+  assert.match(launcher, /-OnListening \$openBrowserOnce/);
+  assert.match(
+    launcher,
+    /Remove-FailedQuantScopeStartup `\r?\n\s+-ServerProcess \$serverProcess/g,
+  );
   assert.match(launcher, /QuantScope/);
   assert.doesNotMatch(launcher, /chatgpt\.site/i);
   assert.ok(firstReadyProbe >= 0);
@@ -354,6 +418,15 @@ test("recovers when a completed no-op Wrangler migration does not exit", () => {
   }
 });
 
+test("process-tree cleanup tolerates a taskkill child-exit race", () => {
+  const result = runLauncherFunction(
+    `$process = [pscustomobject]@{ Id = 9999; HasExited = $false }; $process | Add-Member ScriptMethod Refresh { $this.HasExited = $true }; $process | Add-Member ScriptMethod WaitForExit { param($milliseconds) return $true }; Stop-QuantScopeProcessTree -Process $process -ProcessTreeStopper { param($processId) return 128 }; Write-Output 'RECOVERED'`,
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), "RECOVERED");
+});
+
 test("preserves normal migration success and failure exit codes", () => {
   const fixtureRoot = mkdtempSync(join(tmpdir(), "quantscope-migration-exit-"));
   const successfulNpm = join(fixtureRoot, "npm-success.cmd");
@@ -398,6 +471,24 @@ test("startup wait reports ready and an exited server without timing out", () =>
   );
   assert.equal(exited.status, 0, exited.stderr);
   assert.equal(exited.stdout.trim(), "Exited");
+});
+
+test("startup wait grants one bounded grace period to a listening server", () => {
+  const listening = runLauncherFunction(
+    "$script:readyChecks = 0; $script:listeningCalls = 0; $result = Wait-QuantScopeStartup -ServerProcess ([pscustomobject]@{ HasExited = $false }) -ReadyProbe { $script:readyChecks += 1; return $script:readyChecks -ge 3 } -PortInUseProbe { $true } -OnListening { $script:listeningCalls += 1 } -TimeoutMilliseconds 1 -ListeningGraceMilliseconds 100 -PollMilliseconds 1; Write-Output \"RESULT=$result;CHECKS=$script:readyChecks;LISTENING=$script:listeningCalls\"",
+  );
+  assert.equal(listening.status, 0, listening.stderr);
+  assert.match(listening.stdout, /still compiling/);
+  assert.match(
+    listening.stdout,
+    /RESULT=Ready;CHECKS=[3-9][0-9]*;LISTENING=1/,
+  );
+
+  const notListening = runLauncherFunction(
+    "$result = Wait-QuantScopeStartup -ServerProcess ([pscustomobject]@{ HasExited = $false }) -ReadyProbe { $false } -PortInUseProbe { $false } -TimeoutMilliseconds 1 -ListeningGraceMilliseconds 100 -PollMilliseconds 1; Write-Output $result",
+  );
+  assert.equal(notListening.status, 0, notListening.stderr);
+  assert.equal(notListening.stdout.trim(), "TimedOut");
 });
 
 test("persistent routes share the localhost owner fallback", () => {

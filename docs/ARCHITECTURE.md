@@ -22,8 +22,8 @@ Browser UI
   -> Eastmoney, optional EODHD, Yahoo Finance, Nasdaq, and FRED reference adapters
   -> provider-isolated source snapshots and health measurements
   -> one locked canonical MarketSeries
-  -> explicit daily or provider-native one-minute workspace interval
-  -> interval-exact range, latest-bar, source-health, and cache boundaries
+  -> explicit daily-only workspace interval
+  -> daily range, latest-bar, source-health, and cache boundaries
   -> indicator registry
   -> independent indicator selection and device-local parameter preferences
   -> strategy registry
@@ -146,12 +146,12 @@ catalog produces 1,594 non-equivalent strategy-ID pairs. Final
 combination output keeps only the best parameter/allocation result for each
 unique unordered strategy-ID set within each strategy-count category. Pair
 winners seed bounded triple discovery, and each retained count seeds the next
-count through nine strategies. This forward-expansion beam avoids exhaustive
+count through eight strategies. This forward-expansion beam avoids exhaustive
 tuple enumeration. The UI renders nine vertically stacked disclosures and
-independently retains the top 30 rows per one-to-nine strategy category.
+independently retains the top 30 rows per one-to-eight strategy category.
 Stage-local counters drive one monotonic eighteen-segment bar.
 Clicking or keyboard-activating a result row applies it directly; the strategy
-A/B columns retain detailed parameters for pair results, while three-to-nine
+A/B columns retain detailed parameters for pair results, while three-to-eight
 strategy results use one compact Strategy-A-led layered-plan name, a two-line list
 of the remaining names, and aggregate weights. The strategy lab remains the
 sole equity-preview surface. Every target is generated from
@@ -170,7 +170,10 @@ a result is shown. Child progress is limited to four IPC updates per second and
 includes throughput, stage ETA, resident memory, and restart count. A
 coordinator watchdog replaces a child after 60 seconds without a heartbeat and
 fails explicitly after three consecutive no-progress recoveries. Exact local
-checkpoints use an adaptive 4,096/8,192/16,384 cadence and every stage boundary.
+checkpoints and the browser fallback share an adaptive
+2,048/4,096/8,192/16,384 cadence plus every stage boundary. Histories with at
+least 6,000 bars or hosts with at most 9 GiB physical memory use the 2,048
+boundary.
 An atomic manifest references independent sections, so frozen earlier-stage
 state is not repeatedly serialized. The completed compact outcome is fetched
 from a separate result endpoint only after status reports completion.
@@ -327,7 +330,7 @@ append missing or newer dates.
 
 The daily workspace asks for provider history from 2000-01-01 and retains at
 most 10,000 normalized bars in page memory. `lib/market/history.ts` owns this
-shared boundary and the separate retained intraday safety cap. Eastmoney,
+shared boundary. Eastmoney,
 Yahoo, and each active daily backup translate the boundary into
 provider-specific date parameters or documented caps. A later-listed
 instrument begins at its first available bar.
@@ -350,13 +353,12 @@ Yahoo-discovered instruments, and indexes or ETFs with a verified Yahoo symbol
 mapping. The official Nikkei CSV, Eastmoney, Nasdaq, and optional EODHD,
 Twelve Data, Financial Modeling Prep, AllTick, Alpha Vantage, Marketstack,
 Zhitu, Tencent, and Juhe definitions are tried when supported. During Chinese
-index/ETF outage
-recovery, the no-key Tencent session quote is probed before quota-bearing
-history services; Juhe is the last quote-only attempt and is skipped after a
-valid Tencent quote. The first validated history source remains canonical,
-while either accepted quote can update only the active current session.
-Neither Tencent nor Juhe is a history or effective-primary source. Juhe is
-protected by a 50-call Shanghai-day gate and excluded from routine audits.
+index/ETF outage recovery, no-key Tencent raw daily history can establish or
+extend the canonical base under verified exchange identity; latest-only work
+uses its session quote. Juhe is the last quote-only attempt and is skipped
+after a valid Tencent result. Tencent history can become an effective backup,
+while a Tencent or Juhe quote can update only the active current session. Juhe
+is protected by a 50-call Shanghai-day gate and excluded from routine audits.
 Gold FMP `GCUSD`, AllTick `GOLD`, and Eastmoney `101.GC00Y`
 backups are overlap-required and therefore cannot recover an empty chart or
 rewrite confirmed Yahoo history. FRED is a close-only N225 reference and never
@@ -370,10 +372,16 @@ restricts targets to reviewed provider endpoints, and it lets the local Worker
 runtime reach proxy-preferred sources without receiving proxy addresses or
 credentials. The launcher registers both persistent runtime listeners:
 application port 3000 and relay port 3001. It probes each service, reuses a
-healthy current instance, and removes an unhealthy listener only when the
-owning Node command matches the exact current-checkout executable path and
-role-specific arguments. A different checkout or unrelated listener is never
-stopped automatically.
+healthy current instance through the lightweight application or relay health
+contract, and removes an unhealthy listener only when the owning Node command
+matches the exact current-checkout executable path and role-specific arguments.
+Vite uses strict-port mode so the application cannot move to a different
+origin. Before a new launch, the same exact identity check sweeps legacy
+current-checkout Vinext processes that may already have drifted to a fallback
+port. The browser opens once the registered application port listens, while
+readiness remains independently bounded. Timeout and early-exit paths stop the
+launched tree and recheck exact leftovers. A different checkout or unrelated
+listener is never stopped automatically.
 Provider-side latency, rate limits, regional blocks, and licensing constraints
 remain possible.
 

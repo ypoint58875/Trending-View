@@ -1319,8 +1319,10 @@ export function buildPriceDataZoom(
       end,
       zoomLock: false,
       zoomOnMouseWheel: true,
-      moveOnMouseMove: true,
+      moveOnMouseMove: false,
       moveOnMouseWheel: false,
+      preventDefaultMouseMove: true,
+      throttle: 16,
       ...intradayDensityLimit,
     },
     {
@@ -1361,10 +1363,12 @@ export function buildPriceDataZoom(
 export function defaultPriceDataZoomWindow(
   barsLength: number,
 ): DataZoomWindow {
+  const defaultVisibleBars = 60;
   return {
     start: Math.max(
       0,
-      100 - (120 / Math.max(barsLength, 120)) * 100,
+      100 -
+        (defaultVisibleBars / Math.max(barsLength, defaultVisibleBars)) * 100,
     ),
     end: 100,
   };
@@ -1692,6 +1696,10 @@ export function PriceChart({
       preserveDataZoom
       dataZoomResetKey={zoomDataKey}
       onDataZoomChange={handleDataZoomChange}
+      horizontalPanDataZoomIds={[
+        "price-zoom-inside",
+        "price-zoom-slider",
+      ]}
     />
   );
 }

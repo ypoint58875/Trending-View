@@ -182,11 +182,10 @@ enter IndexedDB health records.
 - Zhitu is enabled only for SSE/SZSE indexes. It is ordered immediately after
   the original provider so a local Chinese index source is tried before broad
   global credentialed services.
-- Tencent supplies one no-key SSE/SZSE index or ETF session quote. Its
-  single-bar response cannot pass the historical promotion threshold and is
-  used only as a validated current-session overlay. Recovery probes this
-  no-key quote before quota-bearing history services, then keeps the first
-  promotable history series as the canonical base.
+- Tencent supplies no-key SSE/SZSE index or ETF raw daily history capped at
+  2,000 requested rows and a separate session quote. An empty chart can accept
+  the history under verified exchange identity. Latest-only recovery keeps the
+  single-bar response as a validated current-session overlay.
 - Juhe supplies the final credentialed SSE/SZSE quote-only attempt when Tencent
   fails. It is skipped after any valid Tencent quote, excluded from routine
   audits and effective-primary selection, and protected by a 50-call

@@ -1,5 +1,50 @@
 # Debugging
 
+## Browser memory grows during an otherwise bounded screening run
+
+First compare the local-engine memory shown in the screening status with the
+Edge renderer working set. If the child remains bounded but the renderer grows,
+instrument the price canvas while progress advances. Screening progress must
+not call `ECharts.setOption` unless chart inputs changed. In particular, never
+pass a new empty array or object literal into a memoized chart dependency on
+each `MarketWorkspace` render. The no-applied-backtest path uses
+`EMPTY_PRICE_CHART_TRADES`; replacing it with `[]` causes every 200 ms progress
+update to rebuild the complete chart option. In the 6,544-bar N225 reproduction
+that defect caused 131 canvas clears in 20 seconds and linear renderer growth.
+
+## Viewing another instrument cancels or misplaces a screening result
+
+Instrument navigation must call
+`clearScreeningPresentationForInstrumentChange()` and must not abort
+`screeningAbortRef`. The active job owns an immutable `runSeries` and
+`runInstrumentKey`; completion may update the visible result tables only when
+`visibleInstrumentKeyRef` still matches that key. The device-local result is
+also written with the run key, so returning to the original instrument can
+restore it. Only the explicit stop action or page teardown may abort the job.
+
+## KRX KS11 screening exhausts memory
+
+Confirm the loaded series length and local engine telemetry. Yahoo `^KS11`
+returned 6,680 daily rows in the 2026-09-21 read-only probe, crossing the shared
+long-history boundary. Both the browser Worker and local child must use
+`screeningCheckpointInterval(...)`; at least 6,000 bars or at most 9 GiB
+physical memory checkpoints every 2,048 evaluations. The atomic checkpoint
+resumes the exact traversal in a fresh heap. Do not shorten history, reduce
+finalist limits, or change strategy domains. If memory still grows, retain the
+job directory and record stage, bar count, RSS, checkpoint bytes, and restart
+count.
+
+## 164824 changes source or price while Shenzhen is closed
+
+The verified profile must resolve legacy `164824.SHE`/`OTHER` and Eastmoney
+aliases to Tencent `sz164824` as the fixed raw canonical primary. Eastmoney
+`0.164824` remains a raw verified backup only. If the source label differs,
+inspect canonical-cache primary metadata and allow the primary-change migration
+to replace an old adjusted or Eastmoney cache as one unit; never merge price
+adjustment modes. The 2026-09-21 probe observed Eastmoney `rc=102` and a valid
+Tencent response, so adding more Eastmoney off-hours retries is not the
+recovery path.
+
 ## One-click screening appears stuck
 
 Check the engine telemetry below the progress bar first. A changing candidate
@@ -14,13 +59,40 @@ Protocol-v3 status responses remain small; the completed result is read once
 from `/screening/jobs/<job-id>/result`. `bars.bin`, `derived.bin`, and the
 checkpoint manifest can be inspected independently when diagnosing disk cost.
 
+## Shortcut batch period screening stops or resumes
+
+1. The left screening button uses the first configured period-window session
+   count and processes only shortcut instruments whose asset type is `index`.
+2. Progress is committed after the strategy record is saved and assigned to
+   its `N日` folder. Pressing Stop leaves the last complete checkpoint intact.
+3. Reopen the page and press the same button with unchanged period, objective,
+   costs, and entry-filter mode to resume. A changed configuration starts a
+   fresh pass.
+4. Failed instruments remain pending and are retried. The bounded checkpoint
+   stores only keys, status, timestamps, and a safe last error—not market data.
+5. If an index group cannot be dragged, confirm nested record/folder drop
+   handlers return without stopping propagation for a group drag.
+
 ## Local launcher does not open QuantScope
 
 1. Confirm `node --version` reports 22.13.0 or newer and `npm --version`
    succeeds.
 2. Read any reported port-owner PID. The launcher manages its own unhealthy
    listeners on ports 3000 and 3001, but refuses to stop an unrelated owner.
+   It also removes an exact-current-checkout Vinext process left on a historical
+   fallback port. Vite now uses strict-port mode, so new launches fail instead
+   of silently moving from 3000 to 3002.
+   Loopback health probes bypass configured HTTP/HTTPS proxies; those proxy
+   values remain enabled only for Node's external market requests.
 3. Read the visible `QuantScope Local Server` window for vinext errors.
+   The browser should open once port 3000 listens. Application readiness is a
+   lightweight `/api/health` request and no longer waits for full workspace SSR.
+   A cold vinext compile may exceed the initial 60-second startup window. If
+   port 3000 is already listening and the server process is still alive, the
+   launcher reports that compilation is continuing and grants one bounded
+   120-second grace period. It still fails after that period rather than
+   waiting indefinitely, then stops the failed launch tree and checks for exact
+   current-checkout leftovers.
 4. If a previous launcher is already serving QuantScope, launch again: the
    readiness check now reuses that server before touching the D1 migration
    state.
@@ -34,8 +106,11 @@ If the console previously stopped after `No migrations to apply!`, Wrangler had
 completed the no-op migration but left its Windows process tree alive. The
 launcher now relays migration output and allows a two-second exit grace period
 after that exact terminal message. It then closes only the migration process
-tree and continues startup. A migration that times out without the success
-message remains a hard failure and is never skipped.
+tree and continues startup. Windows may report that one child exited during
+that cleanup; the launcher now verifies the exact root process and continues
+when it has already stopped. A root process that remains alive, or a migration
+that times out without the success message, remains a hard failure and is never
+skipped.
 
 The launcher never falls back to the hosted site. The local UI and saved
 records do not require login, but live market-data providers still require
@@ -55,7 +130,19 @@ project checkout, a wrong role or port, and an unrelated listener are never
 stopped automatically. The conflict message includes the remaining owner PID
 so it can be inspected explicitly.
 
+Port 3002 is not a valid QuantScope application port. If an older development
+server is found there, rerun the launcher: it will stop that process only when
+the executable path and fixed Vinext arguments identify this exact checkout.
+
 ## Market route returns `UPSTREAM_UNAVAILABLE`
+
+If `164824` appears as exchange `OTHER` or only has a short adjusted history,
+the record came from the legacy EODHD `164824.SHE` discovery path. Reload the
+instrument normally: canonical resolution now repairs it to `SZSE`/`0.164824`
+and requests full raw history. No saved-record or browser-database deletion is
+required. If Eastmoney is unavailable, Tencent supplies the replacement raw
+history; when both public endpoints fail, the existing cache is retained and
+the normal retry backoff applies.
 
 1. Read the chart's source label and call the preferred provider with
    `strictProvider=1`; then call each configured backup strictly in profile
@@ -65,6 +152,10 @@ so it can be inspected explicitly.
    return regional 403/429 responses even when another route succeeds.
    Eastmoney may close a Node TLS socket during burst traffic; confirm the
    same-host HTTP retry and avoid repeatedly bypassing history cache.
+   The relay returns `RELAY_REQUEST_FAILED` with HTTP 502 when an allowlisted
+   request or screening handler throws before sending a response. This is a
+   contained request failure; confirm `/health` still reports `ready: true`
+   before restarting the relay.
 3. Check whether Eastmoney changed `QuotationCodeTable.Data` or `data.klines`.
 4. Confirm daily rows use `YYYY-MM-DD` and minute rows use
    `YYYY-MM-DD HH:mm`.
@@ -110,9 +201,9 @@ the API boundary.
    providers. For ETF `513310`, verify EODHD resolves the SSE listing; Twelve
    Data, Alpha Vantage, Marketstack, and Zhitu are not accepted substitutes
    unless their strict response and mapping pass the profile policy. For the
-   current-session overlay, verify Tencent is tried first and Juhe last. Juhe
-   should be skipped after a valid Tencent quote and can never recover empty
-   history or become the effective primary.
+   current-session overlay, verify Tencent is tried first and Juhe last. A
+   Tencent history response can recover an empty chart; Juhe should be skipped
+   after a valid Tencent result and can never become the effective primary.
 6. Check the browser console for ECharts initialization errors.
 7. If the chart disappeared only after opening a saved strategy for the same
    index, inspect `canReuseSavedBacktestMarketSeries(...)`. The saved, active,
@@ -181,6 +272,30 @@ not deterministic.
    run and that the longer valid series wins without merging providers.
 5. Do not treat the five-bar `mode=latest` overlay as the history response.
 
+For an Eastmoney LOF such as `164824`, confirm the canonical primary remains
+the original Eastmoney `secid`, the request uses `fqt=0`, and the returned
+adjustment label is `raw`. A guessed Yahoo `.SZ`/`.SS` history can return only
+one or a few recent rows and must not become the LOF primary.
+
+If both Eastmoney history hosts fail, request Tencent with the same exchange-
+local symbol and `mode=history`. A valid `164824` backup is raw, starts at
+2018-08-01, and is capped at 2,000 requested rows. Do not merge it with an
+adjusted cache unless the existing overlap/scale gate accepts the replacement.
+
+## Today's daily bar is missing in Asia/Shanghai
+
+1. Confirm the displayed and cached update timestamps use `Asia/Shanghai`.
+2. Inspect Yahoo `regularMarketTime`, price, open, day high, and day low. A
+   valid snapshot with an Asia-Shanghai date at least as new as the daily array
+   should append or replace only the unconfirmed last bar.
+3. Keep exchange-local time only for refresh windows and close timing; do not
+   derive display dates from the browser or server default zone.
+4. For SSE/SZSE indexes and ETFs, confirm the concurrent Tencent quote remains
+   available when Yahoo metadata is absent. Commodity proxies use Yahoo's
+   validated current-session metadata.
+5. Never fabricate a completed close. Invalid or incomplete metadata is
+   ignored and the latest status remains conservative.
+
 ## Latest strategy guidance does not update
 
 1. Confirm the page is visible; background tabs intentionally do not poll.
@@ -196,6 +311,17 @@ not deterministic.
    entry condition was touched but the moving-average slope filter failed.
    This is a blocked hypothetical entry, not a missing executed fill.
 
+## A closed daily chart keeps changing after refresh
+
+1. Confirm the newest canonical bar reports `latestBarStatus: "complete"`.
+2. A same-provider refresh must not rewrite that bar's OHLC. It may only
+   backfill missing published volume on completed dates.
+3. For verified LOFs such as `164824`, confirm the canonical Eastmoney series
+   remains raw and that a Tencent temporary quote is rejected when the same
+   completed trading date already exists.
+4. If an older cache still oscillates, reload once so the locked canonical
+   series replaces the displayed in-progress copy.
+
 ## Chart timeline cannot be dragged
 
 1. Confirm the slider data zoom has `brushSelect: false`; ECharts otherwise
@@ -210,21 +336,6 @@ not deterministic.
 6. If a visible price tooltip disappears during a scheduled refresh, confirm
    chart updates use component `replaceMerge` and do not recreate tooltip or
    axis-pointer state with `notMerge: true`.
-
-## One-minute chart appears ahead of Shanghai time
-
-1. Compare the final bar's provider epoch with its displayed category. The
-   epoch is authoritative for display; an exchange-local `bar.time` can be one
-   hour ahead for JPX without representing a future bar.
-2. Confirm `PriceChart` receives the active interval and calls
-   `formatPriceChartTime(...)` for one-minute categories and trade markers.
-3. Keep canonical `bar.time` exchange-local. Session grouping, entry cutoffs,
-   and forced session-end exits depend on that internal key.
-4. If the chart is visually sparse, confirm both data-zoom components use a
-   one-minute `minValueSpan` of 120; daily zoom must remain unrestricted.
-5. While the venue refresh policy is enabled, compare the newest epoch with
-   `series.fetchedAt`. A gap of at least three minutes must render the yellow
-   `intraday-delay-warning`; a one- or two-minute normal bar boundary must not.
 
 ## Browser shows an empty pane to the right
 
@@ -423,7 +534,9 @@ state and refs before reading `bars`.
 5. Inspect `/api/saved-backtests` for `AUTH_REQUIRED`,
    `INVALID_PAYLOAD`, or `PERSISTENCE_UNAVAILABLE`.
 6. If drag ordering reverts, inspect the `PATCH /api/saved-backtests` response
-   and confirm migration `0004_real_ulik.sql` added `display_order`.
+   and confirm migration `0004_real_ulik.sql` added `display_order`. The route
+   must update the complete order in bounded 25-record chunks; one large
+   conditional statement can exceed D1's bind-parameter limit near 200 rows.
 7. Do not fall back to browser storage for failed durable writes.
 8. Existing core/maximum plan JSON should be converted to A/B when read; a
    failure here indicates invalid stored JSON rather than a missing migration.

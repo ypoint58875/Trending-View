@@ -13,6 +13,8 @@ import {
   unpackMarketBars,
 } from "../lib/analysis/screening-worker-bars";
 import { encodeLocalScreeningJobRequest } from "../lib/analysis/screening-local-engine-bars";
+import { buildCheckpointIdentity } from "../lib/analysis/screening-worker-client";
+import { screeningCheckpointInterval } from "../lib/analysis/screening-memory-policy";
 import type { MarketBar } from "../lib/market/types";
 
 function makeBars(length: number): MarketBar[] {
@@ -40,6 +42,60 @@ function makeBars(length: number): MarketBar[] {
     };
   });
 }
+
+test("uses a tighter screening checkpoint cadence for KS11-sized histories", () => {
+  const eightGiB = 8 * 1_073_741_824;
+
+  assert.equal(screeningCheckpointInterval(6_680, eightGiB), 2_048);
+  assert.equal(screeningCheckpointInterval(6_680), 2_048);
+  assert.equal(screeningCheckpointInterval(4_000, eightGiB), 2_048);
+  assert.equal(
+    screeningCheckpointInterval(4_000, 16 * 1_073_741_824),
+    8_192,
+  );
+  assert.equal(
+    screeningCheckpointInterval(1_000, 32 * 1_073_741_824),
+    16_384,
+  );
+});
+
+test("changes the screening checkpoint identity when any market bar changes", () => {
+  const bars = makeBars(20);
+  const settings = {
+    initialCash: 100_000,
+    commissionRate: 0,
+    slippageRate: 0,
+    interval: "1d" as const,
+  };
+  const config = { mode: "sample" as const, periods: [{ sessions: 20, weight: 100 }] };
+  const options = { objective: "balanced" as const, checkpointNamespace: "nikkei:1d" };
+  const original = buildCheckpointIdentity(bars, settings, config, options);
+  const identical = buildCheckpointIdentity(
+    bars.map((bar) => ({ ...bar })),
+    { ...settings },
+    { mode: "sample", periods: [{ sessions: 20, weight: 100 }] },
+    { ...options },
+  );
+  const updatedBars = bars.map((bar, index) =>
+    index === bars.length - 1 ? { ...bar, close: bar.close + 0.01 } : bar,
+  );
+  const updated = buildCheckpointIdentity(updatedBars, settings, config, options);
+  const appended = buildCheckpointIdentity(
+    [...bars, { ...bars.at(-1)!, time: "2026-01-01", timestamp: Date.parse("2026-01-01T00:00:00Z") }],
+    settings,
+    config,
+    options,
+  );
+  const differentObjective = buildCheckpointIdentity(bars, settings, config, {
+    ...options,
+    objective: "sharpe",
+  });
+
+  assert.equal(identical.signature, original.signature);
+  assert.notEqual(updated.signature, original.signature);
+  assert.notEqual(appended.signature, original.signature);
+  assert.notEqual(differentObjective.signature, original.signature);
+});
 
 function runChildOnce(jobDirectory: string): Promise<number | null> {
   return new Promise((resolvePromise, reject) => {

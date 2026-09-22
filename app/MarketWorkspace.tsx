@@ -49,6 +49,7 @@ import {
   type AllocationBacktestResult,
   type BacktestResult,
   type BacktestSettings,
+  type BacktestTrade,
 } from "@/lib/analysis/backtest";
 import {
   INDICATOR_PREFERENCES_STORAGE_KEY,
@@ -130,6 +131,14 @@ import {
   fingerprintMarketSeries,
   type ScreeningRunRecord,
 } from "@/lib/analysis/screening-runs";
+import {
+  SHORTCUT_BATCH_CHECKPOINT_KEY,
+  createShortcutBatchConfigSignature,
+  parseShortcutBatchCheckpoint,
+  pendingShortcutBatchInstrumentKeys,
+  selectBestShortcutScreeningResult,
+  type ShortcutBatchCheckpoint,
+} from "@/lib/analysis/shortcut-batch-screening";
 
 import {
   DEFAULT_STRATEGY_SHORTLIST_DEPUTY_COUNT,
@@ -195,6 +204,7 @@ import {
   type ShortcutMarketRefreshResult,
 } from "@/lib/market/shortcut-refresh";
 import {
+  canonicalSeriesNeedsFullHistoryReplacement,
   canonicalMarketInstrumentKey,
   resolveCanonicalMarketProfile,
   type CanonicalMarketSourceDefinition,
@@ -216,7 +226,6 @@ import {
   missingPublishedVolumeRepairKey,
 } from "@/lib/market/quality";
 import {
-  estimateIntradayDataDelayMinutes,
   INTRADAY_MARKET_REFRESH_INTERVAL_MS,
   marketRefreshFailureBackoffMs,
   resolveMarketAutoRefreshPolicy,
@@ -431,7 +440,10 @@ const compactFormatter = new Intl.NumberFormat("zh-CN", {
   maximumFractionDigits: 2,
 });
 
+const EMPTY_PRICE_CHART_TRADES: BacktestTrade[] = [];
+
 const updateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
@@ -439,6 +451,7 @@ const updateTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
 });
 
 const cacheTimeFormatter = new Intl.DateTimeFormat("zh-CN", {
+  timeZone: "Asia/Shanghai",
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -683,6 +696,15 @@ function combinationResultPlan(
     ),
     tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
   } as StrategyAllocationPlan;
+}
+
+interface ShortcutBatchProgress {
+  completed: number;
+  total: number;
+  saved: number;
+  failed: number;
+  currentInstrument: string;
+  status: "idle" | "running" | "cancelled" | "completed" | "error";
 }
 
 function formatScreeningDuration(seconds: number | null): string {
@@ -1200,8 +1222,7 @@ export function MarketWorkspace() {
     useState<MarketInstrument>(defaultInstrument);
   const [seriesState, setSeries] = useState<MarketSeries | null>(null);
   const series = isMarketSeries(seriesState) ? seriesState : null;
-  const [researchInterval, setResearchInterval] =
-    useState<WorkspaceInterval>(DAILY_INTERVAL);
+  const [researchInterval] = useState<WorkspaceInterval>(DAILY_INTERVAL);
   const [chartType, setChartType] = useState<"candlestick" | "line">(
     "candlestick",
   );
@@ -1362,10 +1383,23 @@ export function MarketWorkspace() {
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+  const [shortcutBatchProgress, setShortcutBatchProgress] =
+    useState<ShortcutBatchProgress>({
+      completed: 0,
+      total: 0,
+      saved: 0,
+      failed: 0,
+      currentInstrument: "",
+      status: "idle",
+    });
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const indicatorMenusRef = useRef<HTMLDivElement>(null);
   const chartSectionRef = useRef<HTMLElement>(null);
   const screeningAbortRef = useRef<AbortController | null>(null);
+  const visibleInstrumentKeyRef = useRef(
+    savedBacktestInstrumentKey(defaultInstrument),
+  );
+  const shortcutBatchAbortRef = useRef<AbortController | null>(null);
   const screeningCacheRestoreKeyRef = useRef("");
   const screenProgressRef = useRef<CombinationScreeningProgress>(
     emptyCombinationProgress(),
@@ -1623,6 +1657,10 @@ export function MarketWorkspace() {
           currentSeries !== null &&
           currentSeries.bars.length >= 120 &&
           currentSeriesKeyRef.current === seriesKey &&
+          !canonicalSeriesNeedsFullHistoryReplacement(
+            profile,
+            currentSeries,
+          ) &&
           !repairsMissingVolume;
         const applyLoadedSeries = (
           payload: MarketSeries,
@@ -1976,6 +2014,12 @@ export function MarketWorkspace() {
 
         const primaryMode = refreshesLatestOnly ? "latest" : "history";
         const primaryLimit = refreshesLatestOnly ? 5 : seriesLimit;
+        const replacesCanonicalHistory = currentSeries
+          ? canonicalSeriesNeedsFullHistoryReplacement(
+              profile,
+              currentSeries,
+            )
+          : false;
         const initialSourceSelection =
           selectMarketSourceByRollingHealth(
             profile,
@@ -1990,8 +2034,12 @@ export function MarketWorkspace() {
           rollingHealthSkipsPrimary
         ) {
           const backup = await recoverFromBackupSources(
-            currentSeries ? "latest" : "history",
-            currentSeries ? 10 : seriesLimit,
+            currentSeries && !replacesCanonicalHistory
+              ? "latest"
+              : "history",
+            currentSeries && !replacesCanonicalHistory
+              ? 10
+              : seriesLimit,
             currentSeries,
           );
           if (backup.promoted) {
@@ -2128,9 +2176,17 @@ export function MarketWorkspace() {
               Date.now() + marketRefreshFailureBackoffMs(failures),
           };
           const retained = currentSeries;
+          const replacesRetainedHistory = retained
+            ? canonicalSeriesNeedsFullHistoryReplacement(
+                profile,
+                retained,
+              )
+            : false;
           const backup = await recoverFromBackupSources(
-            retained ? "latest" : "history",
-            retained ? 10 : seriesLimit,
+            retained && !replacesRetainedHistory
+              ? "latest"
+              : "history",
+            retained && !replacesRetainedHistory ? 10 : seriesLimit,
             retained,
           );
           if (backup.promoted) {
@@ -2333,6 +2389,7 @@ export function MarketWorkspace() {
   useEffect(
     () => () => {
       screeningAbortRef.current?.abort();
+      shortcutBatchAbortRef.current?.abort();
       shortcutRefreshAbortRef.current?.abort();
       if (shortcutRefreshCooldownTimerRef.current !== null) {
         window.clearTimeout(shortcutRefreshCooldownTimerRef.current);
@@ -2858,9 +2915,10 @@ export function MarketWorkspace() {
         : [];
     });
   }, [appliedChartRange, endDate, series, startDate]);
-  const appliedChartFocusRange = encompassingScreeningWindow(
-    appliedChartWindows,
-  );
+  const appliedChartFocusRange =
+    appliedChartRange.kind === "screening"
+      ? encompassingScreeningWindow(appliedChartWindows)
+      : null;
   const primaryAppliedChartWindow = appliedChartWindows.at(-1) ?? null;
   const appliedStrategyPlanVolumeUnavailable = Boolean(
     appliedStrategyPlan &&
@@ -3011,21 +3069,6 @@ export function MarketWorkspace() {
   const lastUpdated = series?.fetchedAt
     ? updateTimeFormatter.format(new Date(series.fetchedAt))
     : copy.common.unavailable;
-  const intradayDataDelayMinutes = (() => {
-    if (researchInterval !== INTRADAY_INTERVAL || !series?.bars.length) {
-      return null;
-    }
-    const fetchedAt = new Date(series.fetchedAt);
-    if (
-      !resolveMarketAutoRefreshPolicy(series.instrument, fetchedAt).enabled
-    ) {
-      return null;
-    }
-    return estimateIntradayDataDelayMinutes(
-      series.bars.at(-1)!.timestamp,
-      fetchedAt,
-    );
-  })();
   const cachedPreviewTime =
     cachedPreviewAt === null
       ? null
@@ -3851,17 +3894,16 @@ export function MarketWorkspace() {
     }
   };
 
-  const resetScreening = () => {
-    screeningAbortRef.current?.abort();
-    screeningAbortRef.current = null;
-    setScreening(false);
+  const clearScreeningPresentationForInstrumentChange = () => {
     setScreeningError("");
     setScreenResults([]);
     setCombinationResults([]);
-    setValidationProgress(null);
-    setScreenEngineStatus(null);
     setValidationReport(null);
-    setScreenProgress(emptyCombinationProgress());
+    if (!screeningAbortRef.current) {
+      setValidationProgress(null);
+      setScreenEngineStatus(null);
+      setScreenProgress(emptyCombinationProgress());
+    }
   };
 
   const captureIntervalResearchSnapshot = (): IntervalResearchSnapshot => ({
@@ -3969,21 +4011,6 @@ export function MarketWorkspace() {
     setLoading(true);
   };
 
-  const chooseResearchInterval = (nextInterval: WorkspaceInterval) => {
-    if (nextInterval === researchInterval) return;
-    screeningAbortRef.current?.abort();
-    screeningAbortRef.current = null;
-    setScreening(false);
-    intervalResearchSnapshotsRef.current[researchInterval] =
-      captureIntervalResearchSnapshot();
-    restoreIntervalResearchSnapshot(
-      intervalResearchSnapshotsRef.current[nextInterval],
-    );
-    clearMarketSeries();
-    sharedRangeRef.current = { startDate: "", endDate: "" };
-    setResearchInterval(nextInterval);
-  };
-
   const toggleIndicatorFavorite = (indicatorId: IndicatorId) => {
     setFavoriteIndicatorIds((current) =>
       current.includes(indicatorId)
@@ -4072,10 +4099,7 @@ export function MarketWorkspace() {
   };
 
   const openSavedBacktest = (saved: SavedBacktestRecord) => {
-    const savedWorkspaceInterval =
-      saved.interval === INTRADAY_INTERVAL
-        ? INTRADAY_INTERVAL
-        : DAILY_INTERVAL;
+    const savedWorkspaceInterval = DAILY_INTERVAL;
     const restoredStrategyB =
       saved.plan.strategyA &&
       saved.plan.strategyB &&
@@ -4111,18 +4135,17 @@ export function MarketWorkspace() {
       !reusesCurrentSeries ||
       researchInterval !== savedWorkspaceInterval
     ) {
-      resetScreening();
+      clearScreeningPresentationForInstrumentChange();
     }
     if (!sameCanonicalInstrument) {
+      visibleInstrumentKeyRef.current = savedBacktestInstrumentKey(
+        saved.instrument,
+      );
       clearMarketSeries();
       setInstrument(saved.instrument);
     } else if (!reusesCurrentSeries) {
       clearMarketSeries();
       setRefreshVersion((value) => value + 1);
-    }
-    if (researchInterval !== savedWorkspaceInterval) {
-      sharedRangeRef.current = { startDate: "", endDate: "" };
-      setResearchInterval(savedWorkspaceInterval);
     }
     setStrategyAId(saved.plan.strategyA?.strategyId ?? "");
     setStrategyAParameters(
@@ -4196,6 +4219,47 @@ export function MarketWorkspace() {
     setInitialCash(saved.initialCash);
     setCommissionPercent(saved.commissionPercent);
     setSlippagePercent(saved.slippagePercent);
+  };
+
+  const openSavedBacktestGroup = (
+    group: (typeof savedBacktestGroups)[number],
+  ) => {
+    const activeInstrument = series?.instrument ?? instrument;
+    const sameCanonicalInstrument =
+      savedBacktestInstrumentKey(group.instrument) ===
+      savedBacktestInstrumentKey(activeInstrument);
+    const reusesCurrentSeries = canReuseSavedBacktestMarketSeries(
+      group.instrument,
+      activeInstrument,
+      series,
+      researchInterval,
+    );
+
+    if (!sameCanonicalInstrument || !reusesCurrentSeries) {
+      clearScreeningPresentationForInstrumentChange();
+    }
+    if (!sameCanonicalInstrument) {
+      visibleInstrumentKeyRef.current = savedBacktestInstrumentKey(
+        group.instrument,
+      );
+      clearMarketSeries();
+      setInstrument(group.instrument);
+    } else if (!reusesCurrentSeries) {
+      clearMarketSeries();
+      setRefreshVersion((value) => value + 1);
+    }
+
+    setStrategyAId("");
+    setStrategyAParameters({});
+    setStrategyBId("");
+    setStrategyBParameters({});
+    setStrategyCId("");
+    setStrategyCParameters({});
+    setStrategyAAllocationPercent(0);
+    setStrategyBAllocationPercent(0);
+    setStrategyCAllocationPercent(0);
+    setAppliedStrategyPlan(null);
+    setAppliedChartRange({ kind: "workspace" });
   };
 
   const deleteSavedBacktest = async (id: number) => {
@@ -4513,9 +4577,9 @@ export function MarketWorkspace() {
     event: ReactDragEvent<HTMLElement>,
     targetFolder: SavedBacktestFolder,
   ) => {
+    if (savedBacktestDrag?.kind !== "folder") return;
     event.stopPropagation();
     if (
-      savedBacktestDrag?.kind !== "folder" ||
       savedBacktestDrag.folderId === targetFolder.id ||
       savedBacktestDrag.scope !== targetFolder.scope ||
       savedBacktestDrag.contextKey !== targetFolder.contextKey
@@ -4602,6 +4666,7 @@ export function MarketWorkspace() {
     event: ReactDragEvent<HTMLElement>,
     targetGroupKey: string,
   ) => {
+    if (savedBacktestDrag?.kind !== "group") return;
     event.stopPropagation();
     const sourceGroup =
       savedBacktestDrag?.kind === "group"
@@ -4613,7 +4678,6 @@ export function MarketWorkspace() {
       (group) => group.key === targetGroupKey,
     );
     if (
-      savedBacktestDrag?.kind !== "group" ||
       savedBacktestDrag.groupKey === targetGroupKey ||
       (sourceGroup?.instrumentFolderId ?? null) !==
         (targetGroup?.instrumentFolderId ?? null)
@@ -4636,6 +4700,7 @@ export function MarketWorkspace() {
     targetGroupKey: string,
     targetRecordId: number,
   ) => {
+    if (savedBacktestDrag?.kind !== "record") return;
     event.stopPropagation();
     const draggedRecordId =
       savedBacktestDrag?.kind === "record"
@@ -4651,7 +4716,6 @@ export function MarketWorkspace() {
       (record) => record.id === targetRecordId,
     );
     if (
-      savedBacktestDrag?.kind !== "record" ||
       savedBacktestDrag.groupKey !== targetGroupKey ||
       savedBacktestDrag.recordId === targetRecordId ||
       (sourceRecord?.strategyFolderId ?? null) !==
@@ -4723,6 +4787,318 @@ export function MarketWorkspace() {
     );
   };
 
+  const runShortcutBatchScreening = async () => {
+    if (shortcutBatchProgress.status === "running") {
+      shortcutBatchAbortRef.current?.abort();
+      return;
+    }
+    const sessions = Math.max(
+      3,
+      Math.round(
+        sampleValidationPeriods[0]?.sessions ??
+          DEFAULT_SAMPLE_VALIDATION_SESSIONS,
+      ),
+    );
+    const shortcutGroups = savedBacktestGroups;
+    if (shortcutGroups.length === 0) {
+      setShortcutBatchProgress({
+        completed: 0,
+        total: 0,
+        saved: 0,
+        failed: 0,
+        currentInstrument: "",
+        status: "error",
+      });
+      return;
+    }
+    const configSignature = createShortcutBatchConfigSignature({
+      sessions,
+      objective: screeningObjective,
+      initialCash,
+      commissionPercent,
+      slippagePercent,
+      entryFilterEnabled: screeningEntryFilterDraft.enabled,
+    });
+    const storedCheckpoint = parseShortcutBatchCheckpoint(
+      window.localStorage.getItem(SHORTCUT_BATCH_CHECKPOINT_KEY),
+    );
+    const allKeys = shortcutGroups.map((group) => group.key);
+    let pendingKeys = pendingShortcutBatchInstrumentKeys(
+      allKeys,
+      storedCheckpoint,
+      configSignature,
+    );
+    let checkpoint =
+      storedCheckpoint?.configSignature === configSignature
+        ? storedCheckpoint
+        : null;
+    if (pendingKeys.length === 0) {
+      checkpoint = null;
+      pendingKeys = [...allKeys];
+    }
+    const completedKeys = new Set(checkpoint?.completedInstrumentKeys ?? []);
+    const failedKeys = new Set<string>();
+    const controller = new AbortController();
+    shortcutBatchAbortRef.current = controller;
+    const initialCompleted = allKeys.length - pendingKeys.length;
+    let savedCount = initialCompleted;
+    setShortcutBatchProgress({
+      completed: initialCompleted,
+      total: allKeys.length,
+      saved: initialCompleted,
+      failed: 0,
+      currentInstrument: "",
+      status: "running",
+    });
+
+    const persistCheckpoint = (lastError: string | null) => {
+      const nextCheckpoint: ShortcutBatchCheckpoint = {
+        version: 1,
+        configSignature,
+        sessions,
+        completedInstrumentKeys: [...completedKeys],
+        failedInstrumentKeys: [...failedKeys],
+        updatedAt: new Date().toISOString(),
+        lastError,
+      };
+      window.localStorage.setItem(
+        SHORTCUT_BATCH_CHECKPOINT_KEY,
+        JSON.stringify(nextCheckpoint),
+      );
+    };
+
+    try {
+      for (const instrumentKey of pendingKeys) {
+        if (controller.signal.aborted) break;
+        const group = shortcutGroups.find(
+          (candidate) => candidate.key === instrumentKey,
+        );
+        if (!group) continue;
+        setShortcutBatchProgress((current) => ({
+          ...current,
+          currentInstrument: group.instrument.name,
+        }));
+        setScreenProgress(emptyCombinationProgress());
+        setValidationProgress(null);
+        setScreenEngineStatus(null);
+        try {
+          const refreshed = await refreshShortcutMarketInstrument(
+            group.instrument,
+            { signal: controller.signal },
+          );
+          if (!refreshed?.canonicalSeries.bars.length) {
+            throw new Error("MARKET_DATA_UNAVAILABLE");
+          }
+          const marketSeries = refreshed.canonicalSeries;
+          const range = resolveTrailingTradingSessionRange(
+            marketSeries.bars,
+            sessions,
+          );
+          if (!range) throw new Error("INSUFFICIENT_SAMPLE_DATA");
+          const hasReliableVolume = assessMarketVolumeCoverage(
+            marketSeries.bars,
+          ).reliable;
+          const outcome = await runScreeningInWorker(
+            marketSeries.bars,
+            {
+              initialCash,
+              commissionRate: commissionPercent / 100,
+              slippageRate: slippagePercent / 100,
+              startTime: range.startTime,
+              endTime: range.endTime,
+              interval: DAILY_INTERVAL,
+              executionPolicy: HISTORICAL_EXECUTION_POLICY,
+              entryFilter: activeMovingAverageSlopeFilter(
+                screeningEntryFilterDraft,
+              ),
+            },
+            {
+              mode: "sample",
+              periods: [{ sessions, weight: 100 }],
+            },
+            {
+              objective: screeningObjective,
+              checkpointNamespace: `${instrumentKey}:1d:shortcut-batch:${sessions}`,
+              entryFilters: screeningEntryFilterDraft.enabled
+                ? buildScreeningMovingAverageSlopeFilters()
+                : undefined,
+              excludedStrategyIds: hasReliableVolume
+                ? undefined
+                : VOLUME_REQUIRED_STRATEGY_IDS,
+              signal: controller.signal,
+              onProgress: (progress) => {
+                screenProgressRef.current = progress;
+                setScreenProgress(progress);
+              },
+              onValidationProgress: setValidationProgress,
+              onEngineStatus: setScreenEngineStatus,
+            },
+          );
+          const best = selectBestShortcutScreeningResult(
+            outcome.singleResults,
+            outcome.results,
+            screeningObjective,
+          );
+          if (!best) throw new Error("NO_SCREENING_RESULT");
+          const plan =
+            best.kind === "single"
+              ? singleResultPlan(best.result)
+              : combinationResultPlan(best.result);
+          const saveResponse = await fetch("/api/saved-backtests", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              createSaveBacktestInput(
+                marketSeries.instrument,
+                DAILY_INTERVAL,
+                plan,
+                datePart(range.startTime),
+                datePart(range.endTime),
+                initialCash,
+                commissionPercent,
+                slippagePercent,
+                best.result,
+              ),
+            ),
+            signal: controller.signal,
+          });
+          const savePayload = (await saveResponse.json()) as {
+            savedBacktest?: SavedBacktestRecord;
+          };
+          if (!saveResponse.ok || !savePayload.savedBacktest) {
+            throw new Error("PERSISTENCE_UNAVAILABLE");
+          }
+
+          const folderName = `${sessions}日`;
+          let folder = savedBacktestFolders.find(
+            (candidate) =>
+              candidate.scope === "strategy" &&
+              candidate.contextKey === instrumentKey &&
+              candidate.name === folderName,
+          );
+          if (!folder) {
+            const folderResponse = await fetch(
+              "/api/saved-backtest-folders",
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  scope: "strategy",
+                  contextKey: instrumentKey,
+                  name: folderName,
+                }),
+                signal: controller.signal,
+              },
+            );
+            if (folderResponse.ok) {
+              folder = ((await folderResponse.json()) as {
+                folder?: SavedBacktestFolder;
+              }).folder;
+            } else if (folderResponse.status === 409) {
+              const reloadResponse = await fetch("/api/saved-backtests", {
+                cache: "no-store",
+                signal: controller.signal,
+              });
+              const reloadPayload = (await reloadResponse.json()) as {
+                savedBacktestFolders?: SavedBacktestFolder[];
+              };
+              folder = reloadPayload.savedBacktestFolders?.find(
+                (candidate) =>
+                  candidate.scope === "strategy" &&
+                  candidate.contextKey === instrumentKey &&
+                  candidate.name === folderName,
+              );
+            }
+          }
+          if (!folder) throw new Error("FOLDER_UNAVAILABLE");
+          const resolvedFolder = folder;
+          const assignResponse = await fetch(
+            "/api/saved-backtest-folders",
+            {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                scope: "strategy",
+                folderId: resolvedFolder.id,
+                savedBacktestId: savePayload.savedBacktest.id,
+              }),
+              signal: controller.signal,
+            },
+          );
+          if (!assignResponse.ok) throw new Error("FOLDER_ASSIGNMENT_FAILED");
+          const assignedSavedBacktest = {
+            ...savePayload.savedBacktest,
+            strategyFolderId: resolvedFolder.id,
+          };
+          setSavedBacktests((current) => {
+            const existingIndex = current.findIndex(
+              (record) => record.id === assignedSavedBacktest.id,
+            );
+            if (existingIndex < 0) {
+              const lastInstrumentIndex = current.findLastIndex(
+                (record) =>
+                  savedBacktestInstrumentKey(record.instrument) ===
+                  instrumentKey,
+              );
+              if (lastInstrumentIndex < 0) {
+                return [...current, assignedSavedBacktest];
+              }
+              const next = [...current];
+              next.splice(lastInstrumentIndex + 1, 0, assignedSavedBacktest);
+              return next;
+            }
+            return current.map((record, index) =>
+              index === existingIndex ? assignedSavedBacktest : record,
+            );
+          });
+          setSavedBacktestFolders((current) =>
+            current.some((candidate) => candidate.id === resolvedFolder.id)
+              ? current
+              : [resolvedFolder, ...current],
+          );
+          completedKeys.add(instrumentKey);
+          failedKeys.delete(instrumentKey);
+          savedCount += 1;
+          persistCheckpoint(null);
+        } catch (error) {
+          if (controller.signal.aborted) break;
+          failedKeys.add(instrumentKey);
+          persistCheckpoint((error as Error).message || "UNKNOWN");
+        }
+        setShortcutBatchProgress((current) => ({
+          ...current,
+          completed: completedKeys.size,
+          saved: savedCount,
+          failed: failedKeys.size,
+        }));
+      }
+      if (controller.signal.aborted) {
+        setShortcutBatchProgress((current) => ({
+          ...current,
+          currentInstrument: "",
+          status: "cancelled",
+        }));
+      } else {
+        if (failedKeys.size === 0) {
+          window.localStorage.removeItem(SHORTCUT_BATCH_CHECKPOINT_KEY);
+        }
+        setShortcutBatchProgress((current) => ({
+          ...current,
+          completed: completedKeys.size,
+          saved: savedCount,
+          failed: failedKeys.size,
+          currentInstrument: "",
+          status: failedKeys.size === 0 ? "completed" : "error",
+        }));
+      }
+      await loadSavedBacktests();
+    } finally {
+      if (shortcutBatchAbortRef.current === controller) {
+        shortcutBatchAbortRef.current = null;
+      }
+    }
+  };
+
   const startScreening = async () => {
     if (!series?.bars.length) return;
     if (screeningBlockedByVolume) {
@@ -4730,13 +5106,17 @@ export function MarketWorkspace() {
       return;
     }
     const runObjective = screeningObjective;
-    const latestDate = series.bars.at(-1)!.time;
+    const runSeries = series;
+    const runInstrumentKey = canonicalMarketInstrumentKey(
+      runSeries.instrument,
+    );
+    const latestDate = runSeries.bars.at(-1)!.time;
     const resolvedMultiRanges = screeningMultiRanges.every(
       (range) => range.startTime && range.endTime,
     )
       ? screeningMultiRanges
       : defaultMultiRangeWindows(
-          series.bars,
+          runSeries.bars,
           startDate,
           endDate || latestDate,
         );
@@ -4776,7 +5156,7 @@ export function MarketWorkspace() {
     screeningAbortRef.current?.abort();
     const controller = new AbortController();
     screeningAbortRef.current = controller;
-    screeningCacheRestoreKeyRef.current = `${canonicalMarketInstrumentKey(series.instrument)}:${researchInterval}`;
+    screeningCacheRestoreKeyRef.current = `${runInstrumentKey}:${researchInterval}`;
     void clearLatestScreeningResult();
     setScreening(true);
     setScreeningError("");
@@ -4788,7 +5168,7 @@ export function MarketWorkspace() {
     setScreenProgress(emptyCombinationProgress());
     try {
       const outcome = await runScreeningInWorker(
-        series.bars,
+        runSeries.bars,
         {
           initialCash,
           commissionRate: commissionPercent / 100,
@@ -4804,7 +5184,7 @@ export function MarketWorkspace() {
         validationConfig,
         {
           objective: runObjective,
-          checkpointNamespace: `${canonicalMarketInstrumentKey(series.instrument)}:${researchInterval}`,
+          checkpointNamespace: `${runInstrumentKey}:${researchInterval}`,
           entryFilters: screeningEntryFilterDraft.enabled
             ? buildScreeningMovingAverageSlopeFilters()
             : undefined,
@@ -4822,31 +5202,38 @@ export function MarketWorkspace() {
       );
 
       if (screeningAbortRef.current !== controller) return;
-      setScreenResults(outcome.singleResults);
-      setCombinationResults(outcome.results);
-      setScreenResultsObjective(runObjective);
-      setValidationReport(outcome.validationReport);
       const completedProgress = {
         ...screenProgressRef.current,
         completed: outcome.evaluatedCount,
         total: outcome.totalCandidates,
         failed: outcome.failedCount,
       };
-      setScreenProgress(completedProgress);
-      await writeLatestScreeningResult({
-        instrumentKey: canonicalMarketInstrumentKey(series.instrument),
-        interval: researchInterval,
-        objective: runObjective,
-        singleResults: outcome.singleResults,
-        combinationResults: outcome.results,
-        validationReport: outcome.validationReport,
-        progress: completedProgress,
-      });
+      if (visibleInstrumentKeyRef.current === runInstrumentKey) {
+        setScreenResults(outcome.singleResults);
+        setCombinationResults(outcome.results);
+        setScreenResultsObjective(runObjective);
+        setValidationReport(outcome.validationReport);
+        setScreenProgress(completedProgress);
+      }
       try {
-        const dataFingerprint = await fingerprintMarketSeries(series);
+        await writeLatestScreeningResult({
+          instrumentKey: runInstrumentKey,
+          interval: researchInterval,
+          objective: runObjective,
+          singleResults: outcome.singleResults,
+          combinationResults: outcome.results,
+          validationReport: outcome.validationReport,
+          progress: completedProgress,
+        });
+      } catch {
+        // The completed in-memory result remains valid when optional local
+        // result caching is unavailable or the browser storage quota is full.
+      }
+      try {
+        const dataFingerprint = await fingerprintMarketSeries(runSeries);
         if (controller.signal.aborted) return;
         const archiveInput = createSaveScreeningRunInput(
-          series,
+          runSeries,
           validationConfig,
           runObjective,
           {
@@ -4897,7 +5284,7 @@ export function MarketWorkspace() {
   };
 
   const chooseInstrument = (nextInstrument: MarketInstrument) => {
-    resetScreening();
+    clearScreeningPresentationForInstrumentChange();
     for (const interval of [DAILY_INTERVAL, INTRADAY_INTERVAL] as const) {
       const snapshot = intervalResearchSnapshotsRef.current[interval];
       intervalResearchSnapshotsRef.current[interval] = {
@@ -4908,6 +5295,9 @@ export function MarketWorkspace() {
         screenProgress: emptyCombinationProgress(),
       };
     }
+    visibleInstrumentKeyRef.current = savedBacktestInstrumentKey(
+      nextInstrument,
+    );
     clearMarketSeries();
     setInstrument(nextInstrument);
     setQuery("");
@@ -4984,7 +5374,7 @@ export function MarketWorkspace() {
       Math.max(
         Number.isFinite(requestedSessions)
           ? Math.floor(requestedSessions)
-          : 3,
+          : DEFAULT_SAMPLE_VALIDATION_SESSIONS,
         3,
       ),
       maximumSharedRangeSessions,
@@ -5006,6 +5396,10 @@ export function MarketWorkspace() {
     const groups: Array<{
       instrumentKey: string;
       marketSeries: MarketSeries;
+      rollingRange: {
+        startTime: string;
+        endTime: string;
+      };
       evaluations: Array<{
         id: number;
         performance: BacktestResult | AllocationBacktestResult;
@@ -5047,8 +5441,8 @@ export function MarketWorkspace() {
               marketSeries.bars,
               saved.plan,
               {
-                startTime: saved.startDate,
-                endTime: saved.endDate,
+                startTime: rollingRange.startTime,
+                endTime: rollingRange.endTime,
               },
             ).relativeLongStrategy,
             performance: runStrategyPlanRangeBacktest(
@@ -5074,6 +5468,10 @@ export function MarketWorkspace() {
         groups.push({
           instrumentKey: group.key,
           marketSeries,
+          rollingRange: {
+            startTime: rollingRange.startTime,
+            endTime: rollingRange.endTime,
+          },
           evaluations,
         });
       }
@@ -5141,7 +5539,7 @@ export function MarketWorkspace() {
           const allocation = buildLiveAllocationGuidance(
             group.marketSeries.bars,
             saved.plan,
-            { startTime: saved.startDate, endTime: saved.endDate },
+            group.rollingRange,
             group.marketSeries.latestBarStatus,
           );
           if (!allocation) continue;
@@ -5277,6 +5675,13 @@ export function MarketWorkspace() {
     return () => controller.abort();
   }, [savedBacktestRollingGroups]);
   const screeningBusy = screening;
+  const shortcutBatchSessions = Math.max(
+    3,
+    Math.round(
+      sampleValidationPeriods[0]?.sessions ??
+        DEFAULT_SAMPLE_VALIDATION_SESSIONS,
+    ),
+  );
   const screeningResultShortcutMatch = (
     result: ScreeningSingleResult | ScreeningCombinationResult,
   ) =>
@@ -5366,6 +5771,21 @@ export function MarketWorkspace() {
     screenProgress,
     validationProgress,
   );
+  const shortcutBatchCurrentFraction =
+    shortcutBatchProgress.status === "running" &&
+    screeningProgressBar.maximum > 0
+      ? Math.min(
+          Math.max(
+            screeningProgressBar.value / screeningProgressBar.maximum,
+            0,
+          ),
+          1,
+        )
+      : 0;
+  const shortcutBatchContinuousProgress = Math.min(
+    shortcutBatchProgress.completed + shortcutBatchCurrentFraction,
+    shortcutBatchProgress.total,
+  );
   const screeningStageLabel = {
     strategies: copy.combinationScreening.runningStrategies,
     entryFilters: copy.combinationScreening.runningEntryFilters,
@@ -5388,9 +5808,6 @@ export function MarketWorkspace() {
     octuples: copy.combinationScreening.runningOctuples,
     octupleAllocations:
       copy.combinationScreening.runningOctupleAllocations,
-    nonuples: copy.combinationScreening.runningNonuples,
-    nonupleAllocations:
-      copy.combinationScreening.runningNonupleAllocations,
   }[screenProgress.stage];
   const selectedValidationCandidateName = (
     reference: ScreeningCandidateReference,
@@ -5436,7 +5853,7 @@ export function MarketWorkspace() {
   const refreshActionLabel =
     shortcutRefreshStatusText || copy.refresh;
   const combinationResultsByCount = new Map(
-    Array.from({ length: 8 }, (_, index) => {
+    Array.from({ length: 7 }, (_, index) => {
       const strategyCount = index + 2;
       return [
         strategyCount,
@@ -5453,7 +5870,7 @@ export function MarketWorkspace() {
       kind: "single" as const,
       results: screenResults,
     },
-    ...Array.from({ length: 8 }, (_, index) => {
+    ...Array.from({ length: 7 }, (_, index) => {
       const strategyCount = index + 2;
       const titles = [
         copy.screening.dualResultsTitle,
@@ -5463,7 +5880,6 @@ export function MarketWorkspace() {
         copy.screening.sextupleResultsTitle,
         copy.screening.septupleResultsTitle,
         copy.screening.octupleResultsTitle,
-        copy.screening.nonupleResultsTitle,
       ];
       return {
         key: String(strategyCount),
@@ -5666,34 +6082,8 @@ export function MarketWorkspace() {
 
       <section className="chart-toolbar">
         <div className="chart-toolbar-menu-row">
-          <div
-            className="toolbar-group chart-interval-tabs"
-            role="group"
-            aria-label={copy.chart.intervalMode}
-          >
-            <button
-              type="button"
-              className={researchInterval === DAILY_INTERVAL ? "active" : ""}
-              aria-pressed={researchInterval === DAILY_INTERVAL}
-              onClick={() => chooseResearchInterval(DAILY_INTERVAL)}
-            >
-              {copy.intervals[DAILY_INTERVAL]}
-            </button>
-            <button
-              type="button"
-              className={
-                researchInterval === INTRADAY_INTERVAL ? "active" : ""
-              }
-              aria-pressed={researchInterval === INTRADAY_INTERVAL}
-              onClick={() => chooseResearchInterval(INTRADAY_INTERVAL)}
-            >
-              {copy.intervals[INTRADAY_INTERVAL]}
-            </button>
-          </div>
           <span className="interval-workspace-badge">
-            {researchInterval === INTRADAY_INTERVAL
-              ? copy.chart.intradayWorkspace
-              : copy.chart.dailyWorkspace}
+            {copy.chart.dailyWorkspace}
           </span>
           <span className="toolbar-divider" />
           <div className="toolbar-group chart-type-tabs">
@@ -5967,32 +6357,13 @@ export function MarketWorkspace() {
                        </span>
                      )}
                      <span>
-                       {researchInterval === INTRADAY_INTERVAL
-                         ? copy.chart.latestIntradayBarStatus[
-                             series.latestBarStatus
-                           ]
-                         : copy.chart.latestBarStatus[
-                             series.latestBarStatus
-                           ]}
+                       {copy.chart.latestBarStatus[series.latestBarStatus]}
                      </span>
-                     {intradayDataDelayMinutes !== null && (
-                       <span
-                         className="intraday-delay-warning"
-                         role="status"
-                         title={copy.chart.intradayDelayEstimate}
-                       >
-                         {copy.chart.intradayDelay}{" "}
-                         {intradayDataDelayMinutes}{" "}
-                         {copy.chart.minuteUnit}
-                       </span>
-                     )}
                      <span>
                       {copy.marketStats.asOf} {lastUpdated}
                     </span>
                     <span>
-                      {researchInterval === INTRADAY_INTERVAL
-                        ? copy.liveGuidance.intradayAutoRefresh
-                        : copy.liveGuidance.autoRefresh}
+                      {copy.liveGuidance.autoRefresh}
                     </span>
                   </>
                 )}
@@ -6030,7 +6401,7 @@ export function MarketWorkspace() {
                 trades={
                   appliedBacktest && "trades" in appliedBacktest
                     ? appliedBacktest.trades
-                    : []
+                    : EMPTY_PRICE_CHART_TRADES
                 }
                 tradeMarkers={appliedTradeMarkers}
                 dataKey={`${activeInstrument.provider}:${activeInstrument.secid}:${researchInterval}`}
@@ -6405,11 +6776,14 @@ export function MarketWorkspace() {
                         <button
                           className="saved-shortcut-group-toggle"
                           type="button"
-                          onClick={() =>
-                            toggleSavedBacktestGroup(group.key)
-                          }
+                          onClick={() => {
+                            openSavedBacktestGroup(group);
+                            toggleSavedBacktestGroup(group.key);
+                          }}
                           aria-expanded={expanded}
                           aria-controls={groupPanelId}
+                          aria-label={`${copy.savedBacktests.openCleanChart} ${group.instrument.name}`}
+                          title={copy.savedBacktests.openCleanChart}
                         >
                           {expanded ? (
                             <ChevronDown size={14} />
@@ -7889,21 +8263,51 @@ export function MarketWorkspace() {
               </fieldset>
             </div>
             <div className="screening-action-field">
-              <button
-                type="button"
-                className={`primary-action ${screening ? "stop" : ""}`}
-                disabled={!series || screeningBlockedByVolume}
-                onClick={() =>
-                  screening ? stopScreening() : void startScreening()
-                }
-              >
-                {screening ? (
-                  <Square size={14} fill="currentColor" />
-                ) : (
-                  <Sparkles size={16} />
-                )}
-                {screening ? copy.screening.stop : copy.screening.action}
-              </button>
+              <div className="screening-action-buttons">
+                <button
+                  type="button"
+                  className={`primary-action batch ${
+                    shortcutBatchProgress.status === "running" ? "stop" : ""
+                  }`}
+                  disabled={
+                    screening ||
+                    savedBacktestsLoading ||
+                    savedBacktestGroups.length === 0
+                  }
+                  onClick={() => void runShortcutBatchScreening()}
+                >
+                  {shortcutBatchProgress.status === "running" ? (
+                    <Square size={14} fill="currentColor" />
+                  ) : (
+                    <Sparkles size={16} />
+                  )}
+                  {shortcutBatchProgress.status === "running"
+                    ? copy.screening.batchStop
+                    : copy.screening.batchAction.replace(
+                        "{sessions}",
+                        String(shortcutBatchSessions),
+                      )}
+                </button>
+                <button
+                  type="button"
+                  className={`primary-action ${screening ? "stop" : ""}`}
+                  disabled={
+                    !series ||
+                    screeningBlockedByVolume ||
+                    shortcutBatchProgress.status === "running"
+                  }
+                  onClick={() =>
+                    screening ? stopScreening() : void startScreening()
+                  }
+                >
+                  {screening ? (
+                    <Square size={14} fill="currentColor" />
+                  ) : (
+                    <Sparkles size={16} />
+                  )}
+                  {screening ? copy.screening.stop : copy.screening.action}
+                </button>
+              </div>
               {!reliableVolume ? (
                 <small className="screening-volume-notice" role="status">
                   {copy.screening.volumeLimited}
@@ -7919,11 +8323,30 @@ export function MarketWorkspace() {
               </span>
             </div>
           )}
-          {screenProgress.total > 0 && (
-            <div className="screening-progress" aria-live="polite">
+          {(shortcutBatchProgress.status !== "idle" ||
+            screenProgress.total > 0) && (
+            <div
+              className={`screening-progress ${
+                shortcutBatchProgress.status !== "idle" ? "batch" : ""
+              }`}
+              aria-live="polite"
+            >
               <div>
                 <span>
-                  {screening
+                  {shortcutBatchProgress.status !== "idle"
+                    ? `${copy.screening.batchAction.replace(
+                        "{sessions}",
+                        String(shortcutBatchSessions),
+                      )}${
+                        shortcutBatchProgress.currentInstrument
+                          ? ` ${copy.common.separator} ${shortcutBatchProgress.currentInstrument}${
+                              screenProgress.total > 0
+                                ? ` ${copy.common.separator} ${screeningStageLabel}`
+                                : ""
+                            }`
+                          : ""
+                      }`
+                    : screening
                     ? validationProgress
                       ? `${
                         validationProgress.mode === "rolling"
@@ -7947,25 +8370,46 @@ export function MarketWorkspace() {
                     : copy.screening.completed}
                 </span>
                 <strong>
-                  {validationProgress &&
-                  validationProgress.phase !== "optimization"
-                    ? validationProgress.completed
-                    : screenProgress.stageCompleted}{" "}
-                  /{" "}
-                  {validationProgress &&
-                  validationProgress.phase !== "optimization"
-                    ? validationProgress.total
-                    : screenProgress.stageTotal}
-                  {screenProgress.failed > 0
-                    ? ` · ${screenProgress.failed} ${copy.screening.skipped}`
-                    : ""}
+                  {shortcutBatchProgress.status !== "idle"
+                    ? copy.screening.batchProgress
+                        .replace(
+                          "{completed}",
+                          String(shortcutBatchProgress.completed),
+                        )
+                        .replace("{total}", String(shortcutBatchProgress.total))
+                        .replace("{saved}", String(shortcutBatchProgress.saved))
+                        .replace("{failed}", String(shortcutBatchProgress.failed))
+                    : `${
+                        validationProgress &&
+                        validationProgress.phase !== "optimization"
+                          ? validationProgress.completed
+                          : screenProgress.stageCompleted
+                      } / ${
+                        validationProgress &&
+                        validationProgress.phase !== "optimization"
+                          ? validationProgress.total
+                          : screenProgress.stageTotal
+                      }${
+                        screenProgress.failed > 0
+                          ? ` · ${screenProgress.failed} ${copy.screening.skipped}`
+                          : ""
+                      }`}
                 </strong>
               </div>
               <progress
-                max={screeningProgressBar.maximum}
-                value={screeningProgressBar.value}
+                max={
+                  shortcutBatchProgress.status !== "idle"
+                    ? Math.max(shortcutBatchProgress.total, 1)
+                    : screeningProgressBar.maximum
+                }
+                value={
+                  shortcutBatchProgress.status !== "idle"
+                    ? shortcutBatchContinuousProgress
+                    : screeningProgressBar.value
+                }
               />
-              {screening && screenEngineStatus && (
+              {(screening || shortcutBatchProgress.status === "running") &&
+                screenEngineStatus && (
                 <small className="screening-engine-status">
                   <span>
                     {copy.screening.engineSpeed}{copy.common.colon}
@@ -8570,12 +9014,6 @@ export function MarketWorkspace() {
             title: copy.screening.octupleResultsTitle,
             results: combinationResultsByCount.get(8) ?? [],
             strategyCount: 8,
-          },
-          {
-            key: "nonuple",
-            title: copy.screening.nonupleResultsTitle,
-            results: combinationResultsByCount.get(9) ?? [],
-            strategyCount: 9,
           },
         ].map((resultGroup) => (
           <details

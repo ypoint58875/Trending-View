@@ -80,6 +80,12 @@ import {
   screeningRunCandidateRankByKey,
 } from "../lib/analysis/screening-runs";
 import {
+  createShortcutBatchConfigSignature,
+  parseShortcutBatchCheckpoint,
+  pendingShortcutBatchInstrumentKeys,
+  selectBestShortcutScreeningResult,
+} from "../lib/analysis/shortcut-batch-screening";
+import {
   INTRABAR_PRICE_ORDER_STRATEGY_IDS,
   LONG_HORIZON_STRATEGY_IDS,
   SHORT_HORIZON_STRATEGY_IDS,
@@ -174,6 +180,10 @@ import {
   parseKlineRow,
   searchEastmoney,
 } from "../lib/market/eastmoney";
+import {
+  fetchTencentDailySeries,
+  parseTencentDailySeries,
+} from "../lib/market/tencent";
 import {
   fetchNasdaqDailySeries,
   parseNasdaqRows,
@@ -795,6 +805,21 @@ test("finds common global and Chinese indexes without remote search", () => {
     searchIndexCatalog("NDX").map((instrument) => instrument.code),
     ["NDX"],
   );
+  assert.deepEqual(
+    searchIndexCatalog("TOPIX").map((instrument) => [
+      instrument.code,
+      instrument.secid,
+      instrument.exchange,
+      instrument.assetType,
+    ]),
+    [["1306.T", "1306.T", "JPX", "etf"]],
+  );
+  assert.deepEqual(
+    searchIndexCatalog("\u4e1c\u8bc1\u6307\u6570").map(
+      (instrument) => instrument.code,
+    ),
+    ["1306.T"],
+  );
   assert.deepEqual(searchIndexCatalog("not-a-market"), []);
 });
 
@@ -806,7 +831,7 @@ test("adjusts daily Yahoo OHLC and derived changes without rescaling volume", ()
   );
 
   assert.equal(series.priceAdjustment, "corporate-action-adjusted");
-  assert.equal(series.previousClose, 50);
+  assert.equal(series.previousClose, 100);
   assert.deepEqual(
     series.bars.map(({ open, close, high, low, volume, change, changePercent }) => ({
       open,
@@ -1260,6 +1285,133 @@ test("falls back to the same Eastmoney host over HTTP after a TLS failure", asyn
   assert.equal(series.source, "eastmoney");
   assert.equal(series.instrument.exchange, "NYSE_ARCA");
   assert.equal(series.bars.length, 2);
+});
+
+test("falls back to the alternate Eastmoney history host", async () => {
+  const requestedHosts: string[] = [];
+  const payload = {
+    data: {
+      code: "164824",
+      market: 0,
+      name: "India Fund LOF",
+      preKPrice: 1,
+      klines: [
+        "2026-09-14,1.20,1.22,1.23,1.19,1000,100000,3,1,0.02,0.5",
+        "2026-09-15,1.22,1.27,1.28,1.21,1100,110000,3,1,0.05,0.5",
+      ],
+    },
+  };
+  const mockFetch = (async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    requestedHosts.push(`${url.protocol}//${url.hostname}`);
+    if (url.hostname === "push2his.eastmoney.com") {
+      throw new TypeError("fetch failed");
+    }
+    return new Response(JSON.stringify(payload), { status: 200 });
+  }) as typeof fetch;
+
+  const series = await fetchEastmoneySeries(
+    {
+      secid: "0.164824",
+      code: "164824",
+      name: "India Fund LOF",
+      exchange: "SZSE",
+      assetType: "etf",
+      provider: "eastmoney",
+    },
+    "1d",
+    10,
+    mockFetch,
+  );
+
+  assert.deepEqual(requestedHosts, [
+    "https://push2his.eastmoney.com",
+    "http://push2his.eastmoney.com",
+    "https://push2.eastmoney.com",
+  ]);
+  assert.equal(series.bars.at(-1)?.time, "2026-09-15");
+});
+
+test("parses Tencent raw daily history on the Shanghai display date", () => {
+  const instrument: MarketInstrument = {
+    secid: "sz164824",
+    code: "164824",
+    name: "India Fund LOF",
+    exchange: "SZSE",
+    assetType: "etf",
+    provider: "tencent",
+  };
+  const series = parseTencentDailySeries(
+    {
+      code: 0,
+      data: {
+        sz164824: {
+          day: [
+            ["2026-09-14", "1.20", "1.22", "1.23", "1.19", "1000"],
+            ["2026-09-15", "1.22", "1.27", "1.28", "1.21", "1100"],
+          ],
+          qt: { sz164824: ["", "", "164824", "1.27", "1.22"] },
+        },
+      },
+    },
+    instrument,
+    10,
+    new Date("2026-09-15T06:00:00.000Z"),
+  );
+
+  assert.equal(series.source, "tencent");
+  assert.equal(series.priceAdjustment, "raw");
+  assert.equal(series.previousClose, 1.22);
+  assert.equal(series.bars.length, 2);
+  assert.equal(series.bars.at(-1)?.time, "2026-09-15");
+  assert.equal(
+    series.bars.at(-1)?.timestamp,
+    Date.parse("2026-09-15T00:00:00+08:00"),
+  );
+  assert.equal(series.latestBarStatus, "in-progress");
+});
+
+test("bounds Tencent daily requests to 2000 raw bars", async () => {
+  let requestedUrl = "";
+  const rows = Array.from({ length: 2_001 }, (_, index) => {
+    const time = new Date(
+      Date.UTC(2020, 0, index + 1),
+    ).toISOString().slice(0, 10);
+    return [time, "1.20", "1.22", "1.23", "1.19", "1000"];
+  });
+  const mockFetch = (async (input: string | URL | Request) => {
+    requestedUrl = String(input);
+    return new Response(
+      JSON.stringify({
+        code: 0,
+        data: {
+          sz164824: {
+            day: rows,
+          },
+        },
+      }),
+      { status: 200 },
+    );
+  }) as typeof fetch;
+
+  const series = await fetchTencentDailySeries(
+    {
+      secid: "sz164824",
+      code: "164824",
+      name: "India Fund LOF",
+      exchange: "SZSE",
+      assetType: "etf",
+      provider: "tencent",
+    },
+    DAILY_HISTORY_LIMIT,
+    mockFetch,
+  );
+
+  assert.equal(
+    new URL(requestedUrl).searchParams.get("param"),
+    "sz164824,day,,,2000,none",
+  );
+  assert.equal(series.bars.length, 2_000);
 });
 
 test("re-exports the market price-adjustment type from the market barrel", () => {
@@ -1941,6 +2093,10 @@ test("backfills same-source volume without rewriting completed OHLC", () => {
     volume: 21_000,
     amount: 999,
   };
+  primary.bars[2] = {
+    ...primary.bars[2],
+    close: 12.25,
+  };
 
   const canonical = mergeCanonicalMarketSeries(
     history,
@@ -1954,6 +2110,7 @@ test("backfills same-source volume without rewriting completed OHLC", () => {
   assert.equal(canonical.bars[1].close, 11);
   assert.equal(canonical.bars[1].volume, 21_000);
   assert.equal(canonical.bars[1].amount, history.bars[1].amount);
+  assert.equal(canonical.bars[2].close, 12);
 });
 
 test("validates shortcut folder creation, rename, and assignment inputs", () => {
@@ -4067,6 +4224,86 @@ test("maps allocation increases, reductions, and valuation exits to markers", ()
   assert.equal(markers.rangeExits[0].price, 98);
 });
 
+test("adds the current Asia-Shanghai Yahoo daily bar from market metadata", () => {
+  const previousTimestamp =
+    Date.parse("2026-09-14T04:00:00.000Z") / 1_000;
+  const currentTimestamp =
+    Date.parse("2026-09-15T00:30:00.000Z") / 1_000;
+  const series = parseYahooChart(
+    {
+      chart: {
+        result: [
+          {
+            meta: {
+              symbol: "GC=F",
+              longName: "Gold Futures",
+              chartPreviousClose: 4_300,
+              exchangeTimezoneName: "America/New_York",
+              exchangeName: "CMX",
+              regularMarketTime: currentTimestamp,
+              regularMarketPrice: 4_340,
+              regularMarketOpen: 4_320,
+              regularMarketDayHigh: 4_350,
+              regularMarketDayLow: 4_310,
+              regularMarketVolume: 12_345,
+              currentTradingPeriod: {
+                regular: {
+                  end: Date.parse("2026-09-15T05:00:00.000Z") / 1_000,
+                },
+              },
+            },
+            timestamp: [previousTimestamp],
+            indicators: {
+              quote: [
+                {
+                  open: [4_280],
+                  close: [4_300],
+                  high: [4_310],
+                  low: [4_270],
+                  volume: [10_000],
+                },
+              ],
+              adjclose: [{ adjclose: [4_300] }],
+            },
+          },
+        ],
+      },
+    },
+    {
+      secid: "GC=F",
+      code: "GC=F",
+      name: "Gold Futures",
+      exchange: "COMEX",
+      assetType: "commodity",
+      provider: "yahoo",
+    },
+    "1d",
+    new Date("2026-09-15T00:31:00.000Z"),
+  );
+
+  assert.deepEqual(
+    series.bars.map((bar) => bar.time),
+    ["2026-09-14", "2026-09-15"],
+  );
+  assert.deepEqual(
+    {
+      open: series.bars.at(-1)?.open,
+      close: series.bars.at(-1)?.close,
+      high: series.bars.at(-1)?.high,
+      low: series.bars.at(-1)?.low,
+      volume: series.bars.at(-1)?.volume,
+    },
+    {
+      open: 4_320,
+      close: 4_340,
+      high: 4_350,
+      low: 4_310,
+      volume: 12_345,
+    },
+  );
+  assert.equal(series.latestBarStatus, "in-progress");
+});
+
 test("labels inherited range exposure as an opening position without adding a trade", () => {
   const bars = makeOhlcBars([
     { open: 10, high: 10, low: 10, close: 10 },
@@ -4560,8 +4797,6 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
     septupleAllocations: 13,
     octuples: 14,
     octupleAllocations: 15,
-    nonuples: 16,
-    nonupleAllocations: 17,
   } as const;
   const segmentedProgress = progress.map(
     (update) =>
@@ -4709,7 +4944,7 @@ test("crosses the top three parameter finalists for every strategy pair", async 
   assert.equal(outcome.results.length, 1);
 });
 
-test("keeps the top thirty two- through nine-strategy results independently", async () => {
+test("keeps the top thirty two- through eight-strategy results independently", async () => {
   assert.equal(MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY, 16);
   assert.equal(MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY, 3);
   assert.equal(
@@ -4731,7 +4966,6 @@ test("keeps the top thirty two- through nine-strategy results independently", as
     "kdj-reversal",
     "ichimoku-trend",
     "roc-momentum",
-    "tv-bar-up-down",
   ] as const;
   const outcome = await optimizeStrategyCombinations(
     bars,
@@ -4764,7 +4998,6 @@ test("keeps the top thirty two- through nine-strategy results independently", as
       sextupleAllocationCandidates: [SIX_STRATEGY_ALLOCATION_CANDIDATES[0]],
       septupleAllocationCandidates: [SEVEN_STRATEGY_ALLOCATION_CANDIDATES[0]],
       octupleAllocationCandidates: [EIGHT_STRATEGY_ALLOCATION_CANDIDATES[0]],
-      nonupleAllocationCandidates: [NINE_STRATEGY_ALLOCATION_CANDIDATES[0]],
       retainedSinglesPerStrategy: 1,
       maxPairFinalists: 30,
       maxTripleParentPairs: 28,
@@ -4773,7 +5006,7 @@ test("keeps the top thirty two- through nine-strategy results independently", as
     },
   );
   const resultsByCount = new Map(
-    Array.from({ length: 8 }, (_, index) => {
+    Array.from({ length: 7 }, (_, index) => {
       const count = index + 2;
       return [
         count,
@@ -4806,7 +5039,7 @@ test("keeps the top thirty two- through nine-strategy results independently", as
   assert.equal(sevenStrategyResult.sharpe, fullHistoryReplay.sharpe);
   assert.equal(sevenStrategyResult.maxDrawdown, fullHistoryReplay.maxDrawdown);
   assert.equal(sevenStrategyResult.tradeCount, fullHistoryReplay.tradeCount);
-  for (let count = 2; count <= 9; count += 1) {
+  for (let count = 2; count <= 8; count += 1) {
     const categoryResults = resultsByCount.get(count) ?? [];
     const categoryCount = categoryResults.length;
     assert.ok(categoryCount > 0);
@@ -6828,4 +7061,75 @@ test("reports material intraday data delay without flagging normal bar latency",
     null,
   );
   assert.equal(estimateIntradayDataDelayMinutes(Number.NaN, fetchedAt), null);
+});
+
+test("selects the best shortcut batch result across singles and combinations", () => {
+  const single = {
+    strategyId: "sma-cross",
+    parameters: {},
+    totalReturn: 12,
+    maxDrawdown: -5,
+    sharpe: 1.1,
+    tradeCount: 4,
+    score: 14,
+  } as never;
+  const combination = {
+    strategyAId: "sma-cross",
+    strategyBId: "rsi-reversal",
+    totalReturn: 15,
+    maxDrawdown: -4,
+    sharpe: 1.4,
+    tradeCount: 5,
+    score: 18,
+  } as never;
+
+  const best = selectBestShortcutScreeningResult(
+    [single],
+    [combination],
+    "balanced",
+  );
+
+  assert.equal(best?.kind, "combination");
+  assert.equal(best?.result.score, 18);
+});
+
+test("resumes shortcut batch screening only for an identical bounded config", () => {
+  const signature = createShortcutBatchConfigSignature({
+    sessions: 128,
+    objective: "balanced",
+    initialCash: 100_000,
+    commissionPercent: 0.05,
+    slippagePercent: 0.02,
+    entryFilterEnabled: false,
+  });
+  const checkpoint = parseShortcutBatchCheckpoint(
+    JSON.stringify({
+      version: 1,
+      configSignature: signature,
+      sessions: 128,
+      completedInstrumentKeys: ["index:N225"],
+      failedInstrumentKeys: ["index:HSI"],
+      updatedAt: "2026-09-16T00:00:00.000Z",
+      lastError: "UPSTREAM_UNAVAILABLE",
+    }),
+  );
+
+  assert.ok(checkpoint);
+  assert.deepEqual(
+    pendingShortcutBatchInstrumentKeys(
+      ["index:N225", "index:HSI", "index:000300"],
+      checkpoint,
+      signature,
+    ),
+    ["index:HSI", "index:000300"],
+  );
+  assert.deepEqual(
+    pendingShortcutBatchInstrumentKeys(
+      ["index:N225", "index:HSI"],
+      checkpoint,
+      `${signature}:changed`,
+    ),
+    ["index:N225", "index:HSI"],
+  );
+  assert.equal(parseShortcutBatchCheckpoint("{}"), null);
 });

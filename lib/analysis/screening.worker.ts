@@ -12,6 +12,7 @@ import {
   writeScreeningCheckpoint,
 } from "./screening-checkpoint-store";
 import { unpackMarketBars } from "./screening-worker-bars";
+import { screeningCheckpointInterval } from "./screening-memory-policy";
 
 interface WorkerScope {
   onmessage:
@@ -53,7 +54,7 @@ workerScope.onmessage = (event) => {
           resumeCheckpoint,
           // Restarting at an exact intra-stage checkpoint bounds the worker
           // heap without pruning or changing candidate evaluation order.
-          checkpointEvery: 4_096,
+          checkpointEvery: screeningCheckpointInterval(bars.length),
           signal: controller.signal,
           onCheckpoint: (checkpoint) => {
             checkpointWrites = checkpointWrites.then(() =>

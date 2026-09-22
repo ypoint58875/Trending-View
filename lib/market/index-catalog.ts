@@ -6,6 +6,20 @@ interface IndexCatalogEntry extends MarketInstrument {
 
 export const INDEX_CATALOG: readonly IndexCatalogEntry[] = [
   {
+    secid: "1306.T",
+    code: "1306.T",
+    name: "TOPIX-linked ETF Proxy (1306)",
+    exchange: "JPX",
+    assetType: "etf",
+    provider: "yahoo",
+    aliases: [
+      "topix index",
+      "tokyo stock price index",
+      "tpx",
+      "\u4e1c\u8bc1\u6307\u6570",
+    ],
+  },
+  {
     secid: "^N225",
     code: "N225",
     name: "Nikkei 225",

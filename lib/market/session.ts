@@ -105,6 +105,8 @@ const REGULAR_MARKET_SESSION: Partial<
   },
 };
 
+export const MARKET_DISPLAY_TIME_ZONE = "Asia/Shanghai";
+
 const CONTINUOUS_REFRESH_EXCHANGES = new Set<MarketExchange>([
   "COMEX",
   "NYMEX",
@@ -278,10 +280,12 @@ export function resolveLatestDailyBarStatus(
       ? providerRegularSessionEndSeconds! * 1000
       : null;
 
-  const timeZone = session?.timeZone ?? "UTC";
-  const current = dateTimeParts(fetchedAt, timeZone);
-  if (barDate < current.date) return "complete";
-  if (barDate > current.date) return "unknown";
+  const displayCurrent = dateTimeParts(
+    fetchedAt,
+    MARKET_DISPLAY_TIME_ZONE,
+  );
+  if (barDate < displayCurrent.date) return "complete";
+  if (barDate > displayCurrent.date) return "unknown";
   if (!session && providerSessionEndMilliseconds === null) return "unknown";
 
   if (providerSessionEndMilliseconds !== null) {
@@ -289,7 +293,8 @@ export function resolveLatestDailyBarStatus(
       ? "complete"
       : "in-progress";
   }
-  return current.minute >= session!.closeMinute
+  const sessionCurrent = dateTimeParts(fetchedAt, session!.timeZone);
+  return sessionCurrent.minute >= session!.closeMinute
     ? "complete"
     : "in-progress";
 }

@@ -1,5 +1,75 @@
 # Technical Research
 
+## 2026-09-21 Stable 164824, TOPIX availability, and KS11 memory
+
+Problem: `164824` switched through an unstable Eastmoney primary, exact TOPIX
+availability was unclear, and the approximately 6,680-bar Yahoo `^KS11`
+history could exhaust memory during full one-click screening on an 8 GiB host.
+Instrument navigation also cancelled the active job rather than only changing
+the visible workspace.
+
+Source option 1 kept Eastmoney primary and added retries. It preserved the old
+identity but could not repair a semantically valid HTTP response with
+`rc=102`, and every fail/recover cycle still changed the effective source.
+Source option 2 fixed the already integrated Tencent unadjusted series as
+primary and retained Eastmoney as a verified raw backup. A read-only
+2026-09-21 comparison returned valid Tencent daily rows/current quote while
+Eastmoney returned `rc=102`. Option 2 was selected because both histories are
+raw, Tencent has complete coverage from the fund's 2018 launch, and fixed
+ownership removes routine source oscillation. This is reversible in the
+canonical profile if provider behavior changes.
+
+TOPIX option 1 used Yahoo `^TOPX`; its chart endpoint returned HTTP 404 in the
+2026-09-21 probe. Option 2 used JPX exact data; JPX documents current/historical
+index delivery through TMI/J-Quants/licensed services, while its freely
+published historical page is not a continuing no-key daily feed. Option 3
+kept Yahoo `1306.T`, a listed TOPIX-linked ETF. Option 3 remains the only
+loadable no-key choice in current scope and stays explicitly labelled as a
+proxy, not the exact index. A future exact adapter requires user-approved JPX
+credentials/licensing and a separate canonical methodology.
+
+Memory option 1 truncated history or reduced candidate/finalist breadth. It
+would change causal warm-up, opening state, or ranking and was rejected.
+Option 2 raised the Node heap, which risks host-wide pressure on an 8 GiB
+machine and does not help the browser fallback. Option 3 applies the same
+smaller exact checkpoint interval in both engines: 2,048 evaluations for at
+least 6,000 bars or at most 9 GiB physical memory. Option 3 was selected; it
+preserves every bar and candidate while releasing the heap more frequently.
+
+Primary references and observations:
+
+- JPX TOPIX overview and historical/licensed-data links:
+  `https://www.jpx.co.jp/english/markets/indices/topix/`
+- JPX historical data delivery overview:
+  `https://www.jpx.co.jp/english/markets/paid-info-equities/historical/`
+- Yahoo chart probes for `^TOPX` and `^KS11`, accessed 2026-09-21.
+- Eastmoney `0.164824` and Tencent `sz164824` public website probes, accessed
+  2026-09-21. No raw response or credential was committed.
+
+## 2026-09-16 Domestic direct routing and shortcut batch screening
+
+Problem: Eastmoney and Tencent must remain directly reachable when a system
+VPN or environment proxy is active, while foreign providers keep their current
+route. Shortcut-wide screening must also survive interruption without retaining
+all instruments and results in memory.
+
+Option 1 extends `NO_PROXY` in the launcher. It uses Node's documented bypass
+list, but depends on the Node version and every process launch inheriting the
+same environment. Option 2 uses core `http`/`https.request` with `agent: false`
+only for reviewed domestic hosts. It is launch-independent but requires an
+explicit timeout, size cap, redirect validation, and error containment.
+
+Decision: use option 2 for allowlisted Eastmoney and Tencent hosts only. Keep
+TLS verification enabled and keep Yahoo/other foreign sources on the existing
+fetch route. Process shortcut indexes sequentially, persist one bounded
+configuration-bound checkpoint after each complete save-and-folder assignment,
+and reuse the existing per-instrument screening-engine checkpoints.
+
+Primary references:
+
+- https://nodejs.org/api/http.html#built-in-proxy-support
+- https://nodejs.org/api/https.html#httpsrequesturl-options-callback
+
 ## 2026-08-22 screening heap isolation
 
 Compared approaches:
@@ -2583,3 +2653,61 @@ transport, monotonic timeline readers, sparse order-event maps, compact result
 messages, streaming Fold rank accumulation, and one Worker lifetime per
 completed optimization stage. These are exact execution/storage changes; no
 candidate, pair, allocation, or higher-order finalist limit is reduced.
+
+## 2026-09-15 Asia-Shanghai daily freshness and TOPIX coverage
+
+Two time-zone approaches were compared:
+
+1. Keep provider/host-local dates and rely on the Windows time zone. This is
+   simple but makes identical payloads render differently across hosts and can
+   leave an overseas current session under the previous visible date.
+2. Normalize display date identity and UI timestamps with the explicit IANA
+   `Asia/Shanghai` zone, while retaining exchange-local clocks only for market
+   session and close rules. ECMA-402 supports an explicit IANA `timeZone`, so
+   no date library is needed. This approach was selected.
+
+For Yahoo daily freshness, rejecting a successful response whose row array
+lacks today was compared with validating the response's current-session OHLC
+metadata. The metadata overlay was selected because it is same-provider,
+bounded to one unconfirmed bar, geometry-validated, and replaced by the next
+same-source refresh. Missing or invalid fields produce no bar.
+
+Three TOPIX search choices were compared:
+
+1. Yahoo `^TOPX` looks like the direct index identity but returned no usable
+   OHLC rows in the live check.
+2. JPX documents TOPIX as TPX and publishes an official historical workbook,
+   but the free workbook ended at 2025; continuing current OHLC is part of JPX
+   data services and is not a drop-in no-key runtime feed.
+3. Yahoo `1306.T` provides loadable daily OHLC for a TOPIX-linked ETF. It is
+   not the index, so it is exposed only with an explicit ETF-proxy name and
+   asset type. This reversible option was selected over an unusable or
+   mislabelled index result.
+
+Primary references accessed 2026-09-15:
+
+- https://402.ecma-international.org/
+- https://www.iana.org/time-zones
+- https://www.jpx.co.jp/english/markets/indices/topix/
+- https://www.jpx.co.jp/english/markets/paid-info-equities/reference/01.html
+
+## 2026-09-15 Eastmoney outage containment for Chinese funds
+
+Two recovery approaches were compared:
+
+1. Retry only the Eastmoney public history endpoint. This is reversible and
+   preserves one provider, but it does not recover a sustained CDN or host
+   outage. Two reviewed Eastmoney hosts both closed TLS connections during the
+   live check.
+2. Keep bounded Eastmoney host/transport attempts, then use Tencent's separate
+   no-key raw daily endpoint for the same SSE/SZSE symbol. This adds an
+   independent failure domain and can recover an empty chart. It was selected
+   with verified exchange identity, the existing overlap/immutability gates,
+   and a 2,000-row request cap.
+
+The Tencent website endpoint is undocumented and has no published SLA, so the
+decision improves availability without claiming licensed-feed reliability.
+Live `sz164824` checks returned 1,971 rows from 2018-08-01 through 2026-09-15
+and a same-day quote. Yahoo's guessed `164824.SZ` history and Nasdaq's `513800`
+endpoint were rejected as usable substitutes. Yahoo query1 and query2 both
+returned current gold chart payloads during the same check.

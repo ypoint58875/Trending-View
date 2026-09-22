@@ -16,6 +16,7 @@ import type {
   LocalScreeningJobRequest,
 } from "../lib/analysis/screening-local-engine-protocol";
 import { unpackMarketBars } from "../lib/analysis/screening-worker-bars";
+import { screeningCheckpointInterval } from "../lib/analysis/screening-memory-policy";
 
 const RESTART_EXIT_CODE = 75;
 const jobDirectory = process.argv[2];
@@ -46,15 +47,8 @@ const CHECKPOINT_STAGE_ORDER = [
   "tripleAllocations", "quadruples", "quadrupleAllocations",
   "quintuples", "quintupleAllocations", "sextuples",
   "sextupleAllocations", "septuples", "septupleAllocations",
-  "octuples", "octupleAllocations", "nonuples", "nonupleAllocations",
+  "octuples", "octupleAllocations",
 ] as const;
-
-function checkpointIntervalFor(barsLength: number): number {
-  const memoryGiB = totalmem() / 1_073_741_824;
-  if (memoryGiB < 12 || barsLength > 10_000) return 4_096;
-  if (memoryGiB < 24 || barsLength > 7_500) return 8_192;
-  return 16_384;
-}
 
 function emit(event: LocalScreeningChildEvent): void {
   process.stdout.write(`${JSON.stringify(event)}\n`);
@@ -265,7 +259,10 @@ async function main(): Promise<void> {
         entryFilterAllowedByKey,
         yieldEvery: bars.length > 7_500 ? 1_024 : 2_048,
         resumeCheckpoint,
-        checkpointEvery: checkpointIntervalFor(bars.length),
+        checkpointEvery: screeningCheckpointInterval(
+          bars.length,
+          totalmem(),
+        ),
         signal: controller.signal,
         onCheckpoint: (checkpoint) => {
           checkpointWrite = writeCheckpoint(

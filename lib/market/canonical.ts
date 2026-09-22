@@ -3,8 +3,11 @@ import type {
   MarketInstrument,
   MarketNetworkRoute,
   MarketReferenceProvider,
+  MarketSeries,
   MarketSourceProvider,
 } from "./types";
+import { exchangeFromProviderLabels } from "./exchanges";
+import { verifiedFundByCode } from "./fund-catalog";
 import {
   yahooIndexSymbolForCode,
   yahooPrimarySymbolForInstrument,
@@ -45,8 +48,34 @@ export interface CanonicalMarketProfile {
 function normalizedInstrumentCode(instrument: Pick<MarketInstrument, "code">) {
   return instrument.code
     .replace(/^\^/, "")
-    .replace(/\.(SS|SZ|HK|US|INDX)$/i, "")
+    .replace(/\.(SS|SHH|SHG|SHE|SZ|HK|US|INDX)$/i, "")
     .toUpperCase();
+}
+
+function normalizeCanonicalInstrumentIdentity(
+  instrument: MarketInstrument,
+): MarketInstrument {
+  const verifiedFund =
+    instrument.assetType === "etf"
+      ? verifiedFundByCode(instrument.code) ??
+        verifiedFundByCode(instrument.secid)
+      : null;
+  if (verifiedFund) {
+    return {
+      secid: verifiedFund.secid,
+      code: verifiedFund.code,
+      name: verifiedFund.name,
+      exchange: verifiedFund.exchange,
+      assetType: verifiedFund.assetType,
+      provider: verifiedFund.provider,
+    };
+  }
+  if (instrument.exchange !== "OTHER") return instrument;
+  const exchange = exchangeFromProviderLabels(
+    instrument.secid,
+    instrument.code,
+  );
+  return exchange === "OTHER" ? instrument : { ...instrument, exchange };
 }
 
 function canonicalInstrumentCode(
@@ -380,7 +409,18 @@ function semiconductorProfile(
 }
 
 function genericProfile(instrument: MarketInstrument): CanonicalMarketProfile {
-  const yahooSymbol = yahooPrimarySymbolForInstrument(instrument);
+  const verifiedFund =
+    instrument.assetType === "etf"
+      ? verifiedFundByCode(instrument.code) ??
+        verifiedFundByCode(instrument.secid)
+      : null;
+  const keepsEastmoneyLofPrimary =
+    instrument.provider === "eastmoney" &&
+    instrument.assetType === "etf" &&
+    /\bLOF\b/i.test(instrument.name);
+  const yahooSymbol = verifiedFund || keepsEastmoneyLofPrimary
+    ? null
+    : yahooPrimarySymbolForInstrument(instrument);
   const primaryInstrument = yahooSymbol
     ? providerInstrument(instrument, "yahoo", yahooSymbol)
     : instrument;
@@ -414,6 +454,13 @@ function genericProfile(instrument: MarketInstrument): CanonicalMarketProfile {
     addBackup(
       instrument,
       "Original provider instrument definition",
+      "verified-identity",
+    );
+  }
+  if (verifiedFund && primaryInstrument.provider !== "eastmoney") {
+    addBackup(
+      providerInstrument(instrument, "eastmoney", `0.${verifiedFund.code}`),
+      "Verified exchange-local raw LOF daily history",
       "verified-identity",
     );
   }
@@ -507,8 +554,8 @@ function genericProfile(instrument: MarketInstrument): CanonicalMarketProfile {
         "tencent",
         normalizedInstrumentCode(instrument),
       ),
-      "Exchange-local real-time quote; temporary-quote fallback only",
-      "overlap-required",
+      "Exchange-local raw daily history and real-time quote",
+      "verified-identity",
     );
   }
   if (
@@ -547,6 +594,7 @@ function genericProfile(instrument: MarketInstrument): CanonicalMarketProfile {
 export function resolveCanonicalMarketProfile(
   instrument: MarketInstrument,
 ): CanonicalMarketProfile {
+  instrument = normalizeCanonicalInstrumentIdentity(instrument);
   if (
     instrument.assetType === "index" &&
     normalizedInstrumentCode(instrument) === "N225"
@@ -567,6 +615,18 @@ export function resolveCanonicalMarketProfile(
     if (profile) return profile;
   }
   return genericProfile(instrument);
+}
+
+export function canonicalSeriesNeedsFullHistoryReplacement(
+  profile: CanonicalMarketProfile,
+  series: Pick<MarketSeries, "priceAdjustment">,
+): boolean {
+  const verifiedFund = verifiedFundByCode(profile.primary.instrument.code);
+  return Boolean(
+    verifiedFund &&
+      profile.primary.instrument.secid === verifiedFund.secid &&
+      series.priceAdjustment !== verifiedFund.canonicalPriceAdjustment,
+  );
 }
 
 export function canonicalSourceDefinition(

@@ -40,7 +40,7 @@ const completedOptimizationProgress = {
   stageCompleted: 2_236,
   stageTotal: 2_236,
   failed: 0,
-  stage: "nonupleAllocations" as const,
+  stage: "octupleAllocations" as const,
   strategyAId: null,
   strategyBId: null,
 };
@@ -74,7 +74,7 @@ test("maps screening results to their exact chart windows", () => {
   });
 });
 
-test("fills period and range progress when their eighteen-stage optimization completes", () => {
+test("fills period and range progress when their sixteen-stage optimization completes", () => {
   for (const mode of ["sample", "range"] as const) {
     const progress = resolveScreeningProgressBarState(
       completedOptimizationProgress,
@@ -94,7 +94,7 @@ test("fills period and range progress when their eighteen-stage optimization com
     );
 
     assert.equal(progress.value, progress.maximum);
-    assert.equal(progress.maximum, 18);
+    assert.equal(progress.maximum, 16);
   }
 });
 
@@ -146,9 +146,9 @@ test("adds one progress segment per rolling selection window", () => {
     },
   );
 
-  assert.deepEqual(optimization, { value: 18, maximum: 21 });
-  assert.deepEqual(middleWindow, { value: 19.5, maximum: 21 });
-  assert.deepEqual(completed, { value: 21, maximum: 21 });
+  assert.deepEqual(optimization, { value: 16, maximum: 19 });
+  assert.deepEqual(middleWindow, { value: 17.5, maximum: 19 });
+  assert.deepEqual(completed, { value: 19, maximum: 19 });
 });
 
 function firstScreeningCandidatePerStrategy() {

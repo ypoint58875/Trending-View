@@ -18,6 +18,7 @@ import {
 
 const HEALTH_TIMEOUT_MS = 800;
 const POLL_INTERVAL_MS = 200;
+const COMPLETED_RESULT_READ_ATTEMPTS = 5;
 
 function abortError() {
   return new DOMException("Screening cancelled", "AbortError");
@@ -175,14 +176,27 @@ export async function runScreeningInLocalEngine(
         }
       }
       if (snapshot.status === "completed") {
-        const resultResponse = await fetch(`${jobUrl}/result`, {
-          cache: "no-store",
-          signal: options.signal,
-        });
-        if (!resultResponse.ok) {
-          throw new Error("Local screening engine result is unavailable");
+        for (
+          let attempt = 1;
+          attempt <= COMPLETED_RESULT_READ_ATTEMPTS;
+          attempt += 1
+        ) {
+          try {
+            const resultResponse = await fetch(`${jobUrl}/result`, {
+              cache: "no-store",
+              signal: options.signal,
+            });
+            if (resultResponse.ok) {
+              return (await resultResponse.json()) as ScreeningValidationOutcome;
+            }
+          } catch (error) {
+            if ((error as Error).name === "AbortError") throw error;
+          }
+          if (attempt < COMPLETED_RESULT_READ_ATTEMPTS) {
+            await delay(POLL_INTERVAL_MS, options.signal);
+          }
         }
-        return (await resultResponse.json()) as ScreeningValidationOutcome;
+        throw new Error("Local screening engine result is unavailable");
       }
       if (snapshot.status === "cancelled") throw abortError();
       if (snapshot.status === "error") {

@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   ECHART_REPLACE_MERGE_COMPONENTS,
   applyDataZoomWindow,
+  chartReplaceMergeComponents,
+  panDataZoomWindow,
 } from "../app/components/EChart";
 import {
   buildIndicatorSeries,
@@ -38,6 +40,8 @@ type ZoomEntry = {
   zoomOnMouseWheel?: boolean;
   moveOnMouseMove?: boolean;
   moveOnMouseWheel?: boolean;
+  preventDefaultMouseMove?: boolean;
+  throttle?: number;
   minValueSpan?: number;
 };
 
@@ -483,8 +487,10 @@ test("makes the selected price-chart zoom window directly draggable", () => {
   assert.ok(inside);
   assert.equal(inside.zoomLock, false);
   assert.equal(inside.zoomOnMouseWheel, true);
-  assert.equal(inside.moveOnMouseMove, true);
+  assert.equal(inside.moveOnMouseMove, false);
   assert.equal(inside.moveOnMouseWheel, false);
+  assert.equal(inside.preventDefaultMouseMove, true);
+  assert.equal(inside.throttle, 16);
   assert.ok(slider);
   assert.equal(slider.id, "price-zoom-slider");
   assert.equal(slider.brushSelect, false);
@@ -500,7 +506,7 @@ test("links price zoom across every requested grid and starts with recent bars",
   const overlayOnlyZoom = entries(1_000, [0, 1]);
 
   for (const entry of multiplePaneZoom) {
-    assert.equal(entry.start, 88);
+    assert.equal(entry.start, 94);
     assert.equal(entry.end, 100);
     assert.deepEqual(entry.xAxisIndex, [0, 1, 2, 3, 4]);
   }
@@ -508,6 +514,10 @@ test("links price zoom across every requested grid and starts with recent bars",
     assert.deepEqual(entry.xAxisIndex, [0, 1]);
   }
   for (const entry of entries(80, [0, 1, 2])) {
+    assert.equal(entry.start, 25);
+    assert.equal(entry.end, 100);
+  }
+  for (const entry of entries(40, [0, 1, 2])) {
     assert.equal(entry.start, 0);
     assert.equal(entry.end, 100);
   }
@@ -518,6 +528,21 @@ test("links price zoom across every requested grid and starts with recent bars",
   for (const entry of entries(2_500, [0, 1], "1d")) {
     assert.equal(entry.minValueSpan, undefined);
   }
+});
+
+test("pans the visible time window horizontally without changing its span", () => {
+  assert.deepEqual(panDataZoomWindow({ start: 80, end: 100 }, 100, 1_000), {
+    start: 78,
+    end: 98,
+  });
+  assert.deepEqual(panDataZoomWindow({ start: 10, end: 30 }, -5_000, 1_000), {
+    start: 80,
+    end: 100,
+  });
+  assert.deepEqual(panDataZoomWindow({ start: 10, end: 30 }, 5_000, 1_000), {
+    start: 0,
+    end: 20,
+  });
 });
 
 test("builds readable zero, one, and multiple-pane chart layouts", () => {
@@ -734,7 +759,7 @@ test("restores a dragged zoom window after chart options change", () => {
     assert.equal(entry.end, 68);
   }
   for (const entry of original.dataZoom as ZoomEntry[]) {
-    assert.equal(entry.start, 88);
+    assert.equal(entry.start, 94);
     assert.equal(entry.end, 100);
   }
 });
@@ -851,4 +876,16 @@ test("replaces variable chart components without recreating interaction state", 
   );
   assert.equal(replacedComponents.has("tooltip"), false);
   assert.equal(replacedComponents.has("axisPointer"), false);
+  assert.deepEqual(
+    chartReplaceMergeComponents(true, false, { start: 42, end: 68 }),
+    ["grid", "xAxis", "yAxis", "series"],
+  );
+  assert.deepEqual(
+    chartReplaceMergeComponents(true, true, { start: 42, end: 68 }),
+    ECHART_REPLACE_MERGE_COMPONENTS,
+  );
+  assert.deepEqual(
+    chartReplaceMergeComponents(false, false, { start: 42, end: 68 }),
+    ECHART_REPLACE_MERGE_COMPONENTS,
+  );
 });

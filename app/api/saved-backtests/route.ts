@@ -25,6 +25,8 @@ import type { StrategyParameters } from "@/lib/analysis/strategies";
 
 export const dynamic = "force-dynamic";
 
+const SAVED_BACKTEST_ORDER_UPDATE_CHUNK_SIZE = 25;
+
 type SavedBacktestRow = typeof savedBacktests.$inferSelect;
 
 async function getSavedBacktestDb() {
@@ -258,7 +260,9 @@ export async function POST(request: Request) {
         ...values,
         rankHistoryJson: "[]",
         lastRankSnapshotKey: null,
-        displayOrder: Number(orderRow?.value ?? 0) + 1,
+        displayOrder:
+          existingInstrumentRow?.displayOrder ??
+          Number(orderRow?.value ?? 0) + 1,
         instrumentFolderId:
           existingInstrumentRow?.instrumentFolderId ?? null,
       })
@@ -304,22 +308,32 @@ export async function PATCH(request: Request) {
       return Response.json({ error: "NOT_FOUND" }, { status: 404 });
     }
 
-    const orderCases = input.orderedIds.map((id, index) =>
-      sql`WHEN ${id} THEN ${input.orderedIds.length - index}`,
-    );
-    const displayOrder = sql<number>`CASE ${savedBacktests.id} ${sql.join(
-      orderCases,
-      sql.raw(" "),
-    )} ELSE ${savedBacktests.displayOrder} END`;
-    await db
-      .update(savedBacktests)
-      .set({ displayOrder })
-      .where(
-        and(
-          eq(savedBacktests.ownerEmail, ownerEmail),
-          inArray(savedBacktests.id, input.orderedIds),
-        ),
+    for (
+      let offset = 0;
+      offset < input.orderedIds.length;
+      offset += SAVED_BACKTEST_ORDER_UPDATE_CHUNK_SIZE
+    ) {
+      const chunkIds = input.orderedIds.slice(
+        offset,
+        offset + SAVED_BACKTEST_ORDER_UPDATE_CHUNK_SIZE,
       );
+      const orderCases = chunkIds.map((id, chunkIndex) =>
+        sql`WHEN ${id} THEN ${input.orderedIds.length - offset - chunkIndex}`,
+      );
+      const displayOrder = sql<number>`CASE ${savedBacktests.id} ${sql.join(
+        orderCases,
+        sql.raw(" "),
+      )} ELSE ${savedBacktests.displayOrder} END`;
+      await db
+        .update(savedBacktests)
+        .set({ displayOrder })
+        .where(
+          and(
+            eq(savedBacktests.ownerEmail, ownerEmail),
+            inArray(savedBacktests.id, chunkIds),
+          ),
+        );
+    }
     return Response.json({ reordered: true });
   } catch (error) {
     return persistenceError(error);

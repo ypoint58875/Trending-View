@@ -10,6 +10,13 @@ may append missing dates or replace only an unconfirmed final bar.
 
 Current fixed profiles:
 
+- Shenzhen LOF `164824`: the verified fixed identity is Tencent `sz164824`
+  with no-key raw daily history and current quote. Eastmoney `0.164824` raw
+  `fqt=0` history is retained as a verified backup. Legacy EODHD
+  `164824.SHE`/`OTHER` and Eastmoney records normalize to this profile and an
+  incompatible adjusted cache is replaced as one unit. On 2026-09-21 the
+  Eastmoney history endpoint returned `rc=102`, while Tencent returned valid
+  rows through 2026-09-21 and quote close `1.264`.
 - N225: Yahoo `^N225` preferred; official Nikkei CSV, Eastmoney `100.N225`,
   EODHD, Twelve Data, Financial Modeling Prep, Alpha Vantage, and Nasdaq
   ordered backups; FRED `NIKKEI225` close-only reference.
@@ -24,9 +31,10 @@ Current fixed profiles:
 - Other Yahoo-discovered instruments and known index/ETF definitions with a
   deterministic Yahoo symbol use Yahoo as primary. A result without a verified
   Yahoo mapping retains its selected provider. SSE/SZSE indexes try Zhitu
-  immediately after the original provider. SSE/SZSE index/ETF recovery tries
-  the no-key Tencent current quote before credentialed fallbacks and reserves
-  Juhe as the final quote-only candidate. Marketstack is ETF-only.
+  immediately after the original provider. SSE/SZSE index/ETF recovery can use
+  no-key Tencent raw daily history, uses its current quote for latest-only
+  work, and reserves Juhe as the final quote-only candidate. Marketstack is
+  ETF-only.
 
 Canonical index identity is resolved through the shared Yahoo alias table before
 profile validation, search de-duplication, cache lookup, fallback selection, and
@@ -61,6 +69,11 @@ separately.
 `fqt=1` output is marked `corporate-action-adjusted`. Volume is retained in the
 provider's quote-page unit. The application displays it as provider volume and
 does not scale it with price adjustment or silently convert it to shares.
+Verified Eastmoney LOF definitions are the bounded exception: daily requests
+use `fqt=0`, retain the original `secid`, and report `raw`. Eastmoney
+`0.164824` now serves only as a verified backup to fixed Tencent raw history.
+A live 2026-09-15 check returned rows beginning 2018-08-01, but a 2026-09-21
+probe returned `rc=102`; the guessed Yahoo `164824.SZ` mapping is not used.
 
 These are public website endpoints, not a documented licensed API. They may
 change or rate-limit requests. Do not treat them as an authoritative execution
@@ -184,22 +197,26 @@ restricted to SSE/SZSE indexes and caps a request at 1,500 rows. Zhitu's
 documented fund endpoints do not provide the required historical ETF OHLC, and
 `513310` returned HTTP 404, so the source is not used for ETFs.
 
-## Tencent Finance real-time quote
+## Tencent Finance raw daily history and real-time quote
 
 - Endpoint: `https://qt.gtimg.cn/q={symbol}`
-- Accessed: 2026-07-28
+- Daily endpoint: `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get`
+- Daily parameters: `{exchange-symbol},day,,,2000,none`
+- Accessed: 2026-07-28, 2026-09-15, and 2026-09-21
 - Credential: none.
-- Capability: one current-session SSE/SZSE index or ETF quote, not historical
-  daily bars.
+- Capability: up to 2,000 requested raw daily SSE/SZSE index or ETF bars plus
+  one current-session quote.
 
-The `sh513310` live probe returned one current-session quote with open, high,
+The 2026-09-15 `sz164824` daily probe returned 1,971 rows from 2018-08-01
+through 2026-09-15 in about 0.4 seconds while both Eastmoney history hosts
+closed TLS connections. A 2026-09-21 probe again returned valid rows through
+that Shanghai date plus quote close `1.264`, while Eastmoney returned `rc=102`;
+Tencent is therefore the fixed `164824` canonical primary. The `sh513310` live probe returned one current-session quote with open, high,
 low, current price, previous close, volume, amount, and timestamp. Because a
-single quote cannot establish a historical price scale, the adapter is always
-`overlap-required`, cannot recover an empty chart, and cannot be promoted as a
-daily-history source. During outage recovery it is probed before quota-bearing
-history services. After identity, date, OHLC, and relative-price validation,
-its current-session bar may be appended only to the active in-memory view; a
-separately validated history source remains the canonical base.
+single quote cannot establish a historical price scale, latest-only responses
+remain temporary overlays. The raw daily response can recover an empty chart
+under verified exchange identity and remains subject to canonical immutability
+and overlap validation when history already exists.
 
 A live local `513310` refresh on 2026-07-28 returned a 2026-07-28 quote with
 close `4.82` and changed the active series from 242 to 243 bars. The canonical
@@ -276,6 +293,15 @@ original canonical `513310` identity with source `juhe` and
 - Runtime freshness: full history is cacheable; recent-bar overlays use
   `no-store`. The newest returned bar may still reflect Yahoo's own publication
   delay.
+- Current-bar metadata: finite positive `regularMarketTime`, current price,
+  open, day high, and day low may fill only the unconfirmed current daily bar
+  when the daily array lags. Date identity and UI timestamps use the explicit
+  IANA `Asia/Shanghai` zone; venue-local clocks still control session timing.
+- TOPIX search: the deterministic result is Yahoo `1306.T`, explicitly named
+  as a TOPIX-linked ETF proxy. Yahoo `^TOPX` had no usable OHLC on 2026-09-15
+  and returned HTTP 404 on 2026-09-21. JPX exact current/history delivery is a
+  login/licensed service; its free public history is not a continuing current
+  feed. None is presented as a current no-key direct TOPIX history feed.
 
 Yahoo is the preferred discovery and canonical-history provider for supported
 global indexes, ETFs, and `FUTURE` commodity definitions. Search de-duplication
@@ -298,6 +324,11 @@ relay binds only to
 `127.0.0.1`, accepts only reviewed Yahoo/Eastmoney HTTPS endpoint paths, and
 forwards no authorization or cookie headers. It is a local transport path, not
 a market-data provider, and does not change canonical-source ownership.
+From 2026-09-16, allowlisted Eastmoney and Tencent hosts use a bounded direct
+Node HTTP(S) request with no proxy agent, so a system VPN or environment proxy
+does not capture those domestic requests. Foreign allowlisted hosts retain the
+existing fetch route. Redirects remain allowlisted, TLS verification remains
+enabled, requests time out after 15 seconds, and responses are capped at 16 MiB.
 
 On 2026-08-09 a strict N225 one-minute request returned the application maximum
 of 1,500 native bars from 2026-08-03 12:39 through 2026-08-07 15:30. The

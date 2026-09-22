@@ -13,6 +13,7 @@ import {
 import { exchangeFromProviderLabels } from "./exchanges";
 import { createLocalMarketRelayRequest } from "./local-relay";
 import {
+  MARKET_DISPLAY_TIME_ZONE,
   resolveLatestDailyBarStatus,
   resolveLatestIntradayBarStatus,
 } from "./session";
@@ -105,6 +106,12 @@ interface YahooChartResult {
         end?: number;
       };
     };
+    regularMarketTime?: number;
+    regularMarketPrice?: number;
+    regularMarketOpen?: number;
+    regularMarketDayHigh?: number;
+    regularMarketDayLow?: number;
+    regularMarketVolume?: number;
   };
   timestamp?: number[];
   indicators?: {
@@ -322,7 +329,7 @@ export function parseYahooChart(
     );
   }
 
-  const timeZone = result.meta?.exchangeTimezoneName || "UTC";
+  const timeZone = MARKET_DISPLAY_TIME_ZONE;
   const acceptedRows: Array<{
     timestamp: number;
     open: number;
@@ -380,8 +387,8 @@ export function parseYahooChart(
       ({ adjustmentFactor }) =>
         Number.isFinite(adjustmentFactor) && adjustmentFactor > 0,
     );
-  const firstAcceptedAdjustmentFactor = allParsedDailyPricesAdjusted
-    ? acceptedRows[0].adjustmentFactor
+  const latestAcceptedAdjustmentFactor = allParsedDailyPricesAdjusted
+    ? acceptedRows.at(-1)!.adjustmentFactor
     : null;
   const bars: MarketBar[] = [];
   acceptedRows.forEach((row) => {
@@ -413,14 +420,70 @@ export function parseYahooChart(
     });
   });
 
+  const marketTime = Number(result.meta?.regularMarketTime);
+  const marketPrice = Number(result.meta?.regularMarketPrice);
+  const marketOpen = Number(result.meta?.regularMarketOpen);
+  const marketHigh = Number(result.meta?.regularMarketDayHigh);
+  const marketLow = Number(result.meta?.regularMarketDayLow);
+  if (
+    interval === "1d" &&
+    [marketTime, marketPrice, marketOpen, marketHigh, marketLow].every(
+      (value) => Number.isFinite(value) && value > 0,
+    ) &&
+    marketHigh >= Math.max(marketOpen, marketPrice) &&
+    marketLow <= Math.min(marketOpen, marketPrice)
+  ) {
+    const time = formatTimestamp(
+      marketTime,
+      "1d",
+      MARKET_DISPLAY_TIME_ZONE,
+    );
+    const latestBar = bars.at(-1);
+    if (!latestBar || time >= latestBar.time) {
+      const priceFactor = latestAcceptedAdjustmentFactor ?? 1;
+      const normalizedOpen = marketOpen * priceFactor;
+      const normalizedClose = marketPrice * priceFactor;
+      const normalizedHigh = marketHigh * priceFactor;
+      const normalizedLow = marketLow * priceFactor;
+      const previousClose =
+        time === latestBar?.time
+          ? bars.at(-2)?.close ?? normalizedOpen
+          : latestBar?.close ?? normalizedOpen;
+      const change = normalizedClose - previousClose;
+      const currentBar: MarketBar = {
+        time,
+        timestamp: marketTime * 1000,
+        open: normalizedOpen,
+        close: normalizedClose,
+        high: normalizedHigh,
+        low: normalizedLow,
+        volume: Number(result.meta?.regularMarketVolume) || 0,
+        amount: 0,
+        amplitude:
+          previousClose === 0
+            ? 0
+            : ((normalizedHigh - normalizedLow) / previousClose) * 100,
+        changePercent:
+          previousClose === 0 ? 0 : (change / previousClose) * 100,
+        change,
+        turnoverRate: 0,
+      };
+      if (time === latestBar?.time) {
+        bars[bars.length - 1] = currentBar;
+      } else {
+        bars.push(currentBar);
+      }
+    }
+  }
+
   const providerPreviousClose = Number(
     result.meta?.chartPreviousClose ?? result.meta?.previousClose,
   );
   const normalizedProviderPreviousClose =
     allParsedDailyPricesAdjusted &&
-    firstAcceptedAdjustmentFactor !== null &&
+    latestAcceptedAdjustmentFactor !== null &&
     Number.isFinite(providerPreviousClose)
-      ? providerPreviousClose * firstAcceptedAdjustmentFactor
+      ? providerPreviousClose * latestAcceptedAdjustmentFactor
       : providerPreviousClose;
   const exchange = exchangeFromYahoo(
     result.meta?.exchangeName,

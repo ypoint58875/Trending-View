@@ -59,7 +59,7 @@ export function normalizeMarketCode(code: string): string {
   return code
     .trim()
     .replace(/^\^/, "")
-    .replace(/\.(SS|SZ|HK|US|INDX)$/i, "")
+    .replace(/\.(SS|SHH|SHG|SHE|SZ|HK|US|INDX)$/i, "")
     .toUpperCase();
 }
 
@@ -97,7 +97,13 @@ export function exchangeFromProviderLabels(
   ) {
     return "SSE";
   }
-  if (value.includes("SHENZHEN") || value.includes("SHZ")) return "SZSE";
+  if (
+    value.includes("SHENZHEN") ||
+    value.includes("SHZ") ||
+    value.includes("SHE")
+  ) {
+    return "SZSE";
+  }
   if (value.includes("PHLX") || value.includes("NIM")) return "PHLX";
   if (value.includes("XETRA") || value.includes("GERMANY")) return "XETRA";
   if (value.includes("LONDON") || value.includes("LSE")) return "LSE";

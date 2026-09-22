@@ -1,5 +1,204 @@
 # Codex State
 
+## 2026-09-21 bounded chart memory during screening progress
+
+- Screening progress no longer rebuilds the full price-chart option when no
+  strategy backtest is applied. `MarketWorkspace` now passes one stable empty
+  trade collection instead of allocating a new array on every progress render.
+- The reproduced 6,544-bar N225 run previously redrew the canvas 131 times in
+  20 seconds while the renderer working set grew from 376 MB to 449 MB in 47
+  seconds. After the stable-input fix, the same progress path produced zero
+  canvas clears in 20 seconds and the renderer stayed between 269 MB and 295
+  MB across the following 45-second sample. The shared chart boundary also
+  covers shortcut-batch progress without running its record-writing workflow.
+
+## 2026-09-21 non-interrupting screening and stable long-history sources
+
+- Changing the visible instrument or opening another saved strategy no longer
+  aborts an active one-click screening job. The job retains its original
+  immutable series and instrument key, continues through the existing exact
+  checkpoint path, and publishes results only when that original instrument is
+  visible. Its cached result remains keyed to the original instrument.
+- Verified Shenzhen LOF `164824` now uses Tencent `sz164824` raw daily history
+  as its fixed canonical primary, with Eastmoney `0.164824` retained as a raw
+  verified backup. A 2026-09-21 read-only probe returned Eastmoney `rc=102`
+  while Tencent returned valid daily rows and quote `1.264`, matching the
+  reported source instability outside the active session.
+- Screening checkpoint cadence is now one shared browser/local policy. A
+  history of at least 6,000 bars, including the observed 6,680-bar Yahoo
+  `^KS11` series, checkpoints every 2,048 evaluations; a machine with at most
+  9 GiB physical memory uses the same bound. Candidate order, full history,
+  ranking, and resume identity are unchanged.
+- Exact current TOPIX remains unavailable from the reviewed no-key paths:
+  Yahoo `^TOPX` returned 404 on 2026-09-21, while JPX publishes current exact
+  index data through licensed/login services. Search therefore continues to
+  disclose `1306.T` as a TOPIX-linked ETF proxy rather than label it as TOPIX.
+- Verification passed strict TypeScript, 30 focused market/local-engine tests,
+  and all three rendered workspace/API contract tests. Browser interaction,
+  production build, and a complete `^KS11` screening run were intentionally
+  left for user verification.
+
+## 2026-09-15 default 60-session daily chart window
+
+- A daily price chart now initializes to the latest 60 trading sessions,
+  including after opening a saved shortcut. Shortcut metrics, guidance, and
+  marker replay continue to use the latest 128 sessions; that calculation
+  range no longer expands the initial chart viewport. Explicit screening
+  results still focus their selected scoring-window envelope.
+
+## 2026-09-15 Asia-Shanghai current bars and search coverage
+
+- Saved multi-strategy shortcuts now calculate their current position, tactical
+  support, core-role state, action, volatility cap, rolling return, and chart
+  marker replay from the same latest-128-session range. The reproduced
+  `164824` Vortex six-strategy shortcut therefore shows `60%` in both the
+  shortcut and applied backtest instead of pairing a current `Opening position`
+  marker with a stale `0%` value from the record's creation dates. Verification
+  passed strict TypeScript, all 258 TypeScript tests, the production build, both
+  rendered/source tests, ESLint, `git diff --check`, and a live browser check of
+  the exact saved shortcut. One pre-existing coordinator timing test failed on
+  the first full run, then passed alone and in the final complete run.
+- `164824` now resolves through a deterministic verified-fund catalog to the
+  Shenzhen `0.164824` Eastmoney LOF identity even when an older saved/search
+  record says `164824.SHE` and `OTHER`. That compatibility path also replaces
+  a short adjusted legacy cache with complete Tencent raw history instead of
+  mixing price scales, so both the 2018 start and current Shanghai date recover
+  without deleting saved records.
+- Eastmoney daily history now tries both reviewed history hosts within one
+  24-second request deadline. For SSE/SZSE indexes and ETFs, Tencent supplies
+  an independent raw daily-history backup capped at 2,000 requested rows while
+  retaining its one-bar latest quote path. A live Tencent `164824` request
+  returned 1,971 bars from 2018-08-01 through 2026-09-15 after both Eastmoney
+  hosts were independently observed closing TLS connections.
+- Verification passed the focused Eastmoney/Tencent adapter and empty-cache
+  recovery tests, strict TypeScript, all 255 TypeScript tests, the production
+  build, both rendered/source tests, ESLint, and `git diff --check`. Live local
+  API checks returned current Tencent history and quotes for `164824` and
+  `513800`, plus current Yahoo gold and TOPIX-proxy daily series.
+- Yahoo daily normalization now uses the explicit `Asia/Shanghai` display
+  date and accepts a validated current-session OHLC snapshot from Yahoo chart
+  metadata when the daily row array has not published that date yet. Exchange-
+  local calendars still control refresh and close timing.
+- Eastmoney-discovered LOF instruments remain on their verified Eastmoney
+  identity and request raw `fqt=0` history. This avoids incomplete guessed
+  Yahoo histories such as `164824.SZ` while keeping adjustment metadata honest.
+- `TOPIX` and its Chinese query alias resolve immediately to the loadable,
+  explicitly named `1306.T` TOPIX-linked ETF proxy. Yahoo `^TOPX` was rejected
+  because its chart response contained metadata but no usable OHLC rows; the
+  free JPX historical workbook ends at 2025 and is not a current feed.
+- Verification passed 145 focused analysis tests after the cache-boundary
+  addition, strict TypeScript, all 251 TypeScript tests, the production build,
+  and both rendered/source tests. Local live checks passed both TOPIX aliases
+  plus current daily API responses for gold, `513800`, and `1306.T`. Two prior
+  full runs each exposed a different pre-existing launcher timing test; both
+  passed individually and the final complete run passed without failures.
+
+## 2026-08-27 strict and recoverable local startup
+
+- The Windows launcher now probes a small versioned `/api/health` response
+  instead of repeatedly rendering and buffering the complete workspace during
+  cold startup. The browser opens once registered port 3000 begins listening,
+  while application readiness retains the existing bounded 60-second window
+  plus one 120-second listening grace period.
+- Vinext development uses strict-port mode and can no longer move silently from
+  the fixed 3000 origin. Before launch, exact executable path and fixed-command
+  checks remove current-checkout Vinext processes left on fallback ports without
+  touching another checkout or unrelated Node process. Timeout and early-exit
+  paths stop the launched process tree, sweep verified leftovers, and report
+  incomplete cleanup explicitly.
+- Verification passed PowerShell parsing, 18 focused launcher tests, strict
+  TypeScript, all 248 TypeScript tests, the production build, two rendered/source
+  tests, and `git diff --check`. A live cold start found the reproduced exact-
+  checkout PID 9360 on ports 3002 and 9230, removed only that process tree, and
+  reached readiness in 26.6 seconds. The new health response and full root both
+  returned HTTP 200; the final listeners were the new application on 3000 and
+  the existing healthy relay on 3001, with no listener on 3002 or 9230. Existing
+  proxy-detection and large-chunk build warnings remain non-fatal.
+
+## 2026-08-27 proportional direct chart panning
+
+- Direct left-button chart panning now maps pointer travel to the current
+  visible data-window span instead of the complete-history span. A 100-pixel
+  drag across a 1,000-pixel chart with a 20% visible window therefore moves
+  that window by 2 percentage points rather than 10, matching the visual
+  grab-and-drag rate while preserving synchronized panes and boundary clamps.
+- Verification passed all 22 focused chart tests, strict TypeScript, all 246
+  TypeScript tests, the production build, and both rendered/source tests. The
+  automated local-browser refresh was blocked by the browser URL policy, so a
+  fresh automated pointer-drag smoke check was not run in this task. Existing
+  proxy-detection and large-chunk build warnings remain non-fatal.
+
+## 2026-08-27 bounded cold-start readiness grace
+
+- The Windows one-click launcher no longer reports a false 60-second failure
+  when the exact vinext server process is still alive and port 3000 has begun
+  listening during a cold compile. That specific progress signal grants one
+  bounded 120-second grace period; a process exit, absent listener, or failure
+  after the grace period still terminates startup.
+- The reproduced launcher had left the exact-checkout application and relay
+  running after its timeout. Both later passed the launcher's native loopback
+  probes (`200` with the QuantScope title and protocol-v3 relay health), which
+  isolates the defect to the fixed readiness window rather than a crash or
+  port-owner mismatch.
+- Verification passed PowerShell parsing, all 16 focused launcher tests, all
+  246 TypeScript tests, strict TypeScript, the production build, and both
+  rendered/source tests. The existing build chunk-size and proxy-detection
+  warnings remain non-fatal.
+
+## 2026-08-27 direct chart panning with visible-range auto scaling
+
+- The price chart now supports direct left-button horizontal dragging across the
+  plot. The shared chart boundary dispatches one clamped zoom window to the
+  inside controller and slider, preserving the visible span and keeping every
+  price, volume, and indicator pane synchronized.
+- Interactive option updates preserve the live data-zoom controller while
+  React recalculates the price-axis range from only the visible OHLC bars. The
+  y-axis therefore continues to auto-adjust throughout a drag instead of
+  freezing or interrupting the gesture.
+- The shared resize observer now coalesces resize work into one animation frame
+  and skips unchanged dimensions, preventing the development error overlay that
+  previously obscured chart interaction.
+- Verification passed with 22 focused chart tests, 245 TypeScript tests, the
+  production build, two rendered/source tests, and TypeScript checking. A live
+  N225 daily-series drag moved from the current 66,000-74,000 range to historical
+  19,000-20,000 prices and back, with the y-axis adjusting both times and no
+  browser console warnings or errors. ESLint and `git diff --check` also passed;
+  Git reported only the repository's existing LF-to-CRLF conversion warnings.
+
+## 2026-08-27 local startup and relay failure containment
+
+- Windows migration cleanup now treats a non-zero `taskkill` result as a
+  recoverable child-exit race only when the exact verified root process is no
+  longer alive. A failed cleanup with a still-running root remains a hard
+  startup error.
+- Application and relay health probes use a bounded native Node HTTP request
+  that ignores external proxy settings for their fixed `127.0.0.1` endpoints.
+  External Node market requests retain the configured proxy path, preventing a
+  proxy-generated loopback 503 from being misclassified as a dead service.
+- The loopback market relay contains every asynchronous request failure at the
+  HTTP boundary. Before response headers, failures return a stable 502 code;
+  after a partial response, the affected socket is closed without creating an
+  unhandled rejection.
+- Relay headers, request receipt, keep-alive lifetime, and requests per socket
+  are explicitly bounded. Existing 32 KiB relay-body and 15-second upstream
+  limits remain unchanged; no queue or unbounded runtime history was added.
+- Verification passed 18 focused launcher/relay tests, all 244 TypeScript
+  tests, strict TypeScript, the production build, two rendered-source tests,
+  ESLint, PowerShell parsing, and `git diff --check`. A live Windows cold start
+  recovered the reproduced Wrangler no-op hang and reached HTTP readiness in
+  25 seconds; an immediate second launch reused it in about six seconds. With
+  proxy routing enabled, both loopback probes remained ready, and a malformed
+  relay request returned the bounded 502 response while `/health` stayed 200.
+
+## 2026-08-22 eight-strategy ceiling and fresh-run correctness
+
+- One-click screening now stops at eight strategies. The ninth-strategy discovery/allocation stages and result group are removed, reducing optimization from eighteen to sixteen stages while leaving one-through-eight ranking precision unchanged.
+- An identical completed screening request reuses its completed local-engine result. The checkpoint identity hashes every OHLCV bar together with the objective and full screening configuration, so appended/corrected market bars, objective changes, or configuration changes force a new calculation.
+- Screening result model version 3 invalidates pre-change cached results and checkpoints after removing ninth-strategy screening.
+- A completed local-engine calculation now retries transient final-result reads. Optional IndexedDB cache-write failures no longer overwrite a valid completed screen with the generic interrupted-run state.
+- The local coordinator now automatically restarts an unexpectedly exited screening child up to three times, resuming from its latest disk checkpoint. Explicit validation errors are not retried, and repeated unexpected exits terminate cleanly instead of looping forever.
+- Clicking a saved-backtest instrument group now opens the instrument with no selected or applied strategy and resets the chart to the workspace range. The existing indicator collection remains untouched, while child shortcut rows still restore their saved strategy plans.
+
 ## 2026-08-22 lossless screening pipeline completion
 
 - Protocol version 3 uploads one binary columnar request directly from the
@@ -172,8 +371,31 @@
 
 ## Current status
 
-The daily and provider-native one-minute index, ETF, and commodity-proxy
-QuantScope version is implemented and buildable.
+The daily-only index, ETF, and commodity-proxy QuantScope version is
+implemented and buildable. The 1-minute workspace was removed on 2026-09-16;
+the market API now rejects non-daily intervals, while legacy non-daily saved
+records remain readable and reopen against daily bars.
+
+Completed canonical daily bars are immutable even when a refresh comes from
+the same provider. Later refreshes may backfill missing published volume but
+cannot rewrite completed OHLC, preventing closed 164824/Tencent charts from
+oscillating between repeated responses.
+
+The screening panel now includes a period-derived batch button (128 days by
+default). It serially screens all saved shortcut instruments across indexes,
+ETFs, funds, and commodity proxies, checkpoints each
+completed instrument, saves the current-objective winner, and assigns it to an
+instrument-local `N日` strategy folder. Shortcut index drops now bubble past
+nonmatching nested record/folder targets. The loopback relay sends reviewed
+Eastmoney and Tencent hosts over a bounded direct no-proxy connection while
+leaving foreign-provider routing unchanged.
+
+Verification on 2026-09-16: typecheck, production build, and all three rendered
+workspace/API contract tests pass. The complete unit-test phase passes 260 of
+261 tests; the unrelated Windows launcher 1 ms grace-period timing test fails
+in the full parallel run but passes when rerun alone. A live Tencent CSI 300
+request also returned HTTP 200 with an intentionally unusable proxy configured,
+confirming the direct domestic route; Eastmoney reset its direct probe.
 
 Implemented:
 
@@ -183,21 +405,12 @@ Implemented:
   closes only that completed migration tree, and continues startup. Normal
   success and failure exit codes are preserved; a timeout without the terminal
   success message still fails startup.
-- Native one-minute screening now requires at least five distinct trading
-  sessions in the selected range. Below that boundary the workspace keeps the
-  minute chart available but does not produce screening rankings.
-- One-minute chart labels, crosshair headers, tooltips, and trade-marker
-  coordinates render from the provider epoch in `Asia/Shanghai`. Canonical
-  `bar.time` remains exchange-local for market-session and analysis rules.
   Minute zoom keeps at least 120 bars visible when that many are available,
   preventing an accidentally over-zoomed sparse K-line view; daily zoom is
   unchanged. While the venue refresh policy is active, a newest-bar lag of
   three minutes or more is displayed as a prominent estimated minute-data
   delay. A live N225 check at 2026-08-14 09:55 +08:00 measured exactly 15
   minutes between the latest bar epoch and the Yahoo fetch time.
-- The one-minute workspace retains up to 2,500 native bars and selects the
-  complete returned minute range on load, so a five-session provider window is
-  not silently reduced to the daily workspace's 128-bar research default.
   Combination names in the strategy lab, applied chart summary, and saved
   shortcuts place the selected-range relative long-cycle strategy before the
   relative short-cycle strategy. Saved shortcut names wrap to additional lines
@@ -253,9 +466,9 @@ Implemented:
   Empty-chart recovery promotes the selected verified backup, while equally
   fresh candidates prefer the longer history. Backup source-health promotion
   requires at least 500 observed historical bars.
-  For SSE/SZSE indexes and ETFs, a validated Tencent session quote may append
-  one in-memory current-day bar while the separately retained canonical base
-  remains the only persisted history. If Tencent fails, the credentialed Juhe
+  For SSE/SZSE indexes and ETFs, Tencent raw daily history may recover an empty
+  canonical base under verified identity, while a latest-only Tencent session
+  quote may append one in-memory current-day bar. If Tencent fails, the credentialed Juhe
   stock product is the final quote-only candidate and is protected by a
   50-call Shanghai-day gate. A live strict `513310` request returned a complete
   2026-07-28 Juhe bar. Juhe is skipped after a valid Tencent quote, is excluded
@@ -285,11 +498,9 @@ Implemented:
   the launcher reuses healthy services and stops an unhealthy listener only
   after its Node command, current-checkout path, and role arguments are
   verified; unrelated listeners remain untouched.
-- A one-instrument workspace with exactly `日线` and `1 分钟` research tabs.
-  The one-minute path uses 1,500 provider-native bars without resampling,
-  precise minute ranges, one-minute session refresh, close-state classification,
-  and interval-isolated cache/source-health/fingerprint/saved-plan/screening
-  identity. It keeps the current indicator and applied-strategy selections but
+- A one-instrument, daily-only workspace. Intraday selectors and requests are
+  no longer user reachable. The workspace keeps the current indicator and
+  applied-strategy selections but
   aborts old screening results and reloads market state on a tab switch.
   Daily multi-source recovery/reference audits remain daily-only; minute mode
   uses the configured primary and exposes missing provider volume rather than

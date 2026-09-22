@@ -43,6 +43,7 @@ interface EChartProps {
   preserveDataZoom?: boolean;
   dataZoomResetKey?: string;
   onDataZoomChange?: (window: DataZoomWindow) => void;
+  horizontalPanDataZoomIds?: readonly string[];
 }
 
 export interface DataZoomWindow {
@@ -57,6 +58,30 @@ export const ECHART_REPLACE_MERGE_COMPONENTS = [
   "dataZoom",
   "series",
 ] as const;
+
+export function chartReplaceMergeComponents(
+  preserveDataZoom: boolean,
+  resetZoom: boolean,
+  window: DataZoomWindow | null,
+) {
+  return preserveDataZoom && !resetZoom && window
+    ? ECHART_REPLACE_MERGE_COMPONENTS.filter(
+        (component) => component !== "dataZoom",
+      )
+    : ECHART_REPLACE_MERGE_COMPONENTS;
+}
+
+export function panDataZoomWindow(
+  window: DataZoomWindow,
+  dragPixels: number,
+  chartWidth: number,
+): DataZoomWindow {
+  const span = Math.max(0, Math.min(100, window.end - window.start));
+  const maximumStart = 100 - span;
+  const delta = chartWidth > 0 ? (dragPixels / chartWidth) * span : 0;
+  const start = Math.max(0, Math.min(maximumStart, window.start - delta));
+  return { start, end: start + span };
+}
 
 interface DataZoomEvent {
   start?: number;
@@ -101,16 +126,22 @@ export function EChart({
   preserveDataZoom = false,
   dataZoomResetKey,
   onDataZoomChange,
+  horizontalPanDataZoomIds = [],
 }: EChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<EChartsType | null>(null);
   const dataZoomWindowRef = useRef<DataZoomWindow | null>(null);
   const dataZoomResetKeyRef = useRef<string | undefined>(undefined);
   const onDataZoomChangeRef = useRef(onDataZoomChange);
+  const horizontalPanDataZoomIdsRef = useRef(horizontalPanDataZoomIds);
 
   useEffect(() => {
     onDataZoomChangeRef.current = onDataZoomChange;
   }, [onDataZoomChange]);
+
+  useEffect(() => {
+    horizontalPanDataZoomIdsRef.current = horizontalPanDataZoomIds;
+  }, [horizontalPanDataZoomIds]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -119,6 +150,7 @@ export function EChart({
       renderer: "canvas",
     });
     chartRef.current = chart;
+    let panStart: { x: number; window: DataZoomWindow } | null = null;
     const handleDataZoom = (...args: unknown[]) => {
       const window = readDataZoomWindow(
         (args[0] ?? {}) as DataZoomEvent,
@@ -127,13 +159,82 @@ export function EChart({
       if (window) onDataZoomChangeRef.current?.(window);
     };
     chart.on("datazoom", handleDataZoom);
+    const readCurrentZoomWindow = () => {
+      if (dataZoomWindowRef.current) return dataZoomWindowRef.current;
+      const configured = chart.getOption().dataZoom;
+      const first = Array.isArray(configured) ? configured[0] : configured;
+      return first && Number.isFinite(first.start) && Number.isFinite(first.end)
+        ? { start: Number(first.start), end: Number(first.end) }
+        : null;
+    };
+    const handlePanStart = (event: { offsetX: number; event?: MouseEvent }) => {
+      if (
+        horizontalPanDataZoomIdsRef.current.length === 0 ||
+        event.event?.button !== 0
+      ) {
+        return;
+      }
+      const window = readCurrentZoomWindow();
+      if (!window || window.end - window.start >= 100) return;
+      panStart = { x: event.offsetX, window };
+      chart.getZr().setCursorStyle("grabbing");
+      event.event.preventDefault();
+    };
+    const handlePanMove = (event: { offsetX: number; event?: MouseEvent }) => {
+      if (!panStart) return;
+      const window = panDataZoomWindow(
+        panStart.window,
+        event.offsetX - panStart.x,
+        chart.getWidth(),
+      );
+      chart.dispatchAction({
+        type: "dataZoom",
+        batch: horizontalPanDataZoomIdsRef.current.map((dataZoomId) => ({
+          dataZoomId,
+          start: window.start,
+          end: window.end,
+        })),
+      });
+      event.event?.preventDefault();
+    };
+    const handlePanEnd = () => {
+      if (!panStart) return;
+      panStart = null;
+      chart.getZr().setCursorStyle("grab");
+    };
+    chart.getZr().on("mousedown", handlePanStart);
+    chart.getZr().on("mousemove", handlePanMove);
+    chart.getZr().on("mouseup", handlePanEnd);
+    chart.getZr().on("globalout", handlePanEnd);
 
-    const observer = new ResizeObserver(() => chart.resize());
-    observer.observe(containerRef.current);
+    const container = containerRef.current;
+    let resizeFrame: number | null = null;
+    let appliedWidth = chart.getWidth();
+    let appliedHeight = chart.getHeight();
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const width = Math.round(entry.contentRect.width);
+      const height = Math.round(entry.contentRect.height);
+      if (width === appliedWidth && height === appliedHeight) return;
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        if (chart.isDisposed()) return;
+        appliedWidth = width;
+        appliedHeight = height;
+        chart.resize({ width, height });
+      });
+    });
+    observer.observe(container);
 
     return () => {
       observer.disconnect();
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame);
       chart.off("datazoom", handleDataZoom);
+      chart.getZr().off("mousedown", handlePanStart);
+      chart.getZr().off("mousemove", handlePanMove);
+      chart.getZr().off("mouseup", handlePanEnd);
+      chart.getZr().off("globalout", handlePanEnd);
       chart.dispose();
       chartRef.current = null;
     };
@@ -152,7 +253,13 @@ export function EChart({
 
     chart.setOption(nextOption, {
       lazyUpdate: false,
-      replaceMerge: [...ECHART_REPLACE_MERGE_COMPONENTS],
+      replaceMerge: [
+        ...chartReplaceMergeComponents(
+          preserveDataZoom,
+          resetZoom,
+          dataZoomWindowRef.current,
+        ),
+      ],
     });
     dataZoomResetKeyRef.current = dataZoomResetKey;
   }, [dataZoomResetKey, option, preserveDataZoom]);

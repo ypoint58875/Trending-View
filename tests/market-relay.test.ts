@@ -80,6 +80,35 @@ test("local relay is loopback-only and uses a strict source allowlist", async ()
   assert.match(source, /allowedTargets = new Map/);
   assert.match(source, /query1\.finance\.yahoo\.com/);
   assert.match(source, /push2his\.eastmoney\.com/);
+  assert.match(source, /web\.ifzq\.gtimg\.cn/);
+  assert.match(source, /qt\.gtimg\.cn/);
   assert.doesNotMatch(source, /authorization/i);
   assert.doesNotMatch(source, /cookie/i);
+});
+
+test("domestic market hosts bypass environment proxy routing", async () => {
+  const source = await readFile(
+    new URL("../scripts/market-relay.mjs", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /directDomesticHosts = new Set/);
+  assert.match(source, /requestDirect\(target, headers\)/);
+  assert.match(source, /agent: false/);
+  assert.match(source, /MAX_UPSTREAM_RESPONSE_BYTES/);
+  assert.match(source, /Redirect target is not allowed/);
+});
+
+test("local relay bounds connections and contains request failures", async () => {
+  const source = await readFile(
+    new URL("../scripts/market-relay.mjs", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /handleRequest\(request, response\)\.catch/);
+  assert.match(source, /RELAY_REQUEST_FAILED/);
+  assert.match(source, /server\.headersTimeout = 10_000/);
+  assert.match(source, /server\.requestTimeout = 30_000/);
+  assert.match(source, /server\.maxRequestsPerSocket = 100/);
+  assert.match(source, /server\.on\("clientError"/);
 });

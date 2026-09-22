@@ -19,7 +19,8 @@
   gold, silver, crude-oil, and copper continuous proxies without waiting for
   remote discovery.
 - `searchIndexCatalog(query)`: resolves a deterministic local catalog of major
-  global and mainland index symbols without a provider request.
+  global and mainland index symbols without a provider request. TOPIX aliases
+  resolve to the explicitly labelled, loadable `1306.T` ETF proxy.
 - `searchMarketAssets(query)`: merges the commodity catalog and provider
   results with Yahoo exact-symbol results first, then de-duplicates normalized
   instruments. Local catalog hits return immediately. Otherwise public
@@ -33,15 +34,20 @@
   requests that must use the shared 2000-01-01 provider boundary.
 - `fetchEastmoneySeries(instrument, interval, limit)`: fetches and normalizes
   OHLCV bars with `fqt=1`, adds `beg=20000101` for extended daily history, and
-  marks the result corporate-action adjusted. It prefers HTTPS and retries the
-  same official website host over HTTP only after a transport failure.
+  marks the result corporate-action adjusted. It tries the primary and
+  alternate Eastmoney history hosts plus the local relay within one bounded
+  request deadline. A
+  verified Eastmoney LOF instead uses raw `fqt=0` history and reports `raw`.
 - `fetchYahooSeries(instrument, interval, limit)`: fetches global chart history.
   Extended daily requests use explicit `period1`/`period2` dates beginning at
   2000-01-01. Daily bars scale all accepted OHLC rows only when every row has a
   finite positive `adjclose / raw close`; one invalid or missing factor keeps
   the entire series on the raw scale. An all-adjusted series scales provider
-  previous close by its first accepted factor; slicing sets previous close to
-  the immediately preceding normalized bar. Intraday output is raw.
+  previous close by its latest accepted factor; slicing sets previous close to
+  the immediately preceding normalized bar. A validated current-session
+  metadata snapshot may append or replace the unconfirmed `Asia/Shanghai`
+  current daily bar before Yahoo's daily array catches up. Intraday output is
+  raw.
 - `fetchNasdaqDailySeries(instrument, limit)`: fetches supported daily index/ETF
   history from the shared start date when extended history is requested and
   marks it raw. Provider-specific definitions use `secid`, so a selected alias
@@ -62,9 +68,10 @@
 - `fetchMarketstackDailySeries(...)`: fetches adjusted EOD rows only for ETFs.
 - `fetchZhituDailyIndexSeries(...)`: fetches SSE/SZSE index-only daily bars,
   using an exchange-local symbol and a bounded 1,500-bar request.
+- `fetchTencentDailySeries(...)`: fetches up to 2,000 no-key raw daily bars for
+  an SSE/SZSE index or ETF and normalizes them to `MarketSeries`.
 - `fetchTencentQuoteSeries(...)`: fetches one no-key SSE/SZSE index or ETF
-  session snapshot. It is quote-only in practice and cannot pass historical
-  promotion thresholds.
+  session snapshot for a latest-only temporary overlay.
 - `parseJuheQuote(...)`: validates the stock-product response, normalizes both
   special index and `gid` payload shapes, preserves the requested canonical
   code, and returns one raw current quote bar.
@@ -111,14 +118,16 @@
   `resolveCanonicalMarketProfile(...)`: normalize provider aliases and select
   one deterministic primary, independent backups, reference definitions,
   network routes, and methodology. Verified Yahoo symbols become primary;
-  unsupported mappings retain the selected provider.
+  verified `164824` instead stays on fixed Tencent raw history with Eastmoney
+  raw history as backup; unsupported mappings retain the selected provider.
 - `yahooPrimarySymbolForInstrument(...)`: returns a Yahoo symbol only for an
   exact Yahoo-discovered instrument or a deterministic supported index/ETF
   mapping; it returns `null` instead of guessing unsupported exchange suffixes.
 - `mergeCanonicalMarketSeries(...)`: locks completed canonical OHLC, permits
   same-primary replacement only for the unconfirmed final bar, appends later
   primary dates, and fills a same-source cached zero volume for the same date
-  without changing locked OHLC.
+  without changing locked OHLC. A successful primary with a different
+  `priceAdjustment` replaces the old series instead of mixing price scales.
 - `missingPublishedVolumeRepairKey(...)`: identifies recent isolated completed-
   bar volume gaps only when the surrounding source coverage remains reliable,
   allowing one full-history self-repair attempt without polling permanently
@@ -155,7 +164,8 @@
   major global index and provider venue labels to documented market sessions.
 - `resolveLatestDailyBarStatus(...)`: classifies the newest daily bar as
   complete, in-progress, or unknown from provider session-end metadata or the
-  documented exchange close.
+  documented exchange close. Date identity is compared in `Asia/Shanghai`;
+  exchange-local clock time still decides a known venue close.
 - `marketSeriesCacheKey(...)`, `readCachedMarketSeriesEntry(...)`,
   `readCachedMarketSeries(...)`, and `writeCachedMarketSeries(...)`: isolate
   normalized IndexedDB histories by provider/symbol/interval, retain at most 32
@@ -173,7 +183,8 @@
   `parseAlphaVantageDailyCsv(...)`, `parseFmpDailyRows(...)`,
   `parseAllTickKlineRows(...)`,
   `parseMarketstackEodRows(...)`, `parseZhituDailyRows(...)`,
-  `parseTencentQuote(...)`, and `parseNasdaqRows(...)`: normalize provider
+  `parseTencentDailySeries(...)`, `parseTencentQuote(...)`, and
+  `parseNasdaqRows(...)`: normalize provider
   payloads into `MarketBar[]`.
   Provider volume passes through without price-adjustment scaling.
 
@@ -252,6 +263,9 @@
   strategy references, and trade markers.
 - `applyDataZoomWindow(option, window)`: reapplies the user's current zoom
   start/end percentages when chart series or indicators update.
+- `panDataZoomWindow(window, dragPixels, chartWidth)`: translates a direct
+  horizontal drag in proportion to the current visible window, preserving its
+  span and clamping it to the available history.
 - `buildStrategyLineSeries(lines, labels)`: renders strategy price references
   as semantic solid lines matching the legend on the main price axes, removes
   all-null lines, and maps long/short entry/exit references to action labels.
@@ -466,7 +480,7 @@
   and quintuple beams. Three-, four-, and five-leg allocation replay covers all
   positive 10% judgment-weight compositions once. It retains at most 30
   results independently for each strategy count, with one best result per
-  unordered strategy-ID set. Three-through-nine-leg search retains the top 16
+  unordered strategy-ID set. Three-through-eight-leg search retains the top 16
   intermediate parent/finalist candidates for each Strategy A primary at every
   level, while final result categories separately retain at most three rows per
   primary and 30 total. Intermediate pools use cached unordered-set keys and
@@ -476,7 +490,7 @@
   so every pair reaches allocation comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
   are built once from complete loaded history and retained only for finalists.
-  Four-through-nine-leg candidate execution then slices those causal targets to
+  Four-through-eight-leg candidate execution then slices those causal targets to
   the scoring window plus one preceding bar; a backward decisive-state scan
   preserves inherited core-satellite and volatility state without generating
   per-candidate out-of-window equity.
@@ -486,9 +500,9 @@
   transition, and after every 128 evaluations. Browser cooperative yields are followed by a timer-task
   boundary so progress state is committed and painted before work resumes.
 - `MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY`: hard-caps one Strategy A primary
-  at three rows in each final three-through-nine-strategy result category.
+  at three rows in each final three-through-eight-strategy result category.
 - `MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY`: retains the top 16 intermediate
-  candidates for each Strategy A primary at every three-through-nine search
+  candidates for each Strategy A primary at every three-through-eight search
   level before expanding the next strategy count.
 - `MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL`: bounds one intermediate level at
   the registered strategy count multiplied by the per-primary 16-candidate
@@ -497,6 +511,11 @@
   validation run, forwards typed optimization/validation progress, sends
   cancellation, and always terminates the worker. It falls back to the core
   function only when `Worker` is unavailable.
+- `screeningCheckpointInterval(barsLength, physicalMemoryBytes?)`: returns the
+  shared exact-checkpoint cadence used by both the browser Worker and local
+  child. Histories with at least 6,000 bars and hosts with at most 9 GiB use a
+  2,048-evaluation boundary so a fresh process or Worker releases stage heap
+  more frequently without truncating input or changing candidate order.
 - `fingerprintMarketSeries(series)`: SHA-256 hashes interval, source,
   adjustment, and normalized OHLCV bars for screening provenance.
 - `createSaveScreeningRunInput(...)`: converts a validation outcome into a
@@ -575,9 +594,11 @@ and backtests all receive the same normalized `MarketBar[]` from the active
 
 ## Windows local runtime
 
-- `Test-QuantScopeReady()`: accepts port 3000 only when its HTTP response is
-  successful and contains the QuantScope document title. Its ten-second request
-  window allows a cold development render to complete before cleanup.
+- `GET /api/health`: returns the small versioned application-readiness contract
+  without rendering the workspace.
+- `Test-QuantScopeReady()`: accepts port 3000 only when `/api/health` returns the
+  exact application role, readiness flag, and contract version within two
+  seconds.
 - `Test-QuantScopeMarketRelayReady()`: accepts port 3001 only when its health
   endpoint returns `ready: true`.
 - `Test-QuantScopeApplicationProcess(process, root, port)`: verifies that a
@@ -591,6 +612,9 @@ and backtests all receive the same normalized `MarketBar[]` from the active
 - `Remove-UnhealthyQuantScopeRuntimeListener(runtime, root)`: resolves
   listener PIDs and stops only unhealthy owners that pass the exact
   current-checkout role check.
+- `Remove-StrayQuantScopeApplicationProcesses(root)`: enumerates Node processes
+  before launch and stops only exact current-checkout Vinext development
+  commands, including legacy instances that had moved to a fallback port.
 - `Confirm-QuantScopeRuntimePortAvailable(runtime, root)`: applies verified
   cleanup and waits for the registered port to be released.
 - `Get-LocalPortOwnerDescription(runtime)`: returns the unresolved listener PID
@@ -600,7 +624,12 @@ and backtests all receive the same normalized `MarketBar[]` from the active
   no-pending-migrations terminal message enables a short grace period followed
   by migration-process-tree recovery; an unverified timeout remains a failure.
 - `Stop-QuantScopeProcessTree(process)`: terminates only the process tree rooted
-  at the explicitly started one-shot migration process.
+  at an explicitly verified or launched process.
+- `Wait-QuantScopeStartup(serverProcess, onListening, ...)`: opens the browser
+  through a one-shot callback when port 3000 first listens, then enforces the
+  independent readiness deadline and bounded cold-compile grace.
+- `Remove-FailedQuantScopeStartup(serverProcess, root)`: stops the launched
+  tree, sweeps only exact current-checkout leftovers, and verifies port release.
 - `New-QuantScopeServerCommand(root, useMarketRelay, startMarketRelay)`:
   generates the visible server command, reusing a healthy relay or owning and
   cleaning up a newly started relay as appropriate.
@@ -653,9 +682,13 @@ and backtests all receive the same normalized `MarketBar[]` from the active
 - `POST /api/saved-backtests`: inserts a new current-user strategy snapshot and
   clears inert legacy rank fields. An exact
   instrument/plan/filter/allocation/cost setup replaces its existing row even
-  when the rolling date range changed, preventing duplicate shortcuts.
+  when the rolling date range changed, preventing duplicate shortcuts. A new
+  strategy for an existing instrument inherits that instrument group's stored
+  display order so automated saves never move the first-level shortcut group.
 - `PATCH /api/saved-backtests`: verifies every submitted ID belongs to the
-  current owner and persists the complete visible order in one update.
+  current owner and persists the complete visible order in bounded 25-record
+  updates so D1 bind-parameter limits are not exceeded. Repeating the same
+  complete order is deterministic and repairs an interrupted partial write.
 - `PUT /api/saved-backtests`: verifies that every evaluated row belongs to the
   current owner and canonical instrument and stores its latest 128-session
   rolling return. Every row is updated in one conditional SQL statement.
@@ -723,3 +756,10 @@ separate guidance card.
 - `createStreamingCombinationTimeline(...)`: produces monotonic allocation,
   signal, and intrabar states without materializing per-candidate timeline
   arrays.
+- `selectBestShortcutScreeningResult(...)`: compares retained single and
+  combination results with the shared objective comparator and returns the
+  overall winner for automated shortcut saving.
+- `parseShortcutBatchCheckpoint(...)` and
+  `pendingShortcutBatchInstrumentKeys(...)`: validate the bounded durable batch
+  checkpoint and return only incomplete canonical shortcut instruments when
+  the full screening configuration signature still matches.

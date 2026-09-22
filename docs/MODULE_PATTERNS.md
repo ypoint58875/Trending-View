@@ -1,10 +1,26 @@
 # Module Patterns
 
+## Screening ownership and memory policy
+
+- A screening run owns the immutable market series, canonical instrument key,
+  settings, and checkpoint identity captured at start. Visible workspace
+  navigation may clear incompatible presentation state but must not abort or
+  retarget that run. Completion updates visible results only for the owning
+  instrument and always persists under the owning key.
+- Keep cancellation explicit: the stop control and component teardown may
+  abort; opening another instrument, instrument group, or saved strategy may
+  not. Do not reuse one reset helper for both presentation cleanup and task
+  cancellation.
+- Browser and local-engine paths must call the same
+  `screeningCheckpointInterval(...)` policy. Reduce peak heap by exact atomic
+  checkpoint-and-restart boundaries, not by truncating bars, pruning candidate
+  domains, lowering finalist breadth, or changing ranking precision.
+
 ## Multi-strategy plan slots
 
 - Extend multi-leg behavior through the shared `StrategySlot`/`STRATEGY_SLOTS` A–I contract. Persistence, archive keys, shortlist membership, display, and execution must traverse the same ordered slots while accepting missing trailing legacy slots.
 - Keep execution semantics dependent on strategy count: one leg is direct, two legs retain core/tactical hierarchy, and three-to-nine legs produce one core-satellite decision. The longest-duration leg gates a fixed 60% core; all other positive weights form one tactical-support score. Multi-leg weights must be finite, positive, and sum to one.
-- Discover four-through-nine-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 16 intermediate candidates per Strategy A primary at every three-through-nine-leg level, then rank all completed candidates and cap only the final displayed category at three per primary and 30 total.
+- Discover four-through-eight-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 16 intermediate candidates per Strategy A primary at every three-through-eight-leg level, then rank all completed candidates and cap only the final displayed category at three per primary and 30 total.
 - Maintain the bounded discovery pool incrementally: cache each unordered
   strategy-set key, keep the pool in stable objective order, and remove only the
   exact worst member that violates the per-primary or global limit. Do not
@@ -40,6 +56,10 @@ adapters. Search results must normalize to the shared index/ETF/commodity asset
 types and must not expose individual equities. Commodity catalog entries live
 in `lib/market/commodities.ts` and use deterministic Eastmoney continuous
 identifiers with explicit exchange identities.
+Verified fund exceptions live in `lib/market/fund-catalog.ts`. Use that shared
+catalog to repair provider-specific aliases before search de-duplication,
+canonical profile selection, cache validation, and shortcut refresh; do not
+scatter one-off fund-code checks across adapters or UI components.
 
 Proxy-preferred local sources use `lib/market/local-relay.ts` and
 `scripts/market-relay.mjs`. The relay must bind only to loopback, accept only
@@ -48,14 +68,40 @@ headers, and never receive proxy configuration inside Worker code. The Windows
 launcher keeps one runtime-port registry for the application and relay and
 reconciles both on every path, including reuse of an already ready application.
 Development mode may use only the fixed loopback default; production requires
-an explicit binding. Runtime lifecycle checks must probe health first, map a
+an explicit binding. Development servers must enable strict-port behavior; a
+fixed-origin application may never silently move to a fallback port. Runtime
+lifecycle checks must probe a small versioned health contract first, map a
 listener to its owning process, verify the exact current-checkout command and
 role arguments before stopping it, wait for release, and never stop another
-checkout or unrelated listener.
+checkout or unrelated listener. A pre-launch process sweep may inspect commands
+outside the registered ports only when it applies the same exact identity check.
+Failed startup must stop the launched tree, recheck exact leftovers, and report
+whether cleanup completed.
+
+Reviewed domestic Eastmoney and Tencent targets use the relay's direct request
+boundary with `agent: false`. Do not disable TLS or globally bypass proxy
+routing for foreign sources. Direct responses retain the shared timeout, size
+cap, host/path allowlist, redirect validation, and safe-header rules.
+
+Shortcut-wide screening uses one canonical instrument as its durable progress
+unit. Process instruments sequentially, persist a bounded configuration-bound
+checkpoint only after a complete save-and-folder assignment, and retry failed
+or incomplete instruments on resume. Never retain result arrays for more than
+one instrument at a time.
+Fixed loopback health probes must bypass proxy settings even when external Node
+requests use `HTTP_PROXY` or `HTTPS_PROXY`; a proxy-generated response is not
+valid evidence about a local service. Keep probe response size and duration
+bounded.
 One-shot local migration commands retain their normal exit-code contract. A
 process-tree recovery is allowed only after Wrangler emits the exact no-pending
 migrations terminal message and then exceeds a short exit grace period. A
 generic timeout must fail startup rather than assume migration success.
+Native process-tree cleanup must recheck the already-verified root process
+after `taskkill`: a child-exit race is successful only when that root has
+stopped, while a still-live root remains a hard failure. Loopback HTTP services
+must contain asynchronous handler rejections at the request boundary, close a
+partially written response, and declare finite header, request, keep-alive, and
+per-socket request limits.
 
 Canonical orchestration belongs in `lib/market/canonical.ts`,
 `series.ts`, `quality.ts`, `canonical-cache.ts`, `source-health.ts`, and
@@ -69,7 +115,10 @@ or later dates may be appended. Every backup definition declares either
 `verified-identity` or `overlap-required`. Identity-verified sources may recover
 an empty chart; overlap-required sources need sufficient matching dates and
 bounded OHLC error. Neither path may rewrite a confirmed date. Rejected
-candidates remain provider-isolated. Retain a bounded 31-day attempt sample
+candidates remain provider-isolated. When a verified catalog changes the
+canonical adjustment policy, request full history and atomically replace the
+incompatible cache; never merge adjusted and raw bars across dates. Retain a
+bounded 31-day attempt sample
 list in addition to lifetime counters. Source choice uses 7/30-day windows,
 minimum observations, quality gates, persistent demotion, hourly configured-
 primary probes, and seven-day restoration hysteresis; it must never rank a
@@ -93,6 +142,12 @@ of 50, and optional same-day external-usage offset metadata. Its in-process
 counter is a conservative client guard; the upstream provider remains
 authoritative across server restarts.
 
+A provider may expose both a bounded history path and a single-quote path.
+Select the history path only for requests above the latest-only limit, keep
+both outputs on one declared adjustment scale, and let the canonical promotion
+gate decide whether history is accepted. Tencent follows this pattern with a
+2,000-row raw daily bound and a one-bar quote refresh.
+
 Refresh orchestration belongs at the workspace boundary, not in provider
 adapters. Use `resolveMarketAutoRefreshPolicy` for venue-local session timing,
 apply one shared minimum-attempt timestamp to timers, focus, and visibility,
@@ -103,6 +158,11 @@ primary, promoted backup, or valid temporary quote. Whole-shortcut refresh is
 triggered by both the manual header action and automatic active-market refresh
 updates. It is sequential by unique canonical instrument, progress-reporting,
 cooldown-protected, and consumes each queued automatic request version once.
+
+Market date/time presentation uses the explicit IANA `Asia/Shanghai` zone and
+must not depend on the host default. Provider metadata may fill only a
+validated unconfirmed current daily bar. Venue-local time zones remain limited
+to session-open, session-close, and refresh-policy calculations.
 
 Commodity providers must preserve the canonical instrument code even when the
 upstream symbol differs. Spot, CFD, and continuous-futures mappings are always
@@ -133,7 +193,9 @@ Canonical cache identity is instrument plus interval, not the current primary
 provider. A deliberate primary-policy change may reuse a same-instrument locked
 record or qualifying legacy cache as the existing seed. Current-primary writes
 remain strict, so an old-provider seed is never relabeled as a successful new
-primary before the new source actually responds.
+primary before the new source actually responds. Once the new primary succeeds,
+a different `priceAdjustment` scale replaces the old cached series atomically;
+bars from raw and adjusted scales must never be concatenated.
 
 Exchange resolution is shared through `lib/market/exchanges.ts`. A provider
 market bucket is not necessarily an exchange: Eastmoney market `100`, for
@@ -148,7 +210,10 @@ limits. Latest overlays remain bounded, uncached, and independent from the
 full-history boundary.
 
 Every `MarketSeries` must set authoritative `priceAdjustment` metadata.
-Eastmoney's `fqt=1` output is `corporate-action-adjusted`. EODHD daily OHLC is
+Eastmoney's `fqt=1` output is `corporate-action-adjusted`. A verified
+Eastmoney LOF remains on its original provider identity, requests `fqt=0`, and
+is explicitly `raw`; do not prefer a guessed Yahoo suffix with partial
+history. EODHD daily OHLC is
 scaled only when every accepted row has a finite positive
 `adjusted_close / close` factor; otherwise every accepted row remains raw.
 Yahoo daily OHLC is
@@ -156,7 +221,8 @@ scaled per bar only when `adjclose / raw close` is finite and positive; any
 parsed daily bar without a valid factor falls back to raw prices and makes the
 whole series metadata `raw`. Yahoo intraday and Nasdaq daily output are `raw`.
 Never rescale provider volume with a price-adjustment factor. Scale Yahoo's
-provider previous close only for an all-adjusted parsed series, and after
+provider previous close with the latest accepted factor only for an all-
+adjusted parsed series, and after
 slicing use the immediately preceding normalized bar when one exists.
 
 The active `MarketSeries.bars` is the shared input for chart history,
@@ -208,6 +274,15 @@ volume, and all indicator panes share the same zoom contract. Build legend
 names from each visible indicator's actual parameters, leave VWAP/OBV
 parameter-free, use a scrolling legend, and reserve top space so it cannot
 cover the price plot.
+
+The price chart's left-button pan belongs at the shared EChart boundary and
+dispatches the same data-zoom window to the inside controller and slider.
+Map pointer travel to the current visible data span rather than the complete
+history span so the plotted content follows the mouse at a direct visual rate.
+Preserve that live controller during React option updates so visible-window
+y-axis recalculation cannot interrupt an active drag. Derive the price y-axis
+only from visible OHLC bars. Resize-observer callbacks must coalesce into one
+animation frame and skip unchanged dimensions.
 
 When a formula gains a backward-compatible parameter, add it to the registry
 and fill absent stored keys from registry defaults while still rejecting
@@ -486,9 +561,8 @@ for that run. Applying a result copies that filter into both lab and applied
 plans; subsequent lab edits must not mutate or clear the screening snapshot.
 
 The browser workspace holds one index, ETF, or commodity quote proxy at a time
-and exposes only daily and provider-native one-minute research tabs. An
-interval change is a market-state boundary: abort screening, clear the active
-series and exact range, then load the interval-keyed cache. Keep indicator and
+and exposes only daily research. Intraday intervals are rejected at the market
+API boundary. Keep indicator and
 applied-strategy selections so they can be recalculated on the selected bars.
 Do not add resampled or additional minute controls incidentally through an
 adapter change.
@@ -519,13 +593,16 @@ owner/provider/provider-symbol index is non-unique so one instrument can keep
 multiple materially different strategies. UI
 components consume API records and do not access D1
 bindings directly. Shortcut labels use the stored interval for provenance. A
-stored one-minute record switches the workspace to one-minute mode;
-unsupported legacy intervals fall back to daily. Stored dates and metrics
+stored non-daily record falls back to daily. Stored dates and metrics
 remain creation-time provenance, but the
 workspace does not use them as a second active range. Active or successfully
 background-refreshed shortcut instruments instead replay every daily saved
-plan over the latest 128 trading sessions. Persist the resulting return, but
-do not derive, append, or backfill shortcut ranks during refresh or screening.
+plan over the latest 128 trading sessions. Resolve that range once per
+instrument refresh and pass the exact same boundaries to rolling return,
+current allocation guidance, core/tactical role classification, and chart
+marker replay; creation-time record dates must not feed any of those current
+signals. Persist the resulting return, but do not derive, append, or backfill
+shortcut ranks during refresh or screening.
 The shortcut return display uses the current
 calculation when available, then the stored rolling return, and finally the
 creation-time return. Chart

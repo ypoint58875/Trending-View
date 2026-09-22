@@ -6,6 +6,7 @@ import {
   writeMarketSourceSnapshot,
 } from "./canonical-cache";
 import {
+  canonicalSeriesNeedsFullHistoryReplacement,
   resolveCanonicalMarketProfile,
   type CanonicalMarketSourceDefinition,
 } from "./canonical";
@@ -112,8 +113,11 @@ export async function refreshShortcutMarketInstrument(
     DAILY_INTERVAL,
   );
   let canonical = cached?.series ?? null;
-  const mode = canonical ? "latest" : "history";
-  const limit = canonical ? 5 : DAILY_HISTORY_LIMIT;
+  const replacesHistory = canonical
+    ? canonicalSeriesNeedsFullHistoryReplacement(profile, canonical)
+    : false;
+  const mode = canonical && !replacesHistory ? "latest" : "history";
+  const limit = canonical && !replacesHistory ? 5 : DAILY_HISTORY_LIMIT;
   let knownHealth = await readMarketSourceHealth(profile.key);
 
   const loadTrackedSeries = async (
@@ -200,8 +204,8 @@ export async function refreshShortcutMarketInstrument(
     try {
       const source = await loadTrackedSeries(
         definition,
-        canonical ? "latest" : "history",
-        canonical ? 10 : DAILY_HISTORY_LIMIT,
+        canonical && !replacesHistory ? "latest" : "history",
+        canonical && !replacesHistory ? 10 : DAILY_HISTORY_LIMIT,
       );
       candidates.push({ definition, series: source });
       const quote = canonical

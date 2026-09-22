@@ -446,6 +446,7 @@ test("maps global index codes and provider labels to their real exchanges", () =
   assert.equal(knownIndexExchange("STI"), "SGX");
   assert.equal(exchangeFromProviderLabels("CMX", "GC=F"), "COMEX");
   assert.equal(exchangeFromProviderLabels("NYM", "CL=F"), "NYMEX");
+  assert.equal(exchangeFromProviderLabels("SHE China", "164824"), "SZSE");
   assert.equal(
     exchangeFromProviderLabels("NYSE Arca", "SPY"),
     "NYSE_ARCA",
@@ -468,6 +469,25 @@ test("maps global index codes and provider labels to their real exchanges", () =
   assert.equal(sensexProfile.primary.provider, "yahoo");
   assert.equal(sensexProfile.primary.instrument.secid, "^BSESN");
   assert.equal(sensexProfile.backups[0]?.provider, "eastmoney");
+});
+
+test("repairs legacy OTHER identity for the verified 164824 LOF", () => {
+  const profile = resolveCanonicalMarketProfile({
+    secid: "164824.SHE",
+    code: "164824",
+    name: "India Market Fund",
+    exchange: "OTHER",
+    assetType: "etf",
+    provider: "eodhd",
+  });
+
+  assert.equal(profile.key, "etf:164824");
+  assert.equal(profile.primary.provider, "tencent");
+  assert.equal(profile.primary.instrument.secid, "sz164824");
+  assert.equal(profile.primary.instrument.exchange, "SZSE");
+  assert.ok(
+    profile.backups.some((definition) => definition.provider === "eastmoney"),
+  );
 });
 
 test("parses the FRED close-only reference without inventing OHLC bars", () => {
@@ -1155,6 +1175,41 @@ test("promotes only identity-verified or overlap-validated backups", () => {
   );
 });
 
+test("replaces legacy adjusted 164824 history with its fixed Tencent raw primary", () => {
+  const profile = resolveCanonicalMarketProfile({
+    secid: "164824.SHE",
+    code: "164824",
+    name: "India Market Fund",
+    exchange: "OTHER",
+    assetType: "etf",
+    provider: "eodhd",
+  });
+  const existing = series(
+    profile.primary.instrument,
+    "eodhd",
+    [1.5, 1.51, 1.52],
+  );
+  const primary = {
+    ...series(profile.primary.instrument, "tencent", [1.1, 1.2, 1.3, 1.4]),
+    priceAdjustment: "raw" as const,
+  };
+
+  const promoted = mergeCanonicalMarketSeries(
+    existing,
+    primary,
+    100,
+    profile,
+  );
+
+  assert.equal(promoted?.source, "tencent");
+  assert.equal(promoted?.priceAdjustment, "raw");
+  assert.equal(promoted?.bars.length, 4);
+  assert.deepEqual(
+    promoted?.bars.map((item) => item.close),
+    [1.1, 1.2, 1.3, 1.4],
+  );
+});
+
 test("prefers the longer verified fallback when recovering an empty chart", () => {
   const profile = resolveCanonicalMarketProfile(nikkei);
   const nikkeiDefinition = profile.backups.find(
@@ -1439,4 +1494,47 @@ test("refreshes a shortcut instrument in the background without changing identit
   assert.equal(refreshed?.canonicalSeries.bars.at(-1)?.close, 102);
   assert.equal(refreshed?.status, "primary");
   assert.deepEqual(modes, ["history", "latest"]);
+});
+
+test("recovers an empty Eastmoney LOF chart from Tencent daily history", async () => {
+  const instrument: MarketInstrument = {
+    secid: "0.164825",
+    code: "164825",
+    name: "Outage Recovery LOF",
+    exchange: "SZSE",
+    assetType: "etf",
+    provider: "eastmoney",
+  };
+  const profile = resolveCanonicalMarketProfile(instrument);
+  const requestedProviders: string[] = [];
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input), "http://localhost");
+    const provider = url.searchParams.get("provider") ?? "";
+    requestedProviders.push(provider);
+    if (provider !== "tencent") {
+      return Response.json(
+        { error: "UPSTREAM_UNAVAILABLE" },
+        { status: 502 },
+      );
+    }
+    const definition = profile.backups.find(
+      (candidate) => candidate.provider === "tencent",
+    )!;
+    return Response.json({
+      ...series(definition.instrument, "tencent", [1.2, 1.22, 1.27]),
+      priceAdjustment: "raw",
+    });
+  };
+
+  const recovered = await refreshShortcutMarketInstrument(instrument, {
+    signal: new AbortController().signal,
+    fetcher,
+  });
+
+  assert.equal(requestedProviders[0], "eastmoney");
+  assert.ok(requestedProviders.includes("tencent"));
+  assert.equal(recovered?.status, "backup");
+  assert.equal(recovered?.canonicalSeries.source, "tencent");
+  assert.equal(recovered?.canonicalSeries.priceAdjustment, "raw");
+  assert.equal(recovered?.canonicalSeries.bars.length, 3);
 });

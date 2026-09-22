@@ -19,7 +19,10 @@ import {
 import { fetchAllTickDailySeries } from "./alltick";
 import { fetchMarketstackDailySeries } from "./marketstack";
 import { fetchZhituDailyIndexSeries } from "./zhitu";
-import { fetchTencentQuoteSeries } from "./tencent";
+import {
+  fetchTencentDailySeries,
+  fetchTencentQuoteSeries,
+} from "./tencent";
 import { fetchJuheQuoteSeries } from "./juhe";
 import type {
   MarketInstrument,
@@ -29,6 +32,7 @@ import type {
 import { fetchYahooSeries, searchYahoo } from "./yahoo";
 import { searchCommodityCatalog } from "./commodities";
 import { searchIndexCatalog } from "./index-catalog";
+import { searchFundCatalog } from "./fund-catalog";
 import {
   DAILY_HISTORY_COVERAGE_CUTOFF_DATE,
   requestsExtendedDailyHistory,
@@ -85,6 +89,7 @@ export async function searchMarketAssets(
   query: string,
 ): Promise<MarketInstrument[]> {
   const localCandidates = [
+    ...searchFundCatalog(query),
     ...searchIndexCatalog(query),
     ...searchCommodityCatalog(query),
   ];
@@ -240,13 +245,16 @@ async function fetchStrictProviderSeries(
   }
   if (instrument.provider === "tencent") {
     if (interval !== "1d") {
-      throw new Error("Tencent quote requests require daily bars");
+      throw new Error("Tencent requests require daily bars");
     }
-    return fetchTencentQuoteSeries(
-      instrument,
-      fetch,
-      requestCache,
-    );
+    return limit <= 10
+      ? fetchTencentQuoteSeries(instrument, fetch, requestCache)
+      : fetchTencentDailySeries(
+          instrument,
+          limit,
+          fetch,
+          requestCache,
+        );
   }
   if (instrument.provider === "juhe") {
     if (interval !== "1d") {
@@ -350,11 +358,14 @@ export async function fetchMarketSeries(
     );
   }
   if (instrument.provider === "tencent") {
-    return fetchTencentQuoteSeries(
-      instrument,
-      fetch,
-      requestCache,
-    );
+    return interval === "1d" && limit > 10
+      ? fetchTencentDailySeries(
+          instrument,
+          limit,
+          fetch,
+          requestCache,
+        )
+      : fetchTencentQuoteSeries(instrument, fetch, requestCache);
   }
   if (instrument.provider === "juhe") {
     return fetchJuheQuoteSeries(
