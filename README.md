@@ -19,10 +19,19 @@ trades or run unattended jobs.
   saved records remain readable provenance and reopen against daily bars.
 - A separate strategy-cycle validation page selects an instrument from the
   saved-backtest shortcut bar, repeats historical screening with only the bars
-  visible at each decision, and compares screening windows with update
-  intervals on one continuous account. One compact batch request pre-submits
+  visible at each decision, and compares configurable screening windows and
+  update intervals by how closely each selected plan's later rebalance events
+  match the next same-window screening vintage. A shared five-session vintage
+  grid supplies retrospective labels without fixing the screening window at
+  128 sessions. The report separates correct-direction hits, missed, extra,
+  opposite-direction, early, and late events. Timing hit rates require the
+  predicted adjustment to have the correct direction. Return regret is paired
+  from the prior reference rebalance through the later of the two compared
+  adjustments with one shared start allocation, target allocation, and end
+  price; opposite-direction actions are excluded. One compact batch request pre-submits
   every bounded optimization unit to the loopback coordinator, which continues
-  a CPU- and memory-bounded parallel queue while the tab is sleeping or closed.
+  a CPU- and memory-bounded parallel queue while the tab is sleeping or closed,
+  and restores unfinished non-paused units after a local relay restart.
   One immutable columnar bar file is shared by the queued units; each child
   materializes only its causal prefix,
   and windows at the same decision share range-independent entry-filter

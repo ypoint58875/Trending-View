@@ -10,7 +10,7 @@ import type { MovingAverageSlopeFilter } from "./entry-filter";
 import type { StrategyId } from "./strategies";
 import type { MarketBar, MarketInterval } from "@/lib/market/types";
 
-export const LOCAL_SCREENING_ENGINE_VERSION = 3;
+export const LOCAL_SCREENING_ENGINE_VERSION = 4;
 export const LOCAL_SCREENING_ENGINE_URL = "http://127.0.0.1:3001";
 
 export interface LocalScreeningJobRequest {
@@ -52,6 +52,12 @@ export interface LocalScreeningJobSnapshot {
     code?: ScreeningValidationErrorCode;
     message: string;
   };
+}
+
+export interface LocalScreeningJobBatchStatus {
+  jobId: string;
+  status: LocalScreeningJobSnapshot["status"];
+  error?: LocalScreeningJobSnapshot["error"];
 }
 
 export interface LocalScreeningEngineStatus {

@@ -16,8 +16,11 @@ If progress stops overnight, check `http://127.0.0.1:3001/health` and the
 matching directories under `data/state/screening-engine/`. A queued or running
 job with changing checkpoint timestamps means computation is continuing even
 if the page is asleep. Explicit Pause cancels all submitted unfinished jobs;
-closing the tab does not. Restarting the local relay requires reopening the
-page and pressing Continue so the persisted job requests are re-registered.
+closing the tab does not. Screening-engine protocol version 4 persists a batch
+queue manifest and explicit-cancellation markers, so restarting the local relay
+automatically resumes unfinished, non-paused jobs. Reopen the page and press
+Continue only to reattach report collection immediately; it is not required to
+keep the computation queue advancing.
 
 If the page reports too many units, reduce the evaluation length, remove a
 screening window, or increase update intervals. It rejects schedules above 512
@@ -84,6 +87,10 @@ increase the restart count; they never change or skip candidates.
 Protocol-v3 status responses remain small; the completed result is read once
 from `/screening/jobs/<job-id>/result`. `bars.bin`, `derived.bin`, and the
 checkpoint manifest can be inspected independently when diagnosing disk cost.
+On Windows, an `EPERM` rename error for `checkpoint/manifest.json` indicates a
+transient file lock during replacement. The writer retains the last committed
+manifest, retries the rename, and falls back to a recoverable backup swap; press
+Continue once to restart a job that exhausted its retries before this fix.
 
 ## Shortcut batch period screening stops or resumes
 

@@ -8,6 +8,8 @@ directory separates compact immutable `request.json`, typed columnar
 `bars.bin`, replaceable `checkpoint.bin`, and compact `result.json`.
 Disposable children read the bars and latest checkpoint from disk;
 child-to-parent messages contain throttled progress and memory scalars only.
+An atomic batch queue manifest and per-job cancellation markers distinguish
+restart-resumable submitted work from explicitly paused work.
 Status polling never carries the result payload. After completion the browser
 performs one compact-result read; chart equity and transactions remain
 selection-time replay data.

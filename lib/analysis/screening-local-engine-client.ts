@@ -9,6 +9,7 @@ import {
   LOCAL_SCREENING_ENGINE_URL,
   LOCAL_SCREENING_ENGINE_VERSION,
   type LocalScreeningJobBatchUnit,
+  type LocalScreeningJobBatchStatus,
   type LocalScreeningJobRequest,
   type LocalScreeningJobSnapshot,
 } from "./screening-local-engine-protocol";
@@ -21,6 +22,9 @@ import {
 const HEALTH_TIMEOUT_MS = 800;
 const POLL_INTERVAL_MS = 200;
 const COMPLETED_RESULT_READ_ATTEMPTS = 5;
+const BATCH_STATUS_POLL_INTERVAL_MS = 500;
+const LEGACY_BATCH_STATUS_POLL_INTERVAL_MS = 5_000;
+const LEGACY_STATUS_CHUNK_SIZE = 32;
 
 function abortError() {
   return new DOMException("Screening cancelled", "AbortError");
@@ -285,6 +289,115 @@ export async function waitForScreeningInLocalEngine(
   } finally {
     if (!options.preserveLocalJobOnAbort) {
       options.signal?.removeEventListener("abort", cancel);
+    }
+  }
+}
+
+export async function waitForScreeningBatchInLocalEngine(
+  jobIds: readonly string[],
+  options: Pick<WorkerScreeningOptions, "signal">,
+  onCompleted: (
+    jobId: string,
+    outcome: ScreeningValidationOutcome,
+  ) => Promise<void> | void,
+): Promise<void> {
+  const pending = new Set(jobIds);
+  let batchStatusSupported = true;
+  while (pending.size > 0) {
+    if (options.signal?.aborted) throw abortError();
+    let jobs: LocalScreeningJobBatchStatus[] = [];
+    if (batchStatusSupported) {
+      const response = await fetch(
+        `${LOCAL_SCREENING_ENGINE_URL}/screening/job-statuses`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: LOCAL_SCREENING_ENGINE_VERSION,
+            jobIds: [...pending],
+          }),
+          cache: "no-store",
+          signal: options.signal,
+        },
+      );
+      if (response.ok) {
+        const payload = (await response.json()) as {
+          jobs?: LocalScreeningJobBatchStatus[];
+        };
+        jobs = payload.jobs ?? [];
+      } else if (response.status === 404) {
+        batchStatusSupported = false;
+      } else {
+        await delay(BATCH_STATUS_POLL_INTERVAL_MS, options.signal);
+        continue;
+      }
+    }
+    if (!batchStatusSupported) {
+      const pendingJobIds = [...pending];
+      for (
+        let offset = 0;
+        offset < pendingJobIds.length;
+        offset += LEGACY_STATUS_CHUNK_SIZE
+      ) {
+        const chunk = pendingJobIds.slice(offset, offset + LEGACY_STATUS_CHUNK_SIZE);
+        const snapshots = await Promise.all(
+          chunk.map(async (jobId): Promise<LocalScreeningJobBatchStatus> => {
+            try {
+              const response = await fetch(
+                `${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${jobId}`,
+                { cache: "no-store", signal: options.signal },
+              );
+              if (!response.ok) {
+                return { jobId, status: "error", error: { message: "JOB_NOT_FOUND" } };
+              }
+              const snapshot = (await response.json()) as LocalScreeningJobSnapshot;
+              return {
+                jobId,
+                status: snapshot.status,
+                error: snapshot.error,
+              };
+            } catch (error) {
+              if ((error as Error).name === "AbortError") throw error;
+              return { jobId, status: "queued" };
+            }
+          }),
+        );
+        jobs.push(...snapshots);
+      }
+    }
+    const completed = jobs.filter(
+      (job) => pending.has(job.jobId) && job.status === "completed",
+    );
+    for (const job of completed) {
+      const resultResponse = await fetch(
+        `${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${job.jobId}/result`,
+        { cache: "no-store", signal: options.signal },
+      );
+      if (!resultResponse.ok) continue;
+      await onCompleted(
+        job.jobId,
+        (await resultResponse.json()) as ScreeningValidationOutcome,
+      );
+      pending.delete(job.jobId);
+    }
+    const failed = jobs.find(
+      (job) =>
+        pending.has(job.jobId) &&
+        (job.status === "error" || job.status === "cancelled"),
+    );
+    if (failed?.status === "cancelled") throw abortError();
+    if (failed) {
+      throw new Error(
+        failed.error?.message ?? "Local screening engine failed",
+      );
+    }
+    if (pending.size > 0) {
+      await delay(
+        batchStatusSupported
+          ? BATCH_STATUS_POLL_INTERVAL_MS
+          : LEGACY_BATCH_STATUS_POLL_INTERVAL_MS,
+        options.signal,
+      );
     }
   }
 }

@@ -8,12 +8,26 @@
 - `normalizeCycleValues(...)`: de-duplicates, sorts, bounds, and caps user
   screening-window or update-interval values.
 - `buildStrategyCycleSchedule(...)`: forms the union of required historical
-  decision dates so compatible update intervals share optimization work.
+  decision dates plus the five-session reference grid so compatible update
+  intervals share optimization work without fixing the screening-window size.
 - `runStrategyCycleConfiguration(...)`: replays selected plans through one
   continuous allocation account with next-bar execution and no synthetic
   update-boundary reset.
 - `buildStrategyCycleMatrix(...)`: evaluates every normalized window/interval
   pair from persisted selection snapshots.
+- `runStrategyCycleNextVintageReference(...)`: shifts every next same-window
+  five-session vintage onto the preceding segment to create an explicitly
+  retrospective rebalance-event reference timeline.
+- `compareStrategyCycleRebalanceEvents(...)`: chronologically matches strategy
+  rebalances one-to-one, classifies opposite-direction actions as severe errors,
+  and reports correct-direction hits, missed/extra events, late rate, lead/lag,
+  allocation error, and paired basis-point impact. Each paired return starts at
+  the prior reference rebalance and ends at the later compared adjustment with
+  shared start/target allocations and a shared end price. Wrong-direction
+  actions never count toward timing or return metrics.
+- `buildStrategyCycleEventValidation(...)`: compares every configured
+  screening-window/update-interval cell against its common next-vintage event
+  reference without selecting a winner.
 - `evaluateStrategyCycleEffectiveness(...)`: summarizes median return,
   positive rate, and median benchmark excess at fixed forward horizons.
 - `readLatestStrategyCycleValidationTask(...)`,
@@ -26,11 +40,18 @@
   from browser result polling so a bounded cycle queue runs while the page is
   suspended. `cancelScreeningInLocalEngine(...)` implements explicit Pause and
   reset across all submitted units.
+- `waitForScreeningBatchInLocalEngine(...)`: reads the pending job set in one
+  bounded status request and imports completed outcomes regardless of queue
+  order; it falls back to chunked individual reads for an already-running older
+  version-4 relay.
 - `hashMarketBars(...)`: computes one deterministic prefix hash that every
   screening window at the same historical decision reuses.
 - `unpackMarketBars(packed, requestedCount)`: materializes only the validated
   causal prefix from a shared columnar batch file, bounding per-child object
   allocation without copying a file per unit.
+- `createScreeningEngineCoordinator(...)`: persists batch membership in an
+  atomic queue manifest, restores unfinished non-cancelled units at startup,
+  and records explicit cancellation before stopping a child.
 - `screeningResultPlan(...)`: converts single or combination screening winners
   to the shared allocation-plan representation for both workspaces.
 
@@ -791,6 +812,9 @@ separate guidance card.
   checkpoint, and writes only the compact completed outcome.
   Its checkpoint store atomically commits independently mutable sections and
   reuses request-fingerprinted derived entry-filter eligibility.
+- `replaceFileAtomically(...)`: retries transient Windows rename locks, then
+  publishes through a recoverable target-to-backup swap and restores the prior
+  target when the replacement cannot be committed.
 - `createStreamingCombinationTimeline(...)`: produces monotonic allocation,
   signal, and intrabar states without materializing per-candidate timeline
   arrays.

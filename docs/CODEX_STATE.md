@@ -1,5 +1,110 @@
 # Codex State
 
+## 2026-09-23 cycle progress reconciliation
+
+- The local coordinator can finish cycle jobs out of submission order, while
+  the page previously waited for one job at a time. Durable results could
+  therefore show more than one hundred completed files while IndexedDB and the
+  visible counter remained blocked behind the first unfinished job.
+- The coordinator now exposes one bounded batch-status read. The page polls the
+  whole pending set, imports every completed result immediately, and persists
+  each recovered snapshot idempotently. A chunked single-job fallback keeps an
+  already-running version-4 relay usable until it is restarted.
+- A second recovery defect could leave an atomically committed `result.json`
+  classified as queued or running in coordinator memory, especially when a
+  child outlived an earlier relay instance. Status and result reads now
+  reconcile against the durable result, stop duplicate work, and expose the
+  disk-completed unit immediately. This explained the observed 103 durable
+  results versus 46 page-visible completions.
+
+## 2026-09-23 direction-first cycle validation
+
+- Opposite-direction adjustments no longer count as event hits or contribute
+  to lead/lag, allocation-error, or timing-hit statistics. They are exposed as
+  a separate severe-error count.
+- Two- and five-session hit rates now use the full reference-event count as the
+  denominator and require both correct direction and timely execution. A late
+  rate among correct-direction hits makes delayed action visible separately.
+- The ex-post next-vintage account-return gap was removed from the report. It
+  replayed a future-selected plan over the preceding segment and therefore was
+  an oracle guardrail rather than isolated execution regret.
+- Same-direction return regret now uses paired paths from the prior reference
+  rebalance through the later compared event date. Both paths share the start
+  allocation, reference target allocation, and terminal price; only their
+  rebalance execution date and fill differ.
+- Verification passes strict TypeScript, all 271 TypeScript tests, the
+  production build, and all four rendered route/API tests.
+
+## 2026-09-23 divisor-grid cycle reuse
+
+- Cycle decision dates already use a de-duplicated union and each candidate
+  cadence subsamples immutable `(decision, window)` snapshots. A minimum
+  interval that divides all larger intervals is therefore the only candidate
+  grid computed; a one-session interval covers every integer cadence and the
+  five-session retrospective reference grid.
+- A regression now fixes both the one-session and five-session divisor cases,
+  and the validation page explains the reuse contract.
+
+## 2026-09-23 Windows checkpoint manifest replacement
+
+- A live cycle job completed a checkpoint generation but Windows returned
+  `EPERM` while renaming `checkpoint/manifest.tmp` over the existing
+  `manifest.json`. The old manifest remained valid and the new section files
+  were intact, so no committed checkpoint was corrupted, but repeated child
+  restarts exhausted the coordinator retry limit.
+- Local screening now retries transient `EPERM`/`EACCES`/`EBUSY` rename
+  failures, then moves the prior target to a uniquely named recovery backup
+  before publishing the new manifest. A failed publish restores the old target;
+  startup can read a surviving backup or completed temporary manifest if a
+  process stops inside the two-step Windows replacement.
+- Manifest temporaries are unique per process, stale temporary/backup files and
+  superseded sections are cleaned up best-effort after commit, and shared
+  derived-data publication uses the same replacement primitive.
+- Verification passes strict TypeScript, all 269 TypeScript tests, the
+  production build, and all four rendered route/API tests.
+
+## 2026-09-23 next-rebalance event validation
+
+- Strategy-cycle validation no longer ranks screening-window/update-interval
+  cells by realized return. Screening windows remain configurable and are not
+  fixed at 128 sessions.
+- Every configured window is screened on a shared five-session historical
+  vintage grid. For each interval, the next same-window vintage is replayed
+  retrospectively over the preceding segment to form an explicitly ex-post
+  reference event stream; candidate refresh policies use only their selected
+  causal vintages.
+- The initial report showed reference/matched/missed/extra rebalance events,
+  direction agreement, signed and absolute session error, two- and five-day
+  hit rates, target-allocation error, timing-only return difference in basis
+  points, and an ex-post account-return guardrail. The later direction-first
+  revision above removed that oracle-like account comparison and tightened hit
+  semantics. It still makes no automatic refresh-cadence recommendation.
+- The first selected-range initialization is excluded from event scoring, the
+  final vintage without a following label is right-censored, and event matching
+  is chronological and one-to-one within a ten-session tolerance.
+- Verification passes strict TypeScript, all 267 TypeScript tests, the
+  production build, and all four rendered route/API tests.
+
+## 2026-09-23 restart-safe strategy-cycle queue
+
+- Root cause of the reported cycle-validation interruption was split across
+  two lifecycle gaps: the coordinator kept its submitted batch queue only in
+  memory, so a relay restart orphaned durable requests until the page manually
+  resubmitted them; page teardown also recorded its polling abort as an
+  explicit pause even though the local queue continued.
+- Screening-engine protocol version 4 writes an atomic batch `queue.json` and
+  per-job cancellation markers. Coordinator startup reconstructs unfinished,
+  non-cancelled batch jobs from their durable request/shared-bar files and
+  resumes the bounded process pool without browser involvement. A later
+  explicit Continue clears cancellation markers through idempotent submission.
+- Strategy-cycle teardown now only detaches polling. Only the Pause action
+  cancels local jobs and persists the task as paused.
+- Full verification passes: strict TypeScript, all 265 TypeScript tests,
+  production build, and all four rendered route/API tests. Coverage includes a
+  coordinator-recreation regression that proves a submitted missing result is
+  regenerated from the persisted batch queue and a cancelled result stays
+  dormant.
+
 ## 2026-09-23 adaptive multi-CPU screening queue
 
 - The loopback screening coordinator now runs independent queued optimization

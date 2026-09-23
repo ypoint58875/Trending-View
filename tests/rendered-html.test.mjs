@@ -266,7 +266,8 @@ test("server-renders the strategy cycle validation route", async () => {
 
   const html = await response.text();
   assert.match(html, /\u7b56\u7565\u5468\u671f\u9a8c\u8bc1/);
-  assert.match(html, /\u7b5b\u9009\u7a97\u53e3 \u00d7 \u66f4\u65b0\u95f4\u9694/);
+  assert.match(html, /\u4e0b\u4e00\u8c03\u4ed3\u4fe1\u53f7\u9a8c\u8bc1/);
+  assert.match(html, /\u4e0b\u4e00\u8f6e\u8c03\u4ed3\u65f6\u70b9\u4e0e\u6267\u884c\u504f\u5dee/);
   assert.match(html, /\u8fd4\u56de\u7814\u7a76\u53f0/);
 });
 

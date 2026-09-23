@@ -6,17 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { zhCN as copy } from "@/app/i18n/zh-CN";
 import {
   DEFAULT_CYCLE_EVALUATION_SESSIONS,
-  DEFAULT_CYCLE_FORWARD_HORIZONS,
   DEFAULT_CYCLE_SCREENING_WINDOWS,
   DEFAULT_CYCLE_UPDATE_INTERVALS,
   MAX_CYCLE_OPTIMIZATION_UNITS,
   barsAvailableAtCycleDecision,
-  buildStrategyCycleMatrix,
+  buildStrategyCycleEventValidation,
   buildStrategyCycleSchedule,
-  evaluateStrategyCycleEffectiveness,
   normalizeCycleValues,
-  type StrategyCycleEffectivenessPoint,
-  type StrategyCycleMatrixResult,
+  type StrategyCycleEventValidationResult,
   type StrategyCycleSelectionSnapshot,
 } from "@/lib/analysis/strategy-cycle-validation";
 import {
@@ -30,7 +27,7 @@ import {
   enqueueScreeningBatchInLocalEngine,
   localScreeningEngineAvailable,
   screeningJobRequest,
-  waitForScreeningInLocalEngine,
+  waitForScreeningBatchInLocalEngine,
 } from "@/lib/analysis/screening-local-engine-client";
 import type { LocalScreeningJobBatchUnit } from "@/lib/analysis/screening-local-engine-protocol";
 import {
@@ -44,7 +41,10 @@ import {
   runScreeningInWorker,
   type WorkerScreeningOptions,
 } from "@/lib/analysis/screening-worker-client";
-import { resolveTrailingTradingSessionRange } from "@/lib/analysis/screening-validation";
+import {
+  resolveTrailingTradingSessionRange,
+  type ScreeningValidationOutcome,
+} from "@/lib/analysis/screening-validation";
 import { selectBestShortcutScreeningResult } from "@/lib/analysis/shortcut-batch-screening";
 import {
   groupSavedBacktests,
@@ -96,8 +96,18 @@ function resultLabel(result: Parameters<typeof screeningResultPlan>[0]): string 
   return names.join(" + ");
 }
 
-function formatPercent(value: number): string {
-  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+function formatRate(value: number | null): string {
+  return value === null ? "—" : `${(value * 100).toFixed(0)}%`;
+}
+
+function formatSessions(value: number | null, signed = false): string {
+  if (value === null) return "—";
+  return `${signed && value > 0 ? "+" : ""}${value.toFixed(1)}`;
+}
+
+function formatBasisPoints(value: number | null): string {
+  if (value === null) return "—";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}`;
 }
 
 function taskSignature(input: {
@@ -147,8 +157,7 @@ export function StrategyValidationWorkspace() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [storedTask, setStoredTask] = useState<StoredStrategyCycleValidationTask | null>(null);
-  const [matrix, setMatrix] = useState<StrategyCycleMatrixResult[]>([]);
-  const [effectiveness, setEffectiveness] = useState<StrategyCycleEffectivenessPoint[]>([]);
+  const [eventResults, setEventResults] = useState<StrategyCycleEventValidationResult[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const pauseRequestedRef = useRef(false);
 
@@ -220,7 +229,7 @@ export function StrategyValidationWorkspace() {
       interval: DAILY_INTERVAL,
       executionPolicy: HISTORICAL_EXECUTION_POLICY,
     };
-    setMatrix(buildStrategyCycleMatrix(
+    setEventResults(buildStrategyCycleEventValidation(
       series.bars,
       snapshots,
       windows,
@@ -229,19 +238,12 @@ export function StrategyValidationWorkspace() {
       schedule.evaluationEndIndex,
       settings,
     ));
-    setEffectiveness(evaluateStrategyCycleEffectiveness(
-      series.bars,
-      snapshots,
-      DEFAULT_CYCLE_FORWARD_HORIZONS,
-      settings,
-    ));
   }, [commissionPercent, initialCash, slippagePercent]);
 
   const start = useCallback(async () => {
     if (!selectedGroup || running) return;
     setError("");
-    setMatrix([]);
-    setEffectiveness([]);
+    setEventResults([]);
     if (screeningWindows.length === 0 || updateIntervals.length === 0) {
       setError(c.invalidPeriods);
       return;
@@ -317,7 +319,6 @@ export function StrategyValidationWorkspace() {
         executionPolicy: HISTORICAL_EXECUTION_POLICY,
       };
       const localEngine = await localScreeningEngineAvailable();
-      const queuedJobByKey = new Map<string, string>();
       if (localEngine) {
         await writeStrategyCycleValidationTask(currentTask);
         const queuedByKey = new Map(
@@ -395,7 +396,6 @@ export function StrategyValidationWorkspace() {
             screeningWindow: unit.screeningWindow,
             jobId,
           });
-          queuedJobByKey.set(unit.unitKey, jobId);
         });
         currentTask = {
           ...currentTask,
@@ -405,36 +405,88 @@ export function StrategyValidationWorkspace() {
         setStoredTask({ ...currentTask, key: "latest", version: 2, updatedAt: new Date().toISOString() });
       }
 
-      for (const decisionIndex of schedule.decisionIndexes) {
-        const availableBars = barsAvailableAtCycleDecision(series.bars, decisionIndex);
-        const volumeReliable = assessMarketVolumeCoverage(availableBars).reliable;
-        for (const screeningWindow of screeningWindows) {
-          if (controller.signal.aborted) throw new DOMException("Paused", "AbortError");
-          const unitKey = `${screeningWindow}:${decisionIndex}`;
-          if (completed.has(unitKey)) continue;
-          const range = resolveTrailingTradingSessionRange(availableBars, screeningWindow);
-          if (!range) throw new Error(c.insufficientHistory);
-          setProgress({
-            completed: completed.size,
-            total: schedule.optimizationUnits,
-            decisionTime: series.bars[decisionIndex]!.time,
-            screeningWindow,
-          });
-          const workerOptions: WorkerScreeningOptions = {
-            objective,
-            excludedStrategyIds: volumeReliable ? undefined : VOLUME_REQUIRED_STRATEGY_IDS,
-            checkpointNamespace: `cycle:${selectedGroup.key}:${decisionIndex}:${screeningWindow}`,
-            signal: controller.signal,
-            preserveLocalJobOnAbort: true,
-          };
-          const queuedJobId = queuedJobByKey.get(unitKey);
-          if (localEngine && !queuedJobId) throw new Error(c.localEngineError);
-          const outcome = localEngine
-            ? await waitForScreeningInLocalEngine(
-                queuedJobId!,
-                workerOptions,
-              )
-            : await runScreeningInWorker(
+      const recordOutcome = async (
+        unit: {
+          decisionIndex: number;
+          decisionTime: string;
+          screeningWindow: number;
+        },
+        outcome: ScreeningValidationOutcome,
+      ) => {
+        const unitKey = `${unit.screeningWindow}:${unit.decisionIndex}`;
+        if (completed.has(unitKey)) return;
+        const best = selectBestShortcutScreeningResult(
+          outcome.singleResults,
+          outcome.results,
+          objective,
+        );
+        if (!best) throw new Error(c.noResult);
+        snapshots.push({
+          decisionIndex: unit.decisionIndex,
+          decisionTime: unit.decisionTime,
+          screeningWindow: unit.screeningWindow,
+          plan: screeningResultPlan(best.result),
+          fixedRelativeLongStrategy:
+            best.kind === "combination" ? best.result.relativeLongStrategy : null,
+          label: resultLabel(best.result),
+        });
+        completed.add(unitKey);
+        currentTask = {
+          ...currentTask!,
+          completedUnits: completed.size,
+          snapshots,
+          status: "running",
+        };
+        await writeStrategyCycleValidationTask(currentTask);
+        setStoredTask({ ...currentTask, key: "latest", version: 2, updatedAt: new Date().toISOString() });
+        setProgress({
+          completed: completed.size,
+          total: schedule.optimizationUnits,
+          decisionTime: unit.decisionTime,
+          screeningWindow: unit.screeningWindow,
+        });
+      };
+
+      if (localEngine) {
+        const pendingUnits = currentTask.queuedUnits.filter(
+          (unit) => !completed.has(`${unit.screeningWindow}:${unit.decisionIndex}`),
+        );
+        const unitByJobId = new Map(
+          pendingUnits.map((unit) => [unit.jobId, unit]),
+        );
+        await waitForScreeningBatchInLocalEngine(
+          pendingUnits.map((unit) => unit.jobId),
+          { signal: controller.signal },
+          async (jobId, outcome) => {
+            const unit = unitByJobId.get(jobId);
+            if (!unit) throw new Error(c.localEngineError);
+            await recordOutcome(unit, outcome);
+          },
+        );
+      } else {
+        for (const decisionIndex of schedule.decisionIndexes) {
+          const availableBars = barsAvailableAtCycleDecision(series.bars, decisionIndex);
+          const volumeReliable = assessMarketVolumeCoverage(availableBars).reliable;
+          for (const screeningWindow of screeningWindows) {
+            if (controller.signal.aborted) throw new DOMException("Paused", "AbortError");
+            const unitKey = `${screeningWindow}:${decisionIndex}`;
+            if (completed.has(unitKey)) continue;
+            const range = resolveTrailingTradingSessionRange(availableBars, screeningWindow);
+            if (!range) throw new Error(c.insufficientHistory);
+            setProgress({
+              completed: completed.size,
+              total: schedule.optimizationUnits,
+              decisionTime: series.bars[decisionIndex]!.time,
+              screeningWindow,
+            });
+            const workerOptions: WorkerScreeningOptions = {
+              objective,
+              excludedStrategyIds: volumeReliable ? undefined : VOLUME_REQUIRED_STRATEGY_IDS,
+              checkpointNamespace: `cycle:${selectedGroup.key}:${decisionIndex}:${screeningWindow}`,
+              signal: controller.signal,
+              preserveLocalJobOnAbort: true,
+            };
+            const outcome = await runScreeningInWorker(
                 availableBars,
                 {
                   ...settings,
@@ -444,30 +496,12 @@ export function StrategyValidationWorkspace() {
                 { mode: "sample", periods: [{ sessions: screeningWindow, weight: 100 }] },
                 workerOptions,
               );
-          const best = selectBestShortcutScreeningResult(
-            outcome.singleResults,
-            outcome.results,
-            objective,
-          );
-          if (!best) throw new Error(c.noResult);
-          snapshots.push({
-            decisionIndex,
-            decisionTime: series.bars[decisionIndex]!.time,
-            screeningWindow,
-            plan: screeningResultPlan(best.result),
-            fixedRelativeLongStrategy:
-              best.kind === "combination" ? best.result.relativeLongStrategy : null,
-            label: resultLabel(best.result),
-          });
-          completed.add(unitKey);
-          currentTask = {
-            ...currentTask,
-            completedUnits: completed.size,
-            snapshots,
-            status: "running",
-          };
-          await writeStrategyCycleValidationTask(currentTask);
-          setStoredTask({ ...currentTask, key: "latest", version: 2, updatedAt: new Date().toISOString() });
+            await recordOutcome({
+              decisionIndex,
+              decisionTime: series.bars[decisionIndex]!.time,
+              screeningWindow,
+            }, outcome);
+          }
         }
       }
       currentTask = { ...currentTask, completedUnits: completed.size, snapshots, status: "completed" };
@@ -487,7 +521,9 @@ export function StrategyValidationWorkspace() {
             currentTask.queuedUnits.map((unit) => unit.jobId),
           );
         }
-        if (currentTask) await writeStrategyCycleValidationTask({ ...currentTask, status: "paused" });
+        if (pauseRequestedRef.current && currentTask) {
+          await writeStrategyCycleValidationTask({ ...currentTask, status: "paused" });
+        }
       } else {
         const message = caught instanceof Error ? caught.message : c.unknownError;
         setError(message);
@@ -521,8 +557,7 @@ export function StrategyValidationWorkspace() {
     await clearStrategyCycleValidationTask();
     setStoredTask(null);
     setProgress(null);
-    setMatrix([]);
-    setEffectiveness([]);
+    setEventResults([]);
     setError("");
   };
 
@@ -530,10 +565,6 @@ export function StrategyValidationWorkspace() {
     pauseRequestedRef.current = true;
     abortRef.current?.abort();
   };
-
-  const best = matrix.length
-    ? [...matrix].sort((left, right) => right.performance.score - left.performance.score)[0]
-    : null;
 
   return (
     <main className="cycle-validation-shell">
@@ -583,15 +614,10 @@ export function StrategyValidationWorkspace() {
 
           <section className="panel cycle-matrix-card">
             <div className="panel-heading"><div><span className="eyebrow">{c.matrixEyebrow}</span><strong>{c.matrixTitle}</strong></div></div>
-            {best && <div className="cycle-recommendation"><span>{c.currentBest}</span><strong>{best.screeningWindow}{c.dayWindow} · {best.updateInterval}{c.dayUpdate}</strong><small>{c.currentBestNote}</small></div>}
-            {matrix.length ? <div className="cycle-table-wrap"><table><thead><tr><th>{c.screeningWindow}</th><th>{c.updateInterval}</th><th>{c.totalReturn}</th><th>{c.sharpe}</th><th>{c.maxDrawdown}</th><th>{c.rebalances}</th></tr></thead><tbody>
-              {matrix.map((result) => <tr key={`${result.screeningWindow}:${result.updateInterval}`} className={result === best ? "best" : ""}><td>{result.screeningWindow}</td><td>{result.updateInterval}</td><td className={result.performance.totalReturn >= 0 ? "positive" : "negative"}>{formatPercent(result.performance.totalReturn)}</td><td>{result.performance.sharpe.toFixed(2)}</td><td>{formatPercent(result.performance.maxDrawdown)}</td><td>{result.performance.tradeCount}</td></tr>)}
+            <p className="cycle-hint">{c.nextVintageNote}</p>
+            {eventResults.length ? <div className="cycle-table-wrap"><table><thead><tr><th>{c.screeningWindow}</th><th>{c.updateInterval}</th><th>{c.referenceEvents}</th><th>{c.matchedEvents}</th><th>{c.oppositeDirectionEvents}</th><th>{c.missedEvents}</th><th>{c.extraEvents}</th><th>{c.directionAgreement}</th><th>{c.lateEventRate}</th><th>{c.medianLeadLag}</th><th>{c.medianAbsoluteError}</th><th>{c.withinTwoSessions}</th><th>{c.withinFiveSessions}</th><th>{c.targetAllocationError}</th><th>{c.timingReturnDifference}</th></tr></thead><tbody>
+              {eventResults.map((result) => <tr key={`${result.screeningWindow}:${result.updateInterval}`}><td>{result.screeningWindow}</td><td>{result.updateInterval}</td><td>{result.metrics.referenceEventCount}</td><td>{result.metrics.matchedEventCount}</td><td className={result.metrics.oppositeDirectionEventCount > 0 ? "negative" : undefined}>{result.metrics.oppositeDirectionEventCount}</td><td>{result.metrics.missedEventCount}</td><td>{result.metrics.extraEventCount}</td><td>{formatRate(result.metrics.directionAgreementRate)}</td><td>{formatRate(result.metrics.lateEventRate)}</td><td>{formatSessions(result.metrics.medianSignedTimingError, true)}</td><td>{formatSessions(result.metrics.medianAbsoluteTimingError)}</td><td>{formatRate(result.metrics.withinTwoSessionsRate)}</td><td>{formatRate(result.metrics.withinFiveSessionsRate)}</td><td>{formatRate(result.metrics.meanTargetAllocationError)}</td><td>{formatBasisPoints(result.metrics.medianTimingReturnDifferenceBps)}</td></tr>)}
             </tbody></table></div> : <p className="cycle-empty">{c.noMatrix}</p>}
-          </section>
-
-          <section className="panel cycle-effectiveness-card">
-            <div className="panel-heading"><div><span className="eyebrow">{c.effectivenessEyebrow}</span><strong>{c.effectivenessTitle}</strong></div></div>
-            {effectiveness.length ? <div className="cycle-effectiveness-grid">{effectiveness.map((point) => <div key={point.sessions}><span>{point.sessions}{c.sessionsAfter}</span><strong className={point.medianReturn >= 0 ? "positive" : "negative"}>{formatPercent(point.medianReturn)}</strong><small>{c.excess} {formatPercent(point.medianExcessReturn)} · {c.positiveRate} {(point.positiveRate * 100).toFixed(0)}% · n={point.sampleCount}</small></div>)}</div> : <p className="cycle-empty">{c.noEffectiveness}</p>}
           </section>
         </div>
       </section>

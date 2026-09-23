@@ -22,6 +22,8 @@ const MAX_STALL_RESTARTS = 3;
 const MAX_UNEXPECTED_RESTARTS = 3;
 const BAR_FIELD_COUNT = 11;
 const BINARY_CONTENT_TYPE = "application/vnd.quantscope.screening+binary";
+const BATCH_MANIFEST_FILE = "queue.json";
+const CANCELLED_MARKER_FILE = "cancelled";
 const MAX_AUTO_CONCURRENCY = 8;
 const MEMORY_PER_CHILD_BYTES = 4 * 1024 * 1024 * 1024;
 const MIN_SYSTEM_MEMORY_RESERVE_BYTES = 2 * 1024 * 1024 * 1024;
@@ -169,6 +171,7 @@ export function createScreeningEngineCoordinator({
     childScriptPath ?? join(rootDirectory, "scripts", "screening-engine-child.ts");
   const jobs = new Map();
   const concurrency = Math.max(1, Math.floor(maximumConcurrency));
+  let hydrationPromise;
 
   function activeChildCount() {
     return [...jobs.values()].filter((candidate) => candidate.child).length;
@@ -186,6 +189,101 @@ export function createScreeningEngineCoordinator({
       startChild(next);
     }
   }
+
+  function restoredJob(jobId, directory, requestPayload, completed, cancelled) {
+    const sharedDirectory = requestPayload.sharedBarsPath
+      ? dirname(requestPayload.sharedBarsPath)
+      : undefined;
+    return {
+      jobId,
+      directory,
+      status: completed ? "completed" : cancelled ? "cancelled" : "queued",
+      progress: undefined,
+      validationProgress: undefined,
+      error: undefined,
+      child: null,
+      cancelled,
+      restartCount: 0,
+      stallRestartCount: 0,
+      unexpectedRestartCount: 0,
+      stallRestartRequested: false,
+      lastHeartbeatAt: Date.now(),
+      engine: undefined,
+      sharedDirectory,
+      updatedAt: Date.now(),
+    };
+  }
+
+  async function pathExists(path) {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function reconcileCompletedResult(job) {
+    if (job.cancelled || job.status === "completed") return;
+    if (!(await pathExists(join(job.directory, "result.json")))) return;
+    job.status = "completed";
+    job.error = undefined;
+    job.updatedAt = Date.now();
+    // A result can be committed by a child that outlived a previous relay.
+    // Stop any duplicate work still owned by this relay after accepting the
+    // durable, atomically-published result as the source of truth.
+    job.child?.kill();
+  }
+
+  async function hydrateSubmittedBatches() {
+    await mkdir(stateDirectory, { recursive: true });
+    let entries = [];
+    try {
+      entries = await readdir(stateDirectory, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith("batch-")) continue;
+      let manifest;
+      try {
+        manifest = JSON.parse(
+          await readFile(
+            join(stateDirectory, entry.name, BATCH_MANIFEST_FILE),
+            "utf8",
+          ),
+        );
+      } catch {
+        continue;
+      }
+      if (manifest?.version !== 1 || !Array.isArray(manifest.jobIds)) continue;
+      for (const jobId of manifest.jobIds) {
+        if (typeof jobId !== "string" || !/^[a-f0-9]{24}$/.test(jobId)) continue;
+        const directory = join(stateDirectory, jobId);
+        let requestPayload;
+        try {
+          requestPayload = JSON.parse(
+            await readFile(join(directory, "request.json"), "utf8"),
+          );
+        } catch {
+          continue;
+        }
+        const completed = await pathExists(join(directory, "result.json"));
+        const cancelled = await pathExists(
+          join(directory, CANCELLED_MARKER_FILE),
+        );
+        if (!jobs.has(jobId)) {
+          jobs.set(
+            jobId,
+            restoredJob(jobId, directory, requestPayload, completed, cancelled),
+          );
+        }
+      }
+    }
+    startQueuedJobs();
+  }
+
+  hydrationPromise = hydrateSubmittedBatches();
 
   async function pruneOldJobs() {
     const now = Date.now();
@@ -317,6 +415,10 @@ export function createScreeningEngineCoordinator({
         setImmediate(startQueuedJobs);
         return;
       }
+      if (job.status === "completed") {
+        setImmediate(startQueuedJobs);
+        return;
+      }
       if (job.stallRestartRequested) {
         job.stallRestartRequested = false;
         if (job.stallRestartCount > maxStallRestarts) {
@@ -386,30 +488,16 @@ export function createScreeningEngineCoordinator({
       } catch {
         completed = false;
       }
-      job = {
-        jobId,
-        directory,
-        status: completed ? "completed" : "queued",
-        progress: undefined,
-        validationProgress: undefined,
-        error: undefined,
-        child: null,
-        cancelled: false,
-        restartCount: 0,
-        stallRestartCount: 0,
-        unexpectedRestartCount: 0,
-        stallRestartRequested: false,
-        lastHeartbeatAt: Date.now(),
-        engine: undefined,
-        sharedDirectory: sharedBarsPath ? dirname(sharedBarsPath) : undefined,
-        updatedAt: Date.now(),
-      };
+      job = restoredJob(jobId, directory, persistedRequest, completed, false);
       jobs.set(jobId, job);
+    } else {
+      await reconcileCompletedResult(job);
     }
     if (sharedBarsPath) {
       job.sharedDirectory = dirname(sharedBarsPath);
     }
     if (job.status !== "completed" && !job.child) {
+      await rm(join(directory, CANCELLED_MARKER_FILE), { force: true });
       job.cancelled = false;
       job.error = undefined;
       startChild(job);
@@ -433,11 +521,12 @@ export function createScreeningEngineCoordinator({
   return {
     health: {
       screeningEngine: true,
-      screeningEngineVersion: 3,
+      screeningEngineVersion: 4,
       screeningConcurrency: concurrency,
     },
     async handle(request, response) {
       if (!request.url?.startsWith("/screening/")) return false;
+      await hydrationPromise;
       if (!isLoopbackRequest(request)) {
         writeJson(request, response, 403, { error: "LOOPBACK_REQUIRED" });
         return true;
@@ -450,7 +539,7 @@ export function createScreeningEngineCoordinator({
         try {
           const { payload, packedBars } = await readJobBody(request);
           if (
-            payload?.version !== 3 ||
+            payload?.version !== 4 ||
             !Array.isArray(packedBars?.times) ||
             packedBars.times.length === 0 ||
             typeof payload?.checkpoint?.key !== "string" ||
@@ -472,7 +561,7 @@ export function createScreeningEngineCoordinator({
         try {
           const { payload, packedBars } = await readJobBody(request);
           if (
-            payload?.version !== 3 ||
+            payload?.version !== 4 ||
             !Array.isArray(packedBars?.times) ||
             packedBars.times.length === 0 ||
             !Array.isArray(payload?.jobs) ||
@@ -484,7 +573,7 @@ export function createScreeningEngineCoordinator({
           }
           for (const unit of payload.jobs) {
             if (
-              unit?.version !== 3 ||
+              unit?.version !== 4 ||
               !Number.isInteger(unit?.barCount) ||
               unit.barCount <= 0 ||
               unit.barCount > packedBars.times.length ||
@@ -512,6 +601,19 @@ export function createScreeningEngineCoordinator({
           );
           await writeFile(sharedBarsTemporaryPath, serialize(packedBars));
           await rename(sharedBarsTemporaryPath, sharedBarsPath);
+          const batchManifestTemporaryPath = join(
+            batchDirectory,
+            `queue-${randomUUID()}.tmp`,
+          );
+          const batchJobIds = payload.jobs.map(jobIdFor);
+          await writeFile(
+            batchManifestTemporaryPath,
+            JSON.stringify({ version: 1, jobIds: batchJobIds }),
+          );
+          await rename(
+            batchManifestTemporaryPath,
+            join(batchDirectory, BATCH_MANIFEST_FILE),
+          );
           const jobIds = [];
           for (const unit of payload.jobs) {
             const job = await restoreOrCreateJob(
@@ -530,11 +632,44 @@ export function createScreeningEngineCoordinator({
         }
         return true;
       }
+      if (request.method === "POST" && request.url === "/screening/job-statuses") {
+        try {
+          const payload = await readJsonBody(request, 64 * 1024);
+          const jobIds = Array.isArray(payload?.jobIds)
+            ? [...new Set(payload.jobIds)]
+            : [];
+          if (
+            payload?.version !== 4 ||
+            jobIds.length === 0 ||
+            jobIds.length > MAX_BATCH_JOBS ||
+            jobIds.some((jobId) =>
+              typeof jobId !== "string" || !/^[a-f0-9]{24}$/.test(jobId))
+          ) {
+            writeJson(request, response, 400, { error: "INVALID_JOB_IDS" });
+            return true;
+          }
+          writeJson(request, response, 200, {
+            jobs: await Promise.all(jobIds.map(async (jobId) => {
+              const job = jobs.get(jobId);
+              if (job) await reconcileCompletedResult(job);
+              return job
+                ? { jobId, status: job.status, error: job.error }
+                : { jobId, status: "error", error: { message: "JOB_NOT_FOUND" } };
+            })),
+          });
+        } catch (error) {
+          writeJson(request, response, 400, {
+            error: error instanceof Error ? error.message : "JOB_STATUS_READ_FAILED",
+          });
+        }
+        return true;
+      }
       const resultMatch = request.url.match(
         /^\/screening\/jobs\/([a-f0-9]{24})\/result$/,
       );
       if (resultMatch && request.method === "GET") {
         const job = jobs.get(resultMatch[1]);
+        if (job) await reconcileCompletedResult(job);
         if (!job || job.status !== "completed") {
           writeJson(request, response, 404, { error: "RESULT_NOT_FOUND" });
           return true;
@@ -562,12 +697,14 @@ export function createScreeningEngineCoordinator({
         return true;
       }
       if (request.method === "GET") {
+        await reconcileCompletedResult(job);
         writeJson(request, response, 200, await snapshot(job));
         return true;
       }
       if (request.method === "DELETE") {
         job.cancelled = true;
         job.status = "cancelled";
+        await writeFile(join(job.directory, CANCELLED_MARKER_FILE), "");
         job.child?.kill();
         writeJson(request, response, 200, { cancelled: true });
         return true;

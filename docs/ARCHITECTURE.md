@@ -62,10 +62,18 @@ formats to the browser.
 The strategy-cycle page is a separate orchestration boundary over the existing
 market, screening, and allocation engines. For a historical decision index it
 passes only the prefix ending at that close to screening. A `(decision,
-screeningWindow)` result is shared by every compatible update interval. Matrix
-evaluation then splices the selected plans into one complete target/event
-timeline and invokes one allocation backtest per cell; it does not reset cash
-or positions at update boundaries. The browser persists one latest task after
+screeningWindow)` result is shared by every compatible update interval. Every
+configured screening window receives a five-session vintage sequence. The next
+same-window vintage is replayed retrospectively over the preceding segment to
+form one common ex-post reference event stream; each candidate interval adopts
+only its scheduled causal vintages. Chronological one-to-one event matching
+classifies opposite-direction actions before timing: only same-direction pairs
+can be timing hits or contribute timing and allocation errors. The report also
+exposes missed, extra, and late-event rates. Paired return regret starts at the
+prior reference rebalance, applies the same starting and target allocations to
+both paths, and marks both at one common end price on the later adjustment date;
+only execution timing differs. No cadence is automatically selected. The
+browser persists one latest task after
 each complete unit with a signature over instrument, latest bar, configuration,
 and costs. A matching signature resumes idempotently. Before result collection,
 the local page submits every incomplete bounded unit in one full-series batch
@@ -74,7 +82,13 @@ The coordinator slices each causal prefix before child execution and owns
 bounded parallel execution after submission, so background-tab suspension or
 page closure does not stop the next unit. IndexedDB remains the browser-side report and unit-map
 boundary; explicit Pause cancels the submitted queue, while closing the page
-only detaches progress polling.
+only detaches progress polling. Each batch also commits an atomic `queue.json`;
+the coordinator reconstructs unfinished, non-cancelled jobs from it after a
+relay restart. Per-job cancellation markers prevent an explicitly paused queue
+from being revived by startup recovery. Browser progress is reconciled from one
+bounded batch-status read, so completed results are imported out of submission
+order instead of waiting behind an earlier long-running unit. A chunked per-job
+fallback supports a version-4 relay already running without that endpoint.
 
 The cycle batch stores the uploaded columnar market series once in a
 batch-scoped immutable `bars.bin`. Unit requests retain only `barCount` and the
@@ -213,7 +227,9 @@ checkpoints and the browser fallback share an adaptive
 least 6,000 bars or hosts with at most 9 GiB physical memory use the 2,048
 boundary.
 An atomic manifest references independent sections, so frozen earlier-stage
-state is not repeatedly serialized. The completed compact outcome is fetched
+state is not repeatedly serialized. Windows publication retries transient file
+locks and uses a recoverable prior-manifest backup swap instead of deleting the
+last committed generation before replacement. The completed compact outcome is fetched
 from a separate result endpoint only after status reports completion.
 
 `screening-validation.ts` wraps the same optimizer without duplicating its

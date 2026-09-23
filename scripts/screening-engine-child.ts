@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { totalmem } from "node:os";
 import { deserialize, serialize } from "node:v8";
@@ -17,6 +17,7 @@ import type {
 } from "../lib/analysis/screening-local-engine-protocol";
 import { unpackMarketBars } from "../lib/analysis/screening-worker-bars";
 import { screeningCheckpointInterval } from "../lib/analysis/screening-memory-policy";
+import { replaceFileAtomically } from "./atomic-file";
 
 const RESTART_EXIT_CODE = 75;
 const jobDirectory = process.argv[2];
@@ -56,40 +57,66 @@ function emit(event: LocalScreeningChildEvent): void {
 async function readCheckpoint(
   signature: string,
 ): Promise<CombinationOptimizationCheckpoint | null> {
+  let manifestCandidates = [checkpointManifestPath];
   try {
-    const manifest = JSON.parse(await readFile(checkpointManifestPath, "utf8")) as {
-      signature?: string;
-      sections?: Partial<Record<CheckpointSection, string>>;
-    };
-    if (manifest.signature !== signature || !manifest.sections) return null;
-    const readSection = async <T>(section: CheckpointSection): Promise<T> => {
-      const filename = manifest.sections?.[section];
-      if (!filename) throw new Error(`Missing checkpoint section ${section}`);
-      return deserialize(await readFile(join(checkpointDirectory, filename))) as T;
-    };
-    const [meta, finalistsByStrategy, entryFilterCandidatesByStrategy,
-      pairFinalists, tripleFinalists, higherOrderFinalists, results] =
-      await Promise.all([
-        readSection<Pick<CombinationOptimizationCheckpoint,
-          "version" | "progress" | "entryFilterCandidateCount">>("meta"),
-        readSection<CombinationOptimizationCheckpoint["finalistsByStrategy"]>("finalists"),
-        readSection<CombinationOptimizationCheckpoint["entryFilterCandidatesByStrategy"]>("entryFilters"),
-        readSection<CombinationOptimizationCheckpoint["pairFinalists"]>("pairs"),
-        readSection<CombinationOptimizationCheckpoint["tripleFinalists"]>("triples"),
-        readSection<CombinationOptimizationCheckpoint["higherOrderFinalists"]>("higher"),
-        readSection<CombinationOptimizationCheckpoint["results"]>("results"),
-      ]);
-    return {
-      ...meta,
-      finalistsByStrategy,
-      entryFilterCandidatesByStrategy,
-      pairFinalists,
-      tripleFinalists,
-      higherOrderFinalists,
-      results,
-    };
+    const entries = await readdir(checkpointDirectory, { withFileTypes: true });
+    const recoveryCandidates = await Promise.all(
+      entries
+        .filter((entry) =>
+          entry.isFile() &&
+          entry.name !== "manifest.json" &&
+          entry.name.startsWith("manifest") &&
+          (entry.name.endsWith(".tmp") || entry.name.includes(".backup-")))
+        .map(async (entry) => {
+          const path = join(checkpointDirectory, entry.name);
+          return { path, modifiedAt: (await stat(path)).mtimeMs };
+        }),
+    );
+    manifestCandidates = [
+      checkpointManifestPath,
+      ...recoveryCandidates
+        .sort((left, right) => right.modifiedAt - left.modifiedAt)
+        .map((candidate) => candidate.path),
+    ];
   } catch {
-    // Fall through to the version-1 monolithic checkpoint.
+    // The normal manifest read below still handles a missing directory.
+  }
+  for (const manifestPath of manifestCandidates) {
+    try {
+      const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+        signature?: string;
+        sections?: Partial<Record<CheckpointSection, string>>;
+      };
+      if (manifest.signature !== signature || !manifest.sections) continue;
+      const readSection = async <T>(section: CheckpointSection): Promise<T> => {
+        const filename = manifest.sections?.[section];
+        if (!filename) throw new Error(`Missing checkpoint section ${section}`);
+        return deserialize(await readFile(join(checkpointDirectory, filename))) as T;
+      };
+      const [meta, finalistsByStrategy, entryFilterCandidatesByStrategy,
+        pairFinalists, tripleFinalists, higherOrderFinalists, results] =
+        await Promise.all([
+          readSection<Pick<CombinationOptimizationCheckpoint,
+            "version" | "progress" | "entryFilterCandidateCount">>("meta"),
+          readSection<CombinationOptimizationCheckpoint["finalistsByStrategy"]>("finalists"),
+          readSection<CombinationOptimizationCheckpoint["entryFilterCandidatesByStrategy"]>("entryFilters"),
+          readSection<CombinationOptimizationCheckpoint["pairFinalists"]>("pairs"),
+          readSection<CombinationOptimizationCheckpoint["tripleFinalists"]>("triples"),
+          readSection<CombinationOptimizationCheckpoint["higherOrderFinalists"]>("higher"),
+          readSection<CombinationOptimizationCheckpoint["results"]>("results"),
+        ]);
+      return {
+        ...meta,
+        finalistsByStrategy,
+        entryFilterCandidatesByStrategy,
+        pairFinalists,
+        tripleFinalists,
+        higherOrderFinalists,
+        results,
+      };
+    } catch {
+      // Try the next manifest generation before the version-1 fallback.
+    }
   }
   try {
     const stored = deserialize(await readFile(checkpointPath)) as {
@@ -154,16 +181,25 @@ async function writeCheckpoint(
     await rename(temporary, join(checkpointDirectory, filename));
     sections[section] = filename;
   }
-  const manifestTemporary = join(checkpointDirectory, "manifest.tmp");
+  const manifestTemporary = join(
+    checkpointDirectory,
+    `manifest-${Date.now()}-${process.pid}.tmp`,
+  );
   await writeFile(
     manifestTemporary,
     JSON.stringify({ format: 2, signature, sections }),
   );
-  await rename(manifestTemporary, checkpointManifestPath);
+  await replaceFileAtomically(manifestTemporary, checkpointManifestPath);
   const retained = new Set(Object.values(sections));
   for (const entry of await readdir(checkpointDirectory, { withFileTypes: true })) {
     if (entry.isFile() && entry.name.endsWith(".bin") && !retained.has(entry.name)) {
-      await rm(join(checkpointDirectory, entry.name), { force: true });
+      await rm(join(checkpointDirectory, entry.name), { force: true }).catch(() => {});
+    } else if (
+      entry.isFile() &&
+      entry.name.startsWith("manifest") &&
+      (entry.name.endsWith(".tmp") || entry.name.includes(".backup-"))
+    ) {
+      await rm(join(checkpointDirectory, entry.name), { force: true }).catch(() => {});
     }
   }
   return { bytes, milliseconds: performance.now() - startedAt };
@@ -215,7 +251,7 @@ async function main(): Promise<void> {
         entryFilterAllowedByKey: [...entryFilterAllowedByKey],
       }),
     );
-    await rename(derivedTemporaryPath, derivedPath);
+    await replaceFileAtomically(derivedTemporaryPath, derivedPath);
   }
   const resumeCheckpoint = await readCheckpoint(request.checkpoint.signature);
   const controller = new AbortController();

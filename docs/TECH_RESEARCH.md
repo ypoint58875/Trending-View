@@ -2841,3 +2841,97 @@ Live `sz164824` checks returned 1,971 rows from 2018-08-01 through 2026-09-15
 and a same-day quote. Yahoo's guessed `164824.SZ` history and Nasdaq's `513800`
 endpoint were rejected as usable substitutes. Yahoo query1 and query2 both
 returned current gold chart payloads during the same check.
+
+# 2026-09-23 next-rebalance event validation and refresh cadence
+
+The existing strategy-cycle report primarily compares realized portfolio
+returns. That is not aligned with the user's operational question: a position
+is changed when the selected plan emits an allocation-change signal, so the
+validation target should be the timing and direction of the next adjustment.
+
+The current strategies do not forecast a calendar date at selection time.
+They causally emit a signal only as later bars arrive. The honest task is
+therefore *next-adjustment signal agreement*: compare the first future
+executable allocation change emitted by vintage `V(t)` with the adjustment
+event retrospectively identified by the next screening vintage for the same
+configured screening-window length.
+A true time-to-event date forecast would require a separate probabilistic
+model and is outside this change.
+
+Two label designs were compared:
+
+1. Cadence-dependent next-vintage labels. For each candidate refresh interval
+   `k`, use `V(t + k)` to define the reference event. This directly mirrors the
+   chosen operating schedule, but every `k` receives a different ground truth,
+   so cadence rankings are not comparable and a slow schedule can hide events
+   that occur between refreshes.
+2. One dense canonical vintage sequence per configured screening window. Run
+   each candidate window at a five-trading-session base cadence, derive its
+   common reference event stream from consecutive same-window vintages, and
+   evaluate 5/10/20/40/60-session adoption policies by subsampling that same
+   sequence. This costs more screening work but gives every cadence within a
+   window the same events and was selected. Screening-window length remains an
+   independently compared dimension; 128 sessions is not assumed optimal.
+
+Two scoring approaches were compared:
+
+1. Portfolio return, Sharpe, and drawdown. These remain useful safety and
+   economic-impact outputs, but they mix signal direction, timing, sizing,
+   market regime, and path dependence. They cannot explain whether a refresh
+   cadence found the next adjustment at the right time.
+2. One-to-one temporal event matching plus isolated execution regret. Match
+   increase/decrease events within an explicit tolerance; report missed and
+   extra events, signed lead/lag sessions, absolute timing error, direction and
+   target-size agreement, and tolerance hit rates. Then replay the same action
+   at predicted versus reference execution dates to attribute the net return
+   difference to timing. This was selected. Research on sequential event
+   evaluation warns that ordinary point precision/recall can be misleading and
+   supports explicit temporal tolerance; SoftED likewise treats neighboring
+   detections as partial rather than exact matches.
+
+Recommended cadence selection is not a single return-weighted score. First
+reject cadences with materially worse missed-event rate or direction
+agreement; then compare median/P90 absolute lag and timing regret; finally
+prefer the longest cadence that is practically non-inferior to the best timing
+result, reducing computation and unnecessary strategy churn. Report total
+portfolio return, drawdown, turnover, and costs as secondary guardrails. A
+dense fixed schedule is the first implementation; drift-triggered refresh can
+be evaluated later because adaptive retraining research shows that fewer
+updates can preserve accuracy, but it adds a new detector and should not be
+mixed into the initial cadence test.
+
+The reference event must remain explicitly retrospective. `V(t + 5)` was
+selected using bars unavailable at `t`, so its replay over `(t, t + 5]` is an
+ex-post validation label, never an executable historical instruction. Events
+should use actual execution timing: close-derived target changes execute no
+earlier than the next open, while valid price orders retain touched-bar rules.
+Unmatched direction changes are decision errors and must not be disguised as
+timing regret. Right-censored final vintages, which have no following vintage
+or no observable next event, are reported separately rather than scored as
+correct no-action predictions.
+
+The first completed real-data run exposed two necessary metric refinements.
+First, a temporally close opposite-direction action must be classified as a
+severe direction error before any timing score is calculated; otherwise a buy
+near a reference sell can inflate the hit rate. Two- and five-session hit rates
+therefore require correct direction and use all reference events as their
+denominator. Second, the complete-account difference against the retrospective
+next-vintage replay is not isolated timing regret: the future-selected plan has
+already observed the segment over which it is replayed. That oracle-like return
+gap was removed from the decision report, while paired same-direction execution
+regret remains. That paired regret starts at the prior reference rebalance and
+marks both paths at the later compared event date. Both arms use the same start
+allocation, reference target allocation, and terminal price; their rebalance
+execution date and fill are the only differences.
+
+Primary references accessed 2026-09-23:
+
+- Scharwächter and Müller, *Statistical Evaluation of Anomaly Detectors for
+  Sequences*: https://arxiv.org/abs/2008.05788
+- Salles et al., *SoftED: Metrics for Soft Evaluation of Time Series Event
+  Detection*: https://arxiv.org/abs/2304.00439
+- Mroziewicz and Ślepaczuk, *A Novel Approach to Trading Strategy Parameter
+  Optimization, using Double Out-of-Sample Data and Walk-Forward Techniques*:
+  https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6217160
+- Eliades and Papadopoulos, *A Conformal Martingales Approach for Recurrent
+  Concept Drift*: https://proceedings.mlr.press/v266/eliades25a.html

@@ -7,6 +7,22 @@
   `barsAvailableAtCycleDecision(...)` and test it directly.
 - Optimize each `(decision index, screening window)` once. Reuse that immutable
   winner across every update interval whose schedule includes the decision.
+- Build decision dates as a de-duplicated union. When the smallest update
+  interval divides every larger interval, compute only that smallest grid and
+  derive every multiple interval by deterministic snapshot subsampling. An
+  interval of one session therefore covers every integer refresh cadence,
+  including the five-session retrospective reference grid.
+- Keep screening-window length configurable. Build a five-session vintage grid
+  for each window and use its next vintage only as an explicitly retrospective
+  event label. All candidate refresh intervals within that window must share
+  this reference so a slower cadence cannot redefine away missed events.
+- Match rebalance events chronologically and one-to-one. Classify direction
+  before timing: an opposite-direction action is a severe error, not a timing
+  hit. Compute lead/lag and allocation error only for same-direction actions.
+  Compare their returns from the prior reference rebalance to the later event
+  date with identical starting allocation, target allocation, and terminal
+  mark price, so execution date is the only varying input. Report misses and
+  extra actions separately.
 - Compare update policies with one continuous backtest timeline per matrix
   cell. Strategy changes take effect through the existing next-bar execution
   rules; never concatenate independently funded interval backtests.
@@ -19,7 +35,9 @@
   IDs with the task. The loopback coordinator owns CPU- and memory-bounded
   parallel execution across independent jobs; browser
   teardown may stop polling but must not cancel jobs. Only explicit Pause or
-  reset cancels the submitted queue.
+  reset cancels the submitted queue. Persist batch membership atomically and
+  persist explicit cancellation per job, so coordinator restart resumes only
+  the intended unfinished queue.
 - Store one immutable columnar market payload per cycle batch. Unit metadata
   carries a validated prefix count, and the child must materialize only that
   prefix. Share only derivations independent of the scoring window; keep
@@ -721,6 +739,10 @@ modify candidate scores, rankings, backtests, or validation reports.
 - Optimizer recovery checkpoints are versioned, request-fingerprinted,
   structured-cloneable snapshots. Reconstructible execution contexts and
   presentation detail arrays do not belong in a checkpoint.
+- Never delete the last committed disk manifest before publishing its
+  replacement. Retry transient Windows file locks, move the old target to a
+  recoverable backup, publish the complete temporary, and restore or retain the
+  backup if publication fails. Cleanup after commit is best-effort.
 - Summary-only combinations expose a monotonic `AllocationTimelineReader`.
   Readers calculate one bar at a time and may retain scalar state only.
 - Binary targets use `Uint8Array`; sparse event collections use index maps.

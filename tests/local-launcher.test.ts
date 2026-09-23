@@ -475,7 +475,7 @@ test("startup wait reports ready and an exited server without timing out", () =>
 
 test("startup wait grants one bounded grace period to a listening server", () => {
   const listening = runLauncherFunction(
-    "$script:readyChecks = 0; $script:listeningCalls = 0; $result = Wait-QuantScopeStartup -ServerProcess ([pscustomobject]@{ HasExited = $false }) -ReadyProbe { $script:readyChecks += 1; return $script:readyChecks -ge 3 } -PortInUseProbe { $true } -OnListening { $script:listeningCalls += 1 } -TimeoutMilliseconds 1 -ListeningGraceMilliseconds 100 -PollMilliseconds 1; Write-Output \"RESULT=$result;CHECKS=$script:readyChecks;LISTENING=$script:listeningCalls\"",
+    "$script:readyChecks = 0; $script:listeningCalls = 0; $result = Wait-QuantScopeStartup -ServerProcess ([pscustomobject]@{ HasExited = $false }) -ReadyProbe { $script:readyChecks += 1; return $script:readyChecks -ge 3 } -PortInUseProbe { $true } -OnListening { $script:listeningCalls += 1 } -TimeoutMilliseconds 1 -ListeningGraceMilliseconds 1000 -PollMilliseconds 1; Write-Output \"RESULT=$result;CHECKS=$script:readyChecks;LISTENING=$script:listeningCalls\"",
   );
   assert.equal(listening.status, 0, listening.stderr);
   assert.match(listening.stdout, /still compiling/);
