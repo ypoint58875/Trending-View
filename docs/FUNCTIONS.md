@@ -16,10 +16,10 @@
 - `strategyCyclePlanKey(...)`: creates an order-stable exact identity over a
   selected plan and its fixed relative-long role.
 - `buildStrategyCycleDailyValidationReport(...)`: consumes the fixed daily
-  128-session winners, builds completed and right-censored stability episodes,
-  compares each frozen old/new transition over 5/10/15/20 future sessions with
-  configured costs, aggregates forward evidence, and returns a deterministic
-  strategy-adjustment recommendation.
+  128-session winners, compares each frozen old/new transition over 5/10/15/20
+  future sessions with configured costs, aggregates explicit return-difference
+  distributions, splits them by the old/new 128-session return ordering, and
+  builds pair-chart cumulative returns plus pre-change rebalance markers.
 - `runStrategyCycleConfiguration(...)`: replays selected plans through one
   continuous allocation account with next-bar execution and no synthetic
   update-boundary reset.

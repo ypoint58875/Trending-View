@@ -1,9 +1,19 @@
 "use client";
 
-import { Activity, ArrowLeft, LoaderCircle, Pause, Play, RotateCcw } from "lucide-react";
+import {
+  Activity,
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  LoaderCircle,
+  Pause,
+  Play,
+  RotateCcw,
+} from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { zhCN as copy } from "@/app/i18n/zh-CN";
+import { StrategyCycleTransitionChart } from "@/app/components/StrategyCycleTransitionChart";
 import {
   CYCLE_DAILY_SCREENING_WINDOW,
   CYCLE_DAILY_UPDATE_INTERVAL,
@@ -100,10 +110,6 @@ function resultLabel(result: Parameters<typeof screeningResultPlan>[0]): string 
   return names.join(" + ");
 }
 
-function formatRate(value: number | null): string {
-  return value === null ? "—" : `${(value * 100).toFixed(0)}%`;
-}
-
 function formatReturn(value: number | null): string {
   if (value === null) return "—";
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
@@ -152,6 +158,7 @@ export function StrategyValidationWorkspace() {
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [storedTask, setStoredTask] = useState<StoredStrategyCycleValidationTask | null>(null);
   const [dailyReport, setDailyReport] = useState<StrategyCycleDailyValidationReport | null>(null);
+  const [selectedTransitionIndex, setSelectedTransitionIndex] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const pauseRequestedRef = useRef(false);
   const runningRef = useRef(false);
@@ -159,6 +166,9 @@ export function StrategyValidationWorkspace() {
 
   const groups = useMemo(() => groupSavedBacktests(records), [records]);
   const selectedGroup = groups.find((group) => group.key === selectedKey) ?? groups[0] ?? null;
+  const selectedTransition = dailyReport?.transitions[
+    Math.min(selectedTransitionIndex, Math.max(dailyReport.transitions.length - 1, 0))
+  ] ?? null;
 
   useEffect(() => {
     let active = true;
@@ -232,17 +242,20 @@ export function StrategyValidationWorkspace() {
       interval: DAILY_INTERVAL,
       executionPolicy: HISTORICAL_EXECUTION_POLICY,
     };
-    setDailyReport(buildStrategyCycleDailyValidationReport(
+    const report = buildStrategyCycleDailyValidationReport(
       series.bars,
       snapshots,
       settings,
-    ));
+    );
+    setDailyReport(report);
+    setSelectedTransitionIndex(Math.max(0, report.transitions.length - 1));
   }, [commissionPercent, initialCash, slippagePercent]);
 
   const start = useCallback(async () => {
     if (!selectedGroup || running) return;
     setError("");
     setDailyReport(null);
+    setSelectedTransitionIndex(0);
     const controller = new AbortController();
     abortRef.current = controller;
     pauseRequestedRef.current = false;
@@ -559,6 +572,7 @@ export function StrategyValidationWorkspace() {
     setStoredTask(null);
     setProgress(null);
     setDailyReport(null);
+    setSelectedTransitionIndex(0);
     setError("");
   };
 
@@ -616,36 +630,51 @@ export function StrategyValidationWorkspace() {
             <div className="panel-heading"><div><span className="eyebrow">{c.matrixEyebrow}</span><strong>{c.matrixTitle}</strong></div></div>
             <p className="cycle-hint">{c.dailyValidationNote}</p>
             {dailyReport ? <>
-              <div className={`cycle-conclusion ${dailyReport.recommendation}`}>
-                <span>{c.conclusionEyebrow}</span>
-                <strong>{c.recommendations[dailyReport.recommendation].title.replace("{sessions}", String(dailyReport.recommendedDelaySessions ?? ""))}</strong>
-                <p>{c.recommendations[dailyReport.recommendation].description.replace("{sessions}", String(dailyReport.recommendedDelaySessions ?? ""))}</p>
-              </div>
-
-              <div className="cycle-report-section">
-                <div className="cycle-report-heading"><div><span className="eyebrow">{c.stabilityEyebrow}</span><strong>{c.stabilityTitle}</strong></div><small>{c.stabilityHint}</small></div>
-                <div className="cycle-stability-grid">{dailyReport.stabilitySummaries.map((summary) => <article key={summary.strategyKey} className="cycle-stability-card">
-                  <strong>{summary.label}</strong><small>{c.episodes.replace("{count}", String(summary.episodeCount))}</small>
-                  <dl><div><dt>{c.medianStability}</dt><dd>{summary.medianSessions.toFixed(1)} {c.sessionUnit}</dd></div><div><dt>{c.averageStability}</dt><dd>{summary.averageSessions.toFixed(1)} {c.sessionUnit}</dd></div><div><dt>{c.maximumStability}</dt><dd>{summary.maximumSessions} {c.sessionUnit}</dd></div></dl>
-                  <div className="cycle-survival-row">{summary.survivalRates.map((point) => <span key={point.sessions}><small>≥{point.sessions}{c.sessionUnit}</small><b>{formatRate(point.rate)}</b></span>)}</div>
-                </article>)}</div>
-              </div>
-
               <div className="cycle-report-section">
                 <div className="cycle-report-heading"><div><span className="eyebrow">{c.transitionEyebrow}</span><strong>{c.transitionTitle}</strong></div><small>{c.transitionHint}</small></div>
                 <div className="cycle-horizon-grid">{dailyReport.transitionSummaries.map((summary) => <article key={summary.sessions}>
                   <strong>{summary.sessions} {c.sessionUnit}</strong><small>{c.samples.replace("{count}", String(summary.sampleCount))}</small>
-                  <dl><div><dt>{c.newWinRate}</dt><dd>{formatRate(summary.newWinRate)}</dd></div><div><dt>{c.oldPositiveRate}</dt><dd>{formatRate(summary.oldPositiveRate)}</dd></div><div><dt>{c.newPositiveRate}</dt><dd>{formatRate(summary.newPositiveRate)}</dd></div><div><dt>{c.medianReturnDifference}</dt><dd className={(summary.medianReturnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(summary.medianReturnDifference)}</dd></div></dl>
+                  <dl>
+                    <div><dt>{c.medianOldReturn}</dt><dd>{formatReturn(summary.medianOldReturn)}</dd></div>
+                    <div><dt>{c.medianNewReturn}</dt><dd>{formatReturn(summary.medianNewReturn)}</dd></div>
+                    <div><dt>{c.medianReturnDifference}</dt><dd className={(summary.medianReturnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(summary.medianReturnDifference)}</dd></div>
+                    <div><dt>{c.meanReturnDifference}</dt><dd className={(summary.meanReturnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(summary.meanReturnDifference)}</dd></div>
+                    <div><dt>{c.returnDifferenceRange}</dt><dd>{formatReturn(summary.minimumReturnDifference)} ～ {formatReturn(summary.maximumReturnDifference)}</dd></div>
+                    <div><dt>{c.comparisonCounts}</dt><dd>{c.comparisonCountsValue.replace("{new}", String(summary.newBetterCount)).replace("{old}", String(summary.oldBetterCount)).replace("{equal}", String(summary.equalCount))}</dd></div>
+                  </dl>
+                  <div className="cycle-screening-split">
+                    <span><small>{c.screeningNewLed} · {summary.screeningNewLedCount}</small><b>{c.groupedDifference.replace("{median}", formatReturn(summary.screeningNewLedMedianDifference)).replace("{mean}", formatReturn(summary.screeningNewLedMeanDifference))}</b></span>
+                    <span><small>{c.screeningOldLed} · {summary.screeningOldLedCount}</small><b>{c.groupedDifference.replace("{median}", formatReturn(summary.screeningOldLedMedianDifference)).replace("{mean}", formatReturn(summary.screeningOldLedMeanDifference))}</b></span>
+                  </div>
                 </article>)}</div>
               </div>
 
-              <div className="cycle-report-section">
-                <div className="cycle-report-heading"><div><span className="eyebrow">{c.transitionDetailEyebrow}</span><strong>{c.transitionDetailTitle}</strong></div><small>{c.transitionDetailHint}</small></div>
-                <div className="cycle-transition-list">{dailyReport.transitions.slice(-20).reverse().map((transition) => <article key={`${transition.decisionTime}:${transition.newStrategyKey}`}>
-                  <header><time>{transition.decisionTime}</time><span>{transition.oldLabel}</span><b>→</b><span>{transition.newLabel}</span></header>
-                  <div>{transition.horizons.map((horizon) => <span key={horizon.sessions}><small>{horizon.sessions}{c.sessionUnit}</small><b>{c.oldShort} {formatReturn(horizon.oldReturn)}</b><b>{c.newShort} {formatReturn(horizon.newReturn)}</b><em className={(horizon.returnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(horizon.returnDifference)}</em></span>)}</div>
-                </article>)}</div>
-              </div>
+              {selectedTransition && <div className="cycle-transition-explorer">
+                <div className="cycle-transition-navigator">
+                  <div><span className="eyebrow">{c.pairEyebrow}</span><strong>{c.pairPosition.replace("{current}", String(selectedTransitionIndex + 1)).replace("{total}", String(dailyReport.transitions.length))}</strong></div>
+                  <div className="cycle-transition-nav-buttons">
+                    <button type="button" aria-label={c.previousPair} title={c.previousPair} disabled={selectedTransitionIndex <= 0} onClick={() => setSelectedTransitionIndex((value) => Math.max(0, value - 1))}><ArrowUp size={16} /></button>
+                    <button type="button" aria-label={c.nextPair} title={c.nextPair} disabled={selectedTransitionIndex >= dailyReport.transitions.length - 1} onClick={() => setSelectedTransitionIndex((value) => Math.min(dailyReport.transitions.length - 1, value + 1))}><ArrowDown size={16} /></button>
+                  </div>
+                </div>
+                <div className="cycle-transition-pair-title"><time>{selectedTransition.decisionTime}</time><span>{selectedTransition.oldLabel}</span><b>→</b><span>{selectedTransition.newLabel}</span></div>
+                <div className="cycle-transition-meta">
+                  <span>{c.oldDuration.replace("{sessions}", String(selectedTransition.oldDurationSessions))}</span>
+                  <span>{c.performanceWindow.replace("{sessions}", String(selectedTransition.requestedPerformanceSessions)).replace("{start}", selectedTransition.performanceStartTime).replace("{end}", selectedTransition.performanceEndTime)}</span>
+                  <span>{c.screeningPairDifference.replace("{old}", formatReturn(selectedTransition.screeningOldReturn)).replace("{new}", formatReturn(selectedTransition.screeningNewReturn)).replace("{difference}", formatReturn(selectedTransition.screeningReturnDifference))}</span>
+                </div>
+                <div className="cycle-transition-horizons">{selectedTransition.horizons.map((horizon) => <span key={horizon.sessions}>
+                  <small>{c.forwardSessions.replace("{sessions}", String(horizon.sessions))}</small>
+                  <b>{c.oldShort} {formatReturn(horizon.oldReturn)}</b><b>{c.newShort} {formatReturn(horizon.newReturn)}</b>
+                  <em className={(horizon.returnDifference ?? 0) >= 0 ? "positive" : "negative"}>{c.differenceShort} {formatReturn(horizon.returnDifference)}</em>
+                </span>)}</div>
+                <StrategyCycleTransitionChart
+                  transition={selectedTransition}
+                  labels={{ oldStrategy: c.oldStrategyCurve, newStrategy: c.newStrategyCurve, difference: c.differenceCurve, returnUnit: c.returnUnit, changeDate: c.changeDate, oldRebalance: c.oldRebalance, newRebalance: c.newRebalance, targetAllocation: c.targetAllocation }}
+                  ariaLabel={c.transitionChartAriaLabel.replace("{date}", selectedTransition.decisionTime)}
+                />
+                <p className="cycle-hint">{c.transitionChartNote}</p>
+              </div>}
             </> : <p className="cycle-empty">{c.noMatrix}</p>}
           </section>
         </div>

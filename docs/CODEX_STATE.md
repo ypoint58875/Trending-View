@@ -1,5 +1,20 @@
 # Codex State
 
+## 2026-09-24 pairwise cycle-return explorer
+
+- The cycle-validation report now keeps only the new/old return-comparison
+  presentation. The daily-winner stability cards, aggregate recommendation
+  card, and recent-20 transition list are no longer rendered.
+- Each 5/10/15/20-session aggregate reports old and new median returns plus the
+  median, mean, range, and sign counts of `new - old`. The same future
+  difference is separately summarized for events where the incoming plan did
+  or did not beat the outgoing plan over their shared 128-session window.
+- Up/down controls traverse every adjacent winner pair. Its cumulative-return
+  chart starts `148 + outgoing-winner duration + 1 incoming day` sessions before
+  the change boundary and extends up to 20 sessions after it. Old/new rebalance
+  arrows appear throughout the pre-change window through the incoming day, but
+  never in the appended future section.
+
 ## 2026-09-24 maximum-return screening defaults
 
 - Fresh research-workspace intervals and strategy-cycle validation tasks now

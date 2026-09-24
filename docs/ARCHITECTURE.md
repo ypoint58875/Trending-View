@@ -66,17 +66,19 @@ The eligible decision grid advances one trading session at a time after reservin
 the first 128 evaluation sessions for screening and the final 20 for forward
 returns; its unit count is therefore evaluation history minus 148. Exact plan identity
 includes strategy composition, parameters, allocations, entry filters, and the
-fixed relative-long role. Consecutive identical daily winners form stability
-episodes; the final still-running episode is right-censored and excluded from
-average and median completed-lifetime estimates when completed episodes exist.
+fixed relative-long role. Consecutive identical daily winners are retained
+internally to measure the outgoing winner's duration for pair-chart boundaries.
 When the winner changes, both the prior and new plans are frozen at that
 decision. Each starts from the same cash baseline, may trade no earlier than
 the following open, pays the configured commission and slippage, and is replayed
 for 5, 10, 15, and 20 sessions. A later winner does not truncate an existing
-comparison. Complete transitions aggregate old/new positive-return rates,
-new-plan win rates, and median return differences. Deterministic evidence gates
-recommend delayed switching, retaining the old plan, avoiding both, continued
-observation, or more data. The browser persists one latest task after
+comparison. Complete transitions aggregate old/new return differences,
+including median, mean, range, direction counts, and conditional groups based
+on which plan led over the same 128-session screening window. Every adjacent
+pair has a cumulative-return chart whose marked portion is 148 sessions plus
+the old-winner duration and the new-winner day. Up to 20 following sessions are
+appended without rebalance markers.
+The browser persists one latest task after
 each complete unit with a signature over instrument, latest bar, configuration,
 and costs. A matching signature resumes idempotently. Before result collection,
 the local page submits every incomplete bounded unit in one full-series batch

@@ -507,6 +507,106 @@ button {
   white-space: nowrap;
 }
 
+.cycle-screening-split {
+  display: grid;
+  gap: 6px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.cycle-screening-split span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cycle-screening-split small { color: var(--muted); font-size: 10px; }
+.cycle-screening-split b { font-size: 10px; font-weight: 500; line-height: 1.45; }
+
+.cycle-transition-explorer {
+  margin: 14px 16px 18px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.cycle-transition-navigator,
+.cycle-transition-pair-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cycle-transition-navigator > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cycle-transition-nav-buttons { display: flex; gap: 6px; }
+
+.cycle-transition-nav-buttons button {
+  display: inline-flex;
+  width: 34px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0d1613;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.cycle-transition-nav-buttons button:disabled { opacity: 0.35; cursor: default; }
+
+.cycle-transition-pair-title {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr) auto minmax(0, 1fr);
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.04);
+}
+
+.cycle-transition-pair-title time { color: var(--muted); font-size: 10px; }
+.cycle-transition-pair-title span { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.cycle-transition-pair-title b { color: var(--muted); }
+
+.cycle-transition-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 10px 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.cycle-transition-horizons {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.cycle-transition-horizons > span {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.cycle-transition-horizons small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; }
+.cycle-transition-horizons b,
+.cycle-transition-horizons em { font-size: 10px; font-style: normal; font-weight: 500; }
+.cycle-transition-horizons em { text-align: right; }
+
+.cycle-transition-chart { width: 100%; min-width: 0; }
+
 .cycle-stability-card dl,
 .cycle-horizon-grid dl {
   display: grid;
@@ -729,6 +829,7 @@ button {
   .cycle-comparison-heading { align-items: flex-start; flex-direction: column; }
   .cycle-report-heading { align-items: flex-start; flex-direction: column; }
   .cycle-transition-list article > div { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+  .cycle-transition-horizons { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
 }
 
 .topbar-actions {

@@ -22,14 +22,17 @@ trades or run unattended jobs.
   each eligible historical trading day using only the bars then visible. The
   progress total is the selected evaluation history minus 148 sessions, reserving
   the first 128 for screening and the final 20 for forward returns. Consecutive
-  identical winning plans form stability episodes; completed episodes produce
-  per-plan average, median, maximum, and 5/10/15/20-session survival rates.
-  Every winning-plan change freezes the old and new plans and compares their
+  identical winning plans are still tracked internally to determine how long
+  the outgoing winner lasted. Every winning-plan change freezes the old and new plans and compares their
   cost-adjusted forward returns after 5, 10, 15, and 20 sessions, even when a
-  later winner appears. Aggregate new-plan win rates, positive-return rates,
-  and median return differences drive an explicit recommendation to delay and
-  switch, keep the old plan, avoid both plans, continue observing, or wait for
-  more evidence. One compact batch request pre-submits
+  later winner appears. The report focuses on old/new return differences rather
+  than stability cards or a recent-event list. Aggregate cards expose median,
+  mean, range, and direction counts, split again by whether the new plan beat
+  the old plan inside the same 128-session screening window. Up/down controls
+  inspect every adjacent winner pair. Each chart covers 148 sessions plus the
+  outgoing winner's duration and the incoming-winner day, then appends up to 20
+  future sessions; both plans' rebalance markers stop at the incoming-winner
+  day so the appended future remains an unannotated outcome view. One compact batch request pre-submits
   every bounded optimization unit to the loopback coordinator, which continues
   a CPU- and memory-bounded parallel queue while the tab remains open, and
   a browser-held streaming lease cancels queued and running units as soon as

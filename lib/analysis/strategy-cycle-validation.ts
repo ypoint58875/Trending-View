@@ -20,6 +20,7 @@ export const DEFAULT_CYCLE_FORWARD_HORIZONS = [5, 10, 20, 40, 60] as const;
 export const CYCLE_DAILY_SCREENING_WINDOW = 128;
 export const CYCLE_DAILY_UPDATE_INTERVAL = 1;
 export const CYCLE_TRANSITION_HORIZONS = [5, 10, 15, 20] as const;
+export const CYCLE_TRANSITION_ANALYSIS_BASE_SESSIONS = 148;
 export const MIN_CYCLE_DAILY_EVALUATION_SESSIONS =
   CYCLE_DAILY_SCREENING_WINDOW + Math.max(...CYCLE_TRANSITION_HORIZONS);
 export const CYCLE_REFERENCE_INTERVAL = 5;
@@ -131,7 +132,31 @@ export interface StrategyCycleTransitionResult {
   oldLabel: string;
   newStrategyKey: string;
   newLabel: string;
+  oldDurationSessions: number;
+  requestedPerformanceSessions: number;
+  performanceStartTime: string;
+  performanceEndTime: string;
+  performance: StrategyCycleTransitionPerformancePoint[];
+  oldRebalances: StrategyCycleTransitionRebalance[];
+  newRebalances: StrategyCycleTransitionRebalance[];
+  screeningOldReturn: number;
+  screeningNewReturn: number;
+  screeningReturnDifference: number;
   horizons: StrategyCycleTransitionHorizonResult[];
+}
+
+export interface StrategyCycleTransitionPerformancePoint {
+  time: string;
+  oldReturn: number;
+  newReturn: number;
+  returnDifference: number;
+}
+
+export interface StrategyCycleTransitionRebalance {
+  time: string;
+  fromAllocation: number;
+  targetAllocation: number;
+  returnValue: number;
 }
 
 export interface StrategyCycleTransitionSummary {
@@ -143,6 +168,18 @@ export interface StrategyCycleTransitionSummary {
   medianOldReturn: number | null;
   medianNewReturn: number | null;
   medianReturnDifference: number | null;
+  meanReturnDifference: number | null;
+  minimumReturnDifference: number | null;
+  maximumReturnDifference: number | null;
+  newBetterCount: number;
+  oldBetterCount: number;
+  equalCount: number;
+  screeningNewLedCount: number;
+  screeningNewLedMedianDifference: number | null;
+  screeningNewLedMeanDifference: number | null;
+  screeningOldLedCount: number;
+  screeningOldLedMedianDifference: number | null;
+  screeningOldLedMeanDifference: number | null;
 }
 
 export type StrategyCycleAdjustmentRecommendation =
@@ -846,13 +883,14 @@ function prepareFrozenPlanTimeline(
   bars: MarketBar[],
   snapshot: StrategyCycleSelectionSnapshot,
   decisionIndex: number,
+  preparedTimeline?: ReturnType<typeof buildStrategyPlanTimeline>,
 ): ReturnType<typeof buildStrategyPlanTimeline> {
-  const timeline = buildStrategyPlanTimeline(
-    bars,
-    snapshot.plan,
-    undefined,
-    snapshot.fixedRelativeLongStrategy ?? undefined,
-  );
+  const timeline = preparedTimeline ?? buildStrategyPlanTimeline(
+      bars,
+      snapshot.plan,
+      undefined,
+      snapshot.fixedRelativeLongStrategy ?? undefined,
+    );
   const target = [...timeline.target];
   target[decisionIndex - 1] = 0;
   const intrabarExecutions = timeline.intrabarExecutions
@@ -887,6 +925,48 @@ function frozenPlanForwardReturn(
   ).totalReturn;
 }
 
+function historicalPlanPerformance(
+  bars: MarketBar[],
+  snapshot: StrategyCycleSelectionSnapshot,
+  startIndex: number,
+  endIndex: number,
+  settings: Pick<
+    BacktestSettings,
+    "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
+  > & { interval: MarketInterval },
+  preparedTimeline?: ReturnType<typeof buildStrategyPlanTimeline>,
+): {
+  returns: Map<string, number>;
+  rebalances: AllocationRebalance[];
+  totalReturn: number;
+} {
+  const timeline = preparedTimeline ?? buildStrategyPlanTimeline(
+      bars,
+      snapshot.plan,
+      undefined,
+      snapshot.fixedRelativeLongStrategy ?? undefined,
+    );
+  const result = runAllocationBacktest(
+    bars,
+    timeline.target,
+    {
+      ...settings,
+      startTime: bars[startIndex]!.time,
+      endTime: bars[endIndex]!.time,
+    },
+    timeline.signalEvents,
+    timeline.intrabarExecutions,
+  );
+  return {
+    returns: new Map(result.equity.map((point) => [
+      point.time,
+      (point.equity / settings.initialCash - 1) * 100,
+    ])),
+    rebalances: result.rebalances,
+    totalReturn: result.totalReturn,
+  };
+}
+
 function buildStrategyCycleTransitions(
   bars: MarketBar[],
   snapshots: readonly StrategyCycleSelectionSnapshot[],
@@ -898,6 +978,23 @@ function buildStrategyCycleTransitions(
   const ordered = [...snapshots].sort(
     (left, right) => left.decisionIndex - right.decisionIndex,
   );
+  const timelineByStrategyKey = new Map<
+    string,
+    ReturnType<typeof buildStrategyPlanTimeline>
+  >();
+  const timelineFor = (snapshot: StrategyCycleSelectionSnapshot) => {
+    const key = strategyCyclePlanKey(snapshot);
+    const cached = timelineByStrategyKey.get(key);
+    if (cached) return cached;
+    const timeline = buildStrategyPlanTimeline(
+      bars,
+      snapshot.plan,
+      undefined,
+      snapshot.fixedRelativeLongStrategy ?? undefined,
+    );
+    timelineByStrategyKey.set(key, timeline);
+    return timeline;
+  };
   return ordered.slice(1).flatMap((newSnapshot, index) => {
     const oldSnapshot = ordered[index]!;
     const oldStrategyKey = strategyCyclePlanKey(oldSnapshot);
@@ -912,18 +1009,124 @@ function buildStrategyCycleTransitions(
       bars,
       oldSnapshot,
       newSnapshot.decisionIndex,
+      timelineFor(oldSnapshot),
     );
     const newTimeline = prepareFrozenPlanTimeline(
       bars,
       newSnapshot,
       newSnapshot.decisionIndex,
+      timelineFor(newSnapshot),
     );
+    let oldRunStart = index;
+    while (oldRunStart > 0) {
+      const previous = ordered[oldRunStart - 1]!;
+      const current = ordered[oldRunStart]!;
+      if (
+        strategyCyclePlanKey(previous) !== oldStrategyKey ||
+        current.decisionIndex !== previous.decisionIndex + 1
+      ) {
+        break;
+      }
+      oldRunStart -= 1;
+    }
+    const oldDurationSessions = index - oldRunStart + 1;
+    const requestedPerformanceSessions =
+      CYCLE_TRANSITION_ANALYSIS_BASE_SESSIONS + oldDurationSessions + 1;
+    const markerEndIndex = newSnapshot.decisionIndex;
+    const performanceEndIndex = Math.min(
+      bars.length - 1,
+      markerEndIndex + Math.max(...CYCLE_TRANSITION_HORIZONS),
+    );
+    const performanceStartIndex = Math.max(
+      0,
+      markerEndIndex - requestedPerformanceSessions + 1,
+    );
+    const oldPerformance = historicalPlanPerformance(
+      bars,
+      oldSnapshot,
+      performanceStartIndex,
+      performanceEndIndex,
+      settings,
+      timelineFor(oldSnapshot),
+    );
+    const newPerformance = historicalPlanPerformance(
+      bars,
+      newSnapshot,
+      performanceStartIndex,
+      performanceEndIndex,
+      settings,
+      timelineFor(newSnapshot),
+    );
+    const screeningStartIndex = Math.max(
+      0,
+      markerEndIndex - CYCLE_DAILY_SCREENING_WINDOW + 1,
+    );
+    const screeningOldReturn = historicalPlanPerformance(
+      bars,
+      oldSnapshot,
+      screeningStartIndex,
+      markerEndIndex,
+      settings,
+      timelineFor(oldSnapshot),
+    ).totalReturn;
+    const screeningNewReturn = historicalPlanPerformance(
+      bars,
+      newSnapshot,
+      screeningStartIndex,
+      markerEndIndex,
+      settings,
+      timelineFor(newSnapshot),
+    ).totalReturn;
+    const performance = bars
+      .slice(performanceStartIndex, performanceEndIndex + 1)
+      .flatMap((bar) => {
+        const oldReturn = oldPerformance.returns.get(bar.time);
+        const newReturn = newPerformance.returns.get(bar.time);
+        return oldReturn === undefined || newReturn === undefined
+          ? []
+          : [{
+              time: bar.time,
+              oldReturn,
+              newReturn,
+              returnDifference: newReturn - oldReturn,
+            }];
+      });
     return [{
       decisionTime: newSnapshot.decisionTime,
       oldStrategyKey,
       oldLabel: oldSnapshot.label,
       newStrategyKey,
       newLabel: newSnapshot.label,
+      oldDurationSessions,
+      requestedPerformanceSessions,
+      performanceStartTime: bars[performanceStartIndex]!.time,
+      performanceEndTime: bars[performanceEndIndex]!.time,
+      performance,
+      oldRebalances: oldPerformance.rebalances.flatMap((rebalance) => {
+        const returnValue = oldPerformance.returns.get(rebalance.time);
+        return rebalance.time <= newSnapshot.decisionTime && returnValue !== undefined
+          ? [{
+              time: rebalance.time,
+              fromAllocation: rebalance.fromAllocation,
+              targetAllocation: rebalance.targetAllocation,
+              returnValue,
+            }]
+          : [];
+      }),
+      newRebalances: newPerformance.rebalances.flatMap((rebalance) => {
+        const returnValue = newPerformance.returns.get(rebalance.time);
+        return rebalance.time <= newSnapshot.decisionTime && returnValue !== undefined
+          ? [{
+              time: rebalance.time,
+              fromAllocation: rebalance.fromAllocation,
+              targetAllocation: rebalance.targetAllocation,
+              returnValue,
+            }]
+          : [];
+      }),
+      screeningOldReturn,
+      screeningNewReturn,
+      screeningReturnDifference: screeningNewReturn - screeningOldReturn,
       horizons: CYCLE_TRANSITION_HORIZONS.map((sessions) => {
         const oldReturn = frozenPlanForwardReturn(
           bars,
@@ -966,8 +1169,15 @@ function buildStrategyCycleTransitionSummaries(
             oldReturn: result.oldReturn,
             newReturn: result.newReturn,
             returnDifference: result.returnDifference,
+            screeningReturnDifference: transition.screeningReturnDifference,
           }];
     });
+    const screeningNewLed = complete.filter(
+      (entry) => entry.screeningReturnDifference > 0,
+    );
+    const screeningOldLed = complete.filter(
+      (entry) => entry.screeningReturnDifference < 0,
+    );
     return {
       sessions,
       sampleCount: complete.length,
@@ -988,6 +1198,34 @@ function buildStrategyCycleTransitionSummaries(
         : null,
       medianReturnDifference: complete.length
         ? median(complete.map((entry) => entry.returnDifference))
+        : null,
+      meanReturnDifference: complete.length
+        ? complete.reduce((sum, entry) => sum + entry.returnDifference, 0) / complete.length
+        : null,
+      minimumReturnDifference: complete.length
+        ? Math.min(...complete.map((entry) => entry.returnDifference))
+        : null,
+      maximumReturnDifference: complete.length
+        ? Math.max(...complete.map((entry) => entry.returnDifference))
+        : null,
+      newBetterCount: complete.filter((entry) => entry.returnDifference > 0).length,
+      oldBetterCount: complete.filter((entry) => entry.returnDifference < 0).length,
+      equalCount: complete.filter((entry) => entry.returnDifference === 0).length,
+      screeningNewLedCount: screeningNewLed.length,
+      screeningNewLedMedianDifference: screeningNewLed.length
+        ? median(screeningNewLed.map((entry) => entry.returnDifference))
+        : null,
+      screeningNewLedMeanDifference: screeningNewLed.length
+        ? screeningNewLed.reduce((sum, entry) => sum + entry.returnDifference, 0) /
+          screeningNewLed.length
+        : null,
+      screeningOldLedCount: screeningOldLed.length,
+      screeningOldLedMedianDifference: screeningOldLed.length
+        ? median(screeningOldLed.map((entry) => entry.returnDifference))
+        : null,
+      screeningOldLedMeanDifference: screeningOldLed.length
+        ? screeningOldLed.reduce((sum, entry) => sum + entry.returnDifference, 0) /
+          screeningOldLed.length
         : null,
     };
   });

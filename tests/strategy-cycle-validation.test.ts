@@ -184,7 +184,26 @@ test("daily 128-session validation measures stable runs and frozen forward trans
     [5, 10, 15, 20],
   );
   assert.ok(report.transitions[0]?.horizons.every((result) => result.oldReturn !== null));
+  assert.equal(report.transitions[0]?.oldDurationSessions, 2);
+  assert.equal(report.transitions[0]?.requestedPerformanceSessions, 151);
+  assert.equal(report.transitions[0]?.performanceEndTime, bars[152]?.time);
+  assert.ok(
+    report.transitions[0]?.oldRebalances.every(
+      (rebalance) => rebalance.time <= report.transitions[0]!.decisionTime,
+    ),
+  );
+  assert.ok(
+    report.transitions[0]?.newRebalances.every(
+      (rebalance) => rebalance.time <= report.transitions[0]!.decisionTime,
+    ),
+  );
+  assert.ok(Number.isFinite(report.transitions[0]?.screeningReturnDifference));
   assert.equal(report.transitionSummaries[0]?.sampleCount, 2);
+  assert.equal(
+    (report.transitionSummaries[0]?.screeningNewLedCount ?? 0) +
+      (report.transitionSummaries[0]?.screeningOldLedCount ?? 0),
+    report.transitions.filter((transition) => transition.screeningReturnDifference !== 0).length,
+  );
   assert.equal(report.recommendation, "insufficient-evidence");
 
   const repeatedChanges = buildStrategyCycleDailyValidationReport(

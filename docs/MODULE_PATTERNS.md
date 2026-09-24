@@ -10,14 +10,19 @@
   interval selector or subsample the winner sequence. Reserve the first 128
   evaluation sessions and final 20 forward-return sessions, making the visible
   progress total exactly evaluation history minus 148.
-- Exact stability identity includes strategy composition, parameters,
-  allocations, filters, and the fixed relative-long role. Merge only adjacent
-  daily winners with the same exact identity. Mark the last episode as right-
-  censored and exclude it from completed-lifetime averages when possible.
+- Exact plan identity includes strategy composition, parameters, allocations,
+  filters, and the fixed relative-long role. Merge only adjacent daily winners
+  with the same exact identity when measuring the outgoing winner's duration.
 - Create an old/new comparison only when the exact daily winner changes. Freeze
   both plans, start both from the same cash baseline, preserve next-open and
   intrabar execution rules, include commission and slippage, and finish every
   5/10/15/20-session horizon even if another winner appears meanwhile.
+- For each adjacent pair chart, show `148 + old-winner duration + 1 incoming day`
+  marked sessions and append up to 20 future sessions. Plot both cumulative
+  returns and their difference across the full chart, but never render
+  rebalance markers after the incoming-winner day. Aggregate future return
+  differences both overall and conditionally on which plan led in the shared
+  128-session screening window.
 - A switching recommendation must disclose its evidence rule. Require at least
   five complete transitions. Recommend the earliest delayed switch only when
   new-plan win rate is at least 60%, new-plan positive-return rate is at least
