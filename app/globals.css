@@ -512,7 +512,12 @@ button {
   gap: 6px;
   padding-top: 9px;
   border-top: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(192, 132, 252, 0.05);
+  padding: 9px;
 }
+
+.cycle-screening-split > strong { color: #d8b4fe; font-size: 10px; }
 
 .cycle-screening-split span {
   display: flex;

@@ -163,6 +163,7 @@ export function StrategyValidationWorkspace() {
   const pauseRequestedRef = useRef(false);
   const runningRef = useRef(false);
   const queuedJobIdsRef = useRef<string[]>([]);
+  const restoredReportSignatureRef = useRef("");
 
   const groups = useMemo(() => groupSavedBacktests(records), [records]);
   const selectedGroup = groups.find((group) => group.key === selectedKey) ?? groups[0] ?? null;
@@ -232,13 +233,22 @@ export function StrategyValidationWorkspace() {
     series: MarketSeries,
     snapshots: StrategyCycleSelectionSnapshot[],
     sessions: number,
+    restoredCosts?: {
+      initialCash: number;
+      commissionPercent: number;
+      slippagePercent: number;
+    },
   ) => {
     const schedule = buildStrategyCycleDailySchedule(series.bars.length, sessions);
     if (!schedule) return;
+    const reportInitialCash = restoredCosts?.initialCash ?? initialCash;
+    const reportCommissionPercent =
+      restoredCosts?.commissionPercent ?? commissionPercent;
+    const reportSlippagePercent = restoredCosts?.slippagePercent ?? slippagePercent;
     const settings = {
-      initialCash,
-      commissionRate: commissionPercent / 100,
-      slippageRate: slippagePercent / 100,
+      initialCash: reportInitialCash,
+      commissionRate: reportCommissionPercent / 100,
+      slippageRate: reportSlippagePercent / 100,
       interval: DAILY_INTERVAL,
       executionPolicy: HISTORICAL_EXECUTION_POLICY,
     };
@@ -250,6 +260,42 @@ export function StrategyValidationWorkspace() {
     setDailyReport(report);
     setSelectedTransitionIndex(Math.max(0, report.transitions.length - 1));
   }, [commissionPercent, initialCash, slippagePercent]);
+
+  useEffect(() => {
+    if (
+      !storedTask ||
+      storedTask.status !== "completed" ||
+      dailyReport ||
+      running ||
+      restoredReportSignatureRef.current === storedTask.signature
+    ) {
+      return;
+    }
+    restoredReportSignatureRef.current = storedTask.signature;
+    const controller = new AbortController();
+    void fetch(marketRequestUrl(storedTask.instrument), {
+      cache: "no-store",
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(c.marketError);
+      const series = await response.json() as MarketSeries;
+      calculateReports(
+        series,
+        storedTask.snapshots,
+        storedTask.evaluationSessions,
+        {
+          initialCash: storedTask.initialCash,
+          commissionPercent: storedTask.commissionPercent,
+          slippagePercent: storedTask.slippagePercent,
+        },
+      );
+    }).catch((caught) => {
+      if ((caught as Error).name === "AbortError") return;
+      restoredReportSignatureRef.current = "";
+      setError(c.marketError);
+    });
+    return () => controller.abort();
+  }, [c.marketError, calculateReports, dailyReport, running, storedTask]);
 
   const start = useCallback(async () => {
     if (!selectedGroup || running) return;
@@ -643,6 +689,7 @@ export function StrategyValidationWorkspace() {
                     <div><dt>{c.comparisonCounts}</dt><dd>{c.comparisonCountsValue.replace("{new}", String(summary.newBetterCount)).replace("{old}", String(summary.oldBetterCount)).replace("{equal}", String(summary.equalCount))}</dd></div>
                   </dl>
                   <div className="cycle-screening-split">
+                    <strong>{c.screeningSplitTitle}</strong>
                     <span><small>{c.screeningNewLed} · {summary.screeningNewLedCount}</small><b>{c.groupedDifference.replace("{median}", formatReturn(summary.screeningNewLedMedianDifference)).replace("{mean}", formatReturn(summary.screeningNewLedMeanDifference))}</b></span>
                     <span><small>{c.screeningOldLed} · {summary.screeningOldLedCount}</small><b>{c.groupedDifference.replace("{median}", formatReturn(summary.screeningOldLedMedianDifference)).replace("{mean}", formatReturn(summary.screeningOldLedMeanDifference))}</b></span>
                   </div>

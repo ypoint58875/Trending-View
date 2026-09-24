@@ -1282,6 +1282,7 @@ export const zhCN = {
     returnDifferenceRange: "收益差范围",
     comparisonCounts: "收益差方向",
     comparisonCountsValue: "新优 {new} / 旧优 {old} / 持平 {equal}",
+    screeningSplitTitle: "按变化当日的 128 日收益分组",
     screeningNewLed: "128 日内新策略 > 旧策略",
     screeningOldLed: "128 日内新策略 < 旧策略",
     groupedDifference: "未来新减旧：中位 {median} / 平均 {mean}",

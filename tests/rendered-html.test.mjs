@@ -290,6 +290,11 @@ test("server-renders the strategy cycle validation route", async () => {
   );
   assert.match(workspace, /addEventListener\("beforeunload", stopOnPageExit\)/);
   assert.match(workspace, /addEventListener\("pagehide", stopOnPageExit\)/);
+  assert.match(workspace, /storedTask\.status !== "completed"/);
+  assert.match(
+    workspace,
+    /calculateReports\([\s\S]*?storedTask\.snapshots[\s\S]*?storedTask\.evaluationSessions/,
+  );
   assert.match(
     workspace,
     /stopOnPageExit[\s\S]*?cancelScreeningInLocalEngine\(queuedJobIdsRef\.current\)/,

@@ -14,6 +14,10 @@
   the change boundary and extends up to 20 sessions after it. Old/new rebalance
   arrows appear throughout the pre-change window through the incoming day, but
   never in the appended future section.
+- A completed persisted task now fetches its instrument and rebuilds the newest
+  report automatically when the page opens; users no longer need to press
+  Continue merely to reveal previously completed snapshots. The conditional
+  128-session groups have a dedicated visual heading inside every horizon card.
 
 ## 2026-09-24 maximum-return screening defaults
 
