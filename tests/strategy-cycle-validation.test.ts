@@ -198,11 +198,15 @@ test("daily 128-session validation measures stable runs and frozen forward trans
     ),
   );
   assert.ok(Number.isFinite(report.transitions[0]?.screeningReturnDifference));
-  assert.equal(report.transitionSummaries[0]?.sampleCount, 2);
+  assert.equal(report.transitionSummaries[0]?.sampleCount, 0);
+  assert.equal(report.transitionSummaries[0]?.medianReturnDifference, null);
+  assert.equal(report.transitionSummaries[0]?.meanReturnDifference, null);
   assert.equal(
     (report.transitionSummaries[0]?.screeningNewLedCount ?? 0) +
       (report.transitionSummaries[0]?.screeningOldLedCount ?? 0),
-    report.transitions.filter((transition) => transition.screeningReturnDifference !== 0).length,
+    report.transitions.filter((transition) =>
+      Math.abs(transition.screeningReturnDifference) > 1e-12 &&
+      Math.abs(transition.horizons[0]?.returnDifference ?? 0) > 1e-12).length,
   );
   assert.equal(report.recommendation, "insufficient-evidence");
 
@@ -220,8 +224,9 @@ test("daily 128-session validation measures stable runs and frozen forward trans
       executionPolicy: "hybrid",
     },
   );
-  assert.equal(repeatedChanges.transitionSummaries[0]?.sampleCount, 5);
-  assert.equal(repeatedChanges.recommendation, "avoid-both");
+  assert.equal(repeatedChanges.transitionSummaries[0]?.sampleCount, 0);
+  assert.equal(repeatedChanges.transitionSummaries[0]?.equalCount, 0);
+  assert.equal(repeatedChanges.recommendation, "insufficient-evidence");
 });
 
 function allocationResult(

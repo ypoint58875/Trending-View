@@ -115,6 +115,24 @@ function formatReturn(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function formatGroupedAdvantage(
+  value: number | null,
+  labels: {
+    newBetter: string;
+    oldBetter: string;
+    equal: string;
+    insufficient: string;
+  },
+): string {
+  if (value === null) return labels.insufficient;
+  const template = value > 0
+    ? labels.newBetter
+    : value < 0
+      ? labels.oldBetter
+      : labels.equal;
+  return template.replace("{average}", formatReturn(value));
+}
+
 function taskSignature(input: {
   instrument: MarketInstrument;
   series: MarketSeries;
@@ -686,12 +704,12 @@ export function StrategyValidationWorkspace() {
                     <div><dt>{c.medianReturnDifference}</dt><dd className={(summary.medianReturnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(summary.medianReturnDifference)}</dd></div>
                     <div><dt>{c.meanReturnDifference}</dt><dd className={(summary.meanReturnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(summary.meanReturnDifference)}</dd></div>
                     <div><dt>{c.returnDifferenceRange}</dt><dd>{formatReturn(summary.minimumReturnDifference)} ～ {formatReturn(summary.maximumReturnDifference)}</dd></div>
-                    <div><dt>{c.comparisonCounts}</dt><dd>{c.comparisonCountsValue.replace("{new}", String(summary.newBetterCount)).replace("{old}", String(summary.oldBetterCount)).replace("{equal}", String(summary.equalCount))}</dd></div>
+                    <div><dt>{c.comparisonCounts}</dt><dd>{c.comparisonCountsValue.replace("{new}", String(summary.newBetterCount)).replace("{old}", String(summary.oldBetterCount))}</dd></div>
                   </dl>
                   <div className="cycle-screening-split">
                     <strong>{c.screeningSplitTitle}</strong>
-                    <span><small>{c.screeningNewLed} · {summary.screeningNewLedCount}</small><b>{c.groupedDifference.replace("{median}", formatReturn(summary.screeningNewLedMedianDifference)).replace("{mean}", formatReturn(summary.screeningNewLedMeanDifference))}</b></span>
-                    <span><small>{c.screeningOldLed} · {summary.screeningOldLedCount}</small><b>{c.groupedDifference.replace("{median}", formatReturn(summary.screeningOldLedMedianDifference)).replace("{mean}", formatReturn(summary.screeningOldLedMeanDifference))}</b></span>
+                    <span><small>{c.screeningNewLed} · {summary.screeningNewLedCount}</small><b className={(summary.screeningNewLedMeanDifference ?? 0) > 0 ? "positive" : (summary.screeningNewLedMeanDifference ?? 0) < 0 ? "negative" : undefined}>{formatGroupedAdvantage(summary.screeningNewLedMeanDifference, { newBetter: c.groupedNewBetter, oldBetter: c.groupedOldBetter, equal: c.groupedEqual, insufficient: c.groupedInsufficient })}</b></span>
+                    <span><small>{c.screeningOldLed} · {summary.screeningOldLedCount}</small><b className={(summary.screeningOldLedMeanDifference ?? 0) > 0 ? "positive" : (summary.screeningOldLedMeanDifference ?? 0) < 0 ? "negative" : undefined}>{formatGroupedAdvantage(summary.screeningOldLedMeanDifference, { newBetter: c.groupedNewBetter, oldBetter: c.groupedOldBetter, equal: c.groupedEqual, insufficient: c.groupedInsufficient })}</b></span>
                   </div>
                 </article>)}</div>
               </div>

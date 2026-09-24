@@ -20,6 +20,8 @@
   future sessions with configured costs, aggregates explicit return-difference
   distributions, splits them by the old/new 128-session return ordering, and
   builds pair-chart cumulative returns plus pre-change rebalance markers.
+  Display aggregates exclude strict-zero returns or strict-zero differences so
+  inactive/equal-position events do not dilute medians, means, or counts.
 - `runStrategyCycleConfiguration(...)`: replays selected plans through one
   continuous allocation account with next-bar execution and no synthetic
   update-boundary reset.

@@ -18,6 +18,14 @@
   report automatically when the page opens; users no longer need to press
   Continue merely to reveal previously completed snapshots. The conditional
   128-session groups have a dedicated visual heading inside every horizon card.
+- Conditional 128-session groups now translate the sign of their mean forward
+  `new - old` return into an explicit new-strategy-better, old-strategy-better,
+  or tied label and show that signed mean. Their zero-dominated median is no
+  longer rendered.
+- All displayed transition aggregates exclude strict-zero observations. Old
+  and new median returns independently omit their zero returns; difference
+  medians, means, ranges, counts, and conditional groups omit zero `new - old`
+  events. Displayed sample counts therefore mean non-zero-difference events.
 
 ## 2026-09-24 maximum-return screening defaults
 

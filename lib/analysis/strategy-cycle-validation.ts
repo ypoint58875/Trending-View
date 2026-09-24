@@ -1159,6 +1159,7 @@ function buildStrategyCycleTransitions(
 function buildStrategyCycleTransitionSummaries(
   transitions: readonly StrategyCycleTransitionResult[],
 ): StrategyCycleTransitionSummary[] {
+  const isNonZero = (value: number) => Math.abs(value) > 1e-12;
   return CYCLE_TRANSITION_HORIZONS.map((sessions) => {
     const complete = transitions.flatMap((transition) => {
       const result = transition.horizons.find((entry) => entry.sessions === sessions);
@@ -1172,45 +1173,53 @@ function buildStrategyCycleTransitionSummaries(
             screeningReturnDifference: transition.screeningReturnDifference,
           }];
     });
-    const screeningNewLed = complete.filter(
+    const comparable = complete.filter((entry) => isNonZero(entry.returnDifference));
+    const nonZeroOldReturns = complete
+      .map((entry) => entry.oldReturn)
+      .filter(isNonZero);
+    const nonZeroNewReturns = complete
+      .map((entry) => entry.newReturn)
+      .filter(isNonZero);
+    const screeningNewLed = comparable.filter(
       (entry) => entry.screeningReturnDifference > 0,
     );
-    const screeningOldLed = complete.filter(
+    const screeningOldLed = comparable.filter(
       (entry) => entry.screeningReturnDifference < 0,
     );
     return {
       sessions,
-      sampleCount: complete.length,
-      oldPositiveRate: complete.length
-        ? complete.filter((entry) => entry.oldReturn > 0).length / complete.length
+      sampleCount: comparable.length,
+      oldPositiveRate: nonZeroOldReturns.length
+        ? nonZeroOldReturns.filter((value) => value > 0).length / nonZeroOldReturns.length
         : null,
-      newPositiveRate: complete.length
-        ? complete.filter((entry) => entry.newReturn > 0).length / complete.length
+      newPositiveRate: nonZeroNewReturns.length
+        ? nonZeroNewReturns.filter((value) => value > 0).length / nonZeroNewReturns.length
         : null,
-      newWinRate: complete.length
-        ? complete.filter((entry) => entry.returnDifference > 0).length / complete.length
+      newWinRate: comparable.length
+        ? comparable.filter((entry) => entry.returnDifference > 0).length / comparable.length
         : null,
-      medianOldReturn: complete.length
-        ? median(complete.map((entry) => entry.oldReturn))
+      medianOldReturn: nonZeroOldReturns.length
+        ? median(nonZeroOldReturns)
         : null,
-      medianNewReturn: complete.length
-        ? median(complete.map((entry) => entry.newReturn))
+      medianNewReturn: nonZeroNewReturns.length
+        ? median(nonZeroNewReturns)
         : null,
-      medianReturnDifference: complete.length
-        ? median(complete.map((entry) => entry.returnDifference))
+      medianReturnDifference: comparable.length
+        ? median(comparable.map((entry) => entry.returnDifference))
         : null,
-      meanReturnDifference: complete.length
-        ? complete.reduce((sum, entry) => sum + entry.returnDifference, 0) / complete.length
+      meanReturnDifference: comparable.length
+        ? comparable.reduce((sum, entry) => sum + entry.returnDifference, 0) /
+          comparable.length
         : null,
-      minimumReturnDifference: complete.length
-        ? Math.min(...complete.map((entry) => entry.returnDifference))
+      minimumReturnDifference: comparable.length
+        ? Math.min(...comparable.map((entry) => entry.returnDifference))
         : null,
-      maximumReturnDifference: complete.length
-        ? Math.max(...complete.map((entry) => entry.returnDifference))
+      maximumReturnDifference: comparable.length
+        ? Math.max(...comparable.map((entry) => entry.returnDifference))
         : null,
-      newBetterCount: complete.filter((entry) => entry.returnDifference > 0).length,
-      oldBetterCount: complete.filter((entry) => entry.returnDifference < 0).length,
-      equalCount: complete.filter((entry) => entry.returnDifference === 0).length,
+      newBetterCount: comparable.filter((entry) => entry.returnDifference > 0).length,
+      oldBetterCount: comparable.filter((entry) => entry.returnDifference < 0).length,
+      equalCount: 0,
       screeningNewLedCount: screeningNewLed.length,
       screeningNewLedMedianDifference: screeningNewLed.length
         ? median(screeningNewLed.map((entry) => entry.returnDifference))
