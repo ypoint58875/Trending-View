@@ -271,6 +271,10 @@ test("server-renders the strategy cycle validation route", async () => {
     ),
     "utf8",
   );
+  const locale = await readFile(
+    new URL("../app/i18n/zh-CN.ts", import.meta.url),
+    "utf8",
+  );
   const response = await render("/strategy-validation");
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -283,6 +287,20 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(
     workspace,
     /useState<ScreeningObjective>\("totalReturn"\)/,
+  );
+  assert.match(workspace, /addEventListener\("beforeunload", stopOnPageExit\)/);
+  assert.match(workspace, /addEventListener\("pagehide", stopOnPageExit\)/);
+  assert.match(
+    workspace,
+    /stopOnPageExit[\s\S]*?cancelScreeningInLocalEngine\(queuedJobIdsRef\.current\)/,
+  );
+  assert.match(
+    workspace,
+    /holdScreeningBatchLeaseInLocalEngine\([\s\S]*?queuedJobIdsRef\.current[\s\S]*?controller\.signal/,
+  );
+  assert.match(
+    locale,
+    /cycleValidation:[\s\S]*?objective: "优化目标"[\s\S]*?balanced: "综合评分"[\s\S]*?totalReturn: "最大收益"[\s\S]*?sharpe: "最大夏普"/,
   );
 });
 

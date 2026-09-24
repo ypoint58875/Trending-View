@@ -190,6 +190,20 @@ export function createScreeningEngineCoordinator({
     }
   }
 
+  async function cancelJob(job) {
+    job.cancelled = true;
+    job.status = "cancelled";
+    job.updatedAt = Date.now();
+    await writeFile(join(job.directory, CANCELLED_MARKER_FILE), "");
+    job.child?.kill();
+  }
+
+  async function cancelUnfinishedJob(job) {
+    await reconcileCompletedResult(job);
+    if (job.status === "completed" || job.status === "cancelled") return;
+    await cancelJob(job);
+  }
+
   function restoredJob(jobId, directory, requestPayload, completed, cancelled) {
     const sharedDirectory = requestPayload.sharedBarsPath
       ? dirname(requestPayload.sharedBarsPath)
@@ -664,6 +678,77 @@ export function createScreeningEngineCoordinator({
         }
         return true;
       }
+      if (request.method === "POST" && request.url === "/screening/job-cancellations") {
+        try {
+          const payload = await readJsonBody(request, 64 * 1024);
+          const jobIds = Array.isArray(payload?.jobIds)
+            ? [...new Set(payload.jobIds)]
+            : [];
+          if (
+            payload?.version !== 4 ||
+            jobIds.length === 0 ||
+            jobIds.length > MAX_BATCH_JOBS ||
+            jobIds.some((jobId) =>
+              typeof jobId !== "string" || !/^[a-f0-9]{24}$/.test(jobId))
+          ) {
+            writeJson(request, response, 400, { error: "INVALID_JOB_IDS" });
+            return true;
+          }
+          const cancellableJobs = jobIds.flatMap((jobId) => {
+            const job = jobs.get(jobId);
+            return job ? [job] : [];
+          });
+          await Promise.all(cancellableJobs.map(cancelJob));
+          writeJson(request, response, 200, {
+            cancelledJobIds: cancellableJobs.map((job) => job.jobId),
+          });
+        } catch (error) {
+          writeJson(request, response, 400, {
+            error: error instanceof Error ? error.message : "JOB_CANCEL_FAILED",
+          });
+        }
+        return true;
+      }
+      if (request.method === "POST" && request.url === "/screening/job-lease") {
+        try {
+          const payload = await readJsonBody(request, 64 * 1024);
+          const jobIds = Array.isArray(payload?.jobIds)
+            ? [...new Set(payload.jobIds)]
+            : [];
+          if (
+            payload?.version !== 4 ||
+            jobIds.length === 0 ||
+            jobIds.length > MAX_BATCH_JOBS ||
+            jobIds.some((jobId) =>
+              typeof jobId !== "string" || !/^[a-f0-9]{24}$/.test(jobId))
+          ) {
+            writeJson(request, response, 400, { error: "INVALID_JOB_IDS" });
+            return true;
+          }
+          const leasedJobs = jobIds.flatMap((jobId) => {
+            const job = jobs.get(jobId);
+            return job ? [job] : [];
+          });
+          response.writeHead(200, {
+            "Access-Control-Allow-Origin": allowedOrigin(request),
+            "Cache-Control": "no-store",
+            "Content-Type": "text/plain; charset=utf-8",
+          });
+          response.write("lease\n");
+          const heartbeat = setInterval(() => {
+            if (!response.destroyed) response.write("lease\n");
+          }, 1_000);
+          response.on("close", () => {
+            clearInterval(heartbeat);
+            void Promise.all(leasedJobs.map(cancelUnfinishedJob));
+          });
+        } catch (error) {
+          writeJson(request, response, 400, {
+            error: error instanceof Error ? error.message : "JOB_LEASE_FAILED",
+          });
+        }
+        return true;
+      }
       const resultMatch = request.url.match(
         /^\/screening\/jobs\/([a-f0-9]{24})\/result$/,
       );
@@ -702,10 +787,7 @@ export function createScreeningEngineCoordinator({
         return true;
       }
       if (request.method === "DELETE") {
-        job.cancelled = true;
-        job.status = "cancelled";
-        await writeFile(join(job.directory, CANCELLED_MARKER_FILE), "");
-        job.child?.kill();
+        await cancelJob(job);
         writeJson(request, response, 200, { cancelled: true });
         return true;
       }

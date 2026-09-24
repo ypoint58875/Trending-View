@@ -7,7 +7,9 @@
   `barsAvailableAtCycleDecision(...)` and test it directly.
 - The product validation method fixes the screening window at 128 sessions and
   advances exactly one trading session per decision. Do not expose an update-
-  interval selector or subsample the winner sequence.
+  interval selector or subsample the winner sequence. Reserve the first 128
+  evaluation sessions and final 20 forward-return sessions, making the visible
+  progress total exactly evaluation history minus 148.
 - Exact stability identity includes strategy composition, parameters,
   allocations, filters, and the fixed relative-long role. Merge only adjacent
   daily winners with the same exact identity. Mark the last episode as right-
@@ -38,9 +40,12 @@
   optimization units. Keep at most one latest task record. Submit every
   incomplete local unit before awaiting results and persist deterministic job
   IDs with the task. The loopback coordinator owns CPU- and memory-bounded
-  parallel execution across independent jobs; browser
-  teardown may stop polling but must not cancel jobs. Only explicit Pause or
-  reset cancels the submitted queue. Persist batch membership atomically and
+  parallel execution across independent jobs while the page remains open.
+  Hold one coordinator streaming lease for the submitted queue. A disconnected
+  browser lease must cancel every unfinished job and persist cancellation before
+  child termination. Browser `beforeunload`/`pagehide`, explicit Pause, and reset
+  retain one bounded, preflight-free keepalive cancellation as a redundant path.
+  Persist batch membership atomically and
   persist explicit cancellation per job, so coordinator restart resumes only
   the intended unfinished queue.
 - Store one immutable columnar market payload per cycle batch. Unit metadata

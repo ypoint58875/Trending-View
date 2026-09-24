@@ -6,9 +6,25 @@
   default to the shared `totalReturn` screening objective. Balanced score and
   Sharpe remain available as explicit user selections, and restored workspace
   snapshots retain their previously selected objective.
+- Both pages expose the same Chinese objective labels: `综合评分`, `最大收益`,
+  and `最大夏普`; strategy-cycle validation also uses the same `优化目标`
+  field label as the research workspace.
 
 ## 2026-09-24 daily strategy stability and switching evidence
 
+- Closing or leaving the strategy-cycle page now stops its local work. The page
+  holds a streaming coordinator lease over every submitted job ID. Connection
+  loss makes the coordinator write cancellation markers and kill every unfinished
+  child, so correctness no longer depends on an unload event successfully sending
+  a request. A preflight-free keepalive batch cancellation during
+  `beforeunload`/`pagehide` remains as a redundant fast path. Explicit Pause and
+  reset use the same endpoint, with per-job DELETE fallback for an older coordinator.
+- Daily strategy-cycle validation now requires at least 148 evaluation sessions
+  and 148 available bars before scheduling work. This minimum combines the
+  fixed 128-session screening window with the longest 20-session forward-return
+  comparison; shorter requests are rejected without running screening units.
+  The progress total is exactly `evaluation sessions - 148`, so the maximum
+  504-session input schedules 356 daily optimization units rather than 504.
 - Strategy-cycle validation now fixes its method at one 128-session screening
   on every historical trading day. The update-interval and screening-window
   controls and their interval comparison report were removed.

@@ -62,7 +62,9 @@ formats to the browser.
 The strategy-cycle page is a separate orchestration boundary over the existing
 market, screening, and allocation engines. For a historical decision index it
 passes only the prefix ending at that close to one fixed 128-session screening.
-The decision grid advances one trading session at a time. Exact plan identity
+The eligible decision grid advances one trading session at a time after reserving
+the first 128 evaluation sessions for screening and the final 20 for forward
+returns; its unit count is therefore evaluation history minus 148. Exact plan identity
 includes strategy composition, parameters, allocations, entry filters, and the
 fixed relative-long role. Consecutive identical daily winners form stability
 episodes; the final still-running episode is right-censored and excluded from
@@ -80,10 +82,13 @@ and costs. A matching signature resumes idempotently. Before result collection,
 the local page submits every incomplete bounded unit in one full-series batch
 to the loopback screening coordinator and persists its deterministic job ID.
 The coordinator slices each causal prefix before child execution and owns
-bounded parallel execution after submission, so background-tab suspension or
-page closure does not stop the next unit. IndexedDB remains the browser-side report and unit-map
-boundary; explicit Pause cancels the submitted queue, while closing the page
-only detaches progress polling. Each batch also commits an atomic `queue.json`;
+  bounded parallel execution after submission while the page remains open.
+  IndexedDB remains the browser-side report and unit-map boundary. Explicit
+  The page holds one streaming lease over every submitted unit. Browser or page
+  closure breaks that connection, and the coordinator cancels unfinished jobs
+  and persists their markers server-side without depending on an unload request.
+  Pause and `beforeunload`/`pagehide` also send a preflight-free keepalive batch
+  cancellation as a redundant fast path. Each batch commits an atomic `queue.json`;
 the coordinator reconstructs unfinished, non-cancelled jobs from it after a
 relay restart. Per-job cancellation markers prevent an explicitly paused queue
 from being revived by startup recovery. Browser progress is reconciled from one

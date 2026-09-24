@@ -3,6 +3,7 @@ import test from "node:test";
 import type { MarketBar } from "../lib/market/types";
 import {
   buildStrategyCycleDailyValidationReport,
+  buildStrategyCycleDailySchedule,
   buildStrategyCycleEventValidation,
   buildStrategyCycleMatrix,
   buildStrategyCycleSchedule,
@@ -11,6 +12,7 @@ import {
   compareStrategyCycleRebalanceEventsDetailed,
   CYCLE_DAILY_SCREENING_WINDOW,
   MAX_CYCLE_OPTIMIZATION_UNITS,
+  MIN_CYCLE_DAILY_EVALUATION_SESSIONS,
   normalizeCycleValues,
   type StrategyCycleSelectionSnapshot,
 } from "../lib/analysis/strategy-cycle-validation";
@@ -64,6 +66,19 @@ test("a historical decision receives no bars from its future", () => {
   assert.equal(visible.at(-1)?.time, bars[19]?.time);
   assert.notEqual(visible.at(-1)?.time, bars[20]?.time);
   assert.throws(() => barsAvailableAtCycleDecision(bars, 40), RangeError);
+});
+
+test("daily validation requires 128 screening sessions plus 20 forward sessions", () => {
+  assert.equal(MIN_CYCLE_DAILY_EVALUATION_SESSIONS, 148);
+  assert.equal(buildStrategyCycleDailySchedule(600, 147), null);
+  assert.equal(buildStrategyCycleDailySchedule(147, 148), null);
+  assert.equal(buildStrategyCycleDailySchedule(148, 148)?.optimizationUnits, 0);
+  assert.equal(buildStrategyCycleDailySchedule(149, 149)?.optimizationUnits, 1);
+  const maximum = buildStrategyCycleDailySchedule(600, 504);
+  assert.equal(maximum?.optimizationUnits, 356);
+  assert.equal(maximum?.decisionIndexes.length, 356);
+  assert.equal(maximum?.decisionIndexes[0], 224);
+  assert.equal(maximum?.decisionIndexes.at(-1), 579);
 });
 
 test("normalizes user periods deterministically and bounds their count", () => {

@@ -19,7 +19,9 @@ trades or run unattended jobs.
   saved records remain readable provenance and reopen against daily bars.
 - A separate strategy-cycle validation page selects an instrument from the
   saved-backtest shortcut bar and repeats one fixed 128-session screening on
-  every historical trading day using only the bars then visible. Consecutive
+  each eligible historical trading day using only the bars then visible. The
+  progress total is the selected evaluation history minus 148 sessions, reserving
+  the first 128 for screening and the final 20 for forward returns. Consecutive
   identical winning plans form stability episodes; completed episodes produce
   per-plan average, median, maximum, and 5/10/15/20-session survival rates.
   Every winning-plan change freezes the old and new plans and compares their
@@ -29,8 +31,10 @@ trades or run unattended jobs.
   switch, keep the old plan, avoid both plans, continue observing, or wait for
   more evidence. One compact batch request pre-submits
   every bounded optimization unit to the loopback coordinator, which continues
-  a CPU- and memory-bounded parallel queue while the tab is sleeping or closed,
-  and restores unfinished non-paused units after a local relay restart.
+  a CPU- and memory-bounded parallel queue while the tab remains open, and
+  a browser-held streaming lease cancels queued and running units as soon as
+  the page connection closes, so they cannot be restored after a local relay
+  restart.
   One immutable columnar bar file is shared by the queued units; each child
   materializes only its causal prefix,
   and windows at the same decision share range-independent entry-filter

@@ -51,6 +51,99 @@ test("screening concurrency reserves CPU and memory for the desktop", () => {
   );
 });
 
+test("coordinator cancels unfinished work when the browser lease disconnects", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "quantscope-lease-"));
+  const stateDirectory = join(directory, "state");
+  const childScript = join(directory, "fake-child.mjs");
+  await writeFile(childScript, "setInterval(() => {}, 1000);\n");
+  const coordinator = createScreeningEngineCoordinator({
+    rootDirectory: resolve("."),
+    stateDirectoryPath: stateDirectory,
+    childScriptPath: childScript,
+    stallTimeoutMs: 60_000,
+    maximumConcurrency: 1,
+  });
+  const server = createServer(async (request, response) => {
+    if (!(await coordinator.handle(request, response))) {
+      response.writeHead(404).end();
+    }
+  });
+  await new Promise<void>((resolvePromise) =>
+    server.listen(0, "127.0.0.1", resolvePromise),
+  );
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  const leaseController = new AbortController();
+  try {
+    const request: LocalScreeningJobRequest = {
+      version: 4,
+      bars: [{
+        time: "2026-01-01",
+        timestamp: Date.parse("2026-01-01T00:00:00Z"),
+        open: 1,
+        high: 1,
+        low: 1,
+        close: 1,
+        volume: 1,
+        amount: 1,
+        amplitude: 0,
+        changePercent: 0,
+        change: 0,
+        turnoverRate: 0,
+      }],
+      settings: {
+        initialCash: 1,
+        commissionRate: 0,
+        slippageRate: 0,
+        interval: "1d",
+        executionPolicy: "next-open",
+      },
+      config: { mode: "sample", periods: [{ sessions: 1, weight: 100 }] },
+      checkpoint: { key: "lease", signature: "lease" },
+      options: {},
+    };
+    const createdResponse = await fetch(`${baseUrl}/screening/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": LOCAL_SCREENING_BINARY_CONTENT_TYPE },
+      body: encodeLocalScreeningJobRequest(request),
+    });
+    const created = (await createdResponse.json()) as { jobId: string };
+    const leaseResponse = await fetch(`${baseUrl}/screening/job-lease`, {
+      method: "POST",
+      body: JSON.stringify({ version: 4, jobIds: [created.jobId] }),
+      signal: leaseController.signal,
+    });
+    assert.equal(leaseResponse.status, 200);
+    const reader = leaseResponse.body?.getReader();
+    assert.ok(reader);
+    await reader.read();
+    leaseController.abort();
+    try {
+      await reader.read();
+    } catch (error) {
+      assert.equal((error as Error).name, "AbortError");
+    }
+    let status = "running";
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
+      const snapshot = await fetch(
+        `${baseUrl}/screening/jobs/${created.jobId}`,
+      ).then((response) => response.json()) as { status: string };
+      status = snapshot.status;
+      if (status === "cancelled") break;
+    }
+    assert.equal(status, "cancelled");
+    await access(join(stateDirectory, created.jobId, "cancelled"));
+  } finally {
+    leaseController.abort();
+    await new Promise<void>((resolvePromise, reject) =>
+      server.close((error) => (error ? reject(error) : resolvePromise())),
+    );
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("coordinator restarts a stalled child and serves its result lazily", async () => {
   const directory = await mkdtemp(join(tmpdir(), "quantscope-coordinator-"));
   const stateDirectory = join(directory, "state");
@@ -443,10 +536,17 @@ process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
       "a submitted batch unit should resume after coordinator restart",
     );
     const cancelledResponse = await fetch(
-      `${recoveredBaseUrl}/screening/jobs/${jobIds[2]}`,
-      { method: "DELETE" },
+      `${recoveredBaseUrl}/screening/job-cancellations`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version: 4, jobIds: [jobIds[2]] }),
+      },
     );
     assert.equal(cancelledResponse.status, 200);
+    assert.deepEqual(await cancelledResponse.json(), {
+      cancelledJobIds: [jobIds[2]],
+    });
     await rm(join(stateDirectory, jobIds[2]!, "result.json"));
     const pausedCoordinator = createScreeningEngineCoordinator({
       rootDirectory: resolve("."),

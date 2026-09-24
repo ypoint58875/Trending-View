@@ -15,8 +15,12 @@ and press Continue to collect completed results and rebuild the report.
 If progress stops overnight, check `http://127.0.0.1:3001/health` and the
 matching directories under `data/state/screening-engine/`. A queued or running
 job with changing checkpoint timestamps means computation is continuing even
-if the page is asleep. Explicit Pause cancels all submitted unfinished jobs;
-closing the tab does not. Screening-engine protocol version 4 persists a batch
+if the page is temporarily busy. Explicit Pause and closing or leaving the page
+cancel all submitted unfinished jobs. The primary close signal is a streaming
+browser lease: when its connection disappears, the coordinator writes durable
+cancellation markers and kills the children. The unload batch request is only a
+redundant fast path.
+Screening-engine protocol version 4 persists a batch
 queue manifest and explicit-cancellation markers, so restarting the local relay
 automatically resumes unfinished, non-paused jobs. Reopen the page and press
 Continue only to reattach report collection immediately; it is not required to

@@ -9,9 +9,10 @@ import {
   CYCLE_DAILY_UPDATE_INTERVAL,
   DEFAULT_CYCLE_EVALUATION_SESSIONS,
   MAX_CYCLE_OPTIMIZATION_UNITS,
+  MIN_CYCLE_DAILY_EVALUATION_SESSIONS,
   barsAvailableAtCycleDecision,
   buildStrategyCycleDailyValidationReport,
-  buildStrategyCycleSchedule,
+  buildStrategyCycleDailySchedule,
   type StrategyCycleDailyValidationReport,
   type StrategyCycleSelectionSnapshot,
 } from "@/lib/analysis/strategy-cycle-validation";
@@ -24,6 +25,7 @@ import {
 import {
   cancelScreeningInLocalEngine,
   enqueueScreeningBatchInLocalEngine,
+  holdScreeningBatchLeaseInLocalEngine,
   localScreeningEngineAvailable,
   screeningJobRequest,
   waitForScreeningBatchInLocalEngine,
@@ -119,6 +121,7 @@ function taskSignature(input: {
   slippagePercent: number;
 }): string {
   return JSON.stringify({
+    dailySchedule: "evaluation-minus-148-v1",
     instrumentKey: savedBacktestInstrumentKey(input.instrument),
     lastBar: input.series.bars.at(-1)?.time,
     barCount: input.series.bars.length,
@@ -151,6 +154,8 @@ export function StrategyValidationWorkspace() {
   const [dailyReport, setDailyReport] = useState<StrategyCycleDailyValidationReport | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pauseRequestedRef = useRef(false);
+  const runningRef = useRef(false);
+  const queuedJobIdsRef = useRef<string[]>([]);
 
   const groups = useMemo(() => groupSavedBacktests(records), [records]);
   const selectedGroup = groups.find((group) => group.key === selectedKey) ?? groups[0] ?? null;
@@ -165,11 +170,15 @@ export function StrategyValidationWorkspace() {
       const nextRecords = (payload as { savedBacktests?: SavedBacktestRecord[] }).savedBacktests ?? [];
       setRecords(nextRecords);
       setStoredTask(task);
+      queuedJobIdsRef.current = task?.queuedUnits.map((unit) => unit.jobId) ?? [];
       const nextGroups = groupSavedBacktests(nextRecords);
       const restoredKey = task ? savedBacktestInstrumentKey(task.instrument) : "";
       setSelectedKey(nextGroups.some((group) => group.key === restoredKey) ? restoredKey : nextGroups[0]?.key ?? "");
       if (task) {
-        setEvaluationSessions(task.evaluationSessions);
+        setEvaluationSessions(Math.max(
+          MIN_CYCLE_DAILY_EVALUATION_SESSIONS,
+          Math.min(512, task.evaluationSessions),
+        ));
         setObjective(task.objective);
         setInitialCash(task.initialCash);
         setCommissionPercent(task.commissionPercent);
@@ -194,17 +203,27 @@ export function StrategyValidationWorkspace() {
     };
   }, [c.loadError]);
 
+  useEffect(() => {
+    const stopOnPageExit = () => {
+      if (!runningRef.current) return;
+      pauseRequestedRef.current = true;
+      abortRef.current?.abort();
+      void cancelScreeningInLocalEngine(queuedJobIdsRef.current);
+    };
+    window.addEventListener("beforeunload", stopOnPageExit);
+    window.addEventListener("pagehide", stopOnPageExit);
+    return () => {
+      window.removeEventListener("beforeunload", stopOnPageExit);
+      window.removeEventListener("pagehide", stopOnPageExit);
+    };
+  }, []);
+
   const calculateReports = useCallback((
     series: MarketSeries,
     snapshots: StrategyCycleSelectionSnapshot[],
     sessions: number,
   ) => {
-    const schedule = buildStrategyCycleSchedule(
-      series.bars.length,
-      DAILY_SCREENING_WINDOWS,
-      DAILY_UPDATE_INTERVALS,
-      sessions,
-    );
+    const schedule = buildStrategyCycleDailySchedule(series.bars.length, sessions);
     if (!schedule) return;
     const settings = {
       initialCash,
@@ -227,6 +246,7 @@ export function StrategyValidationWorkspace() {
     const controller = new AbortController();
     abortRef.current = controller;
     pauseRequestedRef.current = false;
+    runningRef.current = true;
     setRunning(true);
     let currentTask: Omit<StoredStrategyCycleValidationTask, "key" | "version" | "updatedAt"> | null = null;
     try {
@@ -236,10 +256,8 @@ export function StrategyValidationWorkspace() {
       });
       if (!marketResponse.ok) throw new Error(c.marketError);
       const series = await marketResponse.json() as MarketSeries;
-      const schedule = buildStrategyCycleSchedule(
+      const schedule = buildStrategyCycleDailySchedule(
         series.bars.length,
-        DAILY_SCREENING_WINDOWS,
-        DAILY_UPDATE_INTERVALS,
         evaluationSessions,
       );
       if (!schedule) throw new Error(c.insufficientHistory);
@@ -377,6 +395,11 @@ export function StrategyValidationWorkspace() {
           ...currentTask,
           queuedUnits: [...queuedByKey.values()],
         };
+        queuedJobIdsRef.current = currentTask.queuedUnits.map((unit) => unit.jobId);
+        void holdScreeningBatchLeaseInLocalEngine(
+          queuedJobIdsRef.current,
+          controller.signal,
+        );
         await writeStrategyCycleValidationTask(currentTask);
         setStoredTask({ ...currentTask, key: "latest", version: 2, updatedAt: new Date().toISOString() });
       }
@@ -481,6 +504,7 @@ export function StrategyValidationWorkspace() {
         }
       }
       currentTask = { ...currentTask, completedUnits: completed.size, snapshots, status: "completed" };
+      queuedJobIdsRef.current = [];
       await writeStrategyCycleValidationTask(currentTask);
       setStoredTask({ ...currentTask, key: "latest", version: 2, updatedAt: new Date().toISOString() });
       setProgress({
@@ -506,7 +530,9 @@ export function StrategyValidationWorkspace() {
         if (currentTask) await writeStrategyCycleValidationTask({ ...currentTask, status: "error", lastError: message });
       }
     } finally {
+      controller.abort();
       abortRef.current = null;
+      runningRef.current = false;
       setRunning(false);
     }
   }, [
@@ -529,6 +555,7 @@ export function StrategyValidationWorkspace() {
       storedTask?.queuedUnits.map((unit) => unit.jobId) ?? [],
     );
     await clearStrategyCycleValidationTask();
+    queuedJobIdsRef.current = [];
     setStoredTask(null);
     setProgress(null);
     setDailyReport(null);
@@ -558,7 +585,7 @@ export function StrategyValidationWorkspace() {
               </select></label>
               {groups.length === 0 && <p className="cycle-warning">{c.noShortcuts}</p>}
               <div className="cycle-fixed-method"><span>{c.fixedScreeningWindow}</span><strong>{CYCLE_DAILY_SCREENING_WINDOW} {c.sessionUnit}</strong><span>{c.fixedUpdateInterval}</span><strong>{c.everyTradingDay}</strong></div>
-              <label><span>{c.evaluationSessions}</span><input type="number" min={120} max={512} value={evaluationSessions} disabled={running} onChange={(event) => setEvaluationSessions(Math.max(120, Math.min(512, Number(event.target.value) || 120)))} /></label>
+              <label><span>{c.evaluationSessions}</span><input type="number" min={MIN_CYCLE_DAILY_EVALUATION_SESSIONS} max={512} value={evaluationSessions} disabled={running} onChange={(event) => setEvaluationSessions(Math.max(MIN_CYCLE_DAILY_EVALUATION_SESSIONS, Math.min(512, Number(event.target.value) || MIN_CYCLE_DAILY_EVALUATION_SESSIONS)))} /></label>
               <label><span>{c.objective}</span><select value={objective} disabled={running} onChange={(event) => setObjective(event.target.value as ScreeningObjective)}>
                 {SCREENING_OBJECTIVES.map((value) => <option key={value} value={value}>{c.objectives[value]}</option>)}
               </select></label>

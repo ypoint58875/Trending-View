@@ -148,14 +148,59 @@ export async function enqueueScreeningInLocalEngine(
 export async function cancelScreeningInLocalEngine(
   jobIds: readonly string[],
 ): Promise<void> {
+  const uniqueJobIds = [...new Set(jobIds)];
+  if (uniqueJobIds.length === 0) return;
+  try {
+    const response = await fetch(
+      `${LOCAL_SCREENING_ENGINE_URL}/screening/job-cancellations`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          version: LOCAL_SCREENING_ENGINE_VERSION,
+          jobIds: uniqueJobIds,
+        }),
+        keepalive: true,
+      },
+    );
+    if (response.ok) return;
+  } catch {
+    // Fall through for a coordinator that predates batch cancellation.
+  }
   await Promise.allSettled(
-    [...new Set(jobIds)].map((jobId) =>
+    uniqueJobIds.map((jobId) =>
       fetch(`${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${jobId}`, {
         method: "DELETE",
         keepalive: true,
       }),
     ),
   );
+}
+
+export async function holdScreeningBatchLeaseInLocalEngine(
+  jobIds: readonly string[],
+  signal: AbortSignal,
+): Promise<boolean> {
+  const uniqueJobIds = [...new Set(jobIds)];
+  if (uniqueJobIds.length === 0 || signal.aborted) return false;
+  try {
+    const response = await fetch(
+      `${LOCAL_SCREENING_ENGINE_URL}/screening/job-lease`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          version: LOCAL_SCREENING_ENGINE_VERSION,
+          jobIds: uniqueJobIds,
+        }),
+        cache: "no-store",
+        signal,
+      },
+    );
+    if (!response.ok) return false;
+    await response.text();
+    return true;
+  } catch (error) {
+    return (error as Error).name === "AbortError";
+  }
 }
 
 function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {

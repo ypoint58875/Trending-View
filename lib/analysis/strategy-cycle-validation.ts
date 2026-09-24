@@ -20,6 +20,8 @@ export const DEFAULT_CYCLE_FORWARD_HORIZONS = [5, 10, 20, 40, 60] as const;
 export const CYCLE_DAILY_SCREENING_WINDOW = 128;
 export const CYCLE_DAILY_UPDATE_INTERVAL = 1;
 export const CYCLE_TRANSITION_HORIZONS = [5, 10, 15, 20] as const;
+export const MIN_CYCLE_DAILY_EVALUATION_SESSIONS =
+  CYCLE_DAILY_SCREENING_WINDOW + Math.max(...CYCLE_TRANSITION_HORIZONS);
 export const CYCLE_REFERENCE_INTERVAL = 5;
 export const CYCLE_EVENT_MATCH_TOLERANCE = 10;
 export const MAX_CYCLE_OPTIMIZATION_UNITS = 512;
@@ -211,6 +213,37 @@ export function buildStrategyCycleSchedule(
     evaluationEndIndex,
     decisionIndexes,
     optimizationUnits: decisionIndexes.length * windows.length,
+  };
+}
+
+export function buildStrategyCycleDailySchedule(
+  barsLength: number,
+  evaluationSessions: number,
+): StrategyCycleSchedule | null {
+  const resolvedEvaluationSessions = Math.min(
+    barsLength,
+    Math.round(evaluationSessions),
+  );
+  if (
+    !Number.isFinite(evaluationSessions) ||
+    evaluationSessions < MIN_CYCLE_DAILY_EVALUATION_SESSIONS ||
+    barsLength < MIN_CYCLE_DAILY_EVALUATION_SESSIONS
+  ) {
+    return null;
+  }
+  const optimizationUnits =
+    resolvedEvaluationSessions - MIN_CYCLE_DAILY_EVALUATION_SESSIONS;
+  const evaluationStartIndex =
+    barsLength - resolvedEvaluationSessions + CYCLE_DAILY_SCREENING_WINDOW;
+  const evaluationEndIndex = barsLength - 1;
+  return {
+    evaluationStartIndex,
+    evaluationEndIndex,
+    decisionIndexes: Array.from(
+      { length: optimizationUnits },
+      (_, offset) => evaluationStartIndex + offset,
+    ),
+    optimizationUnits,
   };
 }
 
