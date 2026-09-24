@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { MarketBar } from "../lib/market/types";
 import {
+  buildStrategyCycleDailyValidationReport,
   buildStrategyCycleEventValidation,
   buildStrategyCycleMatrix,
   buildStrategyCycleSchedule,
   barsAvailableAtCycleDecision,
   compareStrategyCycleRebalanceEvents,
+  compareStrategyCycleRebalanceEventsDetailed,
+  CYCLE_DAILY_SCREENING_WINDOW,
   MAX_CYCLE_OPTIMIZATION_UNITS,
   normalizeCycleValues,
   type StrategyCycleSelectionSnapshot,
@@ -110,6 +113,83 @@ test("reuses a minimum divisor grid for every multiple update interval", () => {
   assert.equal(fiveSession.optimizationUnits, fiveSession.decisionIndexes.length);
 });
 
+test("daily 128-session validation measures stable runs and frozen forward transitions", () => {
+  const bars = makeBars(180);
+  const snapshot = (
+    decisionIndex: number,
+    fast: number,
+    slow: number,
+    label: string,
+  ): StrategyCycleSelectionSnapshot => ({
+    decisionIndex,
+    decisionTime: bars[decisionIndex]!.time,
+    screeningWindow: CYCLE_DAILY_SCREENING_WINDOW,
+    plan: {
+      strategyA: { strategyId: "sma-cross", parameters: { fast, slow } },
+      strategyB: null,
+      strategyAAllocation: 1,
+      strategyBAllocation: 0,
+    },
+    fixedRelativeLongStrategy: null,
+    label,
+  });
+  const report = buildStrategyCycleDailyValidationReport(
+    bars,
+    [
+      snapshot(130, 2, 5, "A"),
+      snapshot(131, 2, 5, "A"),
+      snapshot(132, 3, 8, "B"),
+      snapshot(133, 3, 8, "B"),
+      snapshot(134, 2, 5, "A"),
+    ],
+    {
+      initialCash: 100_000,
+      commissionRate: 0.001,
+      slippageRate: 0.001,
+      interval: "1d",
+      executionPolicy: "hybrid",
+    },
+  );
+
+  assert.deepEqual(
+    report.stabilityRuns.map((run) => ({ label: run.label, sessions: run.sessions, complete: run.complete })),
+    [
+      { label: "A", sessions: 2, complete: true },
+      { label: "B", sessions: 2, complete: true },
+      { label: "A", sessions: 1, complete: false },
+    ],
+  );
+  const strategyA = report.stabilitySummaries.find((summary) => summary.label === "A");
+  assert.equal(strategyA?.episodeCount, 2);
+  assert.equal(strategyA?.completedEpisodeCount, 1);
+  assert.equal(strategyA?.averageSessions, 2);
+  assert.equal(report.transitions.length, 2);
+  assert.deepEqual(
+    report.transitions[0]?.horizons.map((result) => result.sessions),
+    [5, 10, 15, 20],
+  );
+  assert.ok(report.transitions[0]?.horizons.every((result) => result.oldReturn !== null));
+  assert.equal(report.transitionSummaries[0]?.sampleCount, 2);
+  assert.equal(report.recommendation, "insufficient-evidence");
+
+  const repeatedChanges = buildStrategyCycleDailyValidationReport(
+    bars,
+    Array.from({ length: 6 }, (_, index) =>
+      index % 2 === 0
+        ? snapshot(140 + index, 2, 5, "A")
+        : snapshot(140 + index, 3, 8, "B")),
+    {
+      initialCash: 100_000,
+      commissionRate: 0.001,
+      slippageRate: 0.001,
+      interval: "1d",
+      executionPolicy: "hybrid",
+    },
+  );
+  assert.equal(repeatedChanges.transitionSummaries[0]?.sampleCount, 5);
+  assert.equal(repeatedChanges.recommendation, "avoid-both");
+});
+
 function allocationResult(
   totalReturn: number,
   rebalances: AllocationBacktestResult["rebalances"],
@@ -183,6 +263,41 @@ test("matches rebalance events one-to-one and isolates timing return difference"
   assert.equal(metrics.withinTwoSessionsRate, 1);
   assert.equal(metrics.meanTargetAllocationError, 0);
   assert.ok(Math.abs((metrics.medianTimingReturnDifferenceBps ?? 0) + 200) < 1e-10);
+
+  const comparison = compareStrategyCycleRebalanceEventsDetailed(
+    bars,
+    candidate,
+    reference,
+    3,
+  );
+  assert.deepEqual(
+    comparison.events.map((event) => ({
+      status: event.status,
+      referenceTime: event.reference?.time ?? null,
+      candidateTime: event.candidate?.time ?? null,
+      timingErrorSessions: event.timingErrorSessions,
+    })),
+    [
+      {
+        status: "matched",
+        referenceTime: bars[10]!.time,
+        candidateTime: bars[12]!.time,
+        timingErrorSessions: 2,
+      },
+      {
+        status: "matched",
+        referenceTime: bars[20]!.time,
+        candidateTime: bars[19]!.time,
+        timingErrorSessions: -1,
+      },
+      {
+        status: "extra",
+        referenceTime: null,
+        candidateTime: bars[35]!.time,
+        timingErrorSessions: null,
+      },
+    ],
+  );
 });
 
 test("opposite-direction adjustments are severe errors rather than timing hits", () => {
@@ -231,6 +346,11 @@ test("opposite-direction adjustments are severe errors rather than timing hits",
   assert.equal(metrics.lateEventRate, null);
   assert.equal(metrics.meanTargetAllocationError, null);
   assert.equal(metrics.medianTimingReturnDifferenceBps, null);
+  assert.deepEqual(
+    compareStrategyCycleRebalanceEventsDetailed(bars, candidate, reference, 3)
+      .events.map((event) => event.status),
+    ["opposite", "opposite"],
+  );
 });
 
 test("reusing an unchanged selected plan does not create update-boundary trades", () => {

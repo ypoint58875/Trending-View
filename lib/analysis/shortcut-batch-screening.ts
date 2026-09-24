@@ -12,13 +12,15 @@ export const SHORTCUT_BATCH_CHECKPOINT_KEY =
 export const MAX_SHORTCUT_BATCH_INSTRUMENTS = 256;
 
 export interface ShortcutBatchCheckpoint {
-  version: 1;
+  version: 2;
+  resumeReason: "failure";
+  runId: string;
   configSignature: string;
   sessions: number;
   completedInstrumentKeys: string[];
   failedInstrumentKeys: string[];
   updatedAt: string;
-  lastError: string | null;
+  lastError: string;
 }
 
 export type BestShortcutScreeningResult =
@@ -50,7 +52,11 @@ export function parseShortcutBatchCheckpoint(
       parsed.failedInstrumentKeys,
     );
     if (
-      parsed.version !== 1 ||
+      parsed.version !== 2 ||
+      parsed.resumeReason !== "failure" ||
+      typeof parsed.runId !== "string" ||
+      parsed.runId.length === 0 ||
+      parsed.runId.length > 120 ||
       typeof parsed.configSignature !== "string" ||
       parsed.configSignature.length === 0 ||
       parsed.configSignature.length > 2_000 ||
@@ -60,21 +66,21 @@ export function parseShortcutBatchCheckpoint(
       !completedInstrumentKeys ||
       !failedInstrumentKeys ||
       typeof parsed.updatedAt !== "string" ||
-      (parsed.lastError !== null && typeof parsed.lastError !== "string")
+      typeof parsed.lastError !== "string" ||
+      parsed.lastError.length === 0
     ) {
       return null;
     }
     return {
-      version: 1,
+      version: 2,
+      resumeReason: "failure",
+      runId: parsed.runId,
       configSignature: parsed.configSignature,
       sessions: Number(parsed.sessions),
       completedInstrumentKeys,
       failedInstrumentKeys,
       updatedAt: parsed.updatedAt,
-      lastError:
-        typeof parsed.lastError === "string"
-          ? parsed.lastError.slice(0, 240)
-          : null,
+      lastError: parsed.lastError.slice(0, 240),
     };
   } catch {
     return null;

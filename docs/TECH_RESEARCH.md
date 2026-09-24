@@ -1,5 +1,37 @@
 # Technical Research
 
+## 2026-09-24 daily strategy stability and champion transitions
+
+The requested question is how long a selected 128-session winner remains
+stable and whether a newly selected winner justifies replacing the old plan.
+Two validation designs were compared:
+
+1. Treat the next screening winner as a retrospective oracle and compare its
+   rebalance events with the prior winner. This diagnoses signal timing but
+   moves a future-selected plan backward, so it cannot measure causal plan
+   lifetime or executable replacement value.
+2. Screen causally every session, merge consecutive exact winners into
+   stability episodes, and freeze every old/new winner transition for forward
+   5/10/15/20-session replay. This preserves the daily selection path and makes
+   the future comparison genuinely out of sample relative to the change date.
+
+Option 2 was selected. Both plans use the same cash start and configured costs;
+a later winner does not censor an earlier comparison. Recommendations require
+multiple complete transitions and a material majority rather than responding
+to one selected winner. This matters because exhaustive selection reuses the
+same history across many candidates: White's Reality Check describes the
+resulting data-snooping risk, while the Deflated Sharpe Ratio literature shows
+why the best observed Sharpe is inflated by multiple testing and non-normal
+returns. The first implementation therefore uses transparent empirical gates
+instead of presenting one in-sample rank change as proof of superiority.
+
+Primary references, accessed 2026-09-24:
+
+- Halbert White, “A Reality Check for Data Snooping”:
+  `https://doi.org/10.1111/1468-0262.00152`
+- David H. Bailey and Marcos López de Prado, “The Deflated Sharpe Ratio”:
+  `https://doi.org/10.2139/ssrn.2460551`
+
 ## 2026-09-23 adaptive multi-CPU screening
 
 The cycle-validation batch contains independent `(decision, screening window)`

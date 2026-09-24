@@ -1,5 +1,79 @@
 # Codex State
 
+## 2026-09-24 maximum-return screening defaults
+
+- Fresh research-workspace intervals and strategy-cycle validation tasks now
+  default to the shared `totalReturn` screening objective. Balanced score and
+  Sharpe remain available as explicit user selections, and restored workspace
+  snapshots retain their previously selected objective.
+
+## 2026-09-24 daily strategy stability and switching evidence
+
+- Strategy-cycle validation now fixes its method at one 128-session screening
+  on every historical trading day. The update-interval and screening-window
+  controls and their interval comparison report were removed.
+- Exact consecutive daily winners form stability episodes. Per-plan reporting
+  exposes completed episode count, median, average, maximum, and the probability
+  of remaining the winner for at least 5, 10, 15, and 20 sessions. The current
+  unfinished episode is right-censored rather than allowed to understate the
+  completed average.
+- Every daily winner change freezes the old and new plan and replays both from
+  one cash baseline for 5/10/15/20 sessions with existing next-open/intrabar
+  execution, commission, and slippage. Later winner changes do not truncate the
+  pending comparison.
+- Aggregate complete events now produce an explicit adjustment conclusion:
+  switch after the earliest sufficiently supported horizon, keep the old plan,
+  avoid both, observe longer, or wait for at least five complete events.
+
+## 2026-09-24 cycle-validation comparison controls
+
+- The cycle-validation price chart now uses the research workspace's two
+  rebalance arrows: an upward triangle below the bar for increased allocation
+  and a downward triangle above the bar for reduced allocation. Marker color,
+  rather than five unrelated shapes, separates correct-direction hits,
+  opposite-direction adjustments, missed adjustments, and extra signals.
+- The combined window/interval result selector and wide 15-column matrix were
+  replaced by independent screening-window and single-update-interval
+  selectors. With one update interval fixed, compact cards compare every
+  configured screening window and switch the chart directly.
+- The chart tooltip still exposes both candidate and retrospective reference
+  dates and target allocations, so removing the duplicate reference marker
+  layer reduces clutter without discarding event detail.
+
+## 2026-09-24 shortcut-batch stop and resume semantics
+
+- The period-derived shortcut batch previously wrote its localStorage
+  checkpoint after every successful instrument. An explicit Stop therefore
+  left an ordinary partial checkpoint, and the next 128-day click repeatedly
+  opened at a stale saved count such as `4/6`.
+- Batch checkpoint version 2 is now explicitly failure-backed. A fresh run does
+  not create a resumable batch checkpoint until an instrument fails; subsequent
+  successful saves advance that failure checkpoint so retry progress remains
+  accurate. Old version-1 checkpoints are rejected.
+- Clicking Stop marks the abort as user-requested and immediately removes the
+  batch checkpoint. The aborted run also enforces the removal before settling,
+  so the next click starts at `0/N`. Each fresh batch also receives a new run
+  identity for its underlying screening jobs, preventing a stopped job's local
+  engine checkpoint or completed result from being silently reused. A failed,
+  non-stopped run retains that run identity and its successful instrument keys,
+  then resumes only the pending instruments.
+
+## 2026-09-24 cycle-validation price overlay
+
+- The strategy-cycle validation report now retains the individual candidate
+  and next-vintage reference rebalance events behind every aggregate matrix
+  cell without changing the existing chronological matching or metric rules.
+- A selectable candlestick chart displays only the current evaluation range.
+  It overlays next-vintage reference adjustments, correct-direction candidate
+  adjustments, opposite-direction adjustments, missed reference events, and
+  extra candidate signals as distinct marker layers. The result selector and
+  screening-window buttons in the detail table switch the chart cell, and the
+  shared ECharts controller preserves zoom and direct horizontal pan.
+- Verification passes strict TypeScript, all 273 TypeScript tests (including
+  event-detail classification and chart-layer coverage), the production build,
+  all four rendered route/API tests, and ESLint with only the two pre-existing
+  `MarketWorkspace` unused-function warnings.
+
 ## 2026-09-23 cycle progress reconciliation
 
 - The local coordinator can finish cycle jobs out of submission order, while

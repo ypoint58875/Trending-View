@@ -223,6 +223,10 @@ test("server-renders the QuantScope research workspace", async () => {
     /name="strategy-b-allocation"[\s\S]*?<option value="0" selected="">0%<\/option>/,
   );
   assert.match(html, /name="strategy-screening-objective"/);
+  assert.match(
+    html,
+    /name="strategy-screening-objective"[\s\S]*?<option value="totalReturn" selected="">/,
+  );
   assert.doesNotMatch(html, /name="strategy-max-parameter-sets"/);
   assert.doesNotMatch(html, /name="single-screening-objective"/);
   assert.doesNotMatch(html, /name="combination-screening-objective"/);
@@ -260,15 +264,26 @@ test("server-renders the QuantScope research workspace", async () => {
 });
 
 test("server-renders the strategy cycle validation route", async () => {
+  const workspace = await readFile(
+    new URL(
+      "../app/strategy-validation/StrategyValidationWorkspace.tsx",
+      import.meta.url,
+    ),
+    "utf8",
+  );
   const response = await render("/strategy-validation");
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /\u7b56\u7565\u5468\u671f\u9a8c\u8bc1/);
-  assert.match(html, /\u4e0b\u4e00\u8c03\u4ed3\u4fe1\u53f7\u9a8c\u8bc1/);
-  assert.match(html, /\u4e0b\u4e00\u8f6e\u8c03\u4ed3\u65f6\u70b9\u4e0e\u6267\u884c\u504f\u5dee/);
+  assert.match(html, /\u6bcf\u65e5 128 \u65e5\u7b5b\u9009\u4e0e\u65b0\u65e7\u7b56\u7565\u9a8c\u8bc1/);
+  assert.match(html, /\u7b56\u7565\u7a33\u5b9a\u6027\u4e0e\u65b0\u65e7\u7b56\u7565\u5207\u6362\u9a8c\u8bc1/);
   assert.match(html, /\u8fd4\u56de\u7814\u7a76\u53f0/);
+  assert.match(
+    workspace,
+    /useState<ScreeningObjective>\("totalReturn"\)/,
+  );
 });
 
 test("rejects removed intraday market intervals", async () => {
@@ -532,6 +547,11 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(styles, /\.screening-progress\.batch progress/);
   assert.match(workspace, /const shortcutBatchContinuousProgress = Math\.min/);
   assert.match(workspace, /SHORTCUT_BATCH_CHECKPOINT_KEY/);
+  assert.match(workspace, /shortcutBatchStopRequestedRef\.current = true/);
+  assert.match(
+    workspace,
+    /shortcutBatchStopRequestedRef\.current = true;[\s\S]{0,180}localStorage\.removeItem\(SHORTCUT_BATCH_CHECKPOINT_KEY\)/,
+  );
   assert.match(workspace, /selectBestShortcutScreeningResult/);
   assert.match(workspace, /name: folderName/);
   assert.match(workspace, /const assignedSavedBacktest =/);

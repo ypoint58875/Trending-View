@@ -61,19 +61,20 @@ formats to the browser.
 
 The strategy-cycle page is a separate orchestration boundary over the existing
 market, screening, and allocation engines. For a historical decision index it
-passes only the prefix ending at that close to screening. A `(decision,
-screeningWindow)` result is shared by every compatible update interval. Every
-configured screening window receives a five-session vintage sequence. The next
-same-window vintage is replayed retrospectively over the preceding segment to
-form one common ex-post reference event stream; each candidate interval adopts
-only its scheduled causal vintages. Chronological one-to-one event matching
-classifies opposite-direction actions before timing: only same-direction pairs
-can be timing hits or contribute timing and allocation errors. The report also
-exposes missed, extra, and late-event rates. Paired return regret starts at the
-prior reference rebalance, applies the same starting and target allocations to
-both paths, and marks both at one common end price on the later adjustment date;
-only execution timing differs. No cadence is automatically selected. The
-browser persists one latest task after
+passes only the prefix ending at that close to one fixed 128-session screening.
+The decision grid advances one trading session at a time. Exact plan identity
+includes strategy composition, parameters, allocations, entry filters, and the
+fixed relative-long role. Consecutive identical daily winners form stability
+episodes; the final still-running episode is right-censored and excluded from
+average and median completed-lifetime estimates when completed episodes exist.
+When the winner changes, both the prior and new plans are frozen at that
+decision. Each starts from the same cash baseline, may trade no earlier than
+the following open, pays the configured commission and slippage, and is replayed
+for 5, 10, 15, and 20 sessions. A later winner does not truncate an existing
+comparison. Complete transitions aggregate old/new positive-return rates,
+new-plan win rates, and median return differences. Deterministic evidence gates
+recommend delayed switching, retaining the old plan, avoiding both, continued
+observation, or more data. The browser persists one latest task after
 each complete unit with a signature over instrument, latest bar, configuration,
 and costs. A matching signature resumes idempotently. Before result collection,
 the local page submits every incomplete bounded unit in one full-series batch

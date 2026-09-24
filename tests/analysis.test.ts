@@ -7104,7 +7104,9 @@ test("resumes shortcut batch screening only for an identical bounded config", ()
   });
   const checkpoint = parseShortcutBatchCheckpoint(
     JSON.stringify({
-      version: 1,
+      version: 2,
+      resumeReason: "failure",
+      runId: "batch-run-1",
       configSignature: signature,
       sessions: 128,
       completedInstrumentKeys: ["index:N225"],
@@ -7132,4 +7134,18 @@ test("resumes shortcut batch screening only for an identical bounded config", ()
     ["index:N225", "index:HSI"],
   );
   assert.equal(parseShortcutBatchCheckpoint("{}"), null);
+  assert.equal(
+    parseShortcutBatchCheckpoint(JSON.stringify({
+      ...checkpoint,
+      version: 1,
+    })),
+    null,
+  );
+  assert.equal(
+    parseShortcutBatchCheckpoint(JSON.stringify({
+      ...checkpoint,
+      lastError: null,
+    })),
+    null,
+  );
 });

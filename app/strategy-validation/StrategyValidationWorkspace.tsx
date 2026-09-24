@@ -5,15 +5,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { zhCN as copy } from "@/app/i18n/zh-CN";
 import {
+  CYCLE_DAILY_SCREENING_WINDOW,
+  CYCLE_DAILY_UPDATE_INTERVAL,
   DEFAULT_CYCLE_EVALUATION_SESSIONS,
-  DEFAULT_CYCLE_SCREENING_WINDOWS,
-  DEFAULT_CYCLE_UPDATE_INTERVALS,
   MAX_CYCLE_OPTIMIZATION_UNITS,
   barsAvailableAtCycleDecision,
-  buildStrategyCycleEventValidation,
+  buildStrategyCycleDailyValidationReport,
   buildStrategyCycleSchedule,
-  normalizeCycleValues,
-  type StrategyCycleEventValidationResult,
+  type StrategyCycleDailyValidationReport,
   type StrategyCycleSelectionSnapshot,
 } from "@/lib/analysis/strategy-cycle-validation";
 import {
@@ -57,20 +56,14 @@ import type { MarketInstrument, MarketSeries } from "@/lib/market/types";
 
 const DAILY_INTERVAL = "1d" as const;
 const HISTORICAL_EXECUTION_POLICY = "hybrid" as const;
+const DAILY_SCREENING_WINDOWS = [CYCLE_DAILY_SCREENING_WINDOW];
+const DAILY_UPDATE_INTERVALS = [CYCLE_DAILY_UPDATE_INTERVAL];
 
 interface ProgressState {
   completed: number;
   total: number;
   decisionTime: string;
   screeningWindow: number;
-}
-
-function parseNumberList(value: string, minimum: number, maximum: number): number[] {
-  return normalizeCycleValues(
-    value.split(/[,，\s]+/).map(Number),
-    minimum,
-    maximum,
-  );
 }
 
 function marketRequestUrl(instrument: MarketInstrument): string {
@@ -87,11 +80,20 @@ function marketRequestUrl(instrument: MarketInstrument): string {
 }
 
 function resultLabel(result: Parameters<typeof screeningResultPlan>[0]): string {
-  if ("strategyId" in result) return copy.strategies[result.strategyId].name;
+  const parameterSuffix = (parameters: unknown) => {
+    if (!parameters || typeof parameters !== "object") return "";
+    const values = Object.values(parameters as Record<string, number>);
+    return values.length ? ` (${values.join("/")})` : "";
+  };
+  if ("strategyId" in result) {
+    return `${copy.strategies[result.strategyId].name}${parameterSuffix(result.parameters)}`;
+  }
   const source = result as unknown as Record<string, unknown>;
   const names = "ABCDEFGHI".split("").flatMap((letter) => {
     const id = source[`strategy${letter}Id`];
-    return typeof id === "string" ? [copy.strategies[id as StrategyId].name] : [];
+    return typeof id === "string"
+      ? [`${copy.strategies[id as StrategyId].name}${parameterSuffix(source[`strategy${letter}Parameters`])}`]
+      : [];
   });
   return names.join(" + ");
 }
@@ -100,14 +102,9 @@ function formatRate(value: number | null): string {
   return value === null ? "—" : `${(value * 100).toFixed(0)}%`;
 }
 
-function formatSessions(value: number | null, signed = false): string {
+function formatReturn(value: number | null): string {
   if (value === null) return "—";
-  return `${signed && value > 0 ? "+" : ""}${value.toFixed(1)}`;
-}
-
-function formatBasisPoints(value: number | null): string {
-  if (value === null) return "—";
-  return `${value >= 0 ? "+" : ""}${value.toFixed(1)}`;
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 function taskSignature(input: {
@@ -139,16 +136,10 @@ export function StrategyValidationWorkspace() {
   const c = copy.cycleValidation;
   const [records, setRecords] = useState<SavedBacktestRecord[]>([]);
   const [selectedKey, setSelectedKey] = useState("");
-  const [screeningWindowsText, setScreeningWindowsText] = useState(
-    DEFAULT_CYCLE_SCREENING_WINDOWS.join(", "),
-  );
-  const [updateIntervalsText, setUpdateIntervalsText] = useState(
-    DEFAULT_CYCLE_UPDATE_INTERVALS.join(", "),
-  );
   const [evaluationSessions, setEvaluationSessions] = useState(
     DEFAULT_CYCLE_EVALUATION_SESSIONS,
   );
-  const [objective, setObjective] = useState<ScreeningObjective>("balanced");
+  const [objective, setObjective] = useState<ScreeningObjective>("totalReturn");
   const [initialCash, setInitialCash] = useState(100_000);
   const [commissionPercent, setCommissionPercent] = useState(0.03);
   const [slippagePercent, setSlippagePercent] = useState(0.02);
@@ -157,20 +148,12 @@ export function StrategyValidationWorkspace() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [storedTask, setStoredTask] = useState<StoredStrategyCycleValidationTask | null>(null);
-  const [eventResults, setEventResults] = useState<StrategyCycleEventValidationResult[]>([]);
+  const [dailyReport, setDailyReport] = useState<StrategyCycleDailyValidationReport | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pauseRequestedRef = useRef(false);
 
   const groups = useMemo(() => groupSavedBacktests(records), [records]);
   const selectedGroup = groups.find((group) => group.key === selectedKey) ?? groups[0] ?? null;
-  const screeningWindows = useMemo(
-    () => parseNumberList(screeningWindowsText, 20, 2_000),
-    [screeningWindowsText],
-  );
-  const updateIntervals = useMemo(
-    () => parseNumberList(updateIntervalsText, 1, 252),
-    [updateIntervalsText],
-  );
 
   useEffect(() => {
     let active = true;
@@ -186,8 +169,6 @@ export function StrategyValidationWorkspace() {
       const restoredKey = task ? savedBacktestInstrumentKey(task.instrument) : "";
       setSelectedKey(nextGroups.some((group) => group.key === restoredKey) ? restoredKey : nextGroups[0]?.key ?? "");
       if (task) {
-        setScreeningWindowsText(task.screeningWindows.join(", "));
-        setUpdateIntervalsText(task.updateIntervals.join(", "));
         setEvaluationSessions(task.evaluationSessions);
         setObjective(task.objective);
         setInitialCash(task.initialCash);
@@ -216,11 +197,14 @@ export function StrategyValidationWorkspace() {
   const calculateReports = useCallback((
     series: MarketSeries,
     snapshots: StrategyCycleSelectionSnapshot[],
-    windows: number[],
-    intervals: number[],
     sessions: number,
   ) => {
-    const schedule = buildStrategyCycleSchedule(series.bars.length, windows, intervals, sessions);
+    const schedule = buildStrategyCycleSchedule(
+      series.bars.length,
+      DAILY_SCREENING_WINDOWS,
+      DAILY_UPDATE_INTERVALS,
+      sessions,
+    );
     if (!schedule) return;
     const settings = {
       initialCash,
@@ -229,13 +213,9 @@ export function StrategyValidationWorkspace() {
       interval: DAILY_INTERVAL,
       executionPolicy: HISTORICAL_EXECUTION_POLICY,
     };
-    setEventResults(buildStrategyCycleEventValidation(
+    setDailyReport(buildStrategyCycleDailyValidationReport(
       series.bars,
       snapshots,
-      windows,
-      intervals,
-      schedule.evaluationStartIndex,
-      schedule.evaluationEndIndex,
       settings,
     ));
   }, [commissionPercent, initialCash, slippagePercent]);
@@ -243,11 +223,7 @@ export function StrategyValidationWorkspace() {
   const start = useCallback(async () => {
     if (!selectedGroup || running) return;
     setError("");
-    setEventResults([]);
-    if (screeningWindows.length === 0 || updateIntervals.length === 0) {
-      setError(c.invalidPeriods);
-      return;
-    }
+    setDailyReport(null);
     const controller = new AbortController();
     abortRef.current = controller;
     pauseRequestedRef.current = false;
@@ -262,8 +238,8 @@ export function StrategyValidationWorkspace() {
       const series = await marketResponse.json() as MarketSeries;
       const schedule = buildStrategyCycleSchedule(
         series.bars.length,
-        screeningWindows,
-        updateIntervals,
+        DAILY_SCREENING_WINDOWS,
+        DAILY_UPDATE_INTERVALS,
         evaluationSessions,
       );
       if (!schedule) throw new Error(c.insufficientHistory);
@@ -273,8 +249,8 @@ export function StrategyValidationWorkspace() {
       const signature = taskSignature({
         instrument: selectedGroup.instrument,
         series,
-        screeningWindows,
-        updateIntervals,
+        screeningWindows: DAILY_SCREENING_WINDOWS,
+        updateIntervals: DAILY_UPDATE_INTERVALS,
         evaluationSessions,
         objective,
         initialCash,
@@ -294,8 +270,8 @@ export function StrategyValidationWorkspace() {
       currentTask = {
         signature,
         instrument: selectedGroup.instrument,
-        screeningWindows,
-        updateIntervals,
+        screeningWindows: DAILY_SCREENING_WINDOWS,
+        updateIntervals: DAILY_UPDATE_INTERVALS,
         evaluationSessions,
         objective,
         initialCash,
@@ -338,7 +314,7 @@ export function StrategyValidationWorkspace() {
           const availableBars = barsAvailableAtCycleDecision(series.bars, decisionIndex);
           const barsHash = hashMarketBars(availableBars);
           const volumeReliable = assessMarketVolumeCoverage(availableBars).reliable;
-          for (const screeningWindow of screeningWindows) {
+          for (const screeningWindow of DAILY_SCREENING_WINDOWS) {
             if (controller.signal.aborted) throw new DOMException("Paused", "AbortError");
             const unitKey = `${screeningWindow}:${decisionIndex}`;
             if (completed.has(unitKey)) continue;
@@ -467,7 +443,7 @@ export function StrategyValidationWorkspace() {
         for (const decisionIndex of schedule.decisionIndexes) {
           const availableBars = barsAvailableAtCycleDecision(series.bars, decisionIndex);
           const volumeReliable = assessMarketVolumeCoverage(availableBars).reliable;
-          for (const screeningWindow of screeningWindows) {
+          for (const screeningWindow of DAILY_SCREENING_WINDOWS) {
             if (controller.signal.aborted) throw new DOMException("Paused", "AbortError");
             const unitKey = `${screeningWindow}:${decisionIndex}`;
             if (completed.has(unitKey)) continue;
@@ -513,7 +489,7 @@ export function StrategyValidationWorkspace() {
         decisionTime: snapshots.at(-1)?.decisionTime ?? "",
         screeningWindow: snapshots.at(-1)?.screeningWindow ?? 0,
       });
-      calculateReports(series, snapshots, screeningWindows, updateIntervals, evaluationSessions);
+      calculateReports(series, snapshots, evaluationSessions);
     } catch (caught) {
       if ((caught as Error).name === "AbortError") {
         if (pauseRequestedRef.current && currentTask) {
@@ -541,11 +517,9 @@ export function StrategyValidationWorkspace() {
     initialCash,
     objective,
     running,
-    screeningWindows,
     selectedGroup,
     slippagePercent,
     storedTask,
-    updateIntervals,
   ]);
 
   const reset = async () => {
@@ -557,7 +531,7 @@ export function StrategyValidationWorkspace() {
     await clearStrategyCycleValidationTask();
     setStoredTask(null);
     setProgress(null);
-    setEventResults([]);
+    setDailyReport(null);
     setError("");
   };
 
@@ -583,9 +557,8 @@ export function StrategyValidationWorkspace() {
                 {groups.map((group) => <option key={group.key} value={group.key}>{group.instrument.name} · {group.instrument.code}</option>)}
               </select></label>
               {groups.length === 0 && <p className="cycle-warning">{c.noShortcuts}</p>}
-              <label><span>{c.screeningWindows}</span><input value={screeningWindowsText} disabled={running} onChange={(event) => setScreeningWindowsText(event.target.value)} /></label>
-              <label><span>{c.updateIntervals}</span><input value={updateIntervalsText} disabled={running} onChange={(event) => setUpdateIntervalsText(event.target.value)} /></label>
-              <label><span>{c.evaluationSessions}</span><input type="number" min={120} max={1500} value={evaluationSessions} disabled={running} onChange={(event) => setEvaluationSessions(Math.max(120, Math.min(1500, Number(event.target.value) || 120)))} /></label>
+              <div className="cycle-fixed-method"><span>{c.fixedScreeningWindow}</span><strong>{CYCLE_DAILY_SCREENING_WINDOW} {c.sessionUnit}</strong><span>{c.fixedUpdateInterval}</span><strong>{c.everyTradingDay}</strong></div>
+              <label><span>{c.evaluationSessions}</span><input type="number" min={120} max={512} value={evaluationSessions} disabled={running} onChange={(event) => setEvaluationSessions(Math.max(120, Math.min(512, Number(event.target.value) || 120)))} /></label>
               <label><span>{c.objective}</span><select value={objective} disabled={running} onChange={(event) => setObjective(event.target.value as ScreeningObjective)}>
                 {SCREENING_OBJECTIVES.map((value) => <option key={value} value={value}>{c.objectives[value]}</option>)}
               </select></label>
@@ -614,10 +587,39 @@ export function StrategyValidationWorkspace() {
 
           <section className="panel cycle-matrix-card">
             <div className="panel-heading"><div><span className="eyebrow">{c.matrixEyebrow}</span><strong>{c.matrixTitle}</strong></div></div>
-            <p className="cycle-hint">{c.nextVintageNote}</p>
-            {eventResults.length ? <div className="cycle-table-wrap"><table><thead><tr><th>{c.screeningWindow}</th><th>{c.updateInterval}</th><th>{c.referenceEvents}</th><th>{c.matchedEvents}</th><th>{c.oppositeDirectionEvents}</th><th>{c.missedEvents}</th><th>{c.extraEvents}</th><th>{c.directionAgreement}</th><th>{c.lateEventRate}</th><th>{c.medianLeadLag}</th><th>{c.medianAbsoluteError}</th><th>{c.withinTwoSessions}</th><th>{c.withinFiveSessions}</th><th>{c.targetAllocationError}</th><th>{c.timingReturnDifference}</th></tr></thead><tbody>
-              {eventResults.map((result) => <tr key={`${result.screeningWindow}:${result.updateInterval}`}><td>{result.screeningWindow}</td><td>{result.updateInterval}</td><td>{result.metrics.referenceEventCount}</td><td>{result.metrics.matchedEventCount}</td><td className={result.metrics.oppositeDirectionEventCount > 0 ? "negative" : undefined}>{result.metrics.oppositeDirectionEventCount}</td><td>{result.metrics.missedEventCount}</td><td>{result.metrics.extraEventCount}</td><td>{formatRate(result.metrics.directionAgreementRate)}</td><td>{formatRate(result.metrics.lateEventRate)}</td><td>{formatSessions(result.metrics.medianSignedTimingError, true)}</td><td>{formatSessions(result.metrics.medianAbsoluteTimingError)}</td><td>{formatRate(result.metrics.withinTwoSessionsRate)}</td><td>{formatRate(result.metrics.withinFiveSessionsRate)}</td><td>{formatRate(result.metrics.meanTargetAllocationError)}</td><td>{formatBasisPoints(result.metrics.medianTimingReturnDifferenceBps)}</td></tr>)}
-            </tbody></table></div> : <p className="cycle-empty">{c.noMatrix}</p>}
+            <p className="cycle-hint">{c.dailyValidationNote}</p>
+            {dailyReport ? <>
+              <div className={`cycle-conclusion ${dailyReport.recommendation}`}>
+                <span>{c.conclusionEyebrow}</span>
+                <strong>{c.recommendations[dailyReport.recommendation].title.replace("{sessions}", String(dailyReport.recommendedDelaySessions ?? ""))}</strong>
+                <p>{c.recommendations[dailyReport.recommendation].description.replace("{sessions}", String(dailyReport.recommendedDelaySessions ?? ""))}</p>
+              </div>
+
+              <div className="cycle-report-section">
+                <div className="cycle-report-heading"><div><span className="eyebrow">{c.stabilityEyebrow}</span><strong>{c.stabilityTitle}</strong></div><small>{c.stabilityHint}</small></div>
+                <div className="cycle-stability-grid">{dailyReport.stabilitySummaries.map((summary) => <article key={summary.strategyKey} className="cycle-stability-card">
+                  <strong>{summary.label}</strong><small>{c.episodes.replace("{count}", String(summary.episodeCount))}</small>
+                  <dl><div><dt>{c.medianStability}</dt><dd>{summary.medianSessions.toFixed(1)} {c.sessionUnit}</dd></div><div><dt>{c.averageStability}</dt><dd>{summary.averageSessions.toFixed(1)} {c.sessionUnit}</dd></div><div><dt>{c.maximumStability}</dt><dd>{summary.maximumSessions} {c.sessionUnit}</dd></div></dl>
+                  <div className="cycle-survival-row">{summary.survivalRates.map((point) => <span key={point.sessions}><small>≥{point.sessions}{c.sessionUnit}</small><b>{formatRate(point.rate)}</b></span>)}</div>
+                </article>)}</div>
+              </div>
+
+              <div className="cycle-report-section">
+                <div className="cycle-report-heading"><div><span className="eyebrow">{c.transitionEyebrow}</span><strong>{c.transitionTitle}</strong></div><small>{c.transitionHint}</small></div>
+                <div className="cycle-horizon-grid">{dailyReport.transitionSummaries.map((summary) => <article key={summary.sessions}>
+                  <strong>{summary.sessions} {c.sessionUnit}</strong><small>{c.samples.replace("{count}", String(summary.sampleCount))}</small>
+                  <dl><div><dt>{c.newWinRate}</dt><dd>{formatRate(summary.newWinRate)}</dd></div><div><dt>{c.oldPositiveRate}</dt><dd>{formatRate(summary.oldPositiveRate)}</dd></div><div><dt>{c.newPositiveRate}</dt><dd>{formatRate(summary.newPositiveRate)}</dd></div><div><dt>{c.medianReturnDifference}</dt><dd className={(summary.medianReturnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(summary.medianReturnDifference)}</dd></div></dl>
+                </article>)}</div>
+              </div>
+
+              <div className="cycle-report-section">
+                <div className="cycle-report-heading"><div><span className="eyebrow">{c.transitionDetailEyebrow}</span><strong>{c.transitionDetailTitle}</strong></div><small>{c.transitionDetailHint}</small></div>
+                <div className="cycle-transition-list">{dailyReport.transitions.slice(-20).reverse().map((transition) => <article key={`${transition.decisionTime}:${transition.newStrategyKey}`}>
+                  <header><time>{transition.decisionTime}</time><span>{transition.oldLabel}</span><b>→</b><span>{transition.newLabel}</span></header>
+                  <div>{transition.horizons.map((horizon) => <span key={horizon.sessions}><small>{horizon.sessions}{c.sessionUnit}</small><b>{c.oldShort} {formatReturn(horizon.oldReturn)}</b><b>{c.newShort} {formatReturn(horizon.newReturn)}</b><em className={(horizon.returnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(horizon.returnDifference)}</em></span>)}</div>
+                </article>)}</div>
+              </div>
+            </> : <p className="cycle-empty">{c.noMatrix}</p>}
           </section>
         </div>
       </section>

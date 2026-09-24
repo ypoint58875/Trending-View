@@ -5,17 +5,22 @@
 - A historical selection decision may consume only the inclusive bar prefix
   ending at its decision close. Keep this boundary in
   `barsAvailableAtCycleDecision(...)` and test it directly.
-- Optimize each `(decision index, screening window)` once. Reuse that immutable
-  winner across every update interval whose schedule includes the decision.
-- Build decision dates as a de-duplicated union. When the smallest update
-  interval divides every larger interval, compute only that smallest grid and
-  derive every multiple interval by deterministic snapshot subsampling. An
-  interval of one session therefore covers every integer refresh cadence,
-  including the five-session retrospective reference grid.
-- Keep screening-window length configurable. Build a five-session vintage grid
-  for each window and use its next vintage only as an explicitly retrospective
-  event label. All candidate refresh intervals within that window must share
-  this reference so a slower cadence cannot redefine away missed events.
+- The product validation method fixes the screening window at 128 sessions and
+  advances exactly one trading session per decision. Do not expose an update-
+  interval selector or subsample the winner sequence.
+- Exact stability identity includes strategy composition, parameters,
+  allocations, filters, and the fixed relative-long role. Merge only adjacent
+  daily winners with the same exact identity. Mark the last episode as right-
+  censored and exclude it from completed-lifetime averages when possible.
+- Create an old/new comparison only when the exact daily winner changes. Freeze
+  both plans, start both from the same cash baseline, preserve next-open and
+  intrabar execution rules, include commission and slippage, and finish every
+  5/10/15/20-session horizon even if another winner appears meanwhile.
+- A switching recommendation must disclose its evidence rule. Require at least
+  five complete transitions. Recommend the earliest delayed switch only when
+  new-plan win rate is at least 60%, new-plan positive-return rate is at least
+  55%, and the median return advantage is positive. Otherwise distinguish
+  keeping the old plan, avoiding both, and continued observation.
 - Match rebalance events chronologically and one-to-one. Classify direction
   before timing: an opposite-direction action is a severe error, not a timing
   hit. Compute lead/lag and allocation error only for same-direction actions.

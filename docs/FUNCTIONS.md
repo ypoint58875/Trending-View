@@ -10,6 +10,13 @@
 - `buildStrategyCycleSchedule(...)`: forms the union of required historical
   decision dates plus the five-session reference grid so compatible update
   intervals share optimization work without fixing the screening-window size.
+- `strategyCyclePlanKey(...)`: creates an order-stable exact identity over a
+  selected plan and its fixed relative-long role.
+- `buildStrategyCycleDailyValidationReport(...)`: consumes the fixed daily
+  128-session winners, builds completed and right-censored stability episodes,
+  compares each frozen old/new transition over 5/10/15/20 future sessions with
+  configured costs, aggregates forward evidence, and returns a deterministic
+  strategy-adjustment recommendation.
 - `runStrategyCycleConfiguration(...)`: replays selected plans through one
   continuous allocation account with next-bar execution and no synthetic
   update-boundary reset.

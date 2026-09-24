@@ -1006,8 +1006,8 @@ function createIntervalResearchSnapshot(
     strategyBAllocationPercent: 0,
     strategyCAllocationPercent: 0,
     tacticalAllocationMode: DEFAULT_TACTICAL_ALLOCATION_MODE,
-    screeningObjective: "balanced",
-    screenResultsObjective: "balanced",
+    screeningObjective: "totalReturn",
+    screenResultsObjective: "totalReturn",
     screeningValidationMode:
       interval === INTRADAY_INTERVAL ? "range" : "sample",
     screeningEntryFilterDraft: createMovingAverageSlopeFilterDraft(
@@ -1271,9 +1271,9 @@ export function MarketWorkspace() {
     ScreeningSingleResult[]
   >([]);
   const [screeningObjective, setScreeningObjective] =
-    useState<ScreeningObjective>("balanced");
+    useState<ScreeningObjective>("totalReturn");
   const [screenResultsObjective, setScreenResultsObjective] =
-    useState<ScreeningObjective>("balanced");
+    useState<ScreeningObjective>("totalReturn");
   const [screeningValidationMode, setScreeningValidationMode] =
     useState<ScreeningValidationMode>("sample");
   const [screeningEntryFilterDraft, setScreeningEntryFilterDraft] = useState(
@@ -1367,6 +1367,7 @@ export function MarketWorkspace() {
     savedBacktestInstrumentKey(defaultInstrument),
   );
   const shortcutBatchAbortRef = useRef<AbortController | null>(null);
+  const shortcutBatchStopRequestedRef = useRef(false);
   const screeningCacheRestoreKeyRef = useRef("");
   const screenProgressRef = useRef<CombinationScreeningProgress>(
     emptyCombinationProgress(),
@@ -4756,6 +4757,8 @@ export function MarketWorkspace() {
 
   const runShortcutBatchScreening = async () => {
     if (shortcutBatchProgress.status === "running") {
+      shortcutBatchStopRequestedRef.current = true;
+      window.localStorage.removeItem(SHORTCUT_BATCH_CHECKPOINT_KEY);
       shortcutBatchAbortRef.current?.abort();
       return;
     }
@@ -4805,7 +4808,9 @@ export function MarketWorkspace() {
     }
     const completedKeys = new Set(checkpoint?.completedInstrumentKeys ?? []);
     const failedKeys = new Set<string>();
+    const batchRunId = checkpoint?.runId ?? window.crypto.randomUUID();
     const controller = new AbortController();
+    shortcutBatchStopRequestedRef.current = false;
     shortcutBatchAbortRef.current = controller;
     const initialCompleted = allKeys.length - pendingKeys.length;
     let savedCount = initialCompleted;
@@ -4818,9 +4823,13 @@ export function MarketWorkspace() {
       status: "running",
     });
 
-    const persistCheckpoint = (lastError: string | null) => {
+    let checkpointPersistenceEnabled = checkpoint !== null;
+    let lastCheckpointError = checkpoint?.lastError ?? "";
+    const persistFailureCheckpoint = (lastError: string) => {
       const nextCheckpoint: ShortcutBatchCheckpoint = {
-        version: 1,
+        version: 2,
+        resumeReason: "failure",
+        runId: batchRunId,
         configSignature,
         sessions,
         completedInstrumentKeys: [...completedKeys],
@@ -4885,7 +4894,7 @@ export function MarketWorkspace() {
             },
             {
               objective: screeningObjective,
-              checkpointNamespace: `${instrumentKey}:1d:shortcut-batch:${sessions}`,
+              checkpointNamespace: `${instrumentKey}:1d:shortcut-batch:${sessions}:${batchRunId}`,
               entryFilters: screeningEntryFilterDraft.enabled
                 ? buildScreeningMovingAverageSlopeFilters()
                 : undefined,
@@ -5026,11 +5035,15 @@ export function MarketWorkspace() {
           completedKeys.add(instrumentKey);
           failedKeys.delete(instrumentKey);
           savedCount += 1;
-          persistCheckpoint(null);
+          if (checkpointPersistenceEnabled && lastCheckpointError) {
+            persistFailureCheckpoint(lastCheckpointError);
+          }
         } catch (error) {
           if (controller.signal.aborted) break;
           failedKeys.add(instrumentKey);
-          persistCheckpoint((error as Error).message || "UNKNOWN");
+          lastCheckpointError = (error as Error).message || "UNKNOWN";
+          checkpointPersistenceEnabled = true;
+          persistFailureCheckpoint(lastCheckpointError);
         }
         setShortcutBatchProgress((current) => ({
           ...current,
@@ -5040,6 +5053,9 @@ export function MarketWorkspace() {
         }));
       }
       if (controller.signal.aborted) {
+        if (shortcutBatchStopRequestedRef.current) {
+          window.localStorage.removeItem(SHORTCUT_BATCH_CHECKPOINT_KEY);
+        }
         setShortcutBatchProgress((current) => ({
           ...current,
           currentInstrument: "",
@@ -5048,6 +5064,8 @@ export function MarketWorkspace() {
       } else {
         if (failedKeys.size === 0) {
           window.localStorage.removeItem(SHORTCUT_BATCH_CHECKPOINT_KEY);
+        } else if (lastCheckpointError) {
+          persistFailureCheckpoint(lastCheckpointError);
         }
         setShortcutBatchProgress((current) => ({
           ...current,
@@ -5063,6 +5081,7 @@ export function MarketWorkspace() {
       if (shortcutBatchAbortRef.current === controller) {
         shortcutBatchAbortRef.current = null;
       }
+      shortcutBatchStopRequestedRef.current = false;
     }
   };
 

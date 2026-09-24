@@ -2,6 +2,7 @@ import {
   runAllocationBacktest,
   type AllocationBacktestResult,
   type AllocationIntrabarExecution,
+  type AllocationRebalance,
   type AllocationSignalEvent,
   type BacktestSettings,
 } from "./backtest";
@@ -16,6 +17,9 @@ export const DEFAULT_CYCLE_SCREENING_WINDOWS = [64, 128, 256] as const;
 export const DEFAULT_CYCLE_UPDATE_INTERVALS = [5, 10, 20, 40, 60] as const;
 export const DEFAULT_CYCLE_EVALUATION_SESSIONS = 504;
 export const DEFAULT_CYCLE_FORWARD_HORIZONS = [5, 10, 20, 40, 60] as const;
+export const CYCLE_DAILY_SCREENING_WINDOW = 128;
+export const CYCLE_DAILY_UPDATE_INTERVAL = 1;
+export const CYCLE_TRANSITION_HORIZONS = [5, 10, 15, 20] as const;
 export const CYCLE_REFERENCE_INTERVAL = 5;
 export const CYCLE_EVENT_MATCH_TOLERANCE = 10;
 export const MAX_CYCLE_OPTIMIZATION_UNITS = 512;
@@ -58,6 +62,23 @@ export interface StrategyCycleEventValidationResult {
   screeningWindow: number;
   updateInterval: number;
   metrics: StrategyCycleEventMetrics;
+  events: StrategyCycleEventDetail[];
+  evaluationStartTime: string;
+  evaluationEndTime: string;
+}
+
+export type StrategyCycleEventStatus = "matched" | "opposite" | "missed" | "extra";
+
+export interface StrategyCycleEventDetail {
+  status: StrategyCycleEventStatus;
+  reference: AllocationRebalance | null;
+  candidate: AllocationRebalance | null;
+  timingErrorSessions: number | null;
+}
+
+export interface StrategyCycleEventComparison {
+  metrics: StrategyCycleEventMetrics;
+  events: StrategyCycleEventDetail[];
 }
 
 export interface StrategyCycleSchedule {
@@ -73,6 +94,70 @@ export interface StrategyCycleEffectivenessPoint {
   medianReturn: number;
   positiveRate: number;
   medianExcessReturn: number;
+}
+
+export interface StrategyCycleStabilityRun {
+  strategyKey: string;
+  label: string;
+  startTime: string;
+  endTime: string;
+  sessions: number;
+  complete: boolean;
+}
+
+export interface StrategyCycleStabilitySummary {
+  strategyKey: string;
+  label: string;
+  episodeCount: number;
+  completedEpisodeCount: number;
+  averageSessions: number;
+  medianSessions: number;
+  maximumSessions: number;
+  survivalRates: Array<{ sessions: number; rate: number }>;
+}
+
+export interface StrategyCycleTransitionHorizonResult {
+  sessions: number;
+  oldReturn: number | null;
+  newReturn: number | null;
+  returnDifference: number | null;
+}
+
+export interface StrategyCycleTransitionResult {
+  decisionTime: string;
+  oldStrategyKey: string;
+  oldLabel: string;
+  newStrategyKey: string;
+  newLabel: string;
+  horizons: StrategyCycleTransitionHorizonResult[];
+}
+
+export interface StrategyCycleTransitionSummary {
+  sessions: number;
+  sampleCount: number;
+  oldPositiveRate: number | null;
+  newPositiveRate: number | null;
+  newWinRate: number | null;
+  medianOldReturn: number | null;
+  medianNewReturn: number | null;
+  medianReturnDifference: number | null;
+}
+
+export type StrategyCycleAdjustmentRecommendation =
+  | "switch-after"
+  | "keep-old"
+  | "avoid-both"
+  | "observe-longer"
+  | "insufficient-evidence";
+
+export interface StrategyCycleDailyValidationReport {
+  screeningWindow: typeof CYCLE_DAILY_SCREENING_WINDOW;
+  stabilityRuns: StrategyCycleStabilityRun[];
+  stabilitySummaries: StrategyCycleStabilitySummary[];
+  transitions: StrategyCycleTransitionResult[];
+  transitionSummaries: StrategyCycleTransitionSummary[];
+  recommendation: StrategyCycleAdjustmentRecommendation;
+  recommendedDelaySessions: number | null;
 }
 
 export function barsAvailableAtCycleDecision(
@@ -282,13 +367,13 @@ function medianOrNull(values: number[]): number | null {
   return values.length ? median(values) : null;
 }
 
-export function compareStrategyCycleRebalanceEvents(
+export function compareStrategyCycleRebalanceEventsDetailed(
   bars: readonly MarketBar[],
   candidate: AllocationBacktestResult,
   reference: AllocationBacktestResult,
   toleranceSessions = CYCLE_EVENT_MATCH_TOLERANCE,
   eventStartTime?: string,
-): StrategyCycleEventMetrics {
+): StrategyCycleEventComparison {
   const barIndexByTime = new Map(bars.map((bar, index) => [bar.time, index]));
   const eventStartIndex = eventStartTime === undefined
     ? 0
@@ -336,6 +421,10 @@ export function compareStrategyCycleRebalanceEvents(
   };
   const unusedCandidateIndexes = new Set(candidateEvents.map((_, index) => index));
   const matches: Array<{
+    referenceEventPosition: number;
+    candidateIndex: number;
+    candidateEvent: AllocationRebalance;
+    referenceEvent: AllocationRebalance;
     timingError: number;
     directionMatches: boolean;
     allocationError: number;
@@ -373,6 +462,10 @@ export function compareStrategyCycleRebalanceEvents(
       nearest.event.targetAllocation - nearest.event.fromAllocation;
     const directionMatches = Math.sign(referenceChange) === Math.sign(candidateChange);
     matches.push({
+      referenceEventPosition,
+      candidateIndex: nearest.candidateIndex,
+      candidateEvent: nearest.event,
+      referenceEvent,
       timingError: nearest.timingError,
       directionMatches,
       allocationError: Math.abs(
@@ -395,7 +488,7 @@ export function compareStrategyCycleRebalanceEvents(
     match.timingReturnDifferenceBps === null
       ? []
       : [match.timingReturnDifferenceBps]);
-  return {
+  const metrics = {
     referenceEventCount: referenceEvents.length,
     predictedEventCount: candidateEvents.length,
     matchedEventCount: directionMatches.length,
@@ -426,6 +519,53 @@ export function compareStrategyCycleRebalanceEvents(
       : null,
     medianTimingReturnDifferenceBps: medianOrNull(timingReturnDifferences),
   };
+  const matchedReferencePositions = new Set(
+    matches.map((match) => match.referenceEventPosition),
+  );
+  const events: StrategyCycleEventDetail[] = [
+    ...matches.map((match) => ({
+      status: match.directionMatches ? "matched" as const : "opposite" as const,
+      reference: match.referenceEvent,
+      candidate: match.candidateEvent,
+      timingErrorSessions: match.timingError,
+    })),
+    ...referenceEvents.flatMap((event, index) =>
+      matchedReferencePositions.has(index)
+        ? []
+        : [{
+            status: "missed" as const,
+            reference: event,
+            candidate: null,
+            timingErrorSessions: null,
+          }]),
+    ...[...unusedCandidateIndexes].map((index) => ({
+      status: "extra" as const,
+      reference: null,
+      candidate: candidateEvents[index]!,
+      timingErrorSessions: null,
+    })),
+  ].sort((left, right) => {
+    const leftTime = left.reference?.time ?? left.candidate?.time ?? "";
+    const rightTime = right.reference?.time ?? right.candidate?.time ?? "";
+    return leftTime.localeCompare(rightTime);
+  });
+  return { metrics, events };
+}
+
+export function compareStrategyCycleRebalanceEvents(
+  bars: readonly MarketBar[],
+  candidate: AllocationBacktestResult,
+  reference: AllocationBacktestResult,
+  toleranceSessions = CYCLE_EVENT_MATCH_TOLERANCE,
+  eventStartTime?: string,
+): StrategyCycleEventMetrics {
+  return compareStrategyCycleRebalanceEventsDetailed(
+    bars,
+    candidate,
+    reference,
+    toleranceSessions,
+    eventStartTime,
+  ).metrics;
 }
 
 export function buildStrategyCycleEventValidation(
@@ -454,6 +594,9 @@ export function buildStrategyCycleEventValidation(
       const comparisonEndIndex = referenceEndTime
         ? bars.findIndex((bar) => bar.time === referenceEndTime)
         : evaluationEndIndex;
+      const resolvedComparisonEndIndex = comparisonEndIndex >= evaluationStartIndex
+        ? comparisonEndIndex
+        : evaluationEndIndex;
       return normalizeCycleValues(updateIntervals, 1, 252).map((updateInterval) => {
         const performance = runStrategyCycleConfiguration(
           bars,
@@ -461,21 +604,23 @@ export function buildStrategyCycleEventValidation(
           screeningWindow,
           updateInterval,
           evaluationStartIndex,
-          comparisonEndIndex >= evaluationStartIndex
-            ? comparisonEndIndex
-            : evaluationEndIndex,
+          resolvedComparisonEndIndex,
           settings,
+        );
+        const comparison = compareStrategyCycleRebalanceEventsDetailed(
+          bars,
+          performance,
+          reference,
+          CYCLE_EVENT_MATCH_TOLERANCE,
+          bars[Math.min(evaluationStartIndex + 1, resolvedComparisonEndIndex)]?.time,
         );
         return {
           screeningWindow,
           updateInterval,
-          metrics: compareStrategyCycleRebalanceEvents(
-            bars,
-            performance,
-            reference,
-            CYCLE_EVENT_MATCH_TOLERANCE,
-            bars[Math.min(evaluationStartIndex + 1, comparisonEndIndex)]?.time,
-          ),
+          metrics: comparison.metrics,
+          events: comparison.events,
+          evaluationStartTime: bars[evaluationStartIndex]?.time ?? "",
+          evaluationEndTime: bars[resolvedComparisonEndIndex]?.time ?? "",
         };
       });
     },
@@ -572,4 +717,305 @@ export function evaluateStrategyCycleEffectiveness(
         : 0,
     };
   });
+}
+
+function stableCycleValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableCycleValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entry]) => [key, stableCycleValue(entry)]),
+    );
+  }
+  return value;
+}
+
+export function strategyCyclePlanKey(
+  snapshot: Pick<StrategyCycleSelectionSnapshot, "plan" | "fixedRelativeLongStrategy">,
+): string {
+  return JSON.stringify(stableCycleValue({
+    plan: snapshot.plan,
+    fixedRelativeLongStrategy: snapshot.fixedRelativeLongStrategy,
+  }));
+}
+
+function buildStrategyCycleStabilityRuns(
+  snapshots: readonly StrategyCycleSelectionSnapshot[],
+): StrategyCycleStabilityRun[] {
+  const ordered = [...snapshots].sort(
+    (left, right) => left.decisionIndex - right.decisionIndex,
+  );
+  const runs: StrategyCycleStabilityRun[] = [];
+  for (let index = 0; index < ordered.length; index += 1) {
+    const snapshot = ordered[index]!;
+    const strategyKey = strategyCyclePlanKey(snapshot);
+    const previousSnapshot = ordered[index - 1];
+    const current = runs.at(-1);
+    if (
+      current &&
+      current.strategyKey === strategyKey &&
+      previousSnapshot?.decisionIndex === snapshot.decisionIndex - 1
+    ) {
+      current.endTime = snapshot.decisionTime;
+      current.sessions += 1;
+      continue;
+    }
+    if (current) current.complete = true;
+    runs.push({
+      strategyKey,
+      label: snapshot.label,
+      startTime: snapshot.decisionTime,
+      endTime: snapshot.decisionTime,
+      sessions: 1,
+      complete: false,
+    });
+  }
+  return runs;
+}
+
+function buildStrategyCycleStabilitySummaries(
+  runs: readonly StrategyCycleStabilityRun[],
+): StrategyCycleStabilitySummary[] {
+  const grouped = new Map<string, StrategyCycleStabilityRun[]>();
+  for (const run of runs) {
+    const values = grouped.get(run.strategyKey) ?? [];
+    values.push(run);
+    grouped.set(run.strategyKey, values);
+  }
+  return [...grouped.entries()]
+    .map(([strategyKey, strategyRuns]) => {
+      const completed = strategyRuns.filter((run) => run.complete);
+      const measured = completed.length ? completed : strategyRuns;
+      const durations = measured.map((run) => run.sessions);
+      return {
+        strategyKey,
+        label: strategyRuns[0]!.label,
+        episodeCount: strategyRuns.length,
+        completedEpisodeCount: completed.length,
+        averageSessions:
+          durations.reduce((sum, duration) => sum + duration, 0) / durations.length,
+        medianSessions: median(durations),
+        maximumSessions: Math.max(...strategyRuns.map((run) => run.sessions)),
+        survivalRates: CYCLE_TRANSITION_HORIZONS.map((sessions) => ({
+          sessions,
+          rate: durations.filter((duration) => duration >= sessions).length / durations.length,
+        })),
+      };
+    })
+    .sort((left, right) =>
+      right.medianSessions - left.medianSessions ||
+      right.episodeCount - left.episodeCount ||
+      left.label.localeCompare(right.label));
+}
+
+function prepareFrozenPlanTimeline(
+  bars: MarketBar[],
+  snapshot: StrategyCycleSelectionSnapshot,
+  decisionIndex: number,
+): ReturnType<typeof buildStrategyPlanTimeline> {
+  const timeline = buildStrategyPlanTimeline(
+    bars,
+    snapshot.plan,
+    undefined,
+    snapshot.fixedRelativeLongStrategy ?? undefined,
+  );
+  const target = [...timeline.target];
+  target[decisionIndex - 1] = 0;
+  const intrabarExecutions = timeline.intrabarExecutions
+    ? [...timeline.intrabarExecutions]
+    : undefined;
+  if (intrabarExecutions) intrabarExecutions[decisionIndex] = [];
+  return { ...timeline, target, intrabarExecutions };
+}
+
+function frozenPlanForwardReturn(
+  bars: MarketBar[],
+  timeline: ReturnType<typeof buildStrategyPlanTimeline>,
+  decisionIndex: number,
+  horizonSessions: number,
+  settings: Pick<
+    BacktestSettings,
+    "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
+  > & { interval: MarketInterval },
+): number | null {
+  const endIndex = decisionIndex + horizonSessions;
+  if (decisionIndex < 1 || endIndex >= bars.length) return null;
+  return runAllocationBacktest(
+    bars,
+    timeline.target,
+    {
+      ...settings,
+      startTime: bars[decisionIndex]!.time,
+      endTime: bars[endIndex]!.time,
+    },
+    timeline.signalEvents,
+    timeline.intrabarExecutions,
+  ).totalReturn;
+}
+
+function buildStrategyCycleTransitions(
+  bars: MarketBar[],
+  snapshots: readonly StrategyCycleSelectionSnapshot[],
+  settings: Pick<
+    BacktestSettings,
+    "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
+  > & { interval: MarketInterval },
+): StrategyCycleTransitionResult[] {
+  const ordered = [...snapshots].sort(
+    (left, right) => left.decisionIndex - right.decisionIndex,
+  );
+  return ordered.slice(1).flatMap((newSnapshot, index) => {
+    const oldSnapshot = ordered[index]!;
+    const oldStrategyKey = strategyCyclePlanKey(oldSnapshot);
+    const newStrategyKey = strategyCyclePlanKey(newSnapshot);
+    if (
+      oldStrategyKey === newStrategyKey ||
+      newSnapshot.decisionIndex !== oldSnapshot.decisionIndex + 1
+    ) {
+      return [];
+    }
+    const oldTimeline = prepareFrozenPlanTimeline(
+      bars,
+      oldSnapshot,
+      newSnapshot.decisionIndex,
+    );
+    const newTimeline = prepareFrozenPlanTimeline(
+      bars,
+      newSnapshot,
+      newSnapshot.decisionIndex,
+    );
+    return [{
+      decisionTime: newSnapshot.decisionTime,
+      oldStrategyKey,
+      oldLabel: oldSnapshot.label,
+      newStrategyKey,
+      newLabel: newSnapshot.label,
+      horizons: CYCLE_TRANSITION_HORIZONS.map((sessions) => {
+        const oldReturn = frozenPlanForwardReturn(
+          bars,
+          oldTimeline,
+          newSnapshot.decisionIndex,
+          sessions,
+          settings,
+        );
+        const newReturn = frozenPlanForwardReturn(
+          bars,
+          newTimeline,
+          newSnapshot.decisionIndex,
+          sessions,
+          settings,
+        );
+        return {
+          sessions,
+          oldReturn,
+          newReturn,
+          returnDifference:
+            oldReturn === null || newReturn === null
+              ? null
+              : newReturn - oldReturn,
+        };
+      }),
+    }];
+  });
+}
+
+function buildStrategyCycleTransitionSummaries(
+  transitions: readonly StrategyCycleTransitionResult[],
+): StrategyCycleTransitionSummary[] {
+  return CYCLE_TRANSITION_HORIZONS.map((sessions) => {
+    const complete = transitions.flatMap((transition) => {
+      const result = transition.horizons.find((entry) => entry.sessions === sessions);
+      return result?.oldReturn === null || result?.newReturn === null ||
+        result?.returnDifference === null || !result
+        ? []
+        : [{
+            oldReturn: result.oldReturn,
+            newReturn: result.newReturn,
+            returnDifference: result.returnDifference,
+          }];
+    });
+    return {
+      sessions,
+      sampleCount: complete.length,
+      oldPositiveRate: complete.length
+        ? complete.filter((entry) => entry.oldReturn > 0).length / complete.length
+        : null,
+      newPositiveRate: complete.length
+        ? complete.filter((entry) => entry.newReturn > 0).length / complete.length
+        : null,
+      newWinRate: complete.length
+        ? complete.filter((entry) => entry.returnDifference > 0).length / complete.length
+        : null,
+      medianOldReturn: complete.length
+        ? median(complete.map((entry) => entry.oldReturn))
+        : null,
+      medianNewReturn: complete.length
+        ? median(complete.map((entry) => entry.newReturn))
+        : null,
+      medianReturnDifference: complete.length
+        ? median(complete.map((entry) => entry.returnDifference))
+        : null,
+    };
+  });
+}
+
+function strategyCycleRecommendation(
+  summaries: readonly StrategyCycleTransitionSummary[],
+): Pick<
+  StrategyCycleDailyValidationReport,
+  "recommendation" | "recommendedDelaySessions"
+> {
+  const sufficientlySampled = summaries.filter((summary) => summary.sampleCount >= 5);
+  if (sufficientlySampled.length === 0) {
+    return { recommendation: "insufficient-evidence", recommendedDelaySessions: null };
+  }
+  const switchPoint = sufficientlySampled.find((summary) =>
+    (summary.newWinRate ?? 0) >= 0.6 &&
+    (summary.newPositiveRate ?? 0) >= 0.55 &&
+    (summary.medianReturnDifference ?? 0) > 0);
+  if (switchPoint) {
+    return {
+      recommendation: "switch-after",
+      recommendedDelaySessions: switchPoint.sessions,
+    };
+  }
+  const longest = sufficientlySampled.at(-1)!;
+  if (
+    (longest.oldPositiveRate ?? 0) < 0.5 &&
+    (longest.newPositiveRate ?? 0) < 0.5
+  ) {
+    return { recommendation: "avoid-both", recommendedDelaySessions: null };
+  }
+  if (
+    (longest.newWinRate ?? 1) <= 0.45 &&
+    (longest.medianReturnDifference ?? 0) <= 0
+  ) {
+    return { recommendation: "keep-old", recommendedDelaySessions: null };
+  }
+  return { recommendation: "observe-longer", recommendedDelaySessions: null };
+}
+
+export function buildStrategyCycleDailyValidationReport(
+  bars: MarketBar[],
+  snapshots: readonly StrategyCycleSelectionSnapshot[],
+  settings: Pick<
+    BacktestSettings,
+    "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
+  > & { interval: MarketInterval },
+): StrategyCycleDailyValidationReport {
+  const dailySnapshots = snapshots.filter(
+    (snapshot) => snapshot.screeningWindow === CYCLE_DAILY_SCREENING_WINDOW,
+  );
+  const stabilityRuns = buildStrategyCycleStabilityRuns(dailySnapshots);
+  const transitions = buildStrategyCycleTransitions(bars, dailySnapshots, settings);
+  const transitionSummaries = buildStrategyCycleTransitionSummaries(transitions);
+  return {
+    screeningWindow: CYCLE_DAILY_SCREENING_WINDOW,
+    stabilityRuns,
+    stabilitySummaries: buildStrategyCycleStabilitySummaries(stabilityRuns),
+    transitions,
+    transitionSummaries,
+    ...strategyCycleRecommendation(transitionSummaries),
+  };
 }

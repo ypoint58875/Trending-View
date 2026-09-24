@@ -18,17 +18,16 @@ trades or run unattended jobs.
   or market API, and no synthetic resampling is performed. Legacy non-daily
   saved records remain readable provenance and reopen against daily bars.
 - A separate strategy-cycle validation page selects an instrument from the
-  saved-backtest shortcut bar, repeats historical screening with only the bars
-  visible at each decision, and compares configurable screening windows and
-  update intervals by how closely each selected plan's later rebalance events
-  match the next same-window screening vintage. A shared five-session vintage
-  grid supplies retrospective labels without fixing the screening window at
-  128 sessions. The report separates correct-direction hits, missed, extra,
-  opposite-direction, early, and late events. Timing hit rates require the
-  predicted adjustment to have the correct direction. Return regret is paired
-  from the prior reference rebalance through the later of the two compared
-  adjustments with one shared start allocation, target allocation, and end
-  price; opposite-direction actions are excluded. One compact batch request pre-submits
+  saved-backtest shortcut bar and repeats one fixed 128-session screening on
+  every historical trading day using only the bars then visible. Consecutive
+  identical winning plans form stability episodes; completed episodes produce
+  per-plan average, median, maximum, and 5/10/15/20-session survival rates.
+  Every winning-plan change freezes the old and new plans and compares their
+  cost-adjusted forward returns after 5, 10, 15, and 20 sessions, even when a
+  later winner appears. Aggregate new-plan win rates, positive-return rates,
+  and median return differences drive an explicit recommendation to delay and
+  switch, keep the old plan, avoid both plans, continue observing, or wait for
+  more evidence. One compact batch request pre-submits
   every bounded optimization unit to the loopback coordinator, which continues
   a CPU- and memory-bounded parallel queue while the tab is sleeping or closed,
   and restores unfinished non-paused units after a local relay restart.
@@ -188,9 +187,12 @@ trades or run unattended jobs.
   complete single-and-combination workflow.
   A second period-derived action (128 days by default) processes every saved
   shortcut instrument sequentially, including indexes, ETFs, funds, and
-  commodity proxies, and resumes after interruption from its last fully
-  saved instrument, and files the current-objective winner into an instrument
-  strategy folder named for that period, such as `128日`.
+  commodity proxies. It writes a batch-resume checkpoint only after an
+  instrument failure; a later click continues after the successfully saved
+  instruments, while an explicit Stop clears that checkpoint so the next click
+  starts the batch from zero with a new underlying screening-run identity. The
+  action files the current-objective winner into an instrument strategy folder
+  named for that period, such as `128日`.
 - Three focused screening targets: balanced score, maximum return, and maximum
   Sharpe. Balanced score is `0.45 * current-window total return +
   8 * clamp(current-window Sharpe, -5, 5) + 0.35 * current-window maximum
