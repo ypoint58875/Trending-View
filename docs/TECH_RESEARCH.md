@@ -1,5 +1,25 @@
 # Technical Research
 
+## 2026-09-25 existing cycle state cleanup
+
+The user's corrected retention target is the current completed 356-result
+N225 task, not all 1,124 old cycle results. The device task record shows
+356/356, 504 evaluation sessions, N225, 128-session total-return screening,
+and a 2026-09-25 last bar. The matching local batch has exactly 356 complete,
+contiguous decision jobs (6169-6524). Keeping all old results in compressed
+archives would preserve unused candidate duplication; deleting blindly by age
+could remove the current task. The chosen procedure validates the exact batch
+manifest, compacts its results to their unchanged winners, then prunes every
+other job and batch directory. One-result replay proved the procedure can
+continue after interruption. This is a local data-retention decision based on
+the current task record and coordinator state; no external source is involved.
+
+## 2026-09-25 cycle result storage and chart scope
+
+The local job result files contained 1,132 JSON results totaling about 1,179 MiB. A sampled 1.1 MiB result held about 0.99 MiB in 210 combination candidates, while cycle validation consumed only the highest-ranked candidate. Two local options were considered: compress every result file or persist only the selected cycle winner. Compression preserves unused candidates and adds decompression and format migration; winner-only persistence follows the existing consumer and preserves the full format for other screening workflows. The winner-only result remains a valid screening outcome with one populated winner array and unchanged summary fields. Existing files remain readable. This is a local data-shape correction based on repository evidence and required no external technical dependency.
+
+The pair chart now receives one shared market series in the page and derives OHLC candles for its selected window. This avoids copying market bars into each transition and keeps the report focused on frozen forward return comparisons and rebalance dates. The chart span and minimum evaluation history share the screening-window + 20 + 1 rule.
+
 ## 2026-09-24 daily strategy stability and champion transitions
 
 The requested question is how long a selected 128-session winner remains
@@ -2967,3 +2987,44 @@ Primary references accessed 2026-09-23:
   https://papers.ssrn.com/sol3/papers.cfm?abstract_id=6217160
 - Eliades and Papadopoulos, *A Conformal Martingales Approach for Recurrent
   Concept Drift*: https://proceedings.mlr.press/v266/eliades25a.html
+# 2026-09-25 interval cycle replay decision
+
+Problem: The cycle page's daily transition summaries do not measure the total
+return of the user's four specified recurring choices over one evaluation
+interval. The first decision must have a complete earlier screening window.
+
+Option 1: Reuse the daily screening schedule, sample every Nth saved winner,
+and combine independent N-day returns. This can reuse old jobs, but treats the
+first screening window as part of evaluation, produces unnecessary screens,
+and loses the portfolio's cash/unit state at update boundaries.
+
+Option 2: Schedule one historical screen immediately before evaluation and
+then one after each completed N-session interval that has another session to
+trade. Stitch four allocation timelines and replay each once through the
+existing backtester. This needs a new task signature and screening run, but
+keeps each decision point-in-time and preserves continuous positions and costs.
+
+Decision: Use option 2. Compare adjacent screening winners over the same
+current trailing window. The preceding winner is always the immediately
+previous *screening* result, even if a portfolio chose another plan. A tie
+uses the current winner. The initial decision bar is included as a flat
+precursor to charge first-open entry costs. Existing local job checkpoints
+and the 512-unit bound provide deterministic interruption recovery; the new
+signature prevents a completed daily report from being mistaken for a rolling
+report. Temporary timeline memory is bounded by four bar-aligned paths plus
+the adjacent old/new plans. This does not establish that choosing the lower
+historical return predicts a higher future return; the four paths are a test
+of that hypothesis.
+
+Chart follow-up: Use the allocation backtest's actual rebalance records for
+markers, rather than inferring a trade from a changed screening winner. This
+preserves the distinction between a plan update and an executed allocation
+change. Reuse the existing `EChart` candlestick/zoom pattern and render one
+selectable account at a time to avoid overlapping four sets of markers.
+
+Primary sources accessed 2026-09-25:
+
+- QuantConnect, Walk Forward Optimization:
+  https://www.quantconnect.com/docs/v2/writing-algorithms/optimization/walk-forward-optimization
+- QuantConnect, Research Guide, look-ahead bias and point-in-time data:
+  https://www.quantconnect.com/docs/v2/writing-algorithms/key-concepts/research-guide

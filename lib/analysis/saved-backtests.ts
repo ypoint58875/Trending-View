@@ -273,6 +273,21 @@ export function reorderSavedBacktestsWithinGroup(
   return groups.flatMap((candidate) => candidate.records);
 }
 
+export function promoteSavedBacktestWithinFolder(
+  records: readonly SavedBacktestRecord[],
+  folderId: number,
+  recordId: number,
+): SavedBacktestRecord[] {
+  const sourceIndex = records.findIndex(
+    (record) => record.id === recordId && record.strategyFolderId === folderId,
+  );
+  const targetIndex = records.findIndex(
+    (record) => record.strategyFolderId === folderId,
+  );
+  if (sourceIndex < 0 || targetIndex < 0) return [...records];
+  return moveArrayEntry(records, sourceIndex, targetIndex);
+}
+
 export function reorderSavedBacktestFolders(
   folders: readonly SavedBacktestFolder[],
   scope: SavedBacktestFolderScope,

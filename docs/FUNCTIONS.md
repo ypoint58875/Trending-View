@@ -1,5 +1,35 @@
 # Function Map
 
+## 2026-09-25 interval-based cycle validation
+
+- `buildStrategyCycleRollingSchedule(...)`: validates one integer screening
+  interval and window, requires the full trailing window before the selected
+  evaluation history, and schedules only decisions that can govern a future
+  evaluation session. The last partial interval needs no extra final screen.
+  The cycle page loads the selected instrument's daily series before editing
+  and binds the evaluation-history input maximum to that series' bar count;
+  the separate 512-unit queue bound remains enforced at start time.
+- `buildStrategyCycleRollingReport(...)`: consumes exactly those persisted
+  winners. It compares only adjacent screening winners over the same current
+  trailing window, replays latest/previous/higher/lower choices through four
+  separate continuous accounts, and computes a same-period buy-and-hold
+  benchmark with the same entry costs. The initial decision bar is included
+  as a flat precursor so first-day entries pay commission and slippage. Each
+  account returns the actual allocation rebalances used by the full-window
+  chart.
+- `buildStrategyCycleRollingChartOption(...)`: plots every evaluation bar and
+  the selected account's actual buy/sell rebalances. It does not infer trades
+  from candidate changes; the same four result paths are selectable without
+  changing the chart's full evaluation period or zoom state.
+
+## 2026-09-25 current cycle result maintenance
+
+- `scripts/compact-current-cycle-results.ts`: preflights the exact current
+  356-result batch, rewrites each full result to its unchanged selected winner
+  via atomic replacement, cancels unfinished jobs outside that batch, and
+  removes unrelated screening-engine state directories. The command is
+  read-only without `--apply`; `--one-result` supports a bounded resume check.
+
 ## 2026-09-22 strategy-cycle validation
 
 - `barsAvailableAtCycleDecision(bars, decisionIndex)`: returns the inclusive
@@ -10,16 +40,16 @@
 - `buildStrategyCycleSchedule(...)`: forms the union of required historical
   decision dates plus the five-session reference grid so compatible update
   intervals share optimization work without fixing the screening-window size.
-- `buildStrategyCycleDailySchedule(...)`: creates the fixed daily product grid
-  with exactly `evaluation sessions - 148` units, reserving 128 sessions before
-  eligible decisions and 20 sessions after them for forward-return measurement.
+- `buildStrategyCycleDailySchedule(...)`: creates the daily product grid with
+  `evaluation sessions - screening window - 20` units. The window defaults
+  to 128 sessions and the daily decision frequency remains fixed.
 - `strategyCyclePlanKey(...)`: creates an order-stable exact identity over a
   selected plan and its fixed relative-long role.
-- `buildStrategyCycleDailyValidationReport(...)`: consumes the fixed daily
-  128-session winners, compares each frozen old/new transition over 5/10/15/20
+- `buildStrategyCycleDailyValidationReport(...)`: consumes daily winners for
+  the selected screening window, compares each frozen old/new transition over 5/10/15/20
   future sessions with configured costs, aggregates explicit return-difference
-  distributions, splits them by the old/new 128-session return ordering, and
-  builds pair-chart cumulative returns plus pre-change rebalance markers.
+  distributions, splits them by old/new screening-window return ordering, and
+  supplies pair-chart dates and pre-change rebalance markers.
   Display aggregates exclude strict-zero returns or strict-zero differences so
   inactive/equal-position events do not dilute medians, means, or counts.
 - `runStrategyCycleConfiguration(...)`: replays selected plans through one
@@ -554,7 +584,7 @@
   and quintuple beams. Three-, four-, and five-leg allocation replay covers all
   positive 10% judgment-weight compositions once. It retains at most 30
   results independently for each strategy count, with one best result per
-  unordered strategy-ID set. Three-through-eight-leg search retains the top 16
+  unordered strategy-ID set. Three-through-six-leg search retains the top 16
   intermediate parent/finalist candidates for each Strategy A primary at every
   level, while final result categories separately retain at most three rows per
   primary and 30 total. Intermediate pools use cached unordered-set keys and
@@ -564,7 +594,7 @@
   so every pair reaches allocation comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
   are built once from complete loaded history and retained only for finalists.
-  Four-through-eight-leg candidate execution then slices those causal targets to
+  Four-through-six-leg candidate execution then slices those causal targets to
   the scoring window plus one preceding bar; a backward decisive-state scan
   preserves inherited core-satellite and volatility state without generating
   per-candidate out-of-window equity.
@@ -574,9 +604,9 @@
   transition, and after every 128 evaluations. Browser cooperative yields are followed by a timer-task
   boundary so progress state is committed and painted before work resumes.
 - `MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY`: hard-caps one Strategy A primary
-  at three rows in each final three-through-eight-strategy result category.
+  at three rows in each final three-through-six-strategy result category.
 - `MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY`: retains the top 16 intermediate
-  candidates for each Strategy A primary at every three-through-eight search
+  candidates for each Strategy A primary at every three-through-six search
   level before expanding the next strategy count.
 - `MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL`: bounds one intermediate level at
   the registered strategy count multiplied by the per-primary 16-candidate

@@ -1,5 +1,21 @@
 # Debugging
 
+## Current cycle result cleanup
+
+Run `npx tsx scripts/compact-current-cycle-results.ts` for a read-only audit of
+the retained 356-result N225 batch. The script checks the exact batch ID,
+unique job IDs, objective, shared bar file, contiguous decision indexes,
+result count, and a 16 MiB per-result input bound before changing anything.
+`--apply --one-result` compacts one result and stops; repeating it should
+report zero further changes. `--apply` finishes compaction, asks the local
+coordinator to cancel unfinished old jobs, and deletes only directories outside
+the verified retained batch. Re-running the script after an interruption is
+safe: already compact results are skipped and already removed directories are
+absent from the new inventory. The retained `result.json` files are still
+readable by the existing coordinator endpoint and browser task. Unused
+historical candidates and other job directories are not recoverable from this
+maintenance run.
+
 ## Strategy-cycle validation does not resume or exceeds its limit
 
 The page stores one versioned task in the
@@ -20,14 +36,14 @@ cancel all submitted unfinished jobs. The primary close signal is a streaming
 browser lease: when its connection disappears, the coordinator writes durable
 cancellation markers and kills the children. The unload batch request is only a
 redundant fast path.
-Screening-engine protocol version 4 persists a batch
+Screening-engine protocol version 6 persists a batch
 queue manifest and explicit-cancellation markers, so restarting the local relay
 automatically resumes unfinished, non-paused jobs. Reopen the page and press
 Continue only to reattach report collection immediately; it is not required to
 keep the computation queue advancing.
 
-If the page reports too many units, reduce the evaluation length, remove a
-screening window, or increase update intervals. It rejects schedules above 512
+If the page reports too many units, reduce the evaluation length or increase
+the screening window. The update interval is always one trading day. It rejects schedules above 512
 units before screening and keeps no unbounded queue. Clearing the task cancels
 its submitted jobs and removes the device-local validation record. If a task cannot be read, inspect
 whether browser site-data policy disabled or cleared IndexedDB; saved backtest

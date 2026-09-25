@@ -17,6 +17,7 @@ import type {
 } from "../lib/analysis/screening-local-engine-protocol";
 import { unpackMarketBars } from "../lib/analysis/screening-worker-bars";
 import { screeningCheckpointInterval } from "../lib/analysis/screening-memory-policy";
+import { compactCycleScreeningOutcome } from "../lib/analysis/shortcut-batch-screening";
 import { replaceFileAtomically } from "./atomic-file";
 
 const RESTART_EXIT_CODE = 75;
@@ -46,8 +47,7 @@ const CHECKPOINT_STAGE_ORDER = [
   "strategies", "entryFilters", "pairs", "allocations", "triples",
   "tripleAllocations", "quadruples", "quadrupleAllocations",
   "quintuples", "quintupleAllocations", "sextuples",
-  "sextupleAllocations", "septuples", "septupleAllocations",
-  "octuples", "octupleAllocations",
+  "sextupleAllocations",
 ] as const;
 
 function emit(event: LocalScreeningChildEvent): void {
@@ -357,7 +357,10 @@ async function main(): Promise<void> {
     return;
   }
   if (!outcome) throw new Error("Screening finished without an outcome");
-  await writeFile(resultTemporaryPath, JSON.stringify(outcome));
+  const persistedOutcome = request.checkpoint.key.startsWith("screening:cycle:")
+    ? compactCycleScreeningOutcome(outcome, request.options.objective ?? "balanced")
+    : outcome;
+  await writeFile(resultTemporaryPath, JSON.stringify(persistedOutcome));
   await rename(resultTemporaryPath, resultPath);
   await rm(checkpointPath, { force: true });
   await rm(checkpointDirectory, { recursive: true, force: true });

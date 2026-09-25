@@ -281,8 +281,8 @@ test("server-renders the strategy cycle validation route", async () => {
 
   const html = await response.text();
   assert.match(html, /\u7b56\u7565\u5468\u671f\u9a8c\u8bc1/);
-  assert.match(html, /\u6bcf\u65e5 128 \u65e5\u7b5b\u9009\u4e0e\u65b0\u65e7\u7b56\u7565\u9a8c\u8bc1/);
-  assert.match(html, /\u65b0\u7b56\u7565\u51fa\u73b0\u540e\u7684\u65b0\u65e7\u6536\u76ca\u5bf9\u6bd4/);
+  assert.match(html, /\u5b9a\u671f\u6eda\u52a8\u7b5b\u9009\u4e0e\u4e94\u79cd\u7d2f\u8ba1\u6536\u76ca\u5bf9\u6bd4/);
+  assert.match(html, /\u540c\u4e00\u533a\u95f4\u7684\u4e94\u79cd\u7ed3\u679c/);
   assert.match(html, /\u8fd4\u56de\u7814\u7a76\u53f0/);
   assert.match(
     workspace,
@@ -291,9 +291,19 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(workspace, /addEventListener\("beforeunload", stopOnPageExit\)/);
   assert.match(workspace, /addEventListener\("pagehide", stopOnPageExit\)/);
   assert.match(workspace, /storedTask\.status !== "completed"/);
+  assert.match(workspace, /cycleScreeningInterval/);
+  assert.match(workspace, /buildStrategyCycleRollingReport/);
+  assert.match(workspace, /StrategyCycleRollingChart/);
+  assert.match(workspace, /rollingReport\.rebalances\[selectedRollingMode\]/);
   assert.match(
     workspace,
     /calculateReports\([\s\S]*?storedTask\.snapshots[\s\S]*?storedTask\.evaluationSessions/,
+  );
+  assert.match(workspace, /setAvailableBarCount\(series\.bars\.length\)/);
+  assert.match(workspace, /max=\{evaluationSessionMaximum\}/);
+  assert.doesNotMatch(
+    workspace,
+    /max=\{512\}[\s\S]{0,200}value=\{evaluationSessions\}/,
   );
   assert.match(
     workspace,
@@ -579,7 +589,12 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /name: folderName/);
   assert.match(workspace, /const assignedSavedBacktest =/);
   assert.match(workspace, /strategyFolderId: resolvedFolder\.id/);
-  assert.match(workspace, /const lastInstrumentIndex = current\.findLastIndex/);
+  assert.match(workspace, /const folderName = `\$\{sessions\}日`/);
+  assert.match(workspace, /promoteSavedBacktestWithinFolder\(/);
+  assert.match(workspace, /orderedIds: nextRecords\.map\(\(record\) => record\.id\)/);
+  assert.match(workspace, /strategySection\.records\.map\(\(saved, index\) =>/);
+  assert.match(workspace, /className="saved-shortcut-number"/);
+  assert.match(styles, /\.saved-shortcut-number\s*\{[^}]*color: var\(--text\)/);
   assert.match(
     savedBacktestRoute,
     /displayOrder:\s*existingInstrumentRow\?\.displayOrder/,
@@ -680,13 +695,13 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     "quintupleAllocations",
     "sextuples",
     "sextupleAllocations",
-    "septuples",
-    "septupleAllocations",
-    "octuples",
-    "octupleAllocations",
   ]) {
     assert.match(combinations, new RegExp(`"${stage}"`));
   }
+  assert.doesNotMatch(
+    combinations,
+    /"septuples"|"septupleAllocations"|"octuples"|"octupleAllocations"/,
+  );
   assert.match(
     entryFilter,
     /SCREENING_MOVING_AVERAGE_SLOPE_PERIODS = \[\s*5,\s*6,\s*7,\s*8,\s*\]/,
@@ -930,6 +945,8 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(workspace, /const combinationResultsByCount = new Map\(/);
   assert.match(locale, /quadrupleResultsTitle: "四策略结果"/);
   assert.match(locale, /quintupleResultsTitle: "五策略结果"/);
+  assert.doesNotMatch(locale, /septupleResultsTitle/);
+  assert.doesNotMatch(locale, /octupleResultsTitle/);
   assert.doesNotMatch(locale, /nonupleResultsTitle/);
   assert.doesNotMatch(
     styles,

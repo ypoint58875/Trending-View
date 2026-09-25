@@ -535,7 +535,7 @@ export function createScreeningEngineCoordinator({
   return {
     health: {
       screeningEngine: true,
-      screeningEngineVersion: 4,
+      screeningEngineVersion: 6,
       screeningConcurrency: concurrency,
     },
     async handle(request, response) {
@@ -553,7 +553,7 @@ export function createScreeningEngineCoordinator({
         try {
           const { payload, packedBars } = await readJobBody(request);
           if (
-            payload?.version !== 4 ||
+            payload?.version !== 6 ||
             !Array.isArray(packedBars?.times) ||
             packedBars.times.length === 0 ||
             typeof payload?.checkpoint?.key !== "string" ||
@@ -575,7 +575,7 @@ export function createScreeningEngineCoordinator({
         try {
           const { payload, packedBars } = await readJobBody(request);
           if (
-            payload?.version !== 4 ||
+            payload?.version !== 6 ||
             !Array.isArray(packedBars?.times) ||
             packedBars.times.length === 0 ||
             !Array.isArray(payload?.jobs) ||
@@ -587,7 +587,7 @@ export function createScreeningEngineCoordinator({
           }
           for (const unit of payload.jobs) {
             if (
-              unit?.version !== 4 ||
+              unit?.version !== 6 ||
               !Number.isInteger(unit?.barCount) ||
               unit.barCount <= 0 ||
               unit.barCount > packedBars.times.length ||
@@ -653,7 +653,7 @@ export function createScreeningEngineCoordinator({
             ? [...new Set(payload.jobIds)]
             : [];
           if (
-            payload?.version !== 4 ||
+            payload?.version !== 6 ||
             jobIds.length === 0 ||
             jobIds.length > MAX_BATCH_JOBS ||
             jobIds.some((jobId) =>
@@ -685,7 +685,7 @@ export function createScreeningEngineCoordinator({
             ? [...new Set(payload.jobIds)]
             : [];
           if (
-            payload?.version !== 4 ||
+            payload?.version !== 6 ||
             jobIds.length === 0 ||
             jobIds.length > MAX_BATCH_JOBS ||
             jobIds.some((jobId) =>
@@ -716,7 +716,7 @@ export function createScreeningEngineCoordinator({
             ? [...new Set(payload.jobIds)]
             : [];
           if (
-            payload?.version !== 4 ||
+            payload?.version !== 6 ||
             jobIds.length === 0 ||
             jobIds.length > MAX_BATCH_JOBS ||
             jobIds.some((jobId) =>

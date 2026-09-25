@@ -163,6 +163,7 @@ import {
   createSaveBacktestInput,
   findStrategyShortcutMatch,
   groupSavedBacktests,
+  promoteSavedBacktestWithinFolder,
   reorderSavedBacktestFolders,
   reorderSavedBacktestGroups,
   reorderSavedBacktestsWithinGroup,
@@ -5006,27 +5007,43 @@ export function MarketWorkspace() {
             ...savePayload.savedBacktest,
             strategyFolderId: resolvedFolder.id,
           };
-          setSavedBacktests((current) => {
-            const existingIndex = current.findIndex(
-              (record) => record.id === assignedSavedBacktest.id,
-            );
-            if (existingIndex < 0) {
-              const lastInstrumentIndex = current.findLastIndex(
-                (record) =>
-                  savedBacktestInstrumentKey(record.instrument) ===
-                  instrumentKey,
-              );
-              if (lastInstrumentIndex < 0) {
-                return [...current, assignedSavedBacktest];
-              }
-              const next = [...current];
-              next.splice(lastInstrumentIndex + 1, 0, assignedSavedBacktest);
-              return next;
-            }
-            return current.map((record, index) =>
-              index === existingIndex ? assignedSavedBacktest : record,
-            );
+          const orderedResponse = await fetch("/api/saved-backtests", {
+            cache: "no-store",
+            signal: controller.signal,
           });
+          if (!orderedResponse.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+          const orderedPayload = (await orderedResponse.json()) as {
+            savedBacktests?: SavedBacktestRecord[];
+          };
+          const fetchedRecords = orderedPayload.savedBacktests;
+          if (
+            !fetchedRecords?.some(
+              (record) => record.id === assignedSavedBacktest.id,
+            )
+          ) {
+            throw new Error("SAVED_BACKTEST_NOT_IN_SHORTCUT_LIST");
+          }
+          const nextRecords = promoteSavedBacktestWithinFolder(
+            fetchedRecords,
+            resolvedFolder.id,
+            assignedSavedBacktest.id,
+          );
+          if (
+            nextRecords.some(
+              (record, index) => record.id !== fetchedRecords[index]?.id,
+            )
+          ) {
+            const orderResponse = await fetch("/api/saved-backtests", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                orderedIds: nextRecords.map((record) => record.id),
+              }),
+              signal: controller.signal,
+            });
+            if (!orderResponse.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+          }
+          setSavedBacktests(nextRecords);
           setSavedBacktestFolders((current) =>
             current.some((candidate) => candidate.id === resolvedFolder.id)
               ? current
@@ -5788,12 +5805,6 @@ export function MarketWorkspace() {
     sextuples: copy.combinationScreening.runningSextuples,
     sextupleAllocations:
       copy.combinationScreening.runningSextupleAllocations,
-    septuples: copy.combinationScreening.runningSeptuples,
-    septupleAllocations:
-      copy.combinationScreening.runningSeptupleAllocations,
-    octuples: copy.combinationScreening.runningOctuples,
-    octupleAllocations:
-      copy.combinationScreening.runningOctupleAllocations,
   }[screenProgress.stage];
   const selectedValidationCandidateName = (
     reference: ScreeningCandidateReference,
@@ -5839,7 +5850,7 @@ export function MarketWorkspace() {
   const refreshActionLabel =
     shortcutRefreshStatusText || copy.refresh;
   const combinationResultsByCount = new Map(
-    Array.from({ length: 7 }, (_, index) => {
+    Array.from({ length: 5 }, (_, index) => {
       const strategyCount = index + 2;
       return [
         strategyCount,
@@ -5856,7 +5867,7 @@ export function MarketWorkspace() {
       kind: "single" as const,
       results: screenResults,
     },
-    ...Array.from({ length: 7 }, (_, index) => {
+    ...Array.from({ length: 5 }, (_, index) => {
       const strategyCount = index + 2;
       const titles = [
         copy.screening.dualResultsTitle,
@@ -5864,8 +5875,6 @@ export function MarketWorkspace() {
         copy.screening.quadrupleResultsTitle,
         copy.screening.quintupleResultsTitle,
         copy.screening.sextupleResultsTitle,
-        copy.screening.septupleResultsTitle,
-        copy.screening.octupleResultsTitle,
       ];
       return {
         key: String(strategyCount),
@@ -7020,7 +7029,7 @@ export function MarketWorkspace() {
                                       className="saved-shortcut-folder-contents"
                                       id={strategyFolderPanelId}
                                     >
-                                      {strategySection.records.map((saved) => {
+                                      {strategySection.records.map((saved, index) => {
                             const requestedInstrumentActive =
                               saved.instrument.secid === instrument.secid &&
                               saved.instrument.provider ===
@@ -7151,6 +7160,9 @@ export function MarketWorkspace() {
                                   aria-label={`${copy.savedBacktests.open} ${group.instrument.name} ${strategyPresentation.fullName}`}
                                 >
                                   <span className="saved-shortcut-name">
+                                    <span className="saved-shortcut-number">
+                                      {index + 1}.
+                                    </span>
                                     <strong title={strategyPresentation.fullName}>
                                       {strategyLabel}
                                     </strong>
@@ -8994,18 +9006,6 @@ export function MarketWorkspace() {
             title: copy.screening.sextupleResultsTitle,
             results: combinationResultsByCount.get(6) ?? [],
             strategyCount: 6,
-          },
-          {
-            key: "septuple",
-            title: copy.screening.septupleResultsTitle,
-            results: combinationResultsByCount.get(7) ?? [],
-            strategyCount: 7,
-          },
-          {
-            key: "octuple",
-            title: copy.screening.octupleResultsTitle,
-            results: combinationResultsByCount.get(8) ?? [],
-            strategyCount: 8,
           },
         ].map((resultGroup) => (
           <details

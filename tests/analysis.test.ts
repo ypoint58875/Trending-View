@@ -59,6 +59,7 @@ import {
   parseSavedBacktestOrderInput,
   parseSavedBacktestRollingUpdateInput,
   parseStrategyAllocationPlan,
+  promoteSavedBacktestWithinFolder,
   reorderSavedBacktestGroups,
   reorderSavedBacktestFolders,
   reorderSavedBacktestsWithinGroup,
@@ -80,6 +81,7 @@ import {
   screeningRunCandidateRankByKey,
 } from "../lib/analysis/screening-runs";
 import {
+  compactCycleScreeningOutcome,
   createShortcutBatchConfigSignature,
   parseShortcutBatchCheckpoint,
   pendingShortcutBatchInstrumentKeys,
@@ -105,9 +107,6 @@ import {
   FIVE_STRATEGY_ALLOCATION_CANDIDATES,
   FOUR_STRATEGY_ALLOCATION_CANDIDATES,
   SIX_STRATEGY_ALLOCATION_CANDIDATES,
-  SEVEN_STRATEGY_ALLOCATION_CANDIDATES,
-  EIGHT_STRATEGY_ALLOCATION_CANDIDATES,
-  NINE_STRATEGY_ALLOCATION_CANDIDATES,
   MAX_COMBINATION_PAIR_FINALISTS,
   MAX_COMBINATION_RESULTS,
   MAX_MULTI_STRATEGY_FINALISTS_PER_LEVEL,
@@ -1793,6 +1792,24 @@ test("groups and reorders the bounded saved-backtest scroll list", () => {
       (record) => record.id,
     ),
     [3, 1, 2],
+  );
+  const folderRecords = [
+    { ...nikkei, strategyFolderId: 4 },
+    { ...gold, strategyFolderId: 9 },
+    { ...nikkeiFallback, strategyFolderId: 4 },
+    { ...nikkei, id: 4, strategyFolderId: 4 },
+  ];
+  assert.deepEqual(
+    promoteSavedBacktestWithinFolder(folderRecords, 4, 4).map(
+      (record) => record.id,
+    ),
+    [4, 1, 2, 3],
+  );
+  assert.deepEqual(
+    promoteSavedBacktestWithinFolder(folderRecords, 4, 2).map(
+      (record) => record.id,
+    ),
+    [1, 2, 3, 4],
   );
   assert.deepEqual(parseSavedBacktestOrderInput({ orderedIds: [3, 1, 2] }), {
     orderedIds: [3, 1, 2],
@@ -4468,20 +4485,14 @@ test("builds all positive tenth-based three-strategy allocations", () => {
   );
 });
 
-test("builds flexible positive tenth-based four- through nine-strategy allocations", () => {
+test("builds flexible positive tenth-based four- through six-strategy allocations", () => {
   assert.equal(FOUR_STRATEGY_ALLOCATION_CANDIDATES.length, 84);
   assert.equal(FIVE_STRATEGY_ALLOCATION_CANDIDATES.length, 126);
   assert.equal(SIX_STRATEGY_ALLOCATION_CANDIDATES.length, 126);
-  assert.equal(SEVEN_STRATEGY_ALLOCATION_CANDIDATES.length, 84);
-  assert.equal(EIGHT_STRATEGY_ALLOCATION_CANDIDATES.length, 36);
-  assert.equal(NINE_STRATEGY_ALLOCATION_CANDIDATES.length, 9);
   for (const candidates of [
     FOUR_STRATEGY_ALLOCATION_CANDIDATES,
     FIVE_STRATEGY_ALLOCATION_CANDIDATES,
     SIX_STRATEGY_ALLOCATION_CANDIDATES,
-    SEVEN_STRATEGY_ALLOCATION_CANDIDATES,
-    EIGHT_STRATEGY_ALLOCATION_CANDIDATES,
-    NINE_STRATEGY_ALLOCATION_CANDIDATES,
   ] as const) {
     assert.ok(
       candidates.every((allocation) => {
@@ -4793,10 +4804,6 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
     quintupleAllocations: 9,
     sextuples: 10,
     sextupleAllocations: 11,
-    septuples: 12,
-    septupleAllocations: 13,
-    octuples: 14,
-    octupleAllocations: 15,
   } as const;
   const segmentedProgress = progress.map(
     (update) =>
@@ -4944,7 +4951,7 @@ test("crosses the top three parameter finalists for every strategy pair", async 
   assert.equal(outcome.results.length, 1);
 });
 
-test("keeps the top thirty two- through eight-strategy results independently", async () => {
+test("keeps the top thirty two- through six-strategy results independently", async () => {
   assert.equal(MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY, 16);
   assert.equal(MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY, 3);
   assert.equal(
@@ -4996,8 +5003,6 @@ test("keeps the top thirty two- through eight-strategy results independently", a
       quadrupleAllocationCandidates: [FOUR_STRATEGY_ALLOCATION_CANDIDATES[0]],
       quintupleAllocationCandidates: [FIVE_STRATEGY_ALLOCATION_CANDIDATES[0]],
       sextupleAllocationCandidates: [SIX_STRATEGY_ALLOCATION_CANDIDATES[0]],
-      septupleAllocationCandidates: [SEVEN_STRATEGY_ALLOCATION_CANDIDATES[0]],
-      octupleAllocationCandidates: [EIGHT_STRATEGY_ALLOCATION_CANDIDATES[0]],
       retainedSinglesPerStrategy: 1,
       maxPairFinalists: 30,
       maxTripleParentPairs: 28,
@@ -5006,7 +5011,7 @@ test("keeps the top thirty two- through eight-strategy results independently", a
     },
   );
   const resultsByCount = new Map(
-    Array.from({ length: 7 }, (_, index) => {
+    Array.from({ length: 5 }, (_, index) => {
       const count = index + 2;
       return [
         count,
@@ -5020,11 +5025,11 @@ test("keeps the top thirty two- through eight-strategy results independently", a
   );
   assert.equal(outcome.cancelled, false);
   assert.equal(outcome.failedCount, 0);
-  const sevenStrategyResult = resultsByCount.get(7)?.[0];
-  assert.ok(sevenStrategyResult);
+  const sixStrategyResult = resultsByCount.get(6)?.[0];
+  assert.ok(sixStrategyResult);
   const fullHistoryReplay = runStrategyCombinationBacktest(
     bars,
-    sevenStrategyResult,
+    sixStrategyResult,
     {
       initialCash: 100_000,
       commissionRate: 0.0003,
@@ -5035,11 +5040,11 @@ test("keeps the top thirty two- through eight-strategy results independently", a
       executionPolicy: "next-open",
     },
   );
-  assert.equal(sevenStrategyResult.totalReturn, fullHistoryReplay.totalReturn);
-  assert.equal(sevenStrategyResult.sharpe, fullHistoryReplay.sharpe);
-  assert.equal(sevenStrategyResult.maxDrawdown, fullHistoryReplay.maxDrawdown);
-  assert.equal(sevenStrategyResult.tradeCount, fullHistoryReplay.tradeCount);
-  for (let count = 2; count <= 8; count += 1) {
+  assert.equal(sixStrategyResult.totalReturn, fullHistoryReplay.totalReturn);
+  assert.equal(sixStrategyResult.sharpe, fullHistoryReplay.sharpe);
+  assert.equal(sixStrategyResult.maxDrawdown, fullHistoryReplay.maxDrawdown);
+  assert.equal(sixStrategyResult.tradeCount, fullHistoryReplay.tradeCount);
+  for (let count = 2; count <= 6; count += 1) {
     const categoryResults = resultsByCount.get(count) ?? [];
     const categoryCount = categoryResults.length;
     assert.ok(categoryCount > 0);
@@ -5060,6 +5065,15 @@ test("keeps the top thirty two- through eight-strategy results independently", a
       );
     }
   }
+  assert.equal(
+    outcome.results.some(
+      (result) =>
+        STRATEGY_SLOTS.filter((slot) =>
+          Boolean((result as unknown as Record<string, unknown>)[`${slot}Id`]),
+        ).length === 7,
+    ),
+    false,
+  );
   const tripleResults = resultsByCount.get(3)!;
   const quadrupleResults = resultsByCount.get(4)!;
   const quintupleResults = resultsByCount.get(5)!;
@@ -7091,6 +7105,14 @@ test("selects the best shortcut batch result across singles and combinations", (
 
   assert.equal(best?.kind, "combination");
   assert.equal(best?.result.score, 18);
+  const compact = compactCycleScreeningOutcome({
+    singleResults: [single],
+    results: [combination, { score: 1 } as never],
+    evaluatedCount: 3,
+  }, "balanced");
+  assert.equal(compact.singleResults.length, 0);
+  assert.deepEqual(compact.results, [combination]);
+  assert.equal(compact.evaluatedCount, 3);
 });
 
 test("resumes shortcut batch screening only for an identical bounded config", () => {

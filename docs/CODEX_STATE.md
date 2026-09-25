@@ -1,5 +1,148 @@
 # Codex State
 
+## 2026-09-25 dynamic cycle evaluation-history limit
+
+- The strategy-cycle page now loads the selected instrument's daily history
+  when its shortcut group is selected and sets the `Evaluation history (days)`
+  input maximum to the returned K-line count. Restored values and manual edits
+  are clamped to that instrument-specific bound instead of a fixed 512 days.
+- The independent 512 optimization-unit safety bound is unchanged. A long
+  history can therefore be selected when its screening interval keeps the
+  generated decision count within that queue limit.
+- Final verification passed: 281 TypeScript tests, production build, four
+  rendered/source checks, and `git diff --check`.
+
+## 2026-09-25 six-strategy screening ceiling
+
+- New one-click and cycle-validation screening stops after the six-strategy
+  discovery and allocation stages. The seven- and eight-strategy result groups,
+  progress labels, allocation candidate inputs, and optimizer stages are
+  removed, so a complete optimization now has twelve stages.
+- Existing saved A-G, A-H, and A-I plans remain readable and replayable for
+  backward compatibility, but fresh screening cannot create a plan with more
+  than six strategies. Screening-engine protocol version 6 prevents older
+  completed jobs that may contain seven- or eight-strategy winners from being
+  reused as fresh results. Screening result-model version 4 likewise rejects
+  the previous device-local latest-result snapshot.
+- The result navigator and stacked result tables now expose standalone through
+  six-strategy categories only. Tests assert that a seven-strategy candidate is
+  not produced even when eight distinct strategy inputs are available.
+- Final verification passed: 281 TypeScript tests, production build, and four
+  rendered/source checks.
+
+## 2026-09-25 full-period cycle trade charts
+
+- The five total-return results remain based on four separate continuous
+  allocation accounts and one buy-and-hold benchmark. Each of the four
+  accounts now retains its backtest's actual rebalance records, including the
+  cost-bearing first-day entry; switching candidates without an executed
+  allocation change creates no trade marker.
+- The cycle page displays a full-evaluation candlestick chart below the five
+  totals. Four buttons select the latest, previous, higher-return, or
+  lower-return account's buy/sell markers. The full evaluation range stays in
+  place, and the slider/drag controls preserve zoom while switching accounts.
+- Chart markers are reconstructed from completed local screening snapshots;
+  the persisted task schema and screening coordinator are unchanged. The chart
+  adds at most the bounded evaluation-bar series and four bounded rebalance
+  lists in browser memory. A focused chart test checks full-period candles,
+  first/last markers, direction, and exclusion of out-of-range records.
+- Final verification passed: 281 unit tests with test-file concurrency set to
+  one, production build, four rendered HTML tests, targeted ESLint, and
+  `git diff --check`. The default parallel `npm test` run hit the existing
+  coordinator lease-cancellation timing test once under load; that test passed
+  alone and in the complete sequential run without changing its code.
+
+## 2026-09-25 interval cycle validation totals
+
+- The strategy-cycle page now accepts one integer screening interval (default
+  five sessions) above the screening-window input (default 128 sessions).
+  Evaluation history is the actual trading interval; it requires the full
+  screening window before its first session. For 504 evaluation sessions and
+  a five-session interval, 101 winners are needed: one before evaluation and
+  one after each of the first 100 completed intervals. The final four-session
+  segment trades from its preceding decision without a terminal screen.
+- Each update compares only the current and immediately previous screening
+  winners on the same trailing window, with configured commission and
+  slippage. Four uninterrupted allocation accounts apply latest, previous,
+  higher-return, and lower-return choices; a fifth value is the same-period
+  buy-and-hold benchmark. Initial entries execute at the first evaluation
+  open and pay costs. Previous winners expire after one comparison round.
+- A new task signature keeps legacy completed daily transition tasks separate
+  from this interval report. Existing winner-only checkpoints, local-engine
+  lease/cancellation, and the 512-screening-unit cap remain in use. No saved
+  market data or completed screening results were rewritten.
+- Verification: `npm test` passed with 280 unit tests, a production build,
+  and four rendered HTML checks. Focused rolling-schedule and replay tests
+  cover the first decision, partial final interval, adjacent-winner aging,
+  continuous-account ordering, entry-cost benchmark, and incomplete results.
+- Remaining risk: the five returns are historical walk-forward estimates for
+  one instrument and chosen parameters. The lower-return rule is a hypothesis,
+  and optimization/search configuration can affect which plan wins each
+  screen. A full fresh N225 screening run was not performed in this change.
+- A read-only replay of 71 available five-session winners from the retained
+  N225/128-session/total-return task, evaluated 2025-03-12 through 2026-08-24,
+  produced benchmark +78.16%, latest +27.06%, previous +12.96%, higher +27.21%,
+  and lower +12.80% under 0.03% commission and 0.02% slippage. These results
+  verify the new report path on saved data; they do not represent a newly run
+  optimizer or an independent out-of-sample confirmation.
+
+## 2026-09-25 shortcut numbering and batch placement
+
+- Each strategy shortcut displays its one-based position within its strategy
+  folder or unfiled section. The number reflects the current persisted order,
+  including manual drag or keyboard reordering.
+- After one-click screening saves and assigns a strategy, it reloads the
+  persisted shortcut list and moves that strategy to the top of its matching
+  session folder through the existing order API. A failed ordering request
+  leaves the instrument pending in the existing local batch checkpoint, so a
+  retry can finish the placement without creating a duplicate strategy.
+- The one-click button, screening window, and destination folder all use the
+  first sample-validation period's trading-session count. For example, changing
+  that field from 128 to 96 changes the action to 96 days and targets `96日`.
+- The shortcut list remains bounded by the existing 200-record API limit; a
+  saved record outside that limit produces an actionable batch failure instead
+  of silently claiming it was placed first.
+- `npm test` passed: typecheck, 278 unit tests, production build, and four
+  rendered HTML checks.
+
+## 2026-09-25 current cycle result retention
+
+- The current completed N225/128-session/total-return cycle task has 356
+  decision results (indexes 6169-6524) in batch
+  `batch-e9746526351c7207958a7e7b`. Its task record reports 356/356.
+- `scripts/compact-current-cycle-results.ts` verified that exact manifest,
+  compacted all 356 existing result files to their selected winners, then
+  removed 782 other job directories and 19 other batch directories.
+- The retained results total 3.83 MiB; the entire screening-engine state
+  directory is 6.95 MiB. Exactly 356 readable one-winner `result.json` files
+  and their one shared batch directory remain. An interrupted one-result run
+  was repeated successfully before the full run, demonstrating idempotent
+  resume. The discarded old jobs and unused candidates were intentionally
+  removed at the user's request; there is no archive of them.
+- A temporary, read-only browser database audit copy remains at
+  `%TEMP%/quantscope-cycle-audit-20260925` (about 23 MiB). Automatic approval
+  review rejected both attempted cleanup commands. It is outside the project
+  and should be removed manually when convenient.
+
+## 2026-09-25 configurable cycle validation and compact results
+
+- The cycle screening window is adjustable from 20 to 491 sessions, defaulting
+  to 128; decisions remain daily. Minimum evaluation history and the pair price
+  chart span both use `screening window + 20 + 1` sessions. The 128-session
+  default therefore requires 149 evaluation sessions and 504 sessions yield
+  356 optimization units.
+- Cycle job result files now retain only the selected winner and summary
+  metadata. Existing full result files remain readable and are not rewritten.
+  The legacy daily-schedule signature token is retained so completed 128-session
+  tasks with matching settings reuse their existing selection snapshots.
+- The pair explorer shows instrument price candles and old/new rebalance points
+  through the change day. Future price candles carry no rebalance points.
+  Pair navigation sits beneath the chart; 5/10/15/20-session returns remain
+  visible above it. A completed task still rebuilds its report on page load.
+- Full `npm test` passed: typecheck, 278 unit tests, production build, and
+  four rendered HTML checks. A sampled legacy 1,162,028-byte result shrank to
+  10,663 bytes (109x) with the winner-only representation.
+
 ## 2026-09-24 pairwise cycle-return explorer
 
 - The cycle-validation report now keeps only the new/old return-comparison

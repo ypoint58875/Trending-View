@@ -550,7 +550,7 @@ button {
   gap: 4px;
 }
 
-.cycle-transition-nav-buttons { display: flex; gap: 6px; }
+.cycle-transition-nav-buttons { display: flex; justify-content: center; gap: 6px; margin: 10px 0 4px; }
 
 .cycle-transition-nav-buttons button {
   display: inline-flex;
@@ -611,6 +611,32 @@ button {
 .cycle-transition-horizons em { text-align: right; }
 
 .cycle-transition-chart { width: 100%; min-width: 0; }
+
+.cycle-rolling-chart-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.cycle-rolling-mode-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.cycle-rolling-mode-buttons button {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0d1613;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.cycle-rolling-mode-buttons button[aria-pressed="true"] {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  color: #d8f3ff;
+}
 
 .cycle-stability-card dl,
 .cycle-horizon-grid dl {
@@ -2143,10 +2169,20 @@ button {
 }
 
 .saved-shortcut-name {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
   width: 100%;
   min-width: 0;
   overflow: hidden;
+}
+
+.saved-shortcut-number {
+  flex: none;
+  color: var(--text);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
 .saved-shortcut-name strong {

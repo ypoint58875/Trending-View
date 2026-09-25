@@ -61,10 +61,11 @@ formats to the browser.
 
 The strategy-cycle page is a separate orchestration boundary over the existing
 market, screening, and allocation engines. For a historical decision index it
-passes only the prefix ending at that close to one fixed 128-session screening.
+passes only the prefix ending at that close to one configurable screening window
+(128 sessions by default).
 The eligible decision grid advances one trading session at a time after reserving
-the first 128 evaluation sessions for screening and the final 20 for forward
-returns; its unit count is therefore evaluation history minus 148. Exact plan identity
+the screening window, 20 forward sessions, and one decision day; its unit count
+is evaluation history minus the screening window and 20. Exact plan identity
 includes strategy composition, parameters, allocations, entry filters, and the
 fixed relative-long role. Consecutive identical daily winners are retained
 internally to measure the outgoing winner's duration for pair-chart boundaries.
@@ -74,10 +75,10 @@ the following open, pays the configured commission and slippage, and is replayed
 for 5, 10, 15, and 20 sessions. A later winner does not truncate an existing
 comparison. Complete transitions aggregate old/new return differences,
 including median, mean, range, direction counts, and conditional groups based
-on which plan led over the same 128-session screening window. Every adjacent
-pair has a cumulative-return chart whose marked portion is 148 sessions plus
-the old-winner duration and the new-winner day. Up to 20 following sessions are
-appended without rebalance markers.
+on which plan led over the same screening window. Every adjacent pair has a
+price chart covering screening window + 20 + 1 sessions. Old and new plan
+rebalance markers end at the change day; the future section has no markers.
+Cycle job result files retain only the selected winner and summary metadata.
 The browser persists one latest task after
 each complete unit with a signature over instrument, latest bar, configuration,
 and costs. A matching signature resumes idempotently. Before result collection,
@@ -206,12 +207,12 @@ catalog produces 1,594 non-equivalent strategy-ID pairs. Final
 combination output keeps only the best parameter/allocation result for each
 unique unordered strategy-ID set within each strategy-count category. Pair
 winners seed bounded triple discovery, and each retained count seeds the next
-count through eight strategies. This forward-expansion beam avoids exhaustive
-tuple enumeration. The UI renders nine vertically stacked disclosures and
-independently retains the top 30 rows per one-to-eight strategy category.
-Stage-local counters drive one monotonic eighteen-segment bar.
+count through six strategies. This forward-expansion beam avoids exhaustive
+tuple enumeration. The UI renders six vertically stacked disclosures and
+independently retains the top 30 rows per one-to-six strategy category.
+Stage-local counters drive one monotonic twelve-segment bar.
 Clicking or keyboard-activating a result row applies it directly; the strategy
-A/B columns retain detailed parameters for pair results, while three-to-eight
+A/B columns retain detailed parameters for pair results, while three-to-six
 strategy results use one compact Strategy-A-led layered-plan name, a two-line list
 of the remaining names, and aggregate weights. The strategy lab remains the
 sole equity-preview surface. Every target is generated from

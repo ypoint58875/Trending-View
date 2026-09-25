@@ -77,7 +77,7 @@ test("coordinator cancels unfinished work when the browser lease disconnects", a
   const leaseController = new AbortController();
   try {
     const request: LocalScreeningJobRequest = {
-      version: 4,
+      version: 6,
       bars: [{
         time: "2026-01-01",
         timestamp: Date.parse("2026-01-01T00:00:00Z"),
@@ -111,7 +111,7 @@ test("coordinator cancels unfinished work when the browser lease disconnects", a
     const created = (await createdResponse.json()) as { jobId: string };
     const leaseResponse = await fetch(`${baseUrl}/screening/job-lease`, {
       method: "POST",
-      body: JSON.stringify({ version: 4, jobIds: [created.jobId] }),
+      body: JSON.stringify({ version: 6, jobIds: [created.jobId] }),
       signal: leaseController.signal,
     });
     assert.equal(leaseResponse.status, 200);
@@ -193,7 +193,7 @@ try {
   const baseUrl = `http://127.0.0.1:${address.port}`;
   try {
     const request: LocalScreeningJobRequest = {
-      version: 4,
+      version: 6,
       bars: [
         {
           time: "2026-01-01",
@@ -300,7 +300,7 @@ setInterval(() => {}, 1000);
   assert.ok(address && typeof address === "object");
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const request: LocalScreeningJobRequest = {
-    version: 4,
+    version: 6,
     bars: [{
       time: "2026-01-01",
       timestamp: Date.parse("2026-01-01T00:00:00Z"),
@@ -397,7 +397,7 @@ process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
   assert.ok(address && typeof address === "object");
   const baseUrl = `http://127.0.0.1:${address.port}`;
   const request: LocalScreeningJobRequest = {
-    version: 4,
+    version: 6,
     bars: [{
       time: "2026-01-01",
       timestamp: Date.parse("2026-01-01T00:00:00Z"),
@@ -425,14 +425,14 @@ process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
   };
   try {
     const batchRequest: LocalScreeningJobBatchRequest = {
-      version: 4,
+      version: 6,
       bars: [
         request.bars[0]!,
         { ...request.bars[0]!, time: "2026-01-02", timestamp: Date.parse("2026-01-02T00:00:00Z") },
         { ...request.bars[0]!, time: "2026-01-03", timestamp: Date.parse("2026-01-03T00:00:00Z") },
       ],
       jobs: Array.from({ length: 3 }, (_, index) => ({
-        version: 4,
+        version: 6,
         settings: request.settings,
         config: request.config,
         checkpoint: {
@@ -480,7 +480,7 @@ process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
     const batchStatusResponse = await fetch(`${baseUrl}/screening/job-statuses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ version: 4, jobIds }),
+      body: JSON.stringify({ version: 6, jobIds }),
     });
     assert.equal(batchStatusResponse.status, 200);
     const batchStatuses = (await batchStatusResponse.json()) as {
@@ -540,7 +540,7 @@ process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version: 4, jobIds: [jobIds[2]] }),
+        body: JSON.stringify({ version: 6, jobIds: [jobIds[2]] }),
       },
     );
     assert.equal(cancelledResponse.status, 200);

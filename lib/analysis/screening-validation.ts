@@ -217,10 +217,6 @@ const SCREENING_OPTIMIZATION_STAGES = [
   "quintupleAllocations",
   "sextuples",
   "sextupleAllocations",
-  "septuples",
-  "septupleAllocations",
-  "octuples",
-  "octupleAllocations",
 ] as const satisfies readonly CombinationScreeningProgress["stage"][];
 
 export interface ScreeningProgressBarState {

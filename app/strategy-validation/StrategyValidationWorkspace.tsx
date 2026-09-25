@@ -2,9 +2,7 @@
 
 import {
   Activity,
-  ArrowDown,
   ArrowLeft,
-  ArrowUp,
   LoaderCircle,
   Pause,
   Play,
@@ -13,17 +11,18 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { zhCN as copy } from "@/app/i18n/zh-CN";
-import { StrategyCycleTransitionChart } from "@/app/components/StrategyCycleTransitionChart";
+import { StrategyCycleRollingChart } from "@/app/components/StrategyCycleRollingChart";
 import {
   CYCLE_DAILY_SCREENING_WINDOW,
-  CYCLE_DAILY_UPDATE_INTERVAL,
   DEFAULT_CYCLE_EVALUATION_SESSIONS,
+  MAX_CYCLE_SCREENING_WINDOW,
   MAX_CYCLE_OPTIMIZATION_UNITS,
-  MIN_CYCLE_DAILY_EVALUATION_SESSIONS,
+  MIN_CYCLE_SCREENING_WINDOW,
   barsAvailableAtCycleDecision,
-  buildStrategyCycleDailyValidationReport,
-  buildStrategyCycleDailySchedule,
-  type StrategyCycleDailyValidationReport,
+  buildStrategyCycleRollingReport,
+  buildStrategyCycleRollingSchedule,
+  type StrategyCycleRollingReport,
+  type StrategyCycleRollingMode,
   type StrategyCycleSelectionSnapshot,
 } from "@/lib/analysis/strategy-cycle-validation";
 import {
@@ -68,8 +67,7 @@ import type { MarketInstrument, MarketSeries } from "@/lib/market/types";
 
 const DAILY_INTERVAL = "1d" as const;
 const HISTORICAL_EXECUTION_POLICY = "hybrid" as const;
-const DAILY_SCREENING_WINDOWS = [CYCLE_DAILY_SCREENING_WINDOW];
-const DAILY_UPDATE_INTERVALS = [CYCLE_DAILY_UPDATE_INTERVAL];
+const DEFAULT_SCREENING_INTERVAL = 5;
 
 interface ProgressState {
   completed: number;
@@ -115,24 +113,6 @@ function formatReturn(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function formatGroupedAdvantage(
-  value: number | null,
-  labels: {
-    newBetter: string;
-    oldBetter: string;
-    equal: string;
-    insufficient: string;
-  },
-): string {
-  if (value === null) return labels.insufficient;
-  const template = value > 0
-    ? labels.newBetter
-    : value < 0
-      ? labels.oldBetter
-      : labels.equal;
-  return template.replace("{average}", formatReturn(value));
-}
-
 function taskSignature(input: {
   instrument: MarketInstrument;
   series: MarketSeries;
@@ -145,7 +125,7 @@ function taskSignature(input: {
   slippagePercent: number;
 }): string {
   return JSON.stringify({
-    dailySchedule: "evaluation-minus-148-v1",
+    rollingSchedule: "trailing-window-next-interval-v1",
     instrumentKey: savedBacktestInstrumentKey(input.instrument),
     lastBar: input.series.bars.at(-1)?.time,
     barCount: input.series.bars.length,
@@ -166,6 +146,9 @@ export function StrategyValidationWorkspace() {
   const [evaluationSessions, setEvaluationSessions] = useState(
     DEFAULT_CYCLE_EVALUATION_SESSIONS,
   );
+  const [availableBarCount, setAvailableBarCount] = useState<number | null>(null);
+  const [screeningWindow, setScreeningWindow] = useState(CYCLE_DAILY_SCREENING_WINDOW);
+  const [screeningInterval, setScreeningInterval] = useState(DEFAULT_SCREENING_INTERVAL);
   const [objective, setObjective] = useState<ScreeningObjective>("totalReturn");
   const [initialCash, setInitialCash] = useState(100_000);
   const [commissionPercent, setCommissionPercent] = useState(0.03);
@@ -175,8 +158,9 @@ export function StrategyValidationWorkspace() {
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [storedTask, setStoredTask] = useState<StoredStrategyCycleValidationTask | null>(null);
-  const [dailyReport, setDailyReport] = useState<StrategyCycleDailyValidationReport | null>(null);
-  const [selectedTransitionIndex, setSelectedTransitionIndex] = useState(0);
+  const [rollingReport, setRollingReport] = useState<StrategyCycleRollingReport | null>(null);
+  const [reportBars, setReportBars] = useState<MarketSeries["bars"]>([]);
+  const [selectedRollingMode, setSelectedRollingMode] = useState<StrategyCycleRollingMode>("latest");
   const abortRef = useRef<AbortController | null>(null);
   const pauseRequestedRef = useRef(false);
   const runningRef = useRef(false);
@@ -185,17 +169,17 @@ export function StrategyValidationWorkspace() {
 
   const groups = useMemo(() => groupSavedBacktests(records), [records]);
   const selectedGroup = groups.find((group) => group.key === selectedKey) ?? groups[0] ?? null;
-  const selectedTransition = dailyReport?.transitions[
-    Math.min(selectedTransitionIndex, Math.max(dailyReport.transitions.length - 1, 0))
-  ] ?? null;
 
   useEffect(() => {
     let active = true;
     void Promise.all([
       fetch("/api/saved-backtests", { cache: "no-store" }).then((response) => response.json()),
       readLatestStrategyCycleValidationTask(),
-    ]).then(([payload, task]) => {
+    ]).then(([payload, restoredTask]) => {
       if (!active) return;
+      const task = restoredTask?.signature.includes('"rollingSchedule":"trailing-window-next-interval-v1"')
+        ? restoredTask
+        : null;
       const nextRecords = (payload as { savedBacktests?: SavedBacktestRecord[] }).savedBacktests ?? [];
       setRecords(nextRecords);
       setStoredTask(task);
@@ -204,9 +188,12 @@ export function StrategyValidationWorkspace() {
       const restoredKey = task ? savedBacktestInstrumentKey(task.instrument) : "";
       setSelectedKey(nextGroups.some((group) => group.key === restoredKey) ? restoredKey : nextGroups[0]?.key ?? "");
       if (task) {
+        const restoredWindow = task.screeningWindows[0] ?? CYCLE_DAILY_SCREENING_WINDOW;
+        setScreeningWindow(restoredWindow);
+        setScreeningInterval(task.updateIntervals[0] ?? DEFAULT_SCREENING_INTERVAL);
         setEvaluationSessions(Math.max(
-          MIN_CYCLE_DAILY_EVALUATION_SESSIONS,
-          Math.min(512, task.evaluationSessions),
+          (task.updateIntervals[0] ?? DEFAULT_SCREENING_INTERVAL) + 1,
+          task.evaluationSessions,
         ));
         setObjective(task.objective);
         setInitialCash(task.initialCash);
@@ -233,6 +220,43 @@ export function StrategyValidationWorkspace() {
   }, [c.loadError]);
 
   useEffect(() => {
+    if (!selectedGroup) {
+      setAvailableBarCount(null);
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setAvailableBarCount(null);
+    void fetch(marketRequestUrl(selectedGroup.instrument), {
+      cache: "no-store",
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(c.marketError);
+      const series = await response.json() as MarketSeries;
+      if (!active) return;
+      setAvailableBarCount(series.bars.length);
+    }).catch((caught) => {
+      if ((caught as Error).name !== "AbortError" && active) {
+        setAvailableBarCount(null);
+      }
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [c.marketError, selectedGroup]);
+
+  useEffect(() => {
+    if (availableBarCount === null) return;
+    setEvaluationSessions((current) =>
+      Math.min(
+        availableBarCount,
+        Math.max(screeningInterval + 1, current),
+      ),
+    );
+  }, [availableBarCount, screeningInterval]);
+
+  useEffect(() => {
     const stopOnPageExit = () => {
       if (!runningRef.current) return;
       pauseRequestedRef.current = true;
@@ -251,13 +275,15 @@ export function StrategyValidationWorkspace() {
     series: MarketSeries,
     snapshots: StrategyCycleSelectionSnapshot[],
     sessions: number,
+    window: number,
+    interval: number,
     restoredCosts?: {
       initialCash: number;
       commissionPercent: number;
       slippagePercent: number;
     },
   ) => {
-    const schedule = buildStrategyCycleDailySchedule(series.bars.length, sessions);
+    const schedule = buildStrategyCycleRollingSchedule(series.bars.length, sessions, window, interval);
     if (!schedule) return;
     const reportInitialCash = restoredCosts?.initialCash ?? initialCash;
     const reportCommissionPercent =
@@ -270,20 +296,23 @@ export function StrategyValidationWorkspace() {
       interval: DAILY_INTERVAL,
       executionPolicy: HISTORICAL_EXECUTION_POLICY,
     };
-    const report = buildStrategyCycleDailyValidationReport(
+    const report = buildStrategyCycleRollingReport(
       series.bars,
       snapshots,
+      sessions,
+      window,
+      interval,
       settings,
     );
-    setDailyReport(report);
-    setSelectedTransitionIndex(Math.max(0, report.transitions.length - 1));
+    setReportBars(series.bars.slice(schedule.evaluationStartIndex, schedule.evaluationEndIndex + 1));
+    setRollingReport(report);
   }, [commissionPercent, initialCash, slippagePercent]);
 
   useEffect(() => {
     if (
       !storedTask ||
       storedTask.status !== "completed" ||
-      dailyReport ||
+      rollingReport ||
       running ||
       restoredReportSignatureRef.current === storedTask.signature
     ) {
@@ -297,10 +326,23 @@ export function StrategyValidationWorkspace() {
     }).then(async (response) => {
       if (!response.ok) throw new Error(c.marketError);
       const series = await response.json() as MarketSeries;
+      if (taskSignature({
+        instrument: storedTask.instrument,
+        series,
+        screeningWindows: storedTask.screeningWindows,
+        updateIntervals: storedTask.updateIntervals,
+        evaluationSessions: storedTask.evaluationSessions,
+        objective: storedTask.objective,
+        initialCash: storedTask.initialCash,
+        commissionPercent: storedTask.commissionPercent,
+        slippagePercent: storedTask.slippagePercent,
+      }) !== storedTask.signature) throw new Error(c.staleTask);
       calculateReports(
         series,
         storedTask.snapshots,
         storedTask.evaluationSessions,
+        storedTask.screeningWindows[0] ?? CYCLE_DAILY_SCREENING_WINDOW,
+        storedTask.updateIntervals[0] ?? DEFAULT_SCREENING_INTERVAL,
         {
           initialCash: storedTask.initialCash,
           commissionPercent: storedTask.commissionPercent,
@@ -309,17 +351,17 @@ export function StrategyValidationWorkspace() {
       );
     }).catch((caught) => {
       if ((caught as Error).name === "AbortError") return;
-      restoredReportSignatureRef.current = "";
-      setError(c.marketError);
+      setError(caught instanceof Error ? caught.message : c.marketError);
     });
     return () => controller.abort();
-  }, [c.marketError, calculateReports, dailyReport, running, storedTask]);
+  }, [c.marketError, c.staleTask, calculateReports, rollingReport, running, storedTask]);
 
   const start = useCallback(async () => {
     if (!selectedGroup || running) return;
     setError("");
-    setDailyReport(null);
-    setSelectedTransitionIndex(0);
+    setRollingReport(null);
+    setReportBars([]);
+    setSelectedRollingMode("latest");
     const controller = new AbortController();
     abortRef.current = controller;
     pauseRequestedRef.current = false;
@@ -333,9 +375,11 @@ export function StrategyValidationWorkspace() {
       });
       if (!marketResponse.ok) throw new Error(c.marketError);
       const series = await marketResponse.json() as MarketSeries;
-      const schedule = buildStrategyCycleDailySchedule(
+      const schedule = buildStrategyCycleRollingSchedule(
         series.bars.length,
         evaluationSessions,
+        screeningWindow,
+        screeningInterval,
       );
       if (!schedule) throw new Error(c.insufficientHistory);
       if (schedule.optimizationUnits > MAX_CYCLE_OPTIMIZATION_UNITS) {
@@ -344,8 +388,8 @@ export function StrategyValidationWorkspace() {
       const signature = taskSignature({
         instrument: selectedGroup.instrument,
         series,
-        screeningWindows: DAILY_SCREENING_WINDOWS,
-        updateIntervals: DAILY_UPDATE_INTERVALS,
+        screeningWindows: [screeningWindow],
+        updateIntervals: [screeningInterval],
         evaluationSessions,
         objective,
         initialCash,
@@ -365,8 +409,8 @@ export function StrategyValidationWorkspace() {
       currentTask = {
         signature,
         instrument: selectedGroup.instrument,
-        screeningWindows: DAILY_SCREENING_WINDOWS,
-        updateIntervals: DAILY_UPDATE_INTERVALS,
+        screeningWindows: [screeningWindow],
+        updateIntervals: [screeningInterval],
         evaluationSessions,
         objective,
         initialCash,
@@ -389,6 +433,7 @@ export function StrategyValidationWorkspace() {
         interval: DAILY_INTERVAL,
         executionPolicy: HISTORICAL_EXECUTION_POLICY,
       };
+      const screeningWindows = [screeningWindow];
       const localEngine = await localScreeningEngineAvailable();
       if (localEngine) {
         await writeStrategyCycleValidationTask(currentTask);
@@ -409,7 +454,7 @@ export function StrategyValidationWorkspace() {
           const availableBars = barsAvailableAtCycleDecision(series.bars, decisionIndex);
           const barsHash = hashMarketBars(availableBars);
           const volumeReliable = assessMarketVolumeCoverage(availableBars).reliable;
-          for (const screeningWindow of DAILY_SCREENING_WINDOWS) {
+          for (const screeningWindow of screeningWindows) {
             if (controller.signal.aborted) throw new DOMException("Paused", "AbortError");
             const unitKey = `${screeningWindow}:${decisionIndex}`;
             if (completed.has(unitKey)) continue;
@@ -543,7 +588,7 @@ export function StrategyValidationWorkspace() {
         for (const decisionIndex of schedule.decisionIndexes) {
           const availableBars = barsAvailableAtCycleDecision(series.bars, decisionIndex);
           const volumeReliable = assessMarketVolumeCoverage(availableBars).reliable;
-          for (const screeningWindow of DAILY_SCREENING_WINDOWS) {
+          for (const screeningWindow of screeningWindows) {
             if (controller.signal.aborted) throw new DOMException("Paused", "AbortError");
             const unitKey = `${screeningWindow}:${decisionIndex}`;
             if (completed.has(unitKey)) continue;
@@ -590,7 +635,7 @@ export function StrategyValidationWorkspace() {
         decisionTime: snapshots.at(-1)?.decisionTime ?? "",
         screeningWindow: snapshots.at(-1)?.screeningWindow ?? 0,
       });
-      calculateReports(series, snapshots, evaluationSessions);
+      calculateReports(series, snapshots, evaluationSessions, screeningWindow, screeningInterval);
     } catch (caught) {
       if ((caught as Error).name === "AbortError") {
         if (pauseRequestedRef.current && currentTask) {
@@ -620,6 +665,8 @@ export function StrategyValidationWorkspace() {
     initialCash,
     objective,
     running,
+    screeningWindow,
+    screeningInterval,
     selectedGroup,
     slippagePercent,
     storedTask,
@@ -635,8 +682,9 @@ export function StrategyValidationWorkspace() {
     queuedJobIdsRef.current = [];
     setStoredTask(null);
     setProgress(null);
-    setDailyReport(null);
-    setSelectedTransitionIndex(0);
+    setRollingReport(null);
+    setReportBars([]);
+    setSelectedRollingMode("latest");
     setError("");
   };
 
@@ -644,6 +692,9 @@ export function StrategyValidationWorkspace() {
     pauseRequestedRef.current = true;
     abortRef.current?.abort();
   };
+
+  const evaluationSessionMaximum =
+    availableBarCount ?? Math.max(DEFAULT_CYCLE_EVALUATION_SESSIONS, evaluationSessions);
 
   return (
     <main className="cycle-validation-shell">
@@ -662,8 +713,9 @@ export function StrategyValidationWorkspace() {
                 {groups.map((group) => <option key={group.key} value={group.key}>{group.instrument.name} · {group.instrument.code}</option>)}
               </select></label>
               {groups.length === 0 && <p className="cycle-warning">{c.noShortcuts}</p>}
-              <div className="cycle-fixed-method"><span>{c.fixedScreeningWindow}</span><strong>{CYCLE_DAILY_SCREENING_WINDOW} {c.sessionUnit}</strong><span>{c.fixedUpdateInterval}</span><strong>{c.everyTradingDay}</strong></div>
-              <label><span>{c.evaluationSessions}</span><input type="number" min={MIN_CYCLE_DAILY_EVALUATION_SESSIONS} max={512} value={evaluationSessions} disabled={running} onChange={(event) => setEvaluationSessions(Math.max(MIN_CYCLE_DAILY_EVALUATION_SESSIONS, Math.min(512, Number(event.target.value) || MIN_CYCLE_DAILY_EVALUATION_SESSIONS)))} /></label>
+              <label><span>{c.cycleScreeningInterval}</span><input type="number" min={1} max={252} step={1} value={screeningInterval} disabled={running} onChange={(event) => { const next = Math.max(1, Math.min(252, Math.trunc(Number(event.target.value) || 1))); setScreeningInterval(next); setEvaluationSessions((current) => Math.max(current, next + 1)); }} /></label>
+              <label><span>{c.cycleScreeningPeriod}</span><input type="number" min={MIN_CYCLE_SCREENING_WINDOW} max={MAX_CYCLE_SCREENING_WINDOW} step={1} value={screeningWindow} disabled={running} onChange={(event) => setScreeningWindow(Math.max(MIN_CYCLE_SCREENING_WINDOW, Math.min(MAX_CYCLE_SCREENING_WINDOW, Math.trunc(Number(event.target.value) || MIN_CYCLE_SCREENING_WINDOW))))} /></label>
+              <label><span>{c.evaluationSessions}</span><input type="number" min={Math.min(screeningInterval + 1, evaluationSessionMaximum)} max={evaluationSessionMaximum} step={1} value={evaluationSessions} disabled={running} onChange={(event) => setEvaluationSessions(Math.max(Math.min(screeningInterval + 1, evaluationSessionMaximum), Math.min(evaluationSessionMaximum, Math.trunc(Number(event.target.value) || screeningInterval + 1))))} /></label>
               <label><span>{c.objective}</span><select value={objective} disabled={running} onChange={(event) => setObjective(event.target.value as ScreeningObjective)}>
                 {SCREENING_OBJECTIVES.map((value) => <option key={value} value={value}>{c.objectives[value]}</option>)}
               </select></label>
@@ -672,7 +724,7 @@ export function StrategyValidationWorkspace() {
                 <label><span>{c.commission}</span><input type="number" min={0} step="0.01" value={commissionPercent} disabled={running} onChange={(event) => setCommissionPercent(Math.max(0, Number(event.target.value) || 0))} /></label>
                 <label><span>{c.slippage}</span><input type="number" min={0} step="0.01" value={slippagePercent} disabled={running} onChange={(event) => setSlippagePercent(Math.max(0, Number(event.target.value) || 0))} /></label>
               </div>
-              <p className="cycle-hint">{c.calculationHint}</p>
+              <p className="cycle-hint">{c.calculationHint.replaceAll("{window}", String(screeningWindow)).replaceAll("{interval}", String(screeningInterval))}</p>
               <div className="cycle-actions">
                 <button type="button" className="primary" disabled={running || !selectedGroup} onClick={() => void start()}><Play size={15} />{storedTask ? c.resume : c.start}</button>
                 <button type="button" disabled={!running} onClick={pause}><Pause size={15} />{c.pause}</button>
@@ -692,55 +744,38 @@ export function StrategyValidationWorkspace() {
 
           <section className="panel cycle-matrix-card">
             <div className="panel-heading"><div><span className="eyebrow">{c.matrixEyebrow}</span><strong>{c.matrixTitle}</strong></div></div>
-            <p className="cycle-hint">{c.dailyValidationNote}</p>
-            {dailyReport ? <>
-              <div className="cycle-report-section">
-                <div className="cycle-report-heading"><div><span className="eyebrow">{c.transitionEyebrow}</span><strong>{c.transitionTitle}</strong></div><small>{c.transitionHint}</small></div>
-                <div className="cycle-horizon-grid">{dailyReport.transitionSummaries.map((summary) => <article key={summary.sessions}>
-                  <strong>{summary.sessions} {c.sessionUnit}</strong><small>{c.samples.replace("{count}", String(summary.sampleCount))}</small>
-                  <dl>
-                    <div><dt>{c.medianOldReturn}</dt><dd>{formatReturn(summary.medianOldReturn)}</dd></div>
-                    <div><dt>{c.medianNewReturn}</dt><dd>{formatReturn(summary.medianNewReturn)}</dd></div>
-                    <div><dt>{c.medianReturnDifference}</dt><dd className={(summary.medianReturnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(summary.medianReturnDifference)}</dd></div>
-                    <div><dt>{c.meanReturnDifference}</dt><dd className={(summary.meanReturnDifference ?? 0) >= 0 ? "positive" : "negative"}>{formatReturn(summary.meanReturnDifference)}</dd></div>
-                    <div><dt>{c.returnDifferenceRange}</dt><dd>{formatReturn(summary.minimumReturnDifference)} ～ {formatReturn(summary.maximumReturnDifference)}</dd></div>
-                    <div><dt>{c.comparisonCounts}</dt><dd>{c.comparisonCountsValue.replace("{new}", String(summary.newBetterCount)).replace("{old}", String(summary.oldBetterCount))}</dd></div>
-                  </dl>
-                  <div className="cycle-screening-split">
-                    <strong>{c.screeningSplitTitle}</strong>
-                    <span><small>{c.screeningNewLed} · {summary.screeningNewLedCount}</small><b className={(summary.screeningNewLedMeanDifference ?? 0) > 0 ? "positive" : (summary.screeningNewLedMeanDifference ?? 0) < 0 ? "negative" : undefined}>{formatGroupedAdvantage(summary.screeningNewLedMeanDifference, { newBetter: c.groupedNewBetter, oldBetter: c.groupedOldBetter, equal: c.groupedEqual, insufficient: c.groupedInsufficient })}</b></span>
-                    <span><small>{c.screeningOldLed} · {summary.screeningOldLedCount}</small><b className={(summary.screeningOldLedMeanDifference ?? 0) > 0 ? "positive" : (summary.screeningOldLedMeanDifference ?? 0) < 0 ? "negative" : undefined}>{formatGroupedAdvantage(summary.screeningOldLedMeanDifference, { newBetter: c.groupedNewBetter, oldBetter: c.groupedOldBetter, equal: c.groupedEqual, insufficient: c.groupedInsufficient })}</b></span>
-                  </div>
-                </article>)}</div>
-              </div>
-
-              {selectedTransition && <div className="cycle-transition-explorer">
-                <div className="cycle-transition-navigator">
-                  <div><span className="eyebrow">{c.pairEyebrow}</span><strong>{c.pairPosition.replace("{current}", String(selectedTransitionIndex + 1)).replace("{total}", String(dailyReport.transitions.length))}</strong></div>
-                  <div className="cycle-transition-nav-buttons">
-                    <button type="button" aria-label={c.previousPair} title={c.previousPair} disabled={selectedTransitionIndex <= 0} onClick={() => setSelectedTransitionIndex((value) => Math.max(0, value - 1))}><ArrowUp size={16} /></button>
-                    <button type="button" aria-label={c.nextPair} title={c.nextPair} disabled={selectedTransitionIndex >= dailyReport.transitions.length - 1} onClick={() => setSelectedTransitionIndex((value) => Math.min(dailyReport.transitions.length - 1, value + 1))}><ArrowDown size={16} /></button>
-                  </div>
+            {rollingReport ? <div className="cycle-report-section">
+              <p className="cycle-hint">{c.rollingPeriod.replace("{start}", rollingReport.evaluationStartTime).replace("{end}", rollingReport.evaluationEndTime).replace("{count}", String(rollingReport.decisionCount)).replace("{window}", String(rollingReport.screeningWindow)).replace("{interval}", String(rollingReport.screeningInterval))}</p>
+              <div className="cycle-horizon-grid">{([
+                [c.rollingBenchmark, rollingReport.benchmarkReturn],
+                [c.rollingLatest, rollingReport.latestReturn],
+                [c.rollingPrevious, rollingReport.previousReturn],
+                [c.rollingHigher, rollingReport.higherReturn],
+                [c.rollingLower, rollingReport.lowerReturn],
+              ] as const).map(([label, value]) => <article key={label}>
+                <strong>{label}</strong>
+                <b className={value >= 0 ? "positive" : "negative"}>{formatReturn(value)}</b>
+              </article>)}</div>
+              <div className="cycle-rolling-chart-section">
+                <strong>{c.rollingChartTitle}</strong>
+                <div className="cycle-rolling-mode-buttons" role="group" aria-label={c.rollingChartTitle}>
+                  {([
+                    ["latest", c.rollingLatest],
+                    ["previous", c.rollingPrevious],
+                    ["higher", c.rollingHigher],
+                    ["lower", c.rollingLower],
+                  ] as const).map(([mode, label]) => <button key={mode} type="button" aria-pressed={selectedRollingMode === mode} onClick={() => setSelectedRollingMode(mode)}>{label}</button>)}
                 </div>
-                <div className="cycle-transition-pair-title"><time>{selectedTransition.decisionTime}</time><span>{selectedTransition.oldLabel}</span><b>→</b><span>{selectedTransition.newLabel}</span></div>
-                <div className="cycle-transition-meta">
-                  <span>{c.oldDuration.replace("{sessions}", String(selectedTransition.oldDurationSessions))}</span>
-                  <span>{c.performanceWindow.replace("{sessions}", String(selectedTransition.requestedPerformanceSessions)).replace("{start}", selectedTransition.performanceStartTime).replace("{end}", selectedTransition.performanceEndTime)}</span>
-                  <span>{c.screeningPairDifference.replace("{old}", formatReturn(selectedTransition.screeningOldReturn)).replace("{new}", formatReturn(selectedTransition.screeningNewReturn)).replace("{difference}", formatReturn(selectedTransition.screeningReturnDifference))}</span>
-                </div>
-                <div className="cycle-transition-horizons">{selectedTransition.horizons.map((horizon) => <span key={horizon.sessions}>
-                  <small>{c.forwardSessions.replace("{sessions}", String(horizon.sessions))}</small>
-                  <b>{c.oldShort} {formatReturn(horizon.oldReturn)}</b><b>{c.newShort} {formatReturn(horizon.newReturn)}</b>
-                  <em className={(horizon.returnDifference ?? 0) >= 0 ? "positive" : "negative"}>{c.differenceShort} {formatReturn(horizon.returnDifference)}</em>
-                </span>)}</div>
-                <StrategyCycleTransitionChart
-                  transition={selectedTransition}
-                  labels={{ oldStrategy: c.oldStrategyCurve, newStrategy: c.newStrategyCurve, difference: c.differenceCurve, returnUnit: c.returnUnit, changeDate: c.changeDate, oldRebalance: c.oldRebalance, newRebalance: c.newRebalance, targetAllocation: c.targetAllocation }}
-                  ariaLabel={c.transitionChartAriaLabel.replace("{date}", selectedTransition.decisionTime)}
+                <StrategyCycleRollingChart
+                  bars={reportBars}
+                  rebalances={rollingReport.rebalances[selectedRollingMode]}
+                  labels={{ price: c.price, buy: c.rollingBuy, sell: c.rollingSell, targetAllocation: c.targetAllocation, fillPrice: c.rollingFillPrice }}
+                  ariaLabel={c.rollingChartAriaLabel.replace("{mode}", ({ latest: c.rollingLatest, previous: c.rollingPrevious, higher: c.rollingHigher, lower: c.rollingLower })[selectedRollingMode])}
+                  dataKey={`${rollingReport.evaluationStartTime}:${rollingReport.evaluationEndTime}`}
                 />
-                <p className="cycle-hint">{c.transitionChartNote}</p>
-              </div>}
-            </> : <p className="cycle-empty">{c.noMatrix}</p>}
+                <p className="cycle-hint">{c.rollingChartHint}</p>
+              </div>
+            </div> : <p className="cycle-empty">{c.noMatrix}</p>}
           </section>
         </div>
       </section>

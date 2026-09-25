@@ -1,15 +1,24 @@
 # Module Patterns
 
+## Screening result maintenance
+
+- Bind one-time result cleanup to an exact batch manifest and assert its
+  instrument, objective, decision range, job count, and shared bar ownership.
+  Compact results sequentially with a per-file size bound and atomic publish.
+  Verify winner identity before and after replacement. Cancel unfinished
+  unrelated jobs before pruning their directories. Rerunning after interruption
+  must skip already compacted files.
+
 ## Historical strategy-cycle tasks
 
 - A historical selection decision may consume only the inclusive bar prefix
   ending at its decision close. Keep this boundary in
   `barsAvailableAtCycleDecision(...)` and test it directly.
-- The product validation method fixes the screening window at 128 sessions and
-  advances exactly one trading session per decision. Do not expose an update-
-  interval selector or subsample the winner sequence. Reserve the first 128
-  evaluation sessions and final 20 forward-return sessions, making the visible
-  progress total exactly evaluation history minus 148.
+- The product validation method defaults to a 128-session adjustable screening
+  window and advances exactly one trading session per decision. Do not expose
+  an update-interval selector or subsample the winner sequence. Reserve the
+  screening window, 20 forward sessions, and one decision day, making the
+  visible progress total evaluation history minus the window and 20.
 - Exact plan identity includes strategy composition, parameters, allocations,
   filters, and the fixed relative-long role. Merge only adjacent daily winners
   with the same exact identity when measuring the outgoing winner's duration.
@@ -17,12 +26,11 @@
   both plans, start both from the same cash baseline, preserve next-open and
   intrabar execution rules, include commission and slippage, and finish every
   5/10/15/20-session horizon even if another winner appears meanwhile.
-- For each adjacent pair chart, show `148 + old-winner duration + 1 incoming day`
-  marked sessions and append up to 20 future sessions. Plot both cumulative
-  returns and their difference across the full chart, but never render
-  rebalance markers after the incoming-winner day. Aggregate future return
+- For each adjacent pair chart, show `screening window + 20 + 1` price sessions.
+  Plot the instrument's OHLC candles and both plans' rebalance markers only
+  through the incoming-winner day. Aggregate future return
   differences both overall and conditionally on which plan led in the shared
-  128-session screening window.
+  screening window.
 - A switching recommendation must disclose its evidence rule. Require at least
   five complete transitions. Recommend the earliest delayed switch only when
   new-plan win rate is at least 60%, new-plan positive-return rate is at least
@@ -83,7 +91,7 @@
 
 - Extend multi-leg behavior through the shared `StrategySlot`/`STRATEGY_SLOTS` A–I contract. Persistence, archive keys, shortlist membership, display, and execution must traverse the same ordered slots while accepting missing trailing legacy slots.
 - Keep execution semantics dependent on strategy count: one leg is direct, two legs retain core/tactical hierarchy, and three-to-nine legs produce one core-satellite decision. The longest-duration leg gates a fixed 60% core; all other positive weights form one tactical-support score. Multi-leg weights must be finite, positive, and sum to one.
-- Discover four-through-eight-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 16 intermediate candidates per Strategy A primary at every three-through-eight-leg level, then rank all completed candidates and cap only the final displayed category at three per primary and 30 total.
+- Discover four-through-six-leg candidates by bounded forward expansion from retained winners of the preceding count. Do not enumerate every catalog tuple. Optimize allocations only after reference-allocation finalists are retained. Keep search breadth separate from presentation diversity: retain up to 16 intermediate candidates per Strategy A primary at every three-through-six-leg level, then rank all completed candidates and cap only the final displayed category at three per primary and 30 total.
 - Maintain the bounded discovery pool incrementally: cache each unordered
   strategy-set key, keep the pool in stable objective order, and remove only the
   exact worst member that violates the per-primary or global limit. Do not

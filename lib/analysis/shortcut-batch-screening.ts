@@ -117,6 +117,23 @@ export function selectBestShortcutScreeningResult(
   );
 }
 
+/** Cycle validation persists only the winner consumed by its report. */
+export function compactCycleScreeningOutcome<T extends {
+  singleResults: ScreeningSingleResult[];
+  results: ScreeningCombinationResult[];
+}>(outcome: T, objective: ScreeningObjective): T {
+  const best = selectBestShortcutScreeningResult(
+    outcome.singleResults,
+    outcome.results,
+    objective,
+  );
+  return {
+    ...outcome,
+    singleResults: best?.kind === "single" ? [best.result as ScreeningSingleResult] : [],
+    results: best?.kind === "combination" ? [best.result as ScreeningCombinationResult] : [],
+  };
+}
+
 export function pendingShortcutBatchInstrumentKeys(
   instrumentKeys: readonly string[],
   checkpoint: ShortcutBatchCheckpoint | null,

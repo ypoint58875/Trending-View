@@ -18,21 +18,21 @@ trades or run unattended jobs.
   or market API, and no synthetic resampling is performed. Legacy non-daily
   saved records remain readable provenance and reopen against daily bars.
 - A separate strategy-cycle validation page selects an instrument from the
-  saved-backtest shortcut bar and repeats one fixed 128-session screening on
-  each eligible historical trading day using only the bars then visible. The
-  progress total is the selected evaluation history minus 148 sessions, reserving
-  the first 128 for screening and the final 20 for forward returns. Consecutive
-  identical winning plans are still tracked internally to determine how long
-  the outgoing winner lasted. Every winning-plan change freezes the old and new plans and compares their
-  cost-adjusted forward returns after 5, 10, 15, and 20 sessions, even when a
-  later winner appears. The report focuses on old/new return differences rather
-  than stability cards or a recent-event list. Aggregate cards expose median,
-  mean, range, and direction counts, split again by whether the new plan beat
-  the old plan inside the same 128-session screening window. Up/down controls
-  inspect every adjacent winner pair. Each chart covers 148 sessions plus the
-  outgoing winner's duration and the incoming-winner day, then appends up to 20
-  future sessions; both plans' rebalance markers stop at the incoming-winner
-  day so the appended future remains an unannotated outcome view. One compact batch request pre-submits
+  saved-backtest shortcut bar. One screening interval (default five sessions)
+  and one trailing screening window (default 128 sessions) define a walk-forward
+  replay over the selected evaluation history. The evaluation-history input
+  loads the selected instrument's daily series and uses its complete K-line
+  count as the dynamic upper bound instead of a fixed 512-session ceiling. The first winner is selected
+  from the complete window before evaluation begins. Each later completed
+  interval screens through its final bar and applies its winner from the next
+  open. Four continuous, cost-adjusted accounts choose the latest winner, the
+  immediately previous winner, or the higher- or lower-return plan when those
+  two winners are replayed over the same current screening window. The previous
+  candidate never persists for more than one comparison round. The page shows
+  exactly these four total returns and the same-period buy-and-hold benchmark.
+  A switchable full-evaluation candlestick chart under the results plots each
+  account's actual buy and sell rebalances, including its initial entry.
+  Each cycle job persists only its selected winner. One compact batch request pre-submits
   every bounded optimization unit to the loopback coordinator, which continues
   a CPU- and memory-bounded parallel queue while the tab remains open, and
   a browser-held streaming lease cancels queued and running units as soon as
@@ -222,7 +222,7 @@ trades or run unattended jobs.
   out-of-sample proof. Bars before an active scoring boundary remain available
   only for causal indicator and position-state continuity; their transactions
   and performance never enter the active-window objective.
-- Monotonic segmented sixteen-stage progress, cancellation, and unexpected-run
+- Monotonic segmented twelve-stage progress, cancellation, and unexpected-run
   recovery. The first result column keeps
   only the best parameter set for each standalone strategy. Screening
   builds every candidate signal over the complete loaded history and limits
@@ -233,7 +233,7 @@ trades or run unattended jobs.
   keeps only compact metrics for each eligible strategy's top 60 unfiltered
   parameter sets. The top three final parameter sets per strategy keep their
   complete execution state for `3 x 3` pair replay.
-- Four-through-eight-strategy screening reuses full-history causal strategy
+- Four-through-six-strategy screening reuses full-history causal strategy
   targets but executes each repeated combination only across the selected
   scoring window plus one preceding bar. Its streaming core-satellite state and
   causal volatility cap advance from complete history, preserving inherited
@@ -293,20 +293,20 @@ trades or run unattended jobs.
   remains favorable, has conflicting short/mid-term evidence, needs review, or
   lacks enough recent executions. Exact and same-type shortcut matches are
   labelled with parameter/allocation/filter differences.
-- Pair winners seed bounded forward expansion through three-to-eight-strategy
+- Pair winners seed bounded forward expansion through three-to-six-strategy
   core-satellite candidates. Every strategy-count category retains at most 30, and
-  three-to-eight-strategy categories retain at most three results with the same
+  three-to-six-strategy categories retain at most three results with the same
   Strategy A primary. Staged search is deliberately wider: every primary keeps
-  its top 16 intermediate candidates at each three-to-eight-strategy level for
+  its top 16 intermediate candidates at each three-to-six-strategy level for
   the next expansion. The three-result cap is applied only to final display, so
   a strong parent is not removed merely because three same-primary variants
   already rank above it.
-  Three-to-eight-strategy result rows use the concise
+  Three-to-six-strategy result rows use the concise
   `Strategy A name · N-strategy layered` label, keep the remaining strategy
   names in a compact two-line summary, and omit per-leg parameters; full names
   remain available through accessible labels and hover text.
 - A compact result navigator below the chart selects the single- through
-  eight-strategy result group and moves through adjacent ranked results without
+  six-strategy result group and moves through adjacent ranked results without
   duplicating the full result tables.
 - A post-screening primary/deputy shortlist combines the standalone and
   combination result pools. The highest eligible candidate under the selected

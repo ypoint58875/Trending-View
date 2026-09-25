@@ -4,6 +4,8 @@ import type { MarketBar } from "../lib/market/types";
 import {
   buildStrategyCycleDailyValidationReport,
   buildStrategyCycleDailySchedule,
+  buildStrategyCycleRollingReport,
+  buildStrategyCycleRollingSchedule,
   buildStrategyCycleEventValidation,
   buildStrategyCycleMatrix,
   buildStrategyCycleSchedule,
@@ -68,17 +70,86 @@ test("a historical decision receives no bars from its future", () => {
   assert.throws(() => barsAvailableAtCycleDecision(bars, 40), RangeError);
 });
 
-test("daily validation requires 128 screening sessions plus 20 forward sessions", () => {
-  assert.equal(MIN_CYCLE_DAILY_EVALUATION_SESSIONS, 148);
-  assert.equal(buildStrategyCycleDailySchedule(600, 147), null);
-  assert.equal(buildStrategyCycleDailySchedule(147, 148), null);
-  assert.equal(buildStrategyCycleDailySchedule(148, 148)?.optimizationUnits, 0);
+test("rolling schedule screens before evaluation and skips a useless final decision", () => {
+  const schedule = buildStrategyCycleRollingSchedule(200, 14, 20, 5);
+  assert.deepEqual(schedule?.decisionIndexes, [185, 190, 195]);
+  assert.equal(schedule?.evaluationStartIndex, 186);
+  assert.equal(schedule?.evaluationEndIndex, 199);
+  assert.equal(buildStrategyCycleRollingSchedule(100, 90, 20, 5), null);
+  assert.equal(buildStrategyCycleRollingSchedule(200, 5, 20, 5), null);
+  assert.equal(buildStrategyCycleRollingSchedule(200, 14, 20, 0), null);
+});
+
+test("rolling report uses the latest two screened winners and continuous accounts", () => {
+  const bars = makeBars(55);
+  const plan = (strategyId: "roc-momentum" | "rsi-reversal") => ({
+    strategyA: strategyId === "roc-momentum"
+      ? { strategyId, parameters: { period: 2, entry: 1, exit: 0 } }
+      : { strategyId, parameters: { period: 14, entry: 30, exit: 70 } },
+    strategyB: null,
+    strategyAAllocation: 1,
+    strategyBAllocation: 0,
+  });
+  const snapshots: StrategyCycleSelectionSnapshot[] = [
+    { decisionIndex: 40, plan: plan("roc-momentum") },
+    { decisionIndex: 45, plan: plan("rsi-reversal") },
+    { decisionIndex: 50, plan: plan("roc-momentum") },
+  ].map(({ decisionIndex, plan }) => ({
+    decisionIndex,
+    decisionTime: bars[decisionIndex]!.time,
+    screeningWindow: 20,
+    plan,
+    fixedRelativeLongStrategy: null,
+    label: String(decisionIndex),
+  }));
+  const settings = {
+    initialCash: 100_000,
+    commissionRate: 0.001,
+    slippageRate: 0.001,
+    interval: "1d" as const,
+    executionPolicy: "hybrid" as const,
+  };
+  const result = buildStrategyCycleRollingReport(bars, snapshots, 14, 20, 5, settings);
+  assert.equal(result.evaluationStartTime, bars[41]!.time);
+  assert.equal(result.evaluationEndTime, bars[54]!.time);
+  assert.equal(result.decisionCount, 3);
+  assert.ok(result.higherReturn > result.latestReturn, JSON.stringify(result));
+  assert.ok(result.latestReturn > result.lowerReturn, JSON.stringify(result));
+  assert.ok(result.previousReturn > result.lowerReturn, JSON.stringify(result));
+  assert.ok(result.previousReturn < result.higherReturn, JSON.stringify(result));
+  for (const mode of ["latest", "previous", "higher", "lower"] as const) {
+    assert.equal(result.rebalances[mode][0]?.time, bars[41]!.time);
+    assert.ok(result.rebalances[mode].every((trade) =>
+      trade.time >= result.evaluationStartTime && trade.time <= result.evaluationEndTime));
+  }
+  assert.ok(result.rebalances.latest.some((trade) => trade.targetAllocation < trade.fromAllocation));
+  assert.ok(result.rebalances.previous.some((trade) => trade.targetAllocation < trade.fromAllocation));
+  assert.equal(result.rebalances.higher.length, 1);
+  assert.ok(Number.isFinite(result.benchmarkReturn));
+  const expectedBenchmark = (
+    bars[54]!.close /
+    (bars[41]!.open * (1 + settings.slippageRate) * (1 + settings.commissionRate)) - 1
+  ) * 100;
+  assert.ok(Math.abs(result.benchmarkReturn - expectedBenchmark) < 1e-9);
+  assert.throws(() => buildStrategyCycleRollingReport(bars, snapshots.slice(0, 2), 14, 20, 5, settings));
+});
+
+test("daily validation requires the screening window plus 20 forward sessions and one decision day", () => {
+  assert.equal(MIN_CYCLE_DAILY_EVALUATION_SESSIONS, 149);
+  assert.equal(buildStrategyCycleDailySchedule(600, 148), null);
+  assert.equal(buildStrategyCycleDailySchedule(148, 149), null);
   assert.equal(buildStrategyCycleDailySchedule(149, 149)?.optimizationUnits, 1);
+  assert.equal(buildStrategyCycleDailySchedule(150, 150)?.optimizationUnits, 2);
   const maximum = buildStrategyCycleDailySchedule(600, 504);
   assert.equal(maximum?.optimizationUnits, 356);
   assert.equal(maximum?.decisionIndexes.length, 356);
   assert.equal(maximum?.decisionIndexes[0], 224);
   assert.equal(maximum?.decisionIndexes.at(-1), 579);
+  const shorter = buildStrategyCycleDailySchedule(600, 504, 64);
+  assert.equal(shorter?.optimizationUnits, 420);
+  assert.equal(shorter?.decisionIndexes[0], 160);
+  assert.equal(buildStrategyCycleDailySchedule(600, 84, 64), null);
+  assert.equal(buildStrategyCycleDailySchedule(600, 85, 64)?.optimizationUnits, 1);
 });
 
 test("normalizes user periods deterministically and bounds their count", () => {
@@ -185,7 +256,8 @@ test("daily 128-session validation measures stable runs and frozen forward trans
   );
   assert.ok(report.transitions[0]?.horizons.every((result) => result.oldReturn !== null));
   assert.equal(report.transitions[0]?.oldDurationSessions, 2);
-  assert.equal(report.transitions[0]?.requestedPerformanceSessions, 151);
+  assert.equal(report.transitions[0]?.requestedPerformanceSessions, 149);
+  assert.equal(report.transitions[0]?.performanceStartTime, bars[4]?.time);
   assert.equal(report.transitions[0]?.performanceEndTime, bars[152]?.time);
   assert.ok(
     report.transitions[0]?.oldRebalances.every(
@@ -209,6 +281,26 @@ test("daily 128-session validation measures stable runs and frozen forward trans
       Math.abs(transition.horizons[0]?.returnDifference ?? 0) > 1e-12).length,
   );
   assert.equal(report.recommendation, "insufficient-evidence");
+
+  const shorterReport = buildStrategyCycleDailyValidationReport(
+    bars,
+    [snapshot(130, 2, 5, "A"), snapshot(131, 3, 8, "B")].map(
+      (entry) => ({ ...entry, screeningWindow: 64 }),
+    ),
+    {
+      initialCash: 100_000,
+      commissionRate: 0.001,
+      slippageRate: 0.001,
+      interval: "1d",
+      executionPolicy: "hybrid",
+    },
+    64,
+  );
+  assert.equal(shorterReport.screeningWindow, 64);
+  assert.equal(shorterReport.transitions.length, 1);
+  assert.equal(shorterReport.transitions[0]?.requestedPerformanceSessions, 85);
+  assert.equal(shorterReport.transitions[0]?.performanceStartTime, bars[67]?.time);
+  assert.equal(shorterReport.transitions[0]?.performanceEndTime, bars[151]?.time);
 
   const repeatedChanges = buildStrategyCycleDailyValidationReport(
     bars,

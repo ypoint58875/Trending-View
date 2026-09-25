@@ -18,15 +18,192 @@ export const DEFAULT_CYCLE_UPDATE_INTERVALS = [5, 10, 20, 40, 60] as const;
 export const DEFAULT_CYCLE_EVALUATION_SESSIONS = 504;
 export const DEFAULT_CYCLE_FORWARD_HORIZONS = [5, 10, 20, 40, 60] as const;
 export const CYCLE_DAILY_SCREENING_WINDOW = 128;
+export const MIN_CYCLE_SCREENING_WINDOW = 20;
+export const MAX_CYCLE_SCREENING_WINDOW = 491;
 export const CYCLE_DAILY_UPDATE_INTERVAL = 1;
 export const CYCLE_TRANSITION_HORIZONS = [5, 10, 15, 20] as const;
-export const CYCLE_TRANSITION_ANALYSIS_BASE_SESSIONS = 148;
 export const MIN_CYCLE_DAILY_EVALUATION_SESSIONS =
-  CYCLE_DAILY_SCREENING_WINDOW + Math.max(...CYCLE_TRANSITION_HORIZONS);
+  CYCLE_DAILY_SCREENING_WINDOW + Math.max(...CYCLE_TRANSITION_HORIZONS) + 1;
+export function minimumCycleEvaluationSessions(screeningWindow: number): number {
+  return screeningWindow + Math.max(...CYCLE_TRANSITION_HORIZONS) + 1;
+}
 export const CYCLE_REFERENCE_INTERVAL = 5;
 export const CYCLE_EVENT_MATCH_TOLERANCE = 10;
 export const MAX_CYCLE_OPTIMIZATION_UNITS = 512;
 export const MAX_CYCLE_VALUE_COUNT = 8;
+
+export type StrategyCycleRollingMode = "latest" | "previous" | "higher" | "lower";
+
+export interface StrategyCycleRollingReport {
+  evaluationStartTime: string;
+  evaluationEndTime: string;
+  screeningWindow: number;
+  screeningInterval: number;
+  decisionCount: number;
+  benchmarkReturn: number;
+  latestReturn: number;
+  previousReturn: number;
+  higherReturn: number;
+  lowerReturn: number;
+  rebalances: Record<StrategyCycleRollingMode, AllocationRebalance[]>;
+}
+
+export function buildStrategyCycleRollingSchedule(
+  barsLength: number,
+  evaluationSessions: number,
+  screeningWindow: number,
+  screeningInterval: number,
+): StrategyCycleSchedule | null {
+  if (
+    !Number.isInteger(evaluationSessions) ||
+    !Number.isInteger(screeningWindow) ||
+    !Number.isInteger(screeningInterval) ||
+    screeningWindow < MIN_CYCLE_SCREENING_WINDOW ||
+    screeningWindow > MAX_CYCLE_SCREENING_WINDOW ||
+    screeningInterval < 1 ||
+    screeningInterval > 252 ||
+    evaluationSessions <= screeningInterval ||
+    evaluationSessions > barsLength
+  ) return null;
+  const evaluationStartIndex = barsLength - evaluationSessions;
+  if (evaluationStartIndex < screeningWindow) return null;
+  const evaluationEndIndex = barsLength - 1;
+  const decisionIndexes: number[] = [];
+  for (
+    let index = evaluationStartIndex - 1;
+    index < evaluationEndIndex;
+    index += screeningInterval
+  ) decisionIndexes.push(index);
+  return {
+    evaluationStartIndex,
+    evaluationEndIndex,
+    decisionIndexes,
+    optimizationUnits: decisionIndexes.length,
+  };
+}
+
+export function buildStrategyCycleRollingReport(
+  bars: MarketBar[],
+  snapshots: readonly StrategyCycleSelectionSnapshot[],
+  evaluationSessions: number,
+  screeningWindow: number,
+  screeningInterval: number,
+  settings: Pick<
+    BacktestSettings,
+    "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
+  > & { interval: MarketInterval },
+): StrategyCycleRollingReport {
+  const schedule = buildStrategyCycleRollingSchedule(
+    bars.length, evaluationSessions, screeningWindow, screeningInterval,
+  );
+  if (!schedule) throw new Error("Invalid rolling cycle schedule");
+  const ordered = [...snapshots]
+    .filter((snapshot) => snapshot.screeningWindow === screeningWindow)
+    .sort((left, right) => left.decisionIndex - right.decisionIndex);
+  if (
+    ordered.length !== schedule.decisionIndexes.length ||
+    ordered.some((snapshot, index) =>
+      snapshot.decisionIndex !== schedule.decisionIndexes[index] ||
+      snapshot.decisionTime !== bars[snapshot.decisionIndex]?.time)
+  ) throw new Error("Rolling cycle screening results are incomplete");
+
+  type Timeline = ReturnType<typeof buildStrategyPlanTimeline>;
+  type Mode = StrategyCycleRollingMode;
+  const modes: Mode[] = ["latest", "previous", "higher", "lower"];
+  const paths = Object.fromEntries(modes.map((mode) => [mode, {
+    target: new Array<number>(bars.length).fill(0),
+    signalEvents: Array.from({ length: bars.length }, () => [] as AllocationSignalEvent[]),
+    intrabarExecutions: Array.from({ length: bars.length }, () => [] as AllocationIntrabarExecution[]),
+  }])) as Record<Mode, {
+    target: number[];
+    signalEvents: AllocationSignalEvent[][];
+    intrabarExecutions: AllocationIntrabarExecution[][];
+  }>;
+  let previousTimeline: Timeline | null = null;
+  for (let round = 0; round < ordered.length; round += 1) {
+    const snapshot = ordered[round]!;
+    const currentTimeline = buildStrategyPlanTimeline(
+      bars, snapshot.plan, undefined, snapshot.fixedRelativeLongStrategy ?? undefined,
+    );
+    let higherTimeline = currentTimeline;
+    let lowerTimeline = currentTimeline;
+    if (previousTimeline) {
+      const rankingStart = snapshot.decisionIndex - screeningWindow + 1;
+      const comparisonSettings = {
+        ...settings,
+        startTime: bars[rankingStart]!.time,
+        endTime: bars[snapshot.decisionIndex]!.time,
+        summaryOnly: true,
+      };
+      const oldReturn = runAllocationBacktest(
+        bars, previousTimeline.target, comparisonSettings,
+        previousTimeline.signalEvents, previousTimeline.intrabarExecutions,
+      ).totalReturn;
+      const newReturn = runAllocationBacktest(
+        bars, currentTimeline.target, comparisonSettings,
+        currentTimeline.signalEvents, currentTimeline.intrabarExecutions,
+      ).totalReturn;
+      if (oldReturn > newReturn) higherTimeline = previousTimeline;
+      if (oldReturn < newReturn) lowerTimeline = previousTimeline;
+    }
+    const choices: Record<Mode, Timeline> = {
+      latest: currentTimeline,
+      previous: previousTimeline ?? currentTimeline,
+      higher: higherTimeline,
+      lower: lowerTimeline,
+    };
+    const segmentEnd = Math.min(
+      ordered[round + 1] ? ordered[round + 1]!.decisionIndex - 1 : schedule.evaluationEndIndex,
+      schedule.evaluationEndIndex,
+    );
+    for (const mode of modes) {
+      const path = paths[mode];
+      const timeline = choices[mode];
+      for (let index = snapshot.decisionIndex; index <= segmentEnd; index += 1) {
+        path.target[index] = timeline.target[index] ?? 0;
+        path.signalEvents[index] = timeline.signalEvents[index] ?? [];
+        path.intrabarExecutions[index] = index > snapshot.decisionIndex
+          ? timeline.intrabarExecutions?.[index] ?? []
+          : [];
+      }
+    }
+    previousTimeline = currentTimeline;
+  }
+  const results = Object.fromEntries(modes.map((mode) => {
+    const path = paths[mode];
+    return [mode, runAllocationBacktest(bars, path.target, {
+      ...settings,
+      startTime: bars[schedule.evaluationStartIndex - 1]!.time,
+      endTime: bars[schedule.evaluationEndIndex]!.time,
+    }, path.signalEvents, path.intrabarExecutions)];
+  })) as Record<Mode, AllocationBacktestResult>;
+  const benchmarkTarget = new Array<number>(bars.length).fill(0);
+  benchmarkTarget.fill(1, schedule.evaluationStartIndex - 1, schedule.evaluationEndIndex + 1);
+  const benchmarkReturn = runAllocationBacktest(bars, benchmarkTarget, {
+    ...settings,
+    startTime: bars[schedule.evaluationStartIndex - 1]!.time,
+    endTime: bars[schedule.evaluationEndIndex]!.time,
+    summaryOnly: true,
+  }).totalReturn;
+  return {
+    evaluationStartTime: bars[schedule.evaluationStartIndex]!.time,
+    evaluationEndTime: bars[schedule.evaluationEndIndex]!.time,
+    screeningWindow,
+    screeningInterval,
+    decisionCount: ordered.length,
+    benchmarkReturn,
+    latestReturn: results.latest.totalReturn,
+    previousReturn: results.previous.totalReturn,
+    higherReturn: results.higher.totalReturn,
+    lowerReturn: results.lower.totalReturn,
+    rebalances: {
+      latest: results.latest.rebalances,
+      previous: results.previous.rebalances,
+      higher: results.higher.rebalances,
+      lower: results.lower.rebalances,
+    },
+  };
+}
 
 export interface StrategyCycleSelectionSnapshot {
   decisionIndex: number;
@@ -136,20 +313,12 @@ export interface StrategyCycleTransitionResult {
   requestedPerformanceSessions: number;
   performanceStartTime: string;
   performanceEndTime: string;
-  performance: StrategyCycleTransitionPerformancePoint[];
   oldRebalances: StrategyCycleTransitionRebalance[];
   newRebalances: StrategyCycleTransitionRebalance[];
   screeningOldReturn: number;
   screeningNewReturn: number;
   screeningReturnDifference: number;
   horizons: StrategyCycleTransitionHorizonResult[];
-}
-
-export interface StrategyCycleTransitionPerformancePoint {
-  time: string;
-  oldReturn: number;
-  newReturn: number;
-  returnDifference: number;
 }
 
 export interface StrategyCycleTransitionRebalance {
@@ -190,7 +359,7 @@ export type StrategyCycleAdjustmentRecommendation =
   | "insufficient-evidence";
 
 export interface StrategyCycleDailyValidationReport {
-  screeningWindow: typeof CYCLE_DAILY_SCREENING_WINDOW;
+  screeningWindow: number;
   stabilityRuns: StrategyCycleStabilityRun[];
   stabilitySummaries: StrategyCycleStabilitySummary[];
   transitions: StrategyCycleTransitionResult[];
@@ -256,22 +425,25 @@ export function buildStrategyCycleSchedule(
 export function buildStrategyCycleDailySchedule(
   barsLength: number,
   evaluationSessions: number,
+  screeningWindow = CYCLE_DAILY_SCREENING_WINDOW,
 ): StrategyCycleSchedule | null {
+  if (!Number.isInteger(screeningWindow) || screeningWindow < MIN_CYCLE_SCREENING_WINDOW || screeningWindow > MAX_CYCLE_SCREENING_WINDOW) return null;
+  const minimumSessions = minimumCycleEvaluationSessions(screeningWindow);
   const resolvedEvaluationSessions = Math.min(
     barsLength,
     Math.round(evaluationSessions),
   );
   if (
     !Number.isFinite(evaluationSessions) ||
-    evaluationSessions < MIN_CYCLE_DAILY_EVALUATION_SESSIONS ||
-    barsLength < MIN_CYCLE_DAILY_EVALUATION_SESSIONS
+    evaluationSessions < minimumSessions ||
+    barsLength < minimumSessions
   ) {
     return null;
   }
   const optimizationUnits =
-    resolvedEvaluationSessions - MIN_CYCLE_DAILY_EVALUATION_SESSIONS;
+    resolvedEvaluationSessions - screeningWindow - Math.max(...CYCLE_TRANSITION_HORIZONS);
   const evaluationStartIndex =
-    barsLength - resolvedEvaluationSessions + CYCLE_DAILY_SCREENING_WINDOW;
+    barsLength - resolvedEvaluationSessions + screeningWindow;
   const evaluationEndIndex = barsLength - 1;
   return {
     evaluationStartIndex,
@@ -970,6 +1142,7 @@ function historicalPlanPerformance(
 function buildStrategyCycleTransitions(
   bars: MarketBar[],
   snapshots: readonly StrategyCycleSelectionSnapshot[],
+  screeningWindow: number,
   settings: Pick<
     BacktestSettings,
     "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
@@ -1030,8 +1203,7 @@ function buildStrategyCycleTransitions(
       oldRunStart -= 1;
     }
     const oldDurationSessions = index - oldRunStart + 1;
-    const requestedPerformanceSessions =
-      CYCLE_TRANSITION_ANALYSIS_BASE_SESSIONS + oldDurationSessions + 1;
+    const requestedPerformanceSessions = minimumCycleEvaluationSessions(screeningWindow);
     const markerEndIndex = newSnapshot.decisionIndex;
     const performanceEndIndex = Math.min(
       bars.length - 1,
@@ -1039,7 +1211,7 @@ function buildStrategyCycleTransitions(
     );
     const performanceStartIndex = Math.max(
       0,
-      markerEndIndex - requestedPerformanceSessions + 1,
+      markerEndIndex - screeningWindow,
     );
     const oldPerformance = historicalPlanPerformance(
       bars,
@@ -1059,7 +1231,7 @@ function buildStrategyCycleTransitions(
     );
     const screeningStartIndex = Math.max(
       0,
-      markerEndIndex - CYCLE_DAILY_SCREENING_WINDOW + 1,
+      markerEndIndex - screeningWindow + 1,
     );
     const screeningOldReturn = historicalPlanPerformance(
       bars,
@@ -1077,20 +1249,6 @@ function buildStrategyCycleTransitions(
       settings,
       timelineFor(newSnapshot),
     ).totalReturn;
-    const performance = bars
-      .slice(performanceStartIndex, performanceEndIndex + 1)
-      .flatMap((bar) => {
-        const oldReturn = oldPerformance.returns.get(bar.time);
-        const newReturn = newPerformance.returns.get(bar.time);
-        return oldReturn === undefined || newReturn === undefined
-          ? []
-          : [{
-              time: bar.time,
-              oldReturn,
-              newReturn,
-              returnDifference: newReturn - oldReturn,
-            }];
-      });
     return [{
       decisionTime: newSnapshot.decisionTime,
       oldStrategyKey,
@@ -1101,7 +1259,6 @@ function buildStrategyCycleTransitions(
       requestedPerformanceSessions,
       performanceStartTime: bars[performanceStartIndex]!.time,
       performanceEndTime: bars[performanceEndIndex]!.time,
-      performance,
       oldRebalances: oldPerformance.rebalances.flatMap((rebalance) => {
         const returnValue = oldPerformance.returns.get(rebalance.time);
         return rebalance.time <= newSnapshot.decisionTime && returnValue !== undefined
@@ -1283,15 +1440,16 @@ export function buildStrategyCycleDailyValidationReport(
     BacktestSettings,
     "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
   > & { interval: MarketInterval },
+  screeningWindow = CYCLE_DAILY_SCREENING_WINDOW,
 ): StrategyCycleDailyValidationReport {
   const dailySnapshots = snapshots.filter(
-    (snapshot) => snapshot.screeningWindow === CYCLE_DAILY_SCREENING_WINDOW,
+    (snapshot) => snapshot.screeningWindow === screeningWindow,
   );
   const stabilityRuns = buildStrategyCycleStabilityRuns(dailySnapshots);
-  const transitions = buildStrategyCycleTransitions(bars, dailySnapshots, settings);
+  const transitions = buildStrategyCycleTransitions(bars, dailySnapshots, screeningWindow, settings);
   const transitionSummaries = buildStrategyCycleTransitionSummaries(transitions);
   return {
-    screeningWindow: CYCLE_DAILY_SCREENING_WINDOW,
+    screeningWindow,
     stabilityRuns,
     stabilitySummaries: buildStrategyCycleStabilitySummaries(stabilityRuns),
     transitions,
