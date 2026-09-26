@@ -134,7 +134,7 @@ function Test-QuantScopeMarketRelayReady {
     $response = $relayResponse.Content | ConvertFrom-Json
     return $response.ready -eq $true -and
       $response.screeningEngine -eq $true -and
-      $response.screeningEngineVersion -eq 6
+      $response.screeningEngineVersion -eq 7
   } catch {
     return $false
   }

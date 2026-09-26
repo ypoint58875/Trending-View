@@ -140,7 +140,7 @@ test("local screening child matches the shared in-process screening core", async
     (strategy) => strategy.id !== "sma-cross",
   ).map((strategy) => strategy.id);
   const request: LocalScreeningJobRequest = {
-    version: 6,
+    version: 7,
     bars,
     settings: {
       initialCash: 100_000,
@@ -191,7 +191,7 @@ test("local screening child matches the shared in-process screening core", async
 test("local screening upload keeps bars columnar and lossless", () => {
   const bars = makeBars(12);
   const request: LocalScreeningJobRequest = {
-    version: 6,
+    version: 7,
     bars,
     settings: {
       initialCash: 100_000,

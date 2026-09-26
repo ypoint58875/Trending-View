@@ -134,7 +134,7 @@ async function coordinatorRequest(path: string, jobIds: string[]) {
   const response = await fetch(`http://127.0.0.1:3001${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ version: 6, jobIds }),
+    body: JSON.stringify({ version: 7, jobIds }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`Coordinator ${path} returned ${response.status}`);

@@ -17,6 +17,13 @@ stopping staged expansion was selected instead. The default remains six, so the
 research workspace retains its existing behavior while cycle validation can
 choose any maximum from two through six.
 
+The 2048-unit frontend ceiling must match every loopback batch endpoint. Keeping
+the coordinator at 512 rejects a valid 672-unit request before any job is
+created; splitting the request would also require multiple leases and partial
+submission recovery. The coordinator boundary was therefore raised to 2048 as
+one atomic batch, and protocol v7 forces the launcher to replace stale v6 relay
+processes that still enforce the old limit.
+
 ## 2026-09-26 trend-triggered strategy-cycle screening
 
 The cycle product previously screened on a fixed integer cadence. The requested

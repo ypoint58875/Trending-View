@@ -13,6 +13,10 @@
 - Completed reports retain one continuous-account return and rebalance list per
   screening period. Period buttons above the full-backtest candlestick chart
   switch its totals and actual rebalance markers without rerunning the task.
+- Loopback screening protocol version 7 raises the coordinator batch, status,
+  cancellation, and lease boundaries from 512 to 2048 job IDs. The launcher
+  rejects an already-running v6 relay so the expanded frontend queue cannot be
+  submitted to a stale 512-job process.
 - This change is isolated to the strategy-cycle validation product. The main
   research workspace, ordinary backtests, saved-shortcut refresh, and global
   execution policy are unchanged.
@@ -32,7 +36,7 @@
 - The report now contains only `Every update` and the buy-and-hold benchmark.
   Its existing full-period candlestick chart remains and plots the actual
   rebalances of the every-update account.
-- Verification passed: strict TypeScript, 286 TypeScript tests, production
+- Verification passed: strict TypeScript, 287 TypeScript tests, production
   build, four rendered route/source tests, and `git diff --check`.
 
 ## 2026-09-25 cycle numeric-input commit behavior

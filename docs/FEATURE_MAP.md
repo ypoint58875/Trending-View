@@ -63,3 +63,6 @@
   explicit-cancellation markers, invalidates older completed jobs that may
   contain seven- or eight-strategy winners, and resumes only compatible unfinished cycle
   jobs after a loopback coordinator restart.
+- Protocol version 7 aligns batch submission, status, cancellation, and lease
+  endpoints with the 2048-unit strategy-cycle ceiling. The launcher replaces a
+  stale v6 relay before the expanded queue is submitted.

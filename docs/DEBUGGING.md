@@ -36,7 +36,7 @@ cancel all submitted unfinished jobs. The primary close signal is a streaming
 browser lease: when its connection disappears, the coordinator writes durable
 cancellation markers and kills the children. The unload batch request is only a
 redundant fast path.
-Screening-engine protocol version 6 persists a batch
+Screening-engine protocol version 7 accepts up to 2048 jobs and persists a batch
 queue manifest and explicit-cancellation markers, so restarting the local relay
 automatically resumes unfinished, non-paused jobs. Reopen the page and press
 Continue only to reattach report collection immediately; it is not required to

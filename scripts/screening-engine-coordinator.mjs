@@ -14,7 +14,8 @@ import { availableParallelism, totalmem } from "node:os";
 import { serialize } from "node:v8";
 
 const MAX_REQUEST_BYTES = 64 * 1024 * 1024;
-const MAX_BATCH_JOBS = 512;
+export const MAX_BATCH_JOBS = 2_048;
+const SCREENING_ENGINE_VERSION = 7;
 const RESTART_EXIT_CODE = 75;
 const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const CHILD_STALL_TIMEOUT_MS = 60_000;
@@ -535,7 +536,7 @@ export function createScreeningEngineCoordinator({
   return {
     health: {
       screeningEngine: true,
-      screeningEngineVersion: 6,
+      screeningEngineVersion: SCREENING_ENGINE_VERSION,
       screeningConcurrency: concurrency,
     },
     async handle(request, response) {
@@ -553,7 +554,7 @@ export function createScreeningEngineCoordinator({
         try {
           const { payload, packedBars } = await readJobBody(request);
           if (
-            payload?.version !== 6 ||
+            payload?.version !== SCREENING_ENGINE_VERSION ||
             !Array.isArray(packedBars?.times) ||
             packedBars.times.length === 0 ||
             typeof payload?.checkpoint?.key !== "string" ||
@@ -575,7 +576,7 @@ export function createScreeningEngineCoordinator({
         try {
           const { payload, packedBars } = await readJobBody(request);
           if (
-            payload?.version !== 6 ||
+            payload?.version !== SCREENING_ENGINE_VERSION ||
             !Array.isArray(packedBars?.times) ||
             packedBars.times.length === 0 ||
             !Array.isArray(payload?.jobs) ||
@@ -587,7 +588,7 @@ export function createScreeningEngineCoordinator({
           }
           for (const unit of payload.jobs) {
             if (
-              unit?.version !== 6 ||
+              unit?.version !== SCREENING_ENGINE_VERSION ||
               !Number.isInteger(unit?.barCount) ||
               unit.barCount <= 0 ||
               unit.barCount > packedBars.times.length ||
@@ -653,7 +654,7 @@ export function createScreeningEngineCoordinator({
             ? [...new Set(payload.jobIds)]
             : [];
           if (
-            payload?.version !== 6 ||
+            payload?.version !== SCREENING_ENGINE_VERSION ||
             jobIds.length === 0 ||
             jobIds.length > MAX_BATCH_JOBS ||
             jobIds.some((jobId) =>
@@ -685,7 +686,7 @@ export function createScreeningEngineCoordinator({
             ? [...new Set(payload.jobIds)]
             : [];
           if (
-            payload?.version !== 6 ||
+            payload?.version !== SCREENING_ENGINE_VERSION ||
             jobIds.length === 0 ||
             jobIds.length > MAX_BATCH_JOBS ||
             jobIds.some((jobId) =>
@@ -716,7 +717,7 @@ export function createScreeningEngineCoordinator({
             ? [...new Set(payload.jobIds)]
             : [];
           if (
-            payload?.version !== 6 ||
+            payload?.version !== SCREENING_ENGINE_VERSION ||
             jobIds.length === 0 ||
             jobIds.length > MAX_BATCH_JOBS ||
             jobIds.some((jobId) =>
