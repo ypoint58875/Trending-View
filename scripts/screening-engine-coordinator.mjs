@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import {
   mkdir,
   readFile,
@@ -15,7 +16,12 @@ import { serialize } from "node:v8";
 
 const MAX_REQUEST_BYTES = 64 * 1024 * 1024;
 export const MAX_BATCH_JOBS = 2_048;
-const SCREENING_ENGINE_VERSION = 7;
+const SCREENING_ENGINE_VERSION = JSON.parse(
+  readFileSync(
+    new URL("../config/screening-engine-protocol.json", import.meta.url),
+    "utf8",
+  ),
+).version;
 const RESTART_EXIT_CODE = 75;
 const JOB_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const CHILD_STALL_TIMEOUT_MS = 60_000;

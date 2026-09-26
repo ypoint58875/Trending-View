@@ -9,8 +9,9 @@ import type {
 import type { MovingAverageSlopeFilter } from "./entry-filter";
 import type { StrategyId } from "./strategies";
 import type { MarketBar, MarketInterval } from "@/lib/market/types";
+import screeningEngineProtocol from "@/config/screening-engine-protocol.json";
 
-export const LOCAL_SCREENING_ENGINE_VERSION = 7;
+export const LOCAL_SCREENING_ENGINE_VERSION = screeningEngineProtocol.version;
 export const LOCAL_SCREENING_ENGINE_URL = "http://127.0.0.1:3001";
 
 export interface LocalScreeningJobRequest {

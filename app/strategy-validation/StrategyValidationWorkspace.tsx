@@ -36,6 +36,7 @@ import {
   cancelScreeningInLocalEngine,
   enqueueScreeningBatchInLocalEngine,
   holdScreeningBatchLeaseInLocalEngine,
+  LocalScreeningEngineProtocolError,
   localScreeningEngineAvailable,
   screeningJobRequest,
   waitForScreeningBatchInLocalEngine,
@@ -655,7 +656,11 @@ export function StrategyValidationWorkspace() {
           await writeStrategyCycleValidationTask({ ...currentTask, status: "paused" });
         }
       } else {
-        const message = caught instanceof Error ? caught.message : c.unknownError;
+        const message = caught instanceof LocalScreeningEngineProtocolError
+          ? c.localEngineRestartRequired
+          : caught instanceof Error
+            ? caught.message
+            : c.unknownError;
         setError(message);
         if (currentTask) await writeStrategyCycleValidationTask({ ...currentTask, status: "error", lastError: message });
       }

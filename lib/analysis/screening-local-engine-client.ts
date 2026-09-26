@@ -25,6 +25,14 @@ const COMPLETED_RESULT_READ_ATTEMPTS = 5;
 const BATCH_STATUS_POLL_INTERVAL_MS = 500;
 const LEGACY_BATCH_STATUS_POLL_INTERVAL_MS = 5_000;
 const LEGACY_STATUS_CHUNK_SIZE = 32;
+const BATCH_STATUS_READ_ATTEMPTS = 20;
+
+export class LocalScreeningEngineProtocolError extends Error {
+  constructor() {
+    super("Local screening engine protocol is incompatible");
+    this.name = "LocalScreeningEngineProtocolError";
+  }
+}
 
 function abortError() {
   return new DOMException("Screening cancelled", "AbortError");
@@ -349,6 +357,8 @@ export async function waitForScreeningBatchInLocalEngine(
 ): Promise<void> {
   const pending = new Set(jobIds);
   let batchStatusSupported = true;
+  let batchStatusReadFailures = 0;
+  const resultReadFailures = new Map<string, number>();
   while (pending.size > 0) {
     if (options.signal?.aborted) throw abortError();
     let jobs: LocalScreeningJobBatchStatus[] = [];
@@ -367,13 +377,21 @@ export async function waitForScreeningBatchInLocalEngine(
         },
       );
       if (response.ok) {
+        batchStatusReadFailures = 0;
         const payload = (await response.json()) as {
           jobs?: LocalScreeningJobBatchStatus[];
         };
         jobs = payload.jobs ?? [];
       } else if (response.status === 404) {
+        batchStatusReadFailures = 0;
         batchStatusSupported = false;
+      } else if (response.status >= 400 && response.status < 500) {
+        throw new LocalScreeningEngineProtocolError();
       } else {
+        batchStatusReadFailures += 1;
+        if (batchStatusReadFailures >= BATCH_STATUS_READ_ATTEMPTS) {
+          throw new Error("Local screening engine status is unavailable");
+        }
         await delay(BATCH_STATUS_POLL_INTERVAL_MS, options.signal);
         continue;
       }
@@ -419,11 +437,19 @@ export async function waitForScreeningBatchInLocalEngine(
         `${LOCAL_SCREENING_ENGINE_URL}/screening/jobs/${job.jobId}/result`,
         { cache: "no-store", signal: options.signal },
       );
-      if (!resultResponse.ok) continue;
+      if (!resultResponse.ok) {
+        const failures = (resultReadFailures.get(job.jobId) ?? 0) + 1;
+        resultReadFailures.set(job.jobId, failures);
+        if (failures >= COMPLETED_RESULT_READ_ATTEMPTS) {
+          throw new Error("Local screening engine result is unavailable");
+        }
+        continue;
+      }
       await onCompleted(
         job.jobId,
         (await resultResponse.json()) as ScreeningValidationOutcome,
       );
+      resultReadFailures.delete(job.jobId);
       pending.delete(job.jobId);
     }
     const failed = jobs.find(

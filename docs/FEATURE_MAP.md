@@ -66,3 +66,17 @@
 - Protocol version 7 aligns batch submission, status, cancellation, and lease
   endpoints with the 2048-unit strategy-cycle ceiling. The launcher replaces a
   stale v6 relay before the expanded queue is submitted.
+- Local screening protocol compatibility is one linked change unit. The single
+  version source is `config/screening-engine-protocol.json`; consumers are
+  `lib/analysis/screening-local-engine-protocol.ts`,
+  `scripts/screening-engine-coordinator.mjs`, `scripts/start-local.ps1`, and
+  protocol-aware maintenance scripts. Request/status behavior also links
+  `lib/analysis/screening-local-engine-client.ts`, `scripts/market-relay.mjs`,
+  `app/strategy-validation/StrategyValidationWorkspace.tsx`, and
+  `app/i18n/zh-CN.ts`. Regression coverage belongs in
+  `tests/screening-local-engine-client.test.ts`,
+  `tests/screening-engine-coordinator.test.ts`,
+  `tests/screening-local-engine.test.ts`, and `tests/local-launcher.test.ts`.
+  Any protocol or endpoint edit must review this whole set. An incompatible
+  status request must leave the running state with a localized restart message;
+  it must not enter an unbounded polling loop.

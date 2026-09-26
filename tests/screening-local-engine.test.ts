@@ -6,7 +6,10 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { serialize } from "node:v8";
 import { runScreeningWithValidation } from "../lib/analysis/screening-validation";
-import type { LocalScreeningJobRequest } from "../lib/analysis/screening-local-engine-protocol";
+import {
+  LOCAL_SCREENING_ENGINE_VERSION,
+  type LocalScreeningJobRequest,
+} from "../lib/analysis/screening-local-engine-protocol";
 import { STRATEGIES } from "../lib/analysis/strategies";
 import {
   packMarketBars,
@@ -140,7 +143,7 @@ test("local screening child matches the shared in-process screening core", async
     (strategy) => strategy.id !== "sma-cross",
   ).map((strategy) => strategy.id);
   const request: LocalScreeningJobRequest = {
-    version: 7,
+    version: LOCAL_SCREENING_ENGINE_VERSION,
     bars,
     settings: {
       initialCash: 100_000,
@@ -191,7 +194,7 @@ test("local screening child matches the shared in-process screening core", async
 test("local screening upload keeps bars columnar and lossless", () => {
   const bars = makeBars(12);
   const request: LocalScreeningJobRequest = {
-    version: 7,
+    version: LOCAL_SCREENING_ENGINE_VERSION,
     bars,
     settings: {
       initialCash: 100_000,

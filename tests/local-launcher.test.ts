@@ -12,6 +12,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { GET as getApplicationHealth } from "../app/api/health/route";
+import { LOCAL_SCREENING_ENGINE_VERSION } from "../lib/analysis/screening-local-engine-protocol";
 
 const projectRoot = new URL("../", import.meta.url);
 const launcherPath = fileURLToPath(
@@ -102,6 +103,23 @@ test("application health route returns the lightweight launcher contract", async
     role: "application",
     version: 1,
   });
+});
+
+test("screening protocol version has one shared configuration source", () => {
+  const protocol = JSON.parse(
+    readProjectFile("config/screening-engine-protocol.json"),
+  ) as { version: number };
+  const launcherVersion = runLauncherFunction(
+    "Write-Output $screeningEngineProtocolVersion",
+  );
+
+  assert.equal(launcherVersion.status, 0, launcherVersion.stderr);
+  assert.equal(Number(launcherVersion.stdout.trim()), protocol.version);
+  assert.equal(LOCAL_SCREENING_ENGINE_VERSION, protocol.version);
+  assert.doesNotMatch(
+    readProjectFile("scripts/start-local.ps1"),
+    /screeningEngineVersion -eq \d+/,
+  );
 });
 
 test("application identity requires this checkout and its fixed runtime arguments", () => {

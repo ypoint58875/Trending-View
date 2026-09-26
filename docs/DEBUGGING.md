@@ -42,6 +42,27 @@ automatically resumes unfinished, non-paused jobs. Reopen the page and press
 Continue only to reattach report collection immediately; it is not required to
 keep the computation queue advancing.
 
+If the page says it is running but CPU remains idle, distinguish computation
+from stale presentation before changing data:
+
+1. Read `/health` and compare `screeningEngineVersion` with
+   `config/screening-engine-protocol.json`.
+2. Check for active `screening-engine-child.ts` processes and sample their CPU
+   delta rather than relying on cumulative process CPU.
+3. Count the current batch's `result.json`, `checkpoint.bin`, and `cancelled`
+   files. A complete result count with no child and no changing checkpoint means
+   calculation has ended even if the browser still says it is running.
+4. On a version mismatch, rerun `open-quantscope.bat`. The launcher replaces
+   only an identified stale relay from this checkout. Return to cycle validation
+   and press Continue; completed deterministic results are read from disk.
+
+Batch collection must not retry a protocol rejection indefinitely. A non-404
+4xx status response now marks the task as an error and displays the restart
+instruction. When changing this behavior, update the shared version config,
+client, coordinator, launcher, localized copy, maintenance scripts, tests, and
+the protocol linkage entries in `FEATURE_MAP.md` and `MODULE_PATTERNS.md`
+together.
+
 If the page reports too many units, reduce the evaluation length or increase
 the screening window. The update interval is always one trading day. It rejects schedules above 2048
 units before screening and keeps no unbounded queue. Clearing the task cancels

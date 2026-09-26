@@ -2,6 +2,7 @@ import { readFile, readdir, realpath, lstat, rm, stat, writeFile } from "node:fs
 import { resolve, join, sep, basename, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compactCycleScreeningOutcome, selectBestShortcutScreeningResult } from "../lib/analysis/shortcut-batch-screening";
+import { LOCAL_SCREENING_ENGINE_VERSION } from "../lib/analysis/screening-local-engine-protocol";
 import type { ScreeningValidationOutcome } from "../lib/analysis/screening-validation";
 import { replaceFileAtomically } from "./atomic-file";
 
@@ -134,7 +135,7 @@ async function coordinatorRequest(path: string, jobIds: string[]) {
   const response = await fetch(`http://127.0.0.1:3001${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ version: 7, jobIds }),
+    body: JSON.stringify({ version: LOCAL_SCREENING_ENGINE_VERSION, jobIds }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new Error(`Coordinator ${path} returned ${response.status}`);

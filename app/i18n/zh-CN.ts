@@ -1371,6 +1371,7 @@ export const zhCN = {
     marketError: "无法获取该标的的完整历史行情。",
     staleTask: "行情日期或任务参数已变化；请点击继续验证，按当前数据重新计算。",
     localEngineError: "无法把完整验证队列提交给本机计算引擎。",
+    localEngineRestartRequired: "本机计算引擎版本与页面不一致。请重新运行 QuantScope 启动器，然后点击继续读取已完成结果。",
     insufficientHistory: "历史行情不足以覆盖评价区间及其之前的完整筛选周期。",
     tooManyUnits: "本次需要 {count} 个筛选单元，超过 2048 个上限；请缩短评价历史或减少筛选周期。",
     noResult: "某个历史决策日没有可用筛选结果。",

@@ -46,7 +46,10 @@ trades or run unattended jobs.
   materializes only its causal prefix,
   and windows at the same decision share range-independent entry-filter
   derivations. Unit mappings and completed selections remain in device-local
-  IndexedDB for report recovery.
+  IndexedDB for report recovery. The browser, coordinator, launcher, and local
+  maintenance tools read one shared protocol-version configuration. If a stale
+  relay is already running, result collection stops with a restart instruction
+  instead of indefinitely showing an active validation with no compute child.
 - Daily history requests start at 2000-01-01 with a 10,000-bar safety cap.
   Instruments launched later begin at their first provider-available bar.
 - Candlestick and line chart modes with volume and synchronized zoom.

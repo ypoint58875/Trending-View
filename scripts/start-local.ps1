@@ -21,6 +21,16 @@ $applicationHealthUrl = "$localUrl/api/health"
 $marketRelayHealthUrl = (
   "http://${runtimeHost}:$($marketRelayRuntime.Port)/health"
 )
+$screeningEngineProtocolPath = Join-Path `
+  $projectRoot `
+  "config\screening-engine-protocol.json"
+$screeningEngineProtocolVersion = [int](
+  (Get-Content -LiteralPath $screeningEngineProtocolPath -Raw |
+    ConvertFrom-Json).version
+)
+if ($screeningEngineProtocolVersion -lt 1) {
+  throw "The screening-engine protocol version is invalid."
+}
 $minimumNodeVersion = [version]"22.13.0"
 
 function Stop-WithError {
@@ -134,7 +144,7 @@ function Test-QuantScopeMarketRelayReady {
     $response = $relayResponse.Content | ConvertFrom-Json
     return $response.ready -eq $true -and
       $response.screeningEngine -eq $true -and
-      $response.screeningEngineVersion -eq 7
+      $response.screeningEngineVersion -eq $screeningEngineProtocolVersion
   } catch {
     return $false
   }

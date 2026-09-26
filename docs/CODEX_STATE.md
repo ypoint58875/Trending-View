@@ -1,5 +1,22 @@
 # Codex State
 
+## 2026-09-26 screening protocol compatibility guard
+
+- The local screening protocol version now has one source of truth at
+  `config/screening-engine-protocol.json`. The browser protocol export, Node
+  coordinator, Windows launcher, current cycle maintenance script, and tests
+  consume the shared value instead of repeating protocol `7` literals.
+- Batch result collection now treats non-404 4xx status responses as protocol
+  incompatibility and exits immediately. Strategy-cycle validation leaves its
+  running state, persists an error, and displays localized instructions to
+  restart QuantScope and continue reading completed disk results.
+- Project rules, architecture, feature linkage, module patterns, README, and
+  debugging guidance now define the protocol compatibility boundary and require
+  its clients, health contract, launcher, queue recovery, UI copy, maintenance
+  tools, and regression tests to change together.
+- Verification passed: strict TypeScript, 289 TypeScript tests, production
+  build, four rendered route/source tests, and `git diff --check`.
+
 ## 2026-09-26 trend-triggered strategy-cycle validation
 
 - The screening-period control is now an inclusive start/end range with an

@@ -87,6 +87,29 @@
   available parallelism and physical memory; retain CPU and memory headroom for
   the browser and operating system.
 
+### Local screening protocol compatibility pattern
+
+- Keep the numeric protocol version only in
+  `config/screening-engine-protocol.json`. TypeScript clients, the Node
+  coordinator, the PowerShell launcher, maintenance scripts, and tests must
+  read that file directly or import the shared TypeScript export derived from
+  it. Never copy the numeric value into a new consumer.
+- Treat request encoding, endpoint validation, health reporting, launcher
+  replacement, persisted queue restoration, browser result collection, and
+  localized failure presentation as one compatibility boundary. Review all of
+  them whenever the protocol shape or endpoint set changes.
+- Use `404` only for the documented legacy endpoint fallback. Other client
+  errors during batch status collection indicate an incompatible or invalid
+  contract and must fail immediately. Transient server failures may retry only
+  under an explicit bound; no polling path may retry forever without progress.
+- A compatibility failure preserves completed on-disk results and the browser
+  task record, changes the task out of `running`, and tells the user to restart
+  the launcher and continue. The restarted compatible coordinator restores
+  deterministic jobs and serves already completed results without recomputing.
+- Tests must cover the shared version source, coordinator health version,
+  stale-relay launcher rejection, incompatible status failure, and recovery of
+  persisted completed and unfinished jobs.
+
 ## Screening ownership and memory policy
 
 - A screening run owns the immutable market series, canonical instrument key,

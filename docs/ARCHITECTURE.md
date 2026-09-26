@@ -193,6 +193,14 @@ reserving one logical CPU and 25% of memory (at least 2 GiB), budgeting 4 GiB
 per child, and capping the pool at eight. One job's stage traversal remains
 single-child and deterministic; the pool parallelizes jobs, not ranking
 reductions inside a job.
+Protocol compatibility spans every process boundary. The authoritative version
+is `config/screening-engine-protocol.json`; the browser protocol export, Node
+coordinator health/request validation, PowerShell launcher readiness probe, and
+maintenance utilities consume that same value. Batch status `404` retains only
+the intentional legacy per-job fallback. Other 4xx responses terminate result
+collection, persist the cycle task as an error, and show a localized instruction
+to restart the launcher. Completed result files remain recoverable, so a
+compatible restarted relay can serve them when the user continues the task.
 The detected pool is shared across browser tabs; each individual job occupies
 at most one compute child. If the local engine is unavailable before a job
 starts, the existing dedicated module Web Worker remains the compatibility
