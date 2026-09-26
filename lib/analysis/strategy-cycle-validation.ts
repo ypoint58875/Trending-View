@@ -18,7 +18,7 @@ export const DEFAULT_CYCLE_UPDATE_INTERVALS = [5, 10, 20, 40, 60] as const;
 export const DEFAULT_CYCLE_EVALUATION_SESSIONS = 504;
 export const DEFAULT_CYCLE_FORWARD_HORIZONS = [5, 10, 20, 40, 60] as const;
 export const CYCLE_DAILY_SCREENING_WINDOW = 128;
-export const MIN_CYCLE_SCREENING_WINDOW = 20;
+export const MIN_CYCLE_SCREENING_WINDOW = 5;
 export const MAX_CYCLE_SCREENING_WINDOW = 491;
 export const CYCLE_DAILY_UPDATE_INTERVAL = 1;
 export const CYCLE_TRANSITION_HORIZONS = [5, 10, 15, 20] as const;
@@ -29,51 +29,65 @@ export function minimumCycleEvaluationSessions(screeningWindow: number): number 
 }
 export const CYCLE_REFERENCE_INTERVAL = 5;
 export const CYCLE_EVENT_MATCH_TOLERANCE = 10;
-export const MAX_CYCLE_OPTIMIZATION_UNITS = 512;
+export const MAX_CYCLE_OPTIMIZATION_UNITS = 2_048;
 export const MAX_CYCLE_VALUE_COUNT = 8;
+export const CYCLE_TREND_ANGLE_DEGREES = 30;
+export const CYCLE_TREND_SLOPE_SCALE_PERCENT = 1;
 
-export type StrategyCycleRollingMode = "latest" | "previous" | "higher" | "lower";
+export function buildCycleScreeningWindows(
+  minimum: number,
+  maximum: number,
+  step: number,
+): number[] {
+  if (
+    !Number.isInteger(minimum) ||
+    !Number.isInteger(maximum) ||
+    !Number.isInteger(step) ||
+    minimum < MIN_CYCLE_SCREENING_WINDOW ||
+    maximum > MAX_CYCLE_SCREENING_WINDOW ||
+    minimum > maximum ||
+    step < 1
+  ) return [];
+  const windows: number[] = [];
+  for (let value = minimum; value <= maximum; value += step) {
+    windows.push(value);
+  }
+  return windows;
+}
 
 export interface StrategyCycleRollingReport {
   evaluationStartTime: string;
   evaluationEndTime: string;
   screeningWindow: number;
-  screeningInterval: number;
   decisionCount: number;
+  skippedDecisionCount: number;
   benchmarkReturn: number;
-  latestReturn: number;
-  previousReturn: number;
-  higherReturn: number;
-  lowerReturn: number;
-  rebalances: Record<StrategyCycleRollingMode, AllocationRebalance[]>;
+  updateReturn: number;
+  rebalances: AllocationRebalance[];
 }
 
 export function buildStrategyCycleRollingSchedule(
-  barsLength: number,
+  bars: readonly MarketBar[],
   evaluationSessions: number,
   screeningWindow: number,
-  screeningInterval: number,
 ): StrategyCycleSchedule | null {
   if (
     !Number.isInteger(evaluationSessions) ||
     !Number.isInteger(screeningWindow) ||
-    !Number.isInteger(screeningInterval) ||
     screeningWindow < MIN_CYCLE_SCREENING_WINDOW ||
     screeningWindow > MAX_CYCLE_SCREENING_WINDOW ||
-    screeningInterval < 1 ||
-    screeningInterval > 252 ||
-    evaluationSessions <= screeningInterval ||
-    evaluationSessions > barsLength
+    evaluationSessions < 2 ||
+    evaluationSessions > bars.length
   ) return null;
-  const evaluationStartIndex = barsLength - evaluationSessions;
+  const evaluationStartIndex = bars.length - evaluationSessions;
   if (evaluationStartIndex < screeningWindow) return null;
-  const evaluationEndIndex = barsLength - 1;
-  const decisionIndexes: number[] = [];
-  for (
-    let index = evaluationStartIndex - 1;
-    index < evaluationEndIndex;
-    index += screeningInterval
-  ) decisionIndexes.push(index);
+  const evaluationEndIndex = bars.length - 1;
+  const decisionIndexes = [evaluationStartIndex - 1];
+  for (let index = evaluationStartIndex; index < evaluationEndIndex; index += 1) {
+    if (shouldScreenStrategyCycleAtIndex(bars, index)) {
+      decisionIndexes.push(index);
+    }
+  }
   return {
     evaluationStartIndex,
     evaluationEndIndex,
@@ -82,19 +96,85 @@ export function buildStrategyCycleRollingSchedule(
   };
 }
 
+export function strategyCycleTrendAngle(
+  bars: readonly MarketBar[],
+  index: number,
+): number | null {
+  if (!Number.isInteger(index) || index < 2 || index >= bars.length) return null;
+  const current = ((bars[index]!.close + bars[index - 1]!.close) / 2);
+  const previous = ((bars[index - 1]!.close + bars[index - 2]!.close) / 2);
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous <= 0) {
+    return null;
+  }
+  const slopePercent = ((current / previous) - 1) * 100;
+  return Math.atan(slopePercent / CYCLE_TREND_SLOPE_SCALE_PERCENT) * 180 / Math.PI;
+}
+
+export function shouldScreenStrategyCycleAtIndex(
+  bars: readonly MarketBar[],
+  index: number,
+): boolean {
+  const angle = strategyCycleTrendAngle(bars, index);
+  if (angle === null) return true;
+  const bar = bars[index]!;
+  const tolerance = Math.max(Math.abs(bar.open), Math.abs(bar.close), 1) * 1e-10;
+  const change = bar.close - bar.open;
+  if (Math.abs(change) <= tolerance) return true;
+  if (angle >= CYCLE_TREND_ANGLE_DEGREES) return change < 0;
+  if (angle <= -CYCLE_TREND_ANGLE_DEGREES) return change > 0;
+  return true;
+}
+
+export interface StrategyCycleRecentSignal {
+  direction: "increase" | "reduce";
+  targetAllocation: number;
+  signals: AllocationSignalEvent[];
+}
+
+export function resolveStrategyCycleRecentSignals(
+  inheritedAllocation: number,
+  recentSignals: readonly StrategyCycleRecentSignal[],
+): { targetAllocation: number; signals: AllocationSignalEvent[] } {
+  const inherited = Math.min(1, Math.max(0, inheritedAllocation));
+  const hasReduceThenIncrease = recentSignals.some(
+    (signal, index) =>
+      signal.direction === "reduce" &&
+      recentSignals.slice(index + 1).some((later) => later.direction === "increase"),
+  );
+  if (hasReduceThenIncrease) return { targetAllocation: inherited, signals: [] };
+  const latestReduce = [...recentSignals].reverse().find(
+    (signal) => signal.direction === "reduce",
+  );
+  if (latestReduce) {
+    return {
+      targetAllocation: Math.min(inherited, latestReduce.targetAllocation),
+      signals: [...latestReduce.signals],
+    };
+  }
+  const latestIncrease = [...recentSignals].reverse().find(
+    (signal) => signal.direction === "increase",
+  );
+  if (latestIncrease) {
+    return {
+      targetAllocation: Math.max(inherited, latestIncrease.targetAllocation),
+      signals: [...latestIncrease.signals],
+    };
+  }
+  return { targetAllocation: inherited, signals: [] };
+}
+
 export function buildStrategyCycleRollingReport(
   bars: MarketBar[],
   snapshots: readonly StrategyCycleSelectionSnapshot[],
   evaluationSessions: number,
   screeningWindow: number,
-  screeningInterval: number,
   settings: Pick<
     BacktestSettings,
     "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
   > & { interval: MarketInterval },
 ): StrategyCycleRollingReport {
   const schedule = buildStrategyCycleRollingSchedule(
-    bars.length, evaluationSessions, screeningWindow, screeningInterval,
+    bars, evaluationSessions, screeningWindow,
   );
   if (!schedule) throw new Error("Invalid rolling cycle schedule");
   const ordered = [...snapshots]
@@ -107,76 +187,68 @@ export function buildStrategyCycleRollingReport(
       snapshot.decisionTime !== bars[snapshot.decisionIndex]?.time)
   ) throw new Error("Rolling cycle screening results are incomplete");
 
-  type Timeline = ReturnType<typeof buildStrategyPlanTimeline>;
-  type Mode = StrategyCycleRollingMode;
-  const modes: Mode[] = ["latest", "previous", "higher", "lower"];
-  const paths = Object.fromEntries(modes.map((mode) => [mode, {
-    target: new Array<number>(bars.length).fill(0),
-    signalEvents: Array.from({ length: bars.length }, () => [] as AllocationSignalEvent[]),
-    intrabarExecutions: Array.from({ length: bars.length }, () => [] as AllocationIntrabarExecution[]),
-  }])) as Record<Mode, {
-    target: number[];
-    signalEvents: AllocationSignalEvent[][];
-    intrabarExecutions: AllocationIntrabarExecution[][];
-  }>;
-  let previousTimeline: Timeline | null = null;
-  for (let round = 0; round < ordered.length; round += 1) {
-    const snapshot = ordered[round]!;
-    const currentTimeline = buildStrategyPlanTimeline(
-      bars, snapshot.plan, undefined, snapshot.fixedRelativeLongStrategy ?? undefined,
-    );
-    let higherTimeline = currentTimeline;
-    let lowerTimeline = currentTimeline;
-    if (previousTimeline) {
-      const rankingStart = snapshot.decisionIndex - screeningWindow + 1;
-      const comparisonSettings = {
-        ...settings,
-        startTime: bars[rankingStart]!.time,
-        endTime: bars[snapshot.decisionIndex]!.time,
-        summaryOnly: true,
-      };
-      const oldReturn = runAllocationBacktest(
-        bars, previousTimeline.target, comparisonSettings,
-        previousTimeline.signalEvents, previousTimeline.intrabarExecutions,
-      ).totalReturn;
-      const newReturn = runAllocationBacktest(
-        bars, currentTimeline.target, comparisonSettings,
-        currentTimeline.signalEvents, currentTimeline.intrabarExecutions,
-      ).totalReturn;
-      if (oldReturn > newReturn) higherTimeline = previousTimeline;
-      if (oldReturn < newReturn) lowerTimeline = previousTimeline;
+  const target = new Array<number>(bars.length).fill(0);
+  const signalEvents = Array.from(
+    { length: bars.length },
+    () => [] as AllocationSignalEvent[],
+  );
+  const timelines = ordered.map((snapshot) => buildStrategyPlanTimeline(
+    bars,
+    snapshot.plan,
+    undefined,
+    snapshot.fixedRelativeLongStrategy ?? undefined,
+  ));
+  let inheritedAllocation = 0;
+  const firstDecisionIndex = ordered[0]!.decisionIndex;
+  let selectedIndex = -1;
+  for (let index = firstDecisionIndex; index <= schedule.evaluationEndIndex; index += 1) {
+    const isDecision =
+      selectedIndex + 1 < ordered.length &&
+      ordered[selectedIndex + 1]!.decisionIndex === index;
+    if (!isDecision) {
+      target[index] = inheritedAllocation;
+      continue;
     }
-    const choices: Record<Mode, Timeline> = {
-      latest: currentTimeline,
-      previous: previousTimeline ?? currentTimeline,
-      higher: higherTimeline,
-      lower: lowerTimeline,
-    };
-    const segmentEnd = Math.min(
-      ordered[round + 1] ? ordered[round + 1]!.decisionIndex - 1 : schedule.evaluationEndIndex,
-      schedule.evaluationEndIndex,
-    );
-    for (const mode of modes) {
-      const path = paths[mode];
-      const timeline = choices[mode];
-      for (let index = snapshot.decisionIndex; index <= segmentEnd; index += 1) {
-        path.target[index] = timeline.target[index] ?? 0;
-        path.signalEvents[index] = timeline.signalEvents[index] ?? [];
-        path.intrabarExecutions[index] = index > snapshot.decisionIndex
-          ? timeline.intrabarExecutions?.[index] ?? []
-          : [];
+    selectedIndex += 1;
+    const timeline = timelines[selectedIndex]!;
+    const recentSignals: StrategyCycleRecentSignal[] = [];
+    for (let signalIndex = Math.max(1, index - 1); signalIndex <= index; signalIndex += 1) {
+      const previousAllocation = timeline.target[signalIndex - 1] ?? 0;
+      const nextAllocation = timeline.target[signalIndex] ?? previousAllocation;
+      if (nextAllocation > previousAllocation + 1e-10) {
+        recentSignals.push({
+          direction: "increase",
+          targetAllocation: nextAllocation,
+          signals: [...(timeline.signalEvents[signalIndex] ?? [])],
+        });
+      } else if (nextAllocation < previousAllocation - 1e-10) {
+        recentSignals.push({
+          direction: "reduce",
+          targetAllocation: nextAllocation,
+          signals: [...(timeline.signalEvents[signalIndex] ?? [])],
+        });
       }
     }
-    previousTimeline = currentTimeline;
+    const resolved = resolveStrategyCycleRecentSignals(
+      inheritedAllocation,
+      recentSignals,
+    );
+    target[index] = resolved.targetAllocation;
+    if (Math.abs(resolved.targetAllocation - inheritedAllocation) > 1e-10) {
+      signalEvents[index] = resolved.signals;
+    }
+    inheritedAllocation = resolved.targetAllocation;
   }
-  const results = Object.fromEntries(modes.map((mode) => {
-    const path = paths[mode];
-    return [mode, runAllocationBacktest(bars, path.target, {
+  const updateResult: AllocationBacktestResult = runAllocationBacktest(
+    bars,
+    target,
+    {
       ...settings,
       startTime: bars[schedule.evaluationStartIndex - 1]!.time,
       endTime: bars[schedule.evaluationEndIndex]!.time,
-    }, path.signalEvents, path.intrabarExecutions)];
-  })) as Record<Mode, AllocationBacktestResult>;
+    },
+    signalEvents,
+  );
   const benchmarkTarget = new Array<number>(bars.length).fill(0);
   benchmarkTarget.fill(1, schedule.evaluationStartIndex - 1, schedule.evaluationEndIndex + 1);
   const benchmarkReturn = runAllocationBacktest(bars, benchmarkTarget, {
@@ -189,19 +261,11 @@ export function buildStrategyCycleRollingReport(
     evaluationStartTime: bars[schedule.evaluationStartIndex]!.time,
     evaluationEndTime: bars[schedule.evaluationEndIndex]!.time,
     screeningWindow,
-    screeningInterval,
     decisionCount: ordered.length,
+    skippedDecisionCount: Math.max(evaluationSessions - ordered.length, 0),
     benchmarkReturn,
-    latestReturn: results.latest.totalReturn,
-    previousReturn: results.previous.totalReturn,
-    higherReturn: results.higher.totalReturn,
-    lowerReturn: results.lower.totalReturn,
-    rebalances: {
-      latest: results.latest.rebalances,
-      previous: results.previous.rebalances,
-      higher: results.higher.rebalances,
-      lower: results.lower.rebalances,
-    },
+    updateReturn: updateResult.totalReturn,
+    rebalances: updateResult.rebalances,
   };
 }
 

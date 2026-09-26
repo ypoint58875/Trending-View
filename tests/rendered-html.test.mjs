@@ -271,6 +271,10 @@ test("server-renders the strategy cycle validation route", async () => {
     ),
     "utf8",
   );
+  const committedNumberInput = await readFile(
+    new URL("../app/components/CommittedNumberInput.tsx", import.meta.url),
+    "utf8",
+  );
   const locale = await readFile(
     new URL("../app/i18n/zh-CN.ts", import.meta.url),
     "utf8",
@@ -281,8 +285,8 @@ test("server-renders the strategy cycle validation route", async () => {
 
   const html = await response.text();
   assert.match(html, /\u7b56\u7565\u5468\u671f\u9a8c\u8bc1/);
-  assert.match(html, /\u5b9a\u671f\u6eda\u52a8\u7b5b\u9009\u4e0e\u4e94\u79cd\u7d2f\u8ba1\u6536\u76ca\u5bf9\u6bd4/);
-  assert.match(html, /\u540c\u4e00\u533a\u95f4\u7684\u4e94\u79cd\u7ed3\u679c/);
+  assert.match(html, /\u8d8b\u52bf\u89e6\u53d1\u7b5b\u9009\u4e0e\u8fde\u7eed\u6301\u4ed3\u6536\u76ca\u9a8c\u8bc1/);
+  assert.match(html, /\u6bcf\u6b21\u66f4\u65b0\u4e0e\u6536\u76ca\u57fa\u51c6/);
   assert.match(html, /\u8fd4\u56de\u7814\u7a76\u53f0/);
   assert.match(
     workspace,
@@ -291,15 +295,32 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(workspace, /addEventListener\("beforeunload", stopOnPageExit\)/);
   assert.match(workspace, /addEventListener\("pagehide", stopOnPageExit\)/);
   assert.match(workspace, /storedTask\.status !== "completed"/);
-  assert.match(workspace, /cycleScreeningInterval/);
+  assert.doesNotMatch(workspace, /cycleScreeningInterval/);
   assert.match(workspace, /buildStrategyCycleRollingReport/);
   assert.match(workspace, /StrategyCycleRollingChart/);
-  assert.match(workspace, /rollingReport\.rebalances\[selectedRollingMode\]/);
+  assert.match(workspace, /rebalances=\{rollingReport\.rebalances\}/);
+  assert.match(workspace, /rollingReports\.map[\s\S]{0,350}setSelectedReportWindow/);
+  assert.doesNotMatch(workspace, /selectedRollingMode|rollingReport\.previousReturn|rollingReport\.higherReturn|rollingReport\.lowerReturn/);
   assert.match(
     workspace,
     /calculateReports\([\s\S]*?storedTask\.snapshots[\s\S]*?storedTask\.evaluationSessions/,
   );
   assert.match(workspace, /setAvailableBarCount\(series\.bars\.length\)/);
+  assert.match(
+    workspace,
+    /cycleScreeningPeriodStart[\s\S]{0,500}<CommittedNumberInput[\s\S]{0,500}setScreeningWindow/,
+  );
+  assert.match(workspace, /cycleScreeningPeriodEnd[\s\S]{0,350}setScreeningWindowMaximum/);
+  assert.match(workspace, /cycleScreeningPeriodStep[\s\S]{0,300}onCommit=\{setScreeningWindowStep\}/);
+  assert.match(workspace, /maxCombinationStrategies[\s\S]{0,300}max=\{6\}/);
+  assert.match(
+    workspace,
+    /evaluationSessions[\s\S]{0,300}<CommittedNumberInput[\s\S]{0,300}onCommit=\{setEvaluationSessions\}/,
+  );
+  assert.match(committedNumberInput, /event\.currentTarget\.select\(\)/);
+  assert.match(committedNumberInput, /onChange=\{\(event\) => setDraft\(event\.target\.value\)\}/);
+  assert.match(committedNumberInput, /onBlur=\{commit\}/);
+  assert.match(committedNumberInput, /event\.key === "Enter"/);
   assert.match(workspace, /max=\{evaluationSessionMaximum\}/);
   assert.doesNotMatch(
     workspace,

@@ -30,6 +30,7 @@ export interface ScreeningWorkerRunRequest {
     objective?: ScreeningObjective;
     entryFilters?: MovingAverageSlopeFilter[];
     excludedStrategyIds?: StrategyId[];
+    maxCombinationStrategies?: number;
   };
 }
 

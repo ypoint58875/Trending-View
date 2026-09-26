@@ -472,6 +472,7 @@ export interface OptimizeStrategyCombinationsOptions {
   quintupleAllocationCandidates?: readonly FiveStrategyAllocation[];
   sextupleAllocationCandidates?: readonly SixStrategyAllocation[];
   includeTriples?: boolean;
+  maxCombinationStrategies?: number;
   retainedSinglesPerStrategy?: number;
   maxPairFinalists?: number;
   maxTripleParentPairs?: number;
@@ -3228,7 +3229,11 @@ export async function optimizeStrategyCombinations(
         (allocation) => !sameAllocation(allocation, referenceAllocation),
       )
     : [];
-  const includeTriples = options.includeTriples ?? true;
+  const requestedMaxCombinationStrategies = options.maxCombinationStrategies ?? 6;
+  const maxCombinationStrategies = Number.isFinite(requestedMaxCombinationStrategies)
+    ? Math.min(6, Math.max(2, Math.floor(requestedMaxCombinationStrategies)))
+    : 6;
+  const includeTriples = (options.includeTriples ?? true) && maxCombinationStrategies >= 3;
   const tripleAllocationCandidates =
     options.tripleAllocationCandidates ??
     THREE_STRATEGY_ALLOCATION_CANDIDATES;
@@ -4179,6 +4184,7 @@ export async function optimizeStrategyCombinations(
       );
 
       higherOrderLoop: for (const strategyCount of [4, 5, 6] as const) {
+        if (strategyCount > maxCombinationStrategies) break;
         if (options.signal?.aborted) break;
         const referenceAllocation =
           higherOrderReferenceAllocations.get(strategyCount);

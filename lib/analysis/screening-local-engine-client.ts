@@ -82,6 +82,7 @@ export function screeningJobRequest(
       excludedStrategyIds: options.excludedStrategyIds
         ? [...options.excludedStrategyIds]
         : undefined,
+      maxCombinationStrategies: options.maxCombinationStrategies,
     },
   };
 }

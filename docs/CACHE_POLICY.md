@@ -160,7 +160,7 @@ aliases unrelated data.
   Incomplete and completed job directories expire after seven days during the
   next coordinator submission. This state is reproducible cache/continuation
   data and is excluded from Git.
-- Strategy-cycle validation may pre-submit up to its bounded 512 units to this
+- Strategy-cycle validation may pre-submit up to its bounded 2048 units to this
   same directory. The coordinator executes an adaptively bounded child pool; queued
   requests reference one immutable batch-scoped columnar bar file plus their
   exact prefix count instead of duplicating one `bars.bin` per unit. Same-

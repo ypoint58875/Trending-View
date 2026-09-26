@@ -18,20 +18,24 @@ trades or run unattended jobs.
   or market API, and no synthetic resampling is performed. Legacy non-daily
   saved records remain readable provenance and reopen against daily bars.
 - A separate strategy-cycle validation page selects an instrument from the
-  saved-backtest shortcut bar. One screening interval (default five sessions)
-  and one trailing screening window (default 128 sessions) define a walk-forward
-  replay over the selected evaluation history. The evaluation-history input
+  saved-backtest shortcut bar. An inclusive trailing-window range with an
+  integer step (default 128 to 128) defines screening periods evaluated
+  independently over the chosen evaluation
+  history. The evaluation-history input
   loads the selected instrument's daily series and uses its complete K-line
-  count as the dynamic upper bound instead of a fixed 512-session ceiling. The first winner is selected
-  from the complete window before evaluation begins. Each later completed
-  interval screens through its final bar and applies its winner from the next
-  open. Four continuous, cost-adjusted accounts choose the latest winner, the
-  immediately previous winner, or the higher- or lower-return plan when those
-  two winners are replayed over the same current screening window. The previous
-  candidate never persists for more than one comparison round. The page shows
-  exactly these four total returns and the same-period buy-and-hold benchmark.
-  A switchable full-evaluation candlestick chart under the results plots each
-  account's actual buy and sell rebalances, including its initial entry.
+  count as the dynamic upper bound instead of a fixed 512-session ceiling. The
+  first winner is selected from the complete window before evaluation begins.
+  Later exhaustive selections occur only when a normalized two-session moving
+  average is neutral, the latest candle opposes a trend of at least 30 degrees,
+  or the candle is a doji; same-direction strong-trend candles keep the current
+  plan. Each selected plan inherits the continuous account's allocation and may
+  change it only from its last two bars: increase-only and reduce-only sequences
+  use their final target, reduce-then-increase does nothing, and
+  increase-then-reduce may only reduce. The page shows only this cost-adjusted
+  every-update return and the same-period buy-and-hold benchmark. Its
+  full-evaluation candlestick chart plots only actual executed rebalances and
+  switches among the completed screening-period results. The maximum
+  combination size is configurable from two through six strategies.
   Each cycle job persists only its selected winner. One compact batch request pre-submits
   every bounded optimization unit to the loopback coordinator, which continues
   a CPU- and memory-bounded parallel queue while the tab remains open, and

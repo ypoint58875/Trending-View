@@ -24,6 +24,7 @@ export type WorkerScreeningOptions = Pick<
   | "objective"
   | "entryFilters"
   | "excludedStrategyIds"
+  | "maxCombinationStrategies"
   | "onProgress"
   | "onValidationProgress"
 > & {
@@ -75,6 +76,7 @@ export function buildCheckpointIdentity(
     objective: options.objective,
     entryFilters: options.entryFilters,
     excludedStrategyIds: options.excludedStrategyIds,
+    maxCombinationStrategies: options.maxCombinationStrategies,
   });
   return {
     key: `screening:${options.checkpointNamespace ?? "default"}`,
@@ -119,6 +121,7 @@ function runScreeningInBrowserWorker(
           excludedStrategyIds: options.excludedStrategyIds
             ? [...options.excludedStrategyIds]
             : undefined,
+          maxCombinationStrategies: options.maxCombinationStrategies,
         },
       });
     const finish = (

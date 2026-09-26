@@ -28,6 +28,7 @@ export interface LocalScreeningJobRequest {
     objective?: ScreeningObjective;
     entryFilters?: MovingAverageSlopeFilter[];
     excludedStrategyIds?: StrategyId[];
+    maxCombinationStrategies?: number;
   };
 }
 

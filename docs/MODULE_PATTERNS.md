@@ -1,5 +1,13 @@
 # Module Patterns
 
+## Committed numeric inputs
+
+- Reuse `app/components/CommittedNumberInput.tsx` for bounded numeric settings
+  that users replace by typing. Keep a string draft while focused, select the
+  existing value on focus, and commit finite normalized values only on blur or
+  Enter. Escape restores the last committed value. Do not clamp or rewrite the
+  controlled number on every keystroke.
+
 ## Screening result maintenance
 
 - Bind one-time result cleanup to an exact batch manifest and assert its
@@ -14,11 +22,19 @@
 - A historical selection decision may consume only the inclusive bar prefix
   ending at its decision close. Keep this boundary in
   `barsAvailableAtCycleDecision(...)` and test it directly.
-- The product validation method defaults to a 128-session adjustable screening
-  window and advances exactly one trading session per decision. Do not expose
-  an update-interval selector or subsample the winner sequence. Reserve the
-  screening window, 20 forward sessions, and one decision day, making the
-  visible progress total evaluation history minus the window and 20.
+- The rendered product validation method defaults to a 128-session adjustable
+  screening window and has no update-interval control. Always screen once
+  immediately before evaluation. Later decisions use a scale-independent
+  normalized MA(2) angle: neutral trends, dojis, and candles opposing a trend
+  of at least 30 degrees screen; strong-trend continuation candles do not.
+  Never schedule the final evaluation bar because it cannot govern a later
+  fill. The older daily-transition APIs below remain analysis-only.
+- On a trigger, the new winner inherits the continuous account allocation.
+  Inspect only that plan's final two bar-to-bar allocation signals. Same-
+  direction signals use the last target; reduce then increase holds; increase
+  then reduce may only reduce. Clamp an increase above the inherited allocation
+  and a reduction below it so a named action cannot reverse direction. A plan
+  change without an allowed signal must not create a rebalance.
 - Exact plan identity includes strategy composition, parameters, allocations,
   filters, and the fixed relative-long role. Merge only adjacent daily winners
   with the same exact identity when measuring the outgoing winner's duration.
@@ -49,7 +65,7 @@
 - Persist only complete optimization units. The task signature includes the
   canonical instrument, latest market boundary, periods, objective, and costs, so
   replay is idempotent and stale snapshots cannot silently join a new run.
-- Bound one task to eight screening windows, eight update intervals, and 512
+- Bound one task to eight screening windows, eight update intervals, and 2048
   optimization units. Keep at most one latest task record. Submit every
   incomplete local unit before awaiting results and persist deterministic job
   IDs with the task. The loopback coordinator owns CPU- and memory-bounded

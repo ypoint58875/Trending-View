@@ -43,7 +43,7 @@ Continue only to reattach report collection immediately; it is not required to
 keep the computation queue advancing.
 
 If the page reports too many units, reduce the evaluation length or increase
-the screening window. The update interval is always one trading day. It rejects schedules above 512
+the screening window. The update interval is always one trading day. It rejects schedules above 2048
 units before screening and keeps no unbounded queue. Clearing the task cancels
 its submitted jobs and removes the device-local validation record. If a task cannot be read, inspect
 whether browser site-data policy disabled or cleared IndexedDB; saved backtest
@@ -629,7 +629,7 @@ state and refs before reading `bars`.
 
 ## Numeric input is hard to replace
 
-1. Confirm the field uses `CommittedNumberInput`, not an eager
+1. Confirm the field uses the shared `app/components/CommittedNumberInput.tsx`, not an eager
    `value={number}` plus `onChange={Number(...)}` binding.
 2. Focus should select the full current value. Empty draft text is valid until
    blur or Enter; Escape restores the committed value.

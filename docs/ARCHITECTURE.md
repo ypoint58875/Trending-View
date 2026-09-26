@@ -61,23 +61,29 @@ formats to the browser.
 
 The strategy-cycle page is a separate orchestration boundary over the existing
 market, screening, and allocation engines. For a historical decision index it
-passes only the prefix ending at that close to one configurable screening window
-(128 sessions by default).
-The eligible decision grid advances one trading session at a time after reserving
-the screening window, 20 forward sessions, and one decision day; its unit count
-is evaluation history minus the screening window and 20. Exact plan identity
-includes strategy composition, parameters, allocations, entry filters, and the
-fixed relative-long role. Consecutive identical daily winners are retained
-internally to measure the outgoing winner's duration for pair-chart boundaries.
-When the winner changes, both the prior and new plans are frozen at that
-decision. Each starts from the same cash baseline, may trade no earlier than
-the following open, pays the configured commission and slippage, and is replayed
-for 5, 10, 15, and 20 sessions. A later winner does not truncate an existing
-comparison. Complete transitions aggregate old/new return differences,
-including median, mean, range, direction counts, and conditional groups based
-on which plan led over the same screening window. Every adjacent pair has a
-price chart covering screening window + 20 + 1 sessions. Old and new plan
-rebalance markers end at the change day; the future section has no markers.
+passes only the prefix ending at that close to each window in one configurable
+inclusive range (128 to 128 sessions by default) with an integer step. It
+screens once before evaluation. Later candidate
+dates are derived only from the selected instrument's causal OHLC prefix: a
+normalized MA(2) angle within 30 degrees, a doji, or a candle opposing a trend
+of at least 30 degrees triggers; a strong-trend continuation candle retains the
+current plan. Every window uses the same causal decision dates, while ranking
+and replay remain independent. The final evaluation bar is never screened because its target
+could not execute inside the report.
+
+Every selected plan inherits the one continuous account allocation. Only its
+last two bar-to-bar allocation signals can change that inherited value.
+Increase-only and reduce-only sequences use their final target;
+reduce-then-increase holds; increase-then-reduce may only reduce. Directional
+clamps prevent a nominal increase from selling inherited exposure or a nominal
+reduction from buying it. Close-derived changes remain next-open orders with
+configured commission and slippage. The rendered report exposes only this
+every-update total return, buy-and-hold return, and actual rebalance markers for
+the selected window. The chart selector switches between completed window
+reports. Each screening request also carries a two-through-six maximum
+combination size and does not enter higher-order optimizer stages above it.
+The library's older daily stability/transition analysis remains available but
+is not rendered by this page.
 Cycle job result files retain only the selected winner and summary metadata.
 The browser persists one latest task after
 each complete unit with a signature over instrument, latest bar, configuration,

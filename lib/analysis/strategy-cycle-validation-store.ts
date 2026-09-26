@@ -23,6 +23,7 @@ export interface StoredStrategyCycleValidationTask {
   instrument: MarketInstrument;
   screeningWindows: number[];
   updateIntervals: number[];
+  maxCombinationStrategies: number;
   evaluationSessions: number;
   objective: ScreeningObjective;
   initialCash: number;

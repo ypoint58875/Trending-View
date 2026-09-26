@@ -433,6 +433,29 @@ test("combination optimization resumes from a persisted internal checkpoint", as
   assert.equal(resumed.evaluatedCount, uninterrupted.evaluatedCount);
 });
 
+test("combination optimization stops at the configured strategy-count limit", async () => {
+  const bars = makeBars(Array.from({ length: 80 }, (_, index) => 100 + index));
+  const stages: string[] = [];
+  const outcome = await optimizeStrategyCombinations(
+    bars,
+    {
+      initialCash: 100_000,
+      commissionRate: 0.001,
+      slippageRate: 0.0005,
+      interval: "1d",
+    },
+    {
+      candidates: firstScreeningCandidatesPerStrategy(1).slice(0, 4),
+      allocationCandidates: TWO_STRATEGY_ALLOCATION_CANDIDATES.slice(0, 1),
+      maxCombinationStrategies: 2,
+      onProgress: (progress) => stages.push(progress.stage),
+    },
+  );
+  assert.ok(outcome.results.length > 0);
+  assert.ok(outcome.results.every((result) => !result.strategyCId));
+  assert.equal(stages.includes("triples"), false);
+});
+
 test("combination optimization emits exact intra-stage checkpoints", async () => {
   const bars = makeBars(Array.from({ length: 40 }, (_, index) => 100 + index));
   const candidates = firstScreeningCandidatesPerStrategy(1).slice(0, 4);

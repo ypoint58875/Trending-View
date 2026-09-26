@@ -1,26 +1,34 @@
 # Function Map
 
-## 2026-09-25 interval-based cycle validation
+## 2026-09-26 trend-triggered cycle validation
 
-- `buildStrategyCycleRollingSchedule(...)`: validates one integer screening
-  interval and window, requires the full trailing window before the selected
-  evaluation history, and schedules only decisions that can govern a future
-  evaluation session. The last partial interval needs no extra final screen.
-  The cycle page loads the selected instrument's daily series before editing
-  and binds the evaluation-history input maximum to that series' bar count;
-  the separate 512-unit queue bound remains enforced at start time.
-- `buildStrategyCycleRollingReport(...)`: consumes exactly those persisted
-  winners. It compares only adjacent screening winners over the same current
-  trailing window, replays latest/previous/higher/lower choices through four
-  separate continuous accounts, and computes a same-period buy-and-hold
-  benchmark with the same entry costs. The initial decision bar is included
-  as a flat precursor so first-day entries pay commission and slippage. Each
-  account returns the actual allocation rebalances used by the full-window
-  chart.
+- `buildCycleScreeningWindows(...)`: expands an inclusive integer screening
+  range by its configured step, rejecting reversed or out-of-bound inputs.
+- `strategyCycleTrendAngle(...)`: converts the normalized one-bar slope of
+  MA(2) into a fixed angle where one slope unit is one percent per bar. The
+  result is independent of chart scale.
+- `shouldScreenStrategyCycleAtIndex(...)`: triggers an exhaustive screen for a
+  neutral MA(2), doji, or candle opposing a trend of at least 30 degrees. A
+  same-direction candle in a strong trend retains the current plan.
+- `buildStrategyCycleRollingSchedule(...)`: requires the configured trailing
+  screening window before evaluation, always screens once immediately before
+  evaluation, and then includes only causal trigger dates that can affect a
+  later evaluation session. Every included unit still screens the complete
+  configured trailing window. The separate 2048-unit bound remains enforced.
+- `resolveStrategyCycleRecentSignals(...)`: applies only the final two bars of
+  one newly selected plan to an inherited allocation. Increase-only or
+  reduce-only sequences use the final same-direction target,
+  reduce-then-increase holds, and increase-then-reduce may only reduce.
+- `buildStrategyCycleRollingReport(...)`: stitches the selected plans into one
+  continuous inherited-allocation account, changes allocation only on trigger
+  decisions with an allowed two-bar sequence, and returns only its total return,
+  actual rebalances, and the same-period buy-and-hold benchmark.
+- `optimizeStrategyCombinations(...)`: honors `maxCombinationStrategies` by
+  stopping staged expansion after the configured two-through-six leg count;
+  the option is included in browser/local-worker request identity.
 - `buildStrategyCycleRollingChartOption(...)`: plots every evaluation bar and
-  the selected account's actual buy/sell rebalances. It does not infer trades
-  from candidate changes; the same four result paths are selectable without
-  changing the chart's full evaluation period or zoom state.
+  the every-update account's actual buy/sell rebalances without creating a
+  marker for a plan-only change.
 
 ## 2026-09-25 current cycle result maintenance
 

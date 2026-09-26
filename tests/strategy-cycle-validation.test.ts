@@ -4,6 +4,7 @@ import type { MarketBar } from "../lib/market/types";
 import {
   buildStrategyCycleDailyValidationReport,
   buildStrategyCycleDailySchedule,
+  buildCycleScreeningWindows,
   buildStrategyCycleRollingReport,
   buildStrategyCycleRollingSchedule,
   buildStrategyCycleEventValidation,
@@ -16,6 +17,9 @@ import {
   MAX_CYCLE_OPTIMIZATION_UNITS,
   MIN_CYCLE_DAILY_EVALUATION_SESSIONS,
   normalizeCycleValues,
+  resolveStrategyCycleRecentSignals,
+  shouldScreenStrategyCycleAtIndex,
+  strategyCycleTrendAngle,
   type StrategyCycleSelectionSnapshot,
 } from "../lib/analysis/strategy-cycle-validation";
 import type { AllocationBacktestResult } from "../lib/analysis/backtest";
@@ -39,6 +43,10 @@ function makeBars(count: number): MarketBar[] {
     };
   });
 }
+
+test("allows up to 2048 strategy-cycle optimization units", () => {
+  assert.equal(MAX_CYCLE_OPTIMIZATION_UNITS, 2_048);
+});
 
 test("builds a bounded shared decision schedule for screening windows", () => {
   const schedule = buildStrategyCycleSchedule(
@@ -70,17 +78,68 @@ test("a historical decision receives no bars from its future", () => {
   assert.throws(() => barsAvailableAtCycleDecision(bars, 40), RangeError);
 });
 
-test("rolling schedule screens before evaluation and skips a useless final decision", () => {
-  const schedule = buildStrategyCycleRollingSchedule(200, 14, 20, 5);
-  assert.deepEqual(schedule?.decisionIndexes, [185, 190, 195]);
-  assert.equal(schedule?.evaluationStartIndex, 186);
-  assert.equal(schedule?.evaluationEndIndex, 199);
-  assert.equal(buildStrategyCycleRollingSchedule(100, 90, 20, 5), null);
-  assert.equal(buildStrategyCycleRollingSchedule(200, 5, 20, 5), null);
-  assert.equal(buildStrategyCycleRollingSchedule(200, 14, 20, 0), null);
+test("expands an inclusive screening-period range by the configured interval", () => {
+  assert.deepEqual(buildCycleScreeningWindows(8, 20, 2), [8, 10, 12, 14, 16, 18, 20]);
+  assert.deepEqual(buildCycleScreeningWindows(8, 19, 4), [8, 12, 16]);
+  assert.deepEqual(buildCycleScreeningWindows(20, 8, 2), []);
+  assert.deepEqual(buildCycleScreeningWindows(8, 20, 0), []);
 });
 
-test("rolling report uses the latest two screened winners and continuous accounts", () => {
+test("trend trigger skips continuation candles and screens reversal candles", () => {
+  const rising = makeBars(3);
+  assert.ok((strategyCycleTrendAngle(rising, 2) ?? 0) >= 30);
+  assert.equal(shouldScreenStrategyCycleAtIndex(rising, 2), false);
+  rising[2] = { ...rising[2]!, open: rising[2]!.close + 1 };
+  assert.equal(shouldScreenStrategyCycleAtIndex(rising, 2), true);
+
+  const falling = makeBars(3).map((bar, index) => ({
+    ...bar,
+    open: 104 - index,
+    close: 103 - index,
+  }));
+  assert.ok((strategyCycleTrendAngle(falling, 2) ?? 0) <= -30);
+  assert.equal(shouldScreenStrategyCycleAtIndex(falling, 2), false);
+  falling[2] = { ...falling[2]!, open: falling[2]!.close - 1 };
+  assert.equal(shouldScreenStrategyCycleAtIndex(falling, 2), true);
+
+  const flat = makeBars(3).map((bar) => ({ ...bar, open: 100, close: 100 }));
+  assert.equal(shouldScreenStrategyCycleAtIndex(flat, 2), true);
+});
+
+test("rolling schedule always screens before evaluation and then only on trend triggers", () => {
+  const bars = makeBars(55);
+  const schedule = buildStrategyCycleRollingSchedule(bars, 14, 20);
+  assert.deepEqual(schedule?.decisionIndexes, [40]);
+  assert.equal(schedule?.evaluationStartIndex, 41);
+  assert.equal(schedule?.evaluationEndIndex, 54);
+  bars[45] = { ...bars[45]!, open: bars[45]!.close + 1 };
+  assert.deepEqual(buildStrategyCycleRollingSchedule(bars, 14, 20)?.decisionIndexes, [40, 45]);
+  assert.equal(buildStrategyCycleRollingSchedule(makeBars(100), 90, 20), null);
+  assert.equal(buildStrategyCycleRollingSchedule(makeBars(20), 2, 20), null);
+  assert.ok(buildStrategyCycleRollingSchedule(makeBars(20), 10, 5));
+  assert.equal(buildStrategyCycleRollingSchedule(makeBars(20), 10, 4), null);
+});
+
+test("two-bar signal resolver inherits position and applies the six supported sequences", () => {
+  const increase = (targetAllocation: number) => ({
+    direction: "increase" as const,
+    targetAllocation,
+    signals: ["long-entry" as const],
+  });
+  const reduce = (targetAllocation: number) => ({
+    direction: "reduce" as const,
+    targetAllocation,
+    signals: ["long-exit" as const],
+  });
+  assert.equal(resolveStrategyCycleRecentSignals(0.2, [increase(0.6)]).targetAllocation, 0.6);
+  assert.equal(resolveStrategyCycleRecentSignals(0.8, [reduce(0.4)]).targetAllocation, 0.4);
+  assert.equal(resolveStrategyCycleRecentSignals(0.2, [increase(0.5), increase(0.8)]).targetAllocation, 0.8);
+  assert.equal(resolveStrategyCycleRecentSignals(0.9, [reduce(0.6), reduce(0.3)]).targetAllocation, 0.3);
+  assert.equal(resolveStrategyCycleRecentSignals(0.8, [reduce(0.2), increase(0.7)]).targetAllocation, 0.8);
+  assert.equal(resolveStrategyCycleRecentSignals(0.8, [increase(0.9), reduce(0.4)]).targetAllocation, 0.4);
+});
+
+test("rolling report keeps only event-triggered updates and the benchmark", () => {
   const bars = makeBars(55);
   const plan = (strategyId: "roc-momentum" | "rsi-reversal") => ({
     strategyA: strategyId === "roc-momentum"
@@ -92,8 +151,6 @@ test("rolling report uses the latest two screened winners and continuous account
   });
   const snapshots: StrategyCycleSelectionSnapshot[] = [
     { decisionIndex: 40, plan: plan("roc-momentum") },
-    { decisionIndex: 45, plan: plan("rsi-reversal") },
-    { decisionIndex: 50, plan: plan("roc-momentum") },
   ].map(({ decisionIndex, plan }) => ({
     decisionIndex,
     decisionTime: bars[decisionIndex]!.time,
@@ -109,29 +166,21 @@ test("rolling report uses the latest two screened winners and continuous account
     interval: "1d" as const,
     executionPolicy: "hybrid" as const,
   };
-  const result = buildStrategyCycleRollingReport(bars, snapshots, 14, 20, 5, settings);
+  const result = buildStrategyCycleRollingReport(bars, snapshots, 14, 20, settings);
   assert.equal(result.evaluationStartTime, bars[41]!.time);
   assert.equal(result.evaluationEndTime, bars[54]!.time);
-  assert.equal(result.decisionCount, 3);
-  assert.ok(result.higherReturn > result.latestReturn, JSON.stringify(result));
-  assert.ok(result.latestReturn > result.lowerReturn, JSON.stringify(result));
-  assert.ok(result.previousReturn > result.lowerReturn, JSON.stringify(result));
-  assert.ok(result.previousReturn < result.higherReturn, JSON.stringify(result));
-  for (const mode of ["latest", "previous", "higher", "lower"] as const) {
-    assert.equal(result.rebalances[mode][0]?.time, bars[41]!.time);
-    assert.ok(result.rebalances[mode].every((trade) =>
-      trade.time >= result.evaluationStartTime && trade.time <= result.evaluationEndTime));
-  }
-  assert.ok(result.rebalances.latest.some((trade) => trade.targetAllocation < trade.fromAllocation));
-  assert.ok(result.rebalances.previous.some((trade) => trade.targetAllocation < trade.fromAllocation));
-  assert.equal(result.rebalances.higher.length, 1);
+  assert.equal(result.decisionCount, 1);
+  assert.equal(result.skippedDecisionCount, 13);
+  assert.ok(Number.isFinite(result.updateReturn));
+  assert.ok(result.rebalances.every((trade) =>
+    trade.time >= result.evaluationStartTime && trade.time <= result.evaluationEndTime));
   assert.ok(Number.isFinite(result.benchmarkReturn));
   const expectedBenchmark = (
     bars[54]!.close /
     (bars[41]!.open * (1 + settings.slippageRate) * (1 + settings.commissionRate)) - 1
   ) * 100;
   assert.ok(Math.abs(result.benchmarkReturn - expectedBenchmark) < 1e-9);
-  assert.throws(() => buildStrategyCycleRollingReport(bars, snapshots.slice(0, 2), 14, 20, 5, settings));
+  assert.throws(() => buildStrategyCycleRollingReport(bars, [], 14, 20, settings));
 });
 
 test("daily validation requires the screening window plus 20 forward sessions and one decision day", () => {

@@ -1,5 +1,53 @@
 # Codex State
 
+## 2026-09-26 trend-triggered strategy-cycle validation
+
+- The screening-period control is now an inclusive start/end range with an
+  integer step. For example, `8-20` with step `2` evaluates
+  `8/10/12/14/16/18/20` independently on the same causal trigger dates. The
+  2048-unit guard counts every `period x trigger-date` job.
+- Cycle validation now has a maximum combination-size control from two through
+  six strategies. The bound is part of task/checkpoint identity and is passed
+  through both browser Worker and loopback-engine protocols, so stages above
+  the selected size are not computed.
+- Completed reports retain one continuous-account return and rebalance list per
+  screening period. Period buttons above the full-backtest candlestick chart
+  switch its totals and actual rebalance markers without rerunning the task.
+- This change is isolated to the strategy-cycle validation product. The main
+  research workspace, ordinary backtests, saved-shortcut refresh, and global
+  execution policy are unchanged.
+- The adjustable screening-period endpoints accept 5 through 491 trading
+  sessions; both defaults remain 128 sessions.
+- The fixed screening-interval control was removed. Every exhaustive run still
+  uses the configured trailing screening window. One screen occurs before the
+  evaluation range; later screens occur only for a neutral normalized MA(2), a
+  doji, or a candle opposing a trend of at least 30 degrees. Strong-trend
+  continuation candles retain the current plan, and the final evaluation bar is
+  not submitted because it cannot affect a later fill.
+- The replacement plan inherits the continuous account allocation. Only its
+  last two bar-to-bar target signals can adjust that position. Increase-only or
+  reduce-only sequences use the last target, reduce then increase does nothing,
+  and increase then reduce may only reduce. Directional clamps prevent a signal
+  from reversing the inherited position.
+- The report now contains only `Every update` and the buy-and-hold benchmark.
+  Its existing full-period candlestick chart remains and plots the actual
+  rebalances of the every-update account.
+- Verification passed: strict TypeScript, 286 TypeScript tests, production
+  build, four rendered route/source tests, and `git diff --check`.
+
+## 2026-09-25 cycle numeric-input commit behavior
+
+- Strategy-cycle `Screening window` and `Evaluation history (days)` now use the
+  same shared committed-number control as the main research workspace. Focus
+  selects the existing value, typing edits an independent string draft, blank
+  text remains temporarily valid, and blur or Enter performs integer and
+  min/max normalization. Escape restores the prior committed value.
+- The former eager `onChange` handlers no longer rewrite each keystroke, so an
+  intended value such as `1000` cannot be appended to or transformed by the
+  previous controlled value while it is being entered.
+- Final verification passed: 281 TypeScript tests, production build, four
+  rendered/source checks, and `git diff --check`.
+
 ## 2026-09-25 dynamic cycle evaluation-history limit
 
 - The strategy-cycle page now loads the selected instrument's daily history

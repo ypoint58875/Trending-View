@@ -1,5 +1,57 @@
 # Technical Research
 
+## 2026-09-26 cycle screening-period range and combination ceiling
+
+Two range models were compared: one optimizer request containing multiple
+sample periods, which would aggregate ranks and lose a distinct winner per
+period, and independent `(decision date, screening period)` units sharing the
+existing immutable bar batch. Independent units preserve the requested
+per-period full-backtest results and reuse the current resumable queue, so that
+model was selected. The inclusive range is expanded deterministically from
+start/end/step, and the 2048-unit bound limits total work.
+
+For the combination ceiling, filtering six-leg results after a full run would
+still spend time and could discard the best eligible lower-order result during
+winner selection. Passing the ceiling through the shared screening options and
+stopping staged expansion was selected instead. The default remains six, so the
+research workspace retains its existing behavior while cycle validation can
+choose any maximum from two through six.
+
+## 2026-09-26 trend-triggered strategy-cycle screening
+
+The cycle product previously screened on a fixed integer cadence. The requested
+operating model instead treats a strong same-direction trend candle as unlikely
+to justify an expensive exhaustive reselection and screens on a contrary candle,
+doji, or neutral short trend. Two implementation shapes were compared:
+
+1. Keep the fixed decision grid and discard completed screening results after
+   detecting continuation candles. This preserves the old queue shape but does
+   not reduce computation.
+2. Derive the causal decision grid from OHLC before submitting jobs. Always
+   screen once before evaluation, then submit only eligible dates. This reduces
+   both optimization work and stored winners and was selected.
+
+A visual chart angle was rejected because it changes with axis scale. The
+selected definition uses the one-bar percentage slope of MA(2), maps one percent
+per bar to one slope unit, and applies `atan` before comparing with 30 degrees.
+Every submitted job still ranks candidates over the complete configured trailing
+screening window.
+
+Two position-transition designs were also compared. Immediately adopting a new
+plan's current historical target can invent a rebalance whose originating signal
+predates selection. Resetting each plan to cash breaks continuous-account costs
+and state. The selected method inherits the prior account allocation and inspects
+only the new plan's final two bar-to-bar target changes. Same-direction sequences
+use the final target, reduce-then-increase holds, and increase-then-reduce may
+only reduce. Directional clamps ensure an action label cannot reverse the actual
+inherited position. The report therefore needs one strategy account and one
+buy-and-hold benchmark rather than the prior four strategy hypotheses.
+
+This is a repository-local execution-policy change with no new dependency. It
+reuses the existing point-in-time screening, continuous allocation backtester,
+bounded local queue, and prior walk-forward/look-ahead research documented
+below.
+
 ## 2026-09-25 existing cycle state cleanup
 
 The user's corrected retention target is the current completed 356-result
