@@ -8,11 +8,20 @@ import { EChart } from "./EChart";
 
 export interface StrategyCycleRollingChartLabels {
   price: string;
-  buy: string;
-  sell: string;
+  establish: string;
+  increase: string;
+  reduce: string;
+  clear: string;
   targetAllocation: string;
   fillPrice: string;
 }
+
+type RebalancePoint = {
+  value: [string, number];
+  rebalance: AllocationRebalance;
+  symbolRotate: number;
+  symbolOffset: [number, number];
+};
 
 export function buildStrategyCycleRollingChartOption(
   bars: readonly MarketBar[],
@@ -20,13 +29,22 @@ export function buildStrategyCycleRollingChartOption(
   labels: StrategyCycleRollingChartLabels,
 ): EChartsOption {
   const barByTime = new Map(bars.map((bar) => [bar.time, bar]));
-  const buyPoints: Array<{ value: [string, number]; rebalance: AllocationRebalance; symbolRotate: number; symbolOffset: [number, number] }> = [];
-  const sellPoints: typeof buyPoints = [];
+  const establishPoints: RebalancePoint[] = [];
+  const increasePoints: RebalancePoint[] = [];
+  const reducePoints: RebalancePoint[] = [];
+  const clearPoints: RebalancePoint[] = [];
   for (const rebalance of rebalances) {
     const bar = barByTime.get(rebalance.time);
     if (!bar || rebalance.targetAllocation === rebalance.fromAllocation) continue;
     const increasing = rebalance.targetAllocation > rebalance.fromAllocation;
-    (increasing ? buyPoints : sellPoints).push({
+    const points = increasing
+      ? rebalance.fromAllocation === 0
+        ? establishPoints
+        : increasePoints
+      : rebalance.targetAllocation === 0
+        ? clearPoints
+        : reducePoints;
+    points.push({
       value: [rebalance.time, increasing ? bar.low : bar.high],
       rebalance,
       symbolRotate: increasing ? 0 : 180,
@@ -35,7 +53,7 @@ export function buildStrategyCycleRollingChartOption(
   }
   const markerSeries = (
     name: string,
-    points: typeof buyPoints,
+    points: RebalancePoint[],
     color: string,
   ) => ({
     name,
@@ -91,8 +109,10 @@ export function buildStrategyCycleRollingChartOption(
     ],
     series: [
       { name: labels.price, type: "candlestick", data: bars.map((bar) => [bar.open, bar.close, bar.low, bar.high]), itemStyle: { color: "#22c55e", color0: "#ef5350", borderColor: "#22c55e", borderColor0: "#ef5350" } },
-      markerSeries(labels.buy, buyPoints, "#38bdf8"),
-      markerSeries(labels.sell, sellPoints, "#f59e0b"),
+      markerSeries(labels.establish, establishPoints, "#38bdf8"),
+      markerSeries(labels.increase, increasePoints, "#0ea5e9"),
+      markerSeries(labels.reduce, reducePoints, "#f59e0b"),
+      markerSeries(labels.clear, clearPoints, "#ef5350"),
     ],
   };
 }

@@ -31,15 +31,19 @@ const trade = (
   reason: "strategy",
 });
 
-test("full-cycle chart shows every evaluation candle and actual buy/sell markers", () => {
+test("full-cycle chart shows every candle and classifies all four rebalance actions", () => {
   const option = buildStrategyCycleRollingChartOption(bars, [
-    trade(bars[0]!.time, 0, 1),
+    trade(bars[0]!.time, 0, 0.6),
+    trade(bars[1]!.time, 0.6, 1),
     trade(bars[2]!.time, 1, 0.5),
-    trade("2026-09-06", 0.5, 1),
+    trade(bars[3]!.time, 0.5, 0),
+    trade("2026-09-06", 0, 1),
   ], {
     price: "Price",
-    buy: "Buy",
-    sell: "Sell",
+    establish: "Establish",
+    increase: "Increase",
+    reduce: "Reduce",
+    clear: "Clear",
     targetAllocation: "Target",
     fillPrice: "Fill",
   });
@@ -48,14 +52,22 @@ test("full-cycle chart shows every evaluation candle and actual buy/sell markers
     data?: Array<number | { value?: [string, number]; symbolRotate?: number }>;
   }>;
   assert.equal(series.find((entry) => entry.name === "Price")?.data?.length, 5);
-  const buy = series.find((entry) => entry.name === "Buy")?.data?.[0];
-  const sell = series.find((entry) => entry.name === "Sell")?.data?.[0];
-  assert.equal(typeof buy === "object" ? buy.value?.[0] : null, bars[0]!.time);
-  assert.equal(typeof buy === "object" ? buy.value?.[1] : null, bars[0]!.low);
-  assert.equal(typeof buy === "object" ? buy.symbolRotate : null, 0);
-  assert.equal(typeof sell === "object" ? sell.value?.[0] : null, bars[2]!.time);
-  assert.equal(typeof sell === "object" ? sell.value?.[1] : null, bars[2]!.high);
-  assert.equal(typeof sell === "object" ? sell.symbolRotate : null, 180);
-  assert.equal(series.find((entry) => entry.name === "Buy")?.data?.length, 1);
-  assert.equal(series.find((entry) => entry.name === "Sell")?.data?.length, 1);
+  const establish = series.find((entry) => entry.name === "Establish")?.data?.[0];
+  const increase = series.find((entry) => entry.name === "Increase")?.data?.[0];
+  const reduce = series.find((entry) => entry.name === "Reduce")?.data?.[0];
+  const clear = series.find((entry) => entry.name === "Clear")?.data?.[0];
+  assert.equal(typeof establish === "object" ? establish.value?.[0] : null, bars[0]!.time);
+  assert.equal(typeof establish === "object" ? establish.value?.[1] : null, bars[0]!.low);
+  assert.equal(typeof establish === "object" ? establish.symbolRotate : null, 0);
+  assert.equal(typeof increase === "object" ? increase.value?.[0] : null, bars[1]!.time);
+  assert.equal(typeof increase === "object" ? increase.symbolRotate : null, 0);
+  assert.equal(typeof reduce === "object" ? reduce.value?.[0] : null, bars[2]!.time);
+  assert.equal(typeof reduce === "object" ? reduce.value?.[1] : null, bars[2]!.high);
+  assert.equal(typeof reduce === "object" ? reduce.symbolRotate : null, 180);
+  assert.equal(typeof clear === "object" ? clear.value?.[0] : null, bars[3]!.time);
+  assert.equal(typeof clear === "object" ? clear.symbolRotate : null, 180);
+  assert.equal(series.find((entry) => entry.name === "Establish")?.data?.length, 1);
+  assert.equal(series.find((entry) => entry.name === "Increase")?.data?.length, 1);
+  assert.equal(series.find((entry) => entry.name === "Reduce")?.data?.length, 1);
+  assert.equal(series.find((entry) => entry.name === "Clear")?.data?.length, 1);
 });

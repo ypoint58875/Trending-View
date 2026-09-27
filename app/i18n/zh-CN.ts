@@ -1245,8 +1245,10 @@ export const zhCN = {
     screeningWindowOption: "{window} 日周期",
     rollingChartAriaLabel: "{mode}的完整区间行情与实际调仓",
     rollingChartHint: "箭头仅标记每次更新账户实际执行的调仓；新策略继承原仓位，没有允许的两日信号时不会额外标记。可拖动底部滑块查看局部。",
-    rollingBuy: "增仓",
-    rollingSell: "减仓",
+    rollingEstablish: "建仓",
+    rollingIncrease: "加仓",
+    rollingReduce: "减仓",
+    rollingClear: "清仓",
     rollingFillPrice: "成交价",
     conclusionEyebrow: "建议调整方式",
     recommendations: {

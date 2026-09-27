@@ -1,5 +1,18 @@
 # Codex State
 
+## 2026-09-28 detailed full-period rebalance actions
+
+- The strategy-cycle full-backtest chart now classifies every actual allocation
+  change as establish, increase, reduce, or clear from its prior and target
+  allocations. This changes chart labels and marker grouping only; execution,
+  fills, costs, and the continuous-account report are unchanged.
+- The research workspace's `One-click N-day` batch already creates or reuses an
+  `N日` strategy folder inside each instrument, saves the best single or
+  combination result for the active objective, and promotes that result to the
+  top of the matching folder. A 10-session setting therefore produces `10日`.
+- Verification passed: strict TypeScript, 289 TypeScript tests, production
+  build, four rendered route/source tests, and `git diff --check`.
+
 ## 2026-09-26 screening protocol compatibility guard
 
 - The local screening protocol version now has one source of truth at

@@ -780,7 +780,15 @@ export function StrategyValidationWorkspace() {
                 <StrategyCycleRollingChart
                   bars={reportBars}
                   rebalances={rollingReport.rebalances}
-                  labels={{ price: c.price, buy: c.rollingBuy, sell: c.rollingSell, targetAllocation: c.targetAllocation, fillPrice: c.rollingFillPrice }}
+                  labels={{
+                    price: c.price,
+                    establish: c.rollingEstablish,
+                    increase: c.rollingIncrease,
+                    reduce: c.rollingReduce,
+                    clear: c.rollingClear,
+                    targetAllocation: c.targetAllocation,
+                    fillPrice: c.rollingFillPrice,
+                  }}
                   ariaLabel={c.rollingChartAriaLabel.replace("{mode}", c.rollingLatest)}
                   dataKey={`${rollingReport.screeningWindow}:${rollingReport.evaluationStartTime}:${rollingReport.evaluationEndTime}`}
                 />
