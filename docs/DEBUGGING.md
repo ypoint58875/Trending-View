@@ -70,6 +70,24 @@ its submitted jobs and removes the device-local validation record. If a task can
 whether browser site-data policy disabled or cleared IndexedDB; saved backtest
 shortcuts and market sources use separate persistence boundaries.
 
+If the development server becomes slow while the local children continue to
+use CPU, compare the application process handle count with the directory count
+under `data/state/screening-engine/`. Vite must exclude that runtime directory
+through `server.watch.ignored`; request, checkpoint, derived-data, and result
+writes are not source changes. Restart the local launcher after changing this
+setting so existing watcher handles are released. Do not remove the directory
+to fix watcher pressure: it contains resumable task state and completed
+results. Closing or reloading the page still intentionally cancels unfinished
+cycle jobs.
+
+If strategy-cycle validation says the complete market history is unavailable,
+first open the instrument in the research workspace and verify that its
+canonical daily chart loads. The cycle page reads that provider-validated
+IndexedDB series before requesting the network, and a successful network load
+is written back through the same canonical profile gate. If both paths fail,
+inspect the primary and ordered backup health rather than reducing the history
+limit or accepting a partial series.
+
 ## Browser memory grows during an otherwise bounded screening run
 
 First compare the local-engine memory shown in the screening status with the

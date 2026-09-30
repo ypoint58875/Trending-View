@@ -198,10 +198,10 @@ export function createScreeningEngineCoordinator({
   }
 
   async function cancelJob(job) {
+    await writeFile(join(job.directory, CANCELLED_MARKER_FILE), "");
     job.cancelled = true;
     job.status = "cancelled";
     job.updatedAt = Date.now();
-    await writeFile(join(job.directory, CANCELLED_MARKER_FILE), "");
     job.child?.kill();
   }
 

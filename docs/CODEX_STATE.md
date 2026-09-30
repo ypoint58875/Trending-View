@@ -1,5 +1,27 @@
 # Codex State
 
+## 2026-09-30 screening-state watcher isolation
+
+- The Vite development server now excludes
+  `data/state/screening-engine/**` from file watching. Cycle validation can
+  create thousands of request, checkpoint, derived-data, and result files;
+  these are runtime state rather than source inputs and previously caused the
+  application process to retain a file-watcher handle for each directory.
+- Page-close behavior is intentionally unchanged. Closing, reloading, or
+  leaving strategy-cycle validation still breaks the streaming lease and
+  cancels every unfinished local job.
+- Cancellation now publishes the in-memory `cancelled` status only after its
+  durable marker is written. A status read can no longer report cancellation
+  before restart recovery is guaranteed to keep that job dormant.
+- The rendered source contract now verifies both the existing Wrangler-state
+  exclusion and the screening-state exclusion.
+- Strategy-cycle validation now shares the research workspace's device-local
+  canonical daily-series fast path. Selection bounds, completed-report replay,
+  and a new validation run read the same provider-validated full history from
+  IndexedDB before making a remote request; a successful network fallback is
+  written back through the canonical profile gate. This avoids repeated slow
+  full-history calls without shortening or synthesizing K-line data.
+
 ## 2026-09-28 detailed full-period rebalance actions
 
 - The strategy-cycle full-backtest chart now classifies every actual allocation

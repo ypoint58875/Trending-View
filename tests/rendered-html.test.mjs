@@ -294,6 +294,12 @@ test("server-renders the strategy cycle validation route", async () => {
   );
   assert.match(workspace, /addEventListener\("beforeunload", stopOnPageExit\)/);
   assert.match(workspace, /addEventListener\("pagehide", stopOnPageExit\)/);
+  assert.match(workspace, /loadStrategyValidationMarketSeries/);
+  assert.match(
+    workspace,
+    /readCanonicalMarketSeriesEntry\([\s\S]*?if \(cached\?\.series\.bars\.length\) return cached\.series;[\s\S]*?fetch\(marketRequestUrl/,
+  );
+  assert.match(workspace, /writeCanonicalMarketSeries\(series, profile\)/);
   assert.match(workspace, /storedTask\.status !== "completed"/);
   assert.doesNotMatch(workspace, /cycleScreeningInterval/);
   assert.match(workspace, /buildStrategyCycleRollingReport/);
@@ -842,7 +848,11 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(combinations, /areStrategiesEquivalent/);
   assert.match(workspace, /pendingNextOpenAction/);
   assert.doesNotMatch(locale, /pendingGapOverride:/);
-  assert.match(viteConfig, /ignored: \["\*\*\/\.wrangler\/\*\*"\]/);
+  assert.match(viteConfig, /"\*\*\/\.wrangler\/\*\*"/);
+  assert.match(
+    viteConfig,
+    /"\*\*\/data\/state\/screening-engine\/\*\*"/,
+  );
   const saveCurrentBacktestSource = workspace.match(
     /const saveCurrentBacktest = async \(\) => \{[\s\S]*?\n  \};/,
   )?.[0];

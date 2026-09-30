@@ -14,6 +14,10 @@ const localMarketRelayUrl =
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
+const runtimeWatchIgnoredPaths = [
+  "**/.wrangler/**",
+  "**/data/state/screening-engine/**",
+];
 
 const localBindingConfig = {
   main: "./worker/index.ts",
@@ -58,7 +62,10 @@ export default defineConfig(async () => {
     server: {
       strictPort: true,
       watch: {
-        ignored: ["**/.wrangler/**"],
+        // Screening jobs create thousands of checkpoint and result files. They
+        // are runtime state, not source inputs, and must not consume one Vite
+        // watcher handle per directory or trigger development-server work.
+        ignored: runtimeWatchIgnoredPaths,
         ...(isCodexSeatbeltSandbox
           ? { useFsEvents: false, usePolling: true }
           : {}),

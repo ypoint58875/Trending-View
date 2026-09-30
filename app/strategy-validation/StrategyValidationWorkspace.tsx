@@ -64,6 +64,11 @@ import {
   type SavedBacktestRecord,
 } from "@/lib/analysis/saved-backtests";
 import { VOLUME_REQUIRED_STRATEGY_IDS, type StrategyId } from "@/lib/analysis/strategies";
+import { resolveCanonicalMarketProfile } from "@/lib/market/canonical";
+import {
+  readCanonicalMarketSeriesEntry,
+  writeCanonicalMarketSeries,
+} from "@/lib/market/canonical-cache";
 import { assessMarketVolumeCoverage } from "@/lib/market/quality";
 import type { MarketInstrument, MarketSeries } from "@/lib/market/types";
 
@@ -87,6 +92,29 @@ function marketRequestUrl(instrument: MarketInstrument): string {
     interval: DAILY_INTERVAL,
     limit: "10000",
   })}`;
+}
+
+async function loadStrategyValidationMarketSeries(
+  instrument: MarketInstrument,
+  signal: AbortSignal,
+): Promise<MarketSeries> {
+  const profile = resolveCanonicalMarketProfile(instrument);
+  const cached = await readCanonicalMarketSeriesEntry(
+    profile.primary.instrument,
+    DAILY_INTERVAL,
+  );
+  if (signal.aborted) throw new DOMException("Cancelled", "AbortError");
+  if (cached?.series.bars.length) return cached.series;
+
+  const response = await fetch(marketRequestUrl(profile.primary.instrument), {
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) throw new Error(copy.cycleValidation.marketError);
+  const series = await response.json() as MarketSeries;
+  if (!series.bars.length) throw new Error(copy.cycleValidation.marketError);
+  await writeCanonicalMarketSeries(series, profile);
+  return series;
 }
 
 function resultLabel(result: Parameters<typeof screeningResultPlan>[0]): string {
@@ -238,12 +266,10 @@ export function StrategyValidationWorkspace() {
     const controller = new AbortController();
     let active = true;
     setAvailableBarCount(null);
-    void fetch(marketRequestUrl(selectedGroup.instrument), {
-      cache: "no-store",
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(c.marketError);
-      const series = await response.json() as MarketSeries;
+    void loadStrategyValidationMarketSeries(
+      selectedGroup.instrument,
+      controller.signal,
+    ).then((series) => {
       if (!active) return;
       setAvailableBarCount(series.bars.length);
     }).catch((caught) => {
@@ -328,12 +354,10 @@ export function StrategyValidationWorkspace() {
     }
     restoredReportSignatureRef.current = storedTask.signature;
     const controller = new AbortController();
-    void fetch(marketRequestUrl(storedTask.instrument), {
-      cache: "no-store",
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(c.marketError);
-      const series = await response.json() as MarketSeries;
+    void loadStrategyValidationMarketSeries(
+      storedTask.instrument,
+      controller.signal,
+    ).then((series) => {
       if (taskSignature({
         instrument: storedTask.instrument,
         series,
@@ -375,12 +399,10 @@ export function StrategyValidationWorkspace() {
     setRunning(true);
     let currentTask: Omit<StoredStrategyCycleValidationTask, "key" | "version" | "updatedAt"> | null = null;
     try {
-      const marketResponse = await fetch(marketRequestUrl(selectedGroup.instrument), {
-        cache: "no-store",
-        signal: controller.signal,
-      });
-      if (!marketResponse.ok) throw new Error(c.marketError);
-      const series = await marketResponse.json() as MarketSeries;
+      const series = await loadStrategyValidationMarketSeries(
+        selectedGroup.instrument,
+        controller.signal,
+      );
       if (screeningWindows.length === 0) throw new Error(c.invalidPeriods);
       const schedule = buildStrategyCycleRollingSchedule(
         series.bars,
