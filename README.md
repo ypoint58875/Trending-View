@@ -38,10 +38,10 @@ trades or run unattended jobs.
   combination size is configurable from two through six strategies.
   Each cycle job persists only its selected winner. One compact batch request pre-submits
   every bounded optimization unit to the loopback coordinator, which continues
-  a CPU- and memory-bounded parallel queue while the tab remains open, and
-  a browser-held streaming lease cancels queued and running units as soon as
-  the page connection closes, so they cannot be restored after a local relay
-  restart.
+  a CPU- and memory-bounded durable parallel queue after the tab disconnects.
+  Refreshing, navigating away, or a browser tab discard does not cancel work;
+  reopening the page automatically reattaches result collection. Only explicit
+  Pause, reset, or replacement by a different task cancels unfinished units.
   One immutable columnar bar file is shared by the queued units; each child
   materializes only its causal prefix,
   and windows at the same decision share range-independent entry-filter

@@ -69,11 +69,11 @@
   optimization units. Keep at most one latest task record. Submit every
   incomplete local unit before awaiting results and persist deterministic job
   IDs with the task. The loopback coordinator owns CPU- and memory-bounded
-  parallel execution across independent jobs while the page remains open.
-  Hold one coordinator streaming lease for the submitted queue. A disconnected
-  browser lease must cancel every unfinished job and persist cancellation before
-  child termination. Browser `beforeunload`/`pagehide`, explicit Pause, and reset
-  retain one bounded, preflight-free keepalive cancellation as a redundant path.
+  parallel execution across independent jobs after page disconnection.
+  Treat the coordinator stream as advisory observation, never as cancellation
+  intent. A restored `running` browser task must automatically reattach to its
+  deterministic job IDs. Only explicit Pause, reset, and task replacement send
+  the bounded cancellation request and persist cancellation before child termination.
   Persist batch membership atomically and
   persist explicit cancellation per job, so coordinator restart resumes only
   the intended unfinished queue.

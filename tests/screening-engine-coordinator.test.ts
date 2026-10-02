@@ -57,7 +57,7 @@ test("screening concurrency reserves CPU and memory for the desktop", () => {
   );
 });
 
-test("coordinator cancels unfinished work when the browser lease disconnects", async () => {
+test("coordinator keeps unfinished work until an explicit cancellation", async () => {
   const directory = await mkdtemp(join(tmpdir(), "quantscope-lease-"));
   const stateDirectory = join(directory, "state");
   const childScript = join(directory, "fake-child.mjs");
@@ -133,16 +133,28 @@ test("coordinator cancels unfinished work when the browser lease disconnects", a
     } catch (error) {
       assert.equal((error as Error).name, "AbortError");
     }
-    let status = "running";
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
-      const snapshot = await fetch(
-        `${baseUrl}/screening/jobs/${created.jobId}`,
-      ).then((response) => response.json()) as { status: string };
-      status = snapshot.status;
-      if (status === "cancelled") break;
-    }
-    assert.equal(status, "cancelled");
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+    const disconnectedSnapshot = await fetch(
+      `${baseUrl}/screening/jobs/${created.jobId}`,
+    ).then((response) => response.json()) as { status: string };
+    assert.equal(disconnectedSnapshot.status, "running");
+    await assert.rejects(access(join(stateDirectory, created.jobId, "cancelled")));
+
+    const cancellationResponse = await fetch(
+      `${baseUrl}/screening/job-cancellations`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          version: LOCAL_SCREENING_ENGINE_VERSION,
+          jobIds: [created.jobId],
+        }),
+      },
+    );
+    assert.equal(cancellationResponse.status, 200);
+    const cancelledSnapshot = await fetch(
+      `${baseUrl}/screening/jobs/${created.jobId}`,
+    ).then((response) => response.json()) as { status: string };
+    assert.equal(cancelledSnapshot.status, "cancelled");
     await access(join(stateDirectory, created.jobId, "cancelled"));
   } finally {
     leaseController.abort();

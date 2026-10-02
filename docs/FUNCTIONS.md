@@ -89,12 +89,11 @@
   `waitForScreeningInLocalEngine(...)`: separate durable local job submission
   from browser result polling so a bounded cycle queue can run without tying up
   the React render loop. `cancelScreeningInLocalEngine(...)` sends one keepalive
-  batch request for explicit Pause, reset, and page-exit cancellation across all
+  batch request for explicit Pause, reset, and task replacement across all
   submitted units, with per-job DELETE fallback for older coordinators.
 - `holdScreeningBatchLeaseInLocalEngine(...)`: consumes a streaming coordinator
-  response for the lifetime of the page task. Browser connection loss is the
-  authoritative server-observed signal to cancel every unfinished leased job;
-  completed results remain intact.
+  response for the lifetime of the page task. Under protocol v8 this stream is
+  advisory: connection loss does not alter durable queue state.
 - `waitForScreeningBatchInLocalEngine(...)`: reads the pending job set in one
   bounded status request and imports completed outcomes regardless of queue
   order; it falls back to chunked individual reads for an already-running older
@@ -107,8 +106,8 @@
 - `createScreeningEngineCoordinator(...)`: persists batch membership in an
   atomic queue manifest, restores unfinished non-cancelled units at startup,
   and atomically records single-job or bounded batch cancellation before
-  stopping children. Its job-lease endpoint streams heartbeats and cancels
-  unfinished leased jobs when the response connection closes.
+  stopping children. Its job-lease endpoint streams heartbeats without treating
+  response closure as user cancellation.
 - `screeningResultPlan(...)`: converts single or combination screening winners
   to the shared allocation-plan representation for both workspaces.
 

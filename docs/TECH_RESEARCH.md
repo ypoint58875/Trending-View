@@ -1,5 +1,40 @@
 # Technical Research
 
+## 2026-10-02 disconnect-safe cycle execution
+
+The observed failure cancelled 1,529 unfinished units at the same instant that
+the browser page reloaded into an unhydrated state. The application and relay
+processes stayed healthy, so a browser connection close was incorrectly being
+treated as an explicit cancellation command.
+
+Two recovery models were compared:
+
+1. Keep connection ownership but add a reconnect grace timer. This reduces
+   short-refresh failures, but a sleeping or discarded tab can outlast any
+   chosen timer and still cancel a valid bounded run.
+2. Make the already-persisted coordinator queue authoritative until completion
+   or an explicit Pause/reset request. The browser connection becomes an
+   advisory progress stream; a restored `running` IndexedDB task automatically
+   reattaches to deterministic job IDs after reload. This was selected because
+   queue size, child concurrency, checkpoints, retention, and cancellation are
+   already bounded independently of the page.
+
+Node documents a response `close` as a connection-lifecycle event, including
+premature socket closure, not evidence of user intent. MDN also documents that
+`beforeunload` and `pagehide` are not reliable session boundaries. Protocol v8
+therefore removes cancellation from both signals. Explicit Pause and reset
+still use the durable batch-cancellation endpoint, while a disconnected queue
+continues and survives coordinator restart through its atomic manifest.
+
+Primary references, accessed 2026-10-02:
+
+- Node.js HTTP connection and response-close behavior:
+  `https://nodejs.org/api/http.html`
+- MDN `pagehide` lifecycle and reliability notes:
+  `https://developer.mozilla.org/en-US/docs/Web/API/Window/pagehide_event`
+- MDN `beforeunload` reliability and lifecycle guidance:
+  `https://developer.mozilla.org/en-US/docs/Web/API/Window/beforeunload_event`
+
 ## 2026-09-26 cycle screening-period range and combination ceiling
 
 Two range models were compared: one optimizer request containing multiple

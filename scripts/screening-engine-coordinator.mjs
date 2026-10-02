@@ -732,10 +732,6 @@ export function createScreeningEngineCoordinator({
             writeJson(request, response, 400, { error: "INVALID_JOB_IDS" });
             return true;
           }
-          const leasedJobs = jobIds.flatMap((jobId) => {
-            const job = jobs.get(jobId);
-            return job ? [job] : [];
-          });
           response.writeHead(200, {
             "Access-Control-Allow-Origin": allowedOrigin(request),
             "Cache-Control": "no-store",
@@ -747,7 +743,6 @@ export function createScreeningEngineCoordinator({
           }, 1_000);
           response.on("close", () => {
             clearInterval(heartbeat);
-            void Promise.all(leasedJobs.map(cancelUnfinishedJob));
           });
         } catch (error) {
           writeJson(request, response, 400, {

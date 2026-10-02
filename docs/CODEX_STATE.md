@@ -1,5 +1,20 @@
 # Codex State
 
+## 2026-10-02 disconnect-safe cycle execution
+
+- Screening protocol version 8 makes the persisted coordinator queue the owner
+  of submitted cycle work. Closing a streaming response no longer writes
+  cancellation markers or kills children.
+- Strategy-cycle validation no longer translates `beforeunload` or `pagehide`
+  into cancellation. A restored task whose status is `running` automatically
+  reattaches to its deterministic jobs after the page loads.
+- Explicit Pause, reset, and replacement by a different task retain immediate,
+  durable batch cancellation. A resumed task with persisted local job IDs will
+  not silently fall back to a duplicate browser Worker run while the local
+  engine is unavailable.
+- Protocol, coordinator, rendered-route, launcher, restart-recovery, and full
+  application verification cover this ownership change.
+
 ## 2026-09-30 screening-state watcher isolation
 
 - The Vite development server now excludes
@@ -7,9 +22,8 @@
   create thousands of request, checkpoint, derived-data, and result files;
   these are runtime state rather than source inputs and previously caused the
   application process to retain a file-watcher handle for each directory.
-- Page-close behavior is intentionally unchanged. Closing, reloading, or
-  leaving strategy-cycle validation still breaks the streaming lease and
-  cancels every unfinished local job.
+- Page-close behavior from this historical entry was superseded by protocol v8
+  on 2026-10-02; disconnects now preserve unfinished local jobs.
 - Cancellation now publishes the in-memory `cancelled` status only after its
   durable marker is written. A status read can no longer report cancellation
   before restart recovery is guaranteed to keep that job dormant.
@@ -286,13 +300,9 @@
 
 ## 2026-09-24 daily strategy stability and switching evidence
 
-- Closing or leaving the strategy-cycle page now stops its local work. The page
-  holds a streaming coordinator lease over every submitted job ID. Connection
-  loss makes the coordinator write cancellation markers and kill every unfinished
-  child, so correctness no longer depends on an unload event successfully sending
-  a request. A preflight-free keepalive batch cancellation during
-  `beforeunload`/`pagehide` remains as a redundant fast path. Explicit Pause and
-  reset use the same endpoint, with per-job DELETE fallback for an older coordinator.
+- This historical page-close cancellation design was replaced by protocol v8
+  on 2026-10-02. Disconnects now preserve the durable queue; only explicit
+  Pause, reset, or task replacement cancels unfinished jobs.
 - Daily strategy-cycle validation now requires at least 148 evaluation sessions
   and 148 available bars before scheduling work. This minimum combines the
   fixed 128-session screening window with the longest 20-session forward-return

@@ -196,6 +196,7 @@ export function StrategyValidationWorkspace() {
   const runningRef = useRef(false);
   const queuedJobIdsRef = useRef<string[]>([]);
   const restoredReportSignatureRef = useRef("");
+  const autoResumeSignatureRef = useRef("");
 
   const groups = useMemo(() => groupSavedBacktests(records), [records]);
   const selectedGroup = groups.find((group) => group.key === selectedKey) ?? groups[0] ?? null;
@@ -292,21 +293,6 @@ export function StrategyValidationWorkspace() {
       ),
     );
   }, [availableBarCount]);
-
-  useEffect(() => {
-    const stopOnPageExit = () => {
-      if (!runningRef.current) return;
-      pauseRequestedRef.current = true;
-      abortRef.current?.abort();
-      void cancelScreeningInLocalEngine(queuedJobIdsRef.current);
-    };
-    window.addEventListener("beforeunload", stopOnPageExit);
-    window.addEventListener("pagehide", stopOnPageExit);
-    return () => {
-      window.removeEventListener("beforeunload", stopOnPageExit);
-      window.removeEventListener("pagehide", stopOnPageExit);
-    };
-  }, []);
 
   const calculateReports = useCallback((
     series: MarketSeries,
@@ -464,6 +450,13 @@ export function StrategyValidationWorkspace() {
         executionPolicy: HISTORICAL_EXECUTION_POLICY,
       };
       const localEngine = await localScreeningEngineAvailable();
+      if (
+        !localEngine &&
+        storedTask?.signature === signature &&
+        storedTask.queuedUnits.length > 0
+      ) {
+        throw new Error(c.localEngineError);
+      }
       if (localEngine) {
         await writeStrategyCycleValidationTask(currentTask);
         const queuedByKey = new Map(
@@ -709,6 +702,20 @@ export function StrategyValidationWorkspace() {
     slippagePercent,
     storedTask,
   ]);
+
+  useEffect(() => {
+    if (
+      loading ||
+      running ||
+      !selectedGroup ||
+      storedTask?.status !== "running" ||
+      autoResumeSignatureRef.current === storedTask.signature
+    ) {
+      return;
+    }
+    autoResumeSignatureRef.current = storedTask.signature;
+    void start();
+  }, [loading, running, selectedGroup, start, storedTask]);
 
   const reset = async () => {
     pauseRequestedRef.current = true;

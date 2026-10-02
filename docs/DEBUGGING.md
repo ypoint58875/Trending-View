@@ -25,18 +25,17 @@ latest market bar and bar count, screening windows, update intervals,
 evaluation length, objective, and cost settings. A changed signature starts a
 new task deliberately. Task version 2 also stores every deterministic local
 job ID. All incomplete units are submitted before result collection, so the
-loopback coordinator continues them without browser polling. Reopen the page
-and press Continue to collect completed results and rebuild the report.
+loopback coordinator continues them without browser polling. Reopening the page
+automatically reattaches a task that was still marked `running`; paused or
+errored tasks continue only when the user presses Continue.
 
 If progress stops overnight, check `http://127.0.0.1:3001/health` and the
 matching directories under `data/state/screening-engine/`. A queued or running
 job with changing checkpoint timestamps means computation is continuing even
-if the page is temporarily busy. Explicit Pause and closing or leaving the page
-cancel all submitted unfinished jobs. The primary close signal is a streaming
-browser lease: when its connection disappears, the coordinator writes durable
-cancellation markers and kills the children. The unload batch request is only a
-redundant fast path.
-Screening-engine protocol version 7 accepts up to 2048 jobs and persists a batch
+if the page is temporarily busy. Closing, reloading, navigating away, or a tab
+discard does not cancel submitted work. Only explicit Pause, reset, or task
+replacement writes cancellation markers and stops children.
+Screening-engine protocol version 8 accepts up to 2048 jobs and persists a batch
 queue manifest and explicit-cancellation markers, so restarting the local relay
 automatically resumes unfinished, non-paused jobs. Reopen the page and press
 Continue only to reattach report collection immediately; it is not required to
@@ -77,8 +76,8 @@ through `server.watch.ignored`; request, checkpoint, derived-data, and result
 writes are not source changes. Restart the local launcher after changing this
 setting so existing watcher handles are released. Do not remove the directory
 to fix watcher pressure: it contains resumable task state and completed
-results. Closing or reloading the page still intentionally cancels unfinished
-cycle jobs.
+results. Closing or reloading the page leaves unfinished cycle jobs running;
+reopening the page automatically reattaches a stored running task.
 
 If strategy-cycle validation says the complete market history is unavailable,
 first open the instrument in the research workspace and verify that its

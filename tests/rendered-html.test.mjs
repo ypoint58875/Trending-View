@@ -292,8 +292,6 @@ test("server-renders the strategy cycle validation route", async () => {
     workspace,
     /useState<ScreeningObjective>\("totalReturn"\)/,
   );
-  assert.match(workspace, /addEventListener\("beforeunload", stopOnPageExit\)/);
-  assert.match(workspace, /addEventListener\("pagehide", stopOnPageExit\)/);
   assert.match(workspace, /loadStrategyValidationMarketSeries/);
   assert.match(
     workspace,
@@ -332,13 +330,14 @@ test("server-renders the strategy cycle validation route", async () => {
     workspace,
     /max=\{512\}[\s\S]{0,200}value=\{evaluationSessions\}/,
   );
-  assert.match(
-    workspace,
-    /stopOnPageExit[\s\S]*?cancelScreeningInLocalEngine\(queuedJobIdsRef\.current\)/,
-  );
+  assert.doesNotMatch(workspace, /beforeunload|pagehide|stopOnPageExit/);
   assert.match(
     workspace,
     /holdScreeningBatchLeaseInLocalEngine\([\s\S]*?queuedJobIdsRef\.current[\s\S]*?controller\.signal/,
+  );
+  assert.match(
+    workspace,
+    /storedTask\?\.status !== "running"[\s\S]*?autoResumeSignatureRef\.current = storedTask\.signature;[\s\S]*?void start\(\)/,
   );
   assert.match(
     locale,
