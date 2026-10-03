@@ -569,6 +569,10 @@
   0.35 * currentWindowMaxDrawdown`. Trade count does not enter this score.
 - `compareScreeningResults(left, right, objective)`: orders candidates under
   the selected objective and deterministic metric tie-breakers.
+- `selectCombinationStrategyIds(singleResults, objective)`: applies the shared
+  evidence-bounded family gate after complete standalone and EMA evaluation.
+  It keeps `ceil(95%)` of completed strategy families, with a minimum of two,
+  for every pair and higher-order screening path.
 - `areStrategiesEquivalent(...)`: reports identical IDs or registry entries
   declared as the same mathematical signal family, preventing meaningless
   self-combinations while keeping each standalone result available.
@@ -582,9 +586,11 @@
   candidate unfiltered. For each eligible strategy it keeps compact metrics for
   the top 60 and evaluates those sets under EMA5-8. It normally keeps the top
   three final parameter sets per strategy; rolling callers can request a
-  Top-10 per-strategy pool. It evaluates all nine parameter crossings for
-  every unordered non-equivalent strategy pair, keeps the best crossing for
-  each pair, retains up to 4,096 pairs, and compares 50/50, 60/40, 40/60,
+  Top-10 per-strategy pool. It ranks the completed family winners and allows
+  only the top 95% into combinations. It evaluates all nine parameter
+  crossings for every eligible unordered non-equivalent strategy pair, keeps
+  the best crossing for each pair, retains up to 4,096 pairs, and compares
+  50/50, 60/40, 40/60,
   70/30, and 30/70 under both tactical modes. It reports strategy,
   entry-filter, pair, and allocation
   stages, then expands retained pair winners through bounded triple, quadruple,
@@ -597,8 +603,9 @@
   primary and 30 total. Intermediate pools use cached unordered-set keys and
   stable binary insertion; this is result-equivalent to sorting the complete
   pool after every candidate but avoids that repeated allocation. The current
-  registry creates 1,594 strategy-ID pairs,
-  so every pair reaches allocation comparison. Each pair stores and replays
+  registry contributes 55 families and at most 1,485 unordered pairs before
+  declared-equivalence exclusions, so every eligible pair reaches allocation
+  comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
   are built once from complete loaded history and retained only for finalists.
   Four-through-six-leg candidate execution then slices those causal targets to

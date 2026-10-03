@@ -1,5 +1,82 @@
 # Technical Research
 
+## 2026-10-03 evidence-based standalone-rank pruning
+
+### Question and evidence
+
+The local hypothesis was that winning multi-strategy plans use only the highest
+ranked standalone strategy families, so lower-ranked families could be removed
+before pair and higher-order screening. The reproducible command
+`npm run analyze:screening-pruning` reads existing local-engine checkpoint
+generations without mutating them. For each job it ranks each family by its
+best standalone finalist under the production comparator, then asks whether
+every leg of each stored two- through six-strategy category winner is inside a
+candidate percentile.
+
+The current state contained 215 checkpoint generations. Twenty-seven had both
+at least 50 completed standalone family rankings and completed combination
+results, producing 85 strategy-count categories: 27 pairs, 27 triples, 14
+quadruples, 9 quintuples, and 8 sextuples. All usable jobs optimized total
+return, so the evidence does not establish the same cutoff for balanced-score
+or Sharpe runs.
+
+| Standalone-family cutoff | Exact winner retained | Objective-equivalent stored alternative | Worst observed return loss | Theoretical pair-space reduction |
+| --- | ---: | ---: | ---: | ---: |
+| 50% | 60.0% | 69.4% | 1.189 percentage points | 74.6% |
+| 80% | 77.6% | 83.5% | 0.970 percentage points | 34.9% |
+| 90% | 85.9% | 91.8% | 0.284 percentage points | 17.3% |
+| 95% | 98.8% | 100.0% | 0.000 percentage points | 7.1% |
+
+The median winning combination needed a rank-22 component and the 90th
+percentile needed rank 53 of 57. Low standalone rank therefore does not imply
+that a signal is irrelevant inside a core/tactical or core-satellite plan.
+Some low-ranked legs are inactive or weak alone but alter timing, allocation,
+or diversification when paired. The proposed small `x` is not supported.
+
+### Approaches compared
+
+1. **Hard standalone percentile.** Deterministic, simple, and shared by every
+   validation mode through the central optimizer. It directly reduces pair and
+   expansion candidates, but can discard complementary legs. A 95% cutoff is
+   the smallest tested value with an eligible, objective-equivalent stored
+   alternative in every observed category; 90% and below produced measured
+   losses.
+2. **Successive halving or Hyperband.** These methods allocate increasing
+   budgets to promising configurations. They can save substantial work when a
+   cheap low-fidelity score predicts the final score, but daily strategy
+   screening has no verified fidelity that preserves full-history causal state,
+   opening exposure, and the selected-window objective. Truncating history or
+   bars would change the problem rather than accelerate the same problem.
+3. **No rank pruning; optimize execution only.** This preserves every
+   complementary family and the prior result contract, but cannot deliver the
+   requested candidate-count reduction. Existing bounded beams, checkpoints,
+   compact targets, and process isolation remain necessary regardless of the
+   percentile decision.
+
+Primary references: the original successive-halving formulation in
+[Jamieson and Talwalkar (AISTATS 2016)](https://proceedings.mlr.press/v51/jamieson16.html),
+the adaptive resource-allocation extension in
+[Li et al., Hyperband (JMLR 2018)](https://www.jmlr.org/papers/v18/16-558.html),
+and the portfolio complementarity foundation in
+[Markowitz, Portfolio Selection](https://doi.org/10.2307/2975974).
+
+### Decision
+
+Keep the complete 45,196-parameter standalone and EMA-refinement stages so the
+family ranking remains exact. Before every pair, triple, and higher-order path,
+retain `ceil(95% * completed standalone families)` under the active production
+objective, with a minimum of two. With the current 57-family catalog this keeps
+55 families. The shared optimizer makes the rule apply to period, range,
+multi-period, rolling, shortcut-batch, and cycle-validation screening without
+duplicating orchestration logic. Increment the result model so older
+checkpoints and latest-result caches cannot mix with the changed search domain.
+
+This is a conservative reduction, not a claim of large end-to-end speedup. The
+7.1% theoretical pair-space reduction overstates total savings because the
+standalone grid remains exhaustive and later search is already beam-bounded.
+Revisit a lower cutoff only after the same report contains enough balanced and
+Sharpe jobs and a predeclared loss tolerance.
+
 ## 2026-10-02 disconnect-safe cycle execution
 
 The observed failure cancelled 1,529 unfinished units at the same instant that

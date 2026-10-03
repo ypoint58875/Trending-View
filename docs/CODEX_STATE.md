@@ -1,5 +1,29 @@
 # Codex State
 
+## 2026-10-03 evidence-based combination-family pruning
+
+- Added `scripts/analyze-screening-rank-pruning.mjs` and
+  `npm run analyze:screening-pruning`. The read-only report inspected 215 local
+  checkpoint generations and found 27 usable jobs covering 85 current two-
+  through six-strategy result categories.
+- The evidence rejects aggressive standalone-rank pruning: the median category
+  winner needed a rank-22 component and the 90th percentile needed rank 53 of
+  57. A 90% family cutoff changed the objective in 8.2% of categories and lost
+  as much as 0.284 return percentage points; 80% was worse.
+- The smallest tested cutoff with an objective-equivalent stored alternative in
+  every category was 95%. The central combination optimizer now ranks completed
+  standalone family winners under the active objective and lets only the top
+  `ceil(95%)` enter pair and forward-expansion stages. The current 57-family
+  registry therefore contributes 55 families to combinations while standalone
+  and EMA screening remain exhaustive.
+- The screening result model is now version 5, preventing pre-cutoff
+  checkpoints and latest-result caches from joining the changed search domain.
+  All screening entry points inherit the rule through
+  `optimizeStrategyCombinations(...)`.
+- This is intentionally conservative: the measured theoretical pair-space
+  reduction is about 7.1%, and end-to-end savings will be smaller. The existing
+  data does not support a lower universal x or a claim of dramatic speedup.
+
 ## 2026-10-02 disconnect-safe cycle execution
 
 - Screening protocol version 8 makes the persisted coordinator queue the owner
@@ -1243,17 +1267,19 @@ Implemented:
   plus one segment per rolling selection window; period, range, and rolling
   completion all resolve exactly to 100%. Its left result
   column returns exactly one best parameter set per standalone strategy. The
-  same run retains the top three final parameter sets per strategy,
-  automatically ranks all nine crossings for every unordered pair of
-  non-equivalent strategy IDs, keeps the best crossing per pair and up to 4,096
+  same run ranks all standalone family winners, retains the top 95% of
+  families for combinations, and keeps their top three final parameter sets.
+  It automatically ranks all nine crossings for every eligible unordered pair
+  of non-equivalent strategy IDs, keeps the best crossing per pair and up to 4,096
   pair finalists, then compares 50/50, 60/40, 40/60, 70/30, and
   30/70 under both tactical modes. Holdings remain 0%, 30%, 40%, 50%, 60%,
   70%, or 100% for pairs. The best 128 pair parents then generate bounded
   triples, then bounded forward expansion adds four- and five-strategy sets;
   retained three-to-five-leg sets replay every positive 10% judgment-weight
-  composition once (36/84/126 candidates). The current
-  maximum is 1,594 strategy-ID pairs, so every retained pair reaches the
-  allocation stage. Its right result column keeps one best result per complete
+  composition once (36/84/126 candidates). The current 55 eligible families
+  produce at most 1,485 unordered pairs before equivalence exclusions, so
+  every retained pair reaches the allocation stage. Its right result column
+  keeps one best result per complete
   unordered component set, retains 30 results independently for every one-to-five
   strategy category, displays A–E plus pair core/tactical or multi-leg
   primary/supporting judgment roles, and applies a complete result to the

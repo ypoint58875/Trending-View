@@ -471,12 +471,13 @@ trade only to make a test pass.
 5. Confirm EMA(5-8) runs only for the explicit trend/breakout/momentum family.
    Channel BreakOut and Price Channel must participate; reversal and
    candlestick families must remain unfiltered.
-6. Confirm each strategy pair crosses its top three retained parameter sets,
-   uses the exact independent A/B entry filters, and retains the best of all
-   nine crossings before allocation replay. With 57 strategies and two
-   equivalent ID pairs excluded, the current maximum is 1,594 strategy-ID
-   pairs under the 4,096 safety bound. Compare 50/50, 60/40, 40/60, 70/30,
-   and 30/70.
+6. Confirm all completed standalone family winners are ranked with the active
+   objective and only the top `ceil(95%)` enter combination stages. With 57
+   strategies this retains 55 and permits at most 1,485 unordered pairs before
+   declared-equivalence exclusions. Each eligible pair must still cross its
+   top three retained parameter sets, use the exact independent A/B entry
+   filters, retain the best of all nine crossings before allocation replay,
+   and compare 50/50, 60/40, 40/60, 70/30, and 30/70.
 7. Use the stop action when a run is no longer useful.
 8. Confirm `screening.worker.ts` was emitted by the production build and that
    progress messages continue while the main page remains interactive. The
@@ -484,7 +485,11 @@ trade only to make a test pass.
 9. For rolling mode, confirm the selection pool retains up to ten candidates
    per strategy for every window and collapses to one displayed winner only
    after equal-window ranking.
-10. If screens must survive page closure or run concurrently across devices,
+10. Run `npm run analyze:screening-pruning` before lowering the percentile.
+    A lower value must be supported across total-return, balanced, and Sharpe
+    jobs with an explicit acceptable-loss rule; short-window speed alone is not
+    evidence that complementary lower-ranked legs are irrelevant.
+11. If screens must survive page closure or run concurrently across devices,
    move the same protocol to a durable server queue without changing the
    registered candidate domain.
 

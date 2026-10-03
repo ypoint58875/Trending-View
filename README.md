@@ -198,7 +198,11 @@ trades or run unattended jobs.
 - One-click exhaustive strategy screening across all 57 strategies. It
   traverses all 45,196 finite registered parameter combinations; there is no
   per-strategy sampling control or hidden cap. One shared objective drives the
-  complete single-and-combination workflow.
+  complete single-and-combination workflow. After every standalone family is
+  ranked, the top 95% of completed family winners (55 of the current 57) enter
+  pair and higher-order combination discovery. This evidence-bounded gate is
+  shared by every screening mode; standalone and EMA refinement remain
+  exhaustive.
   A second period-derived action (128 days by default) processes every saved
   shortcut instrument sequentially, including indexes, ETFs, funds, and
   commodity proxies. It writes a batch-resume checkpoint only after an
@@ -282,16 +286,18 @@ trades or run unattended jobs.
   markers, or live guidance before Apply. Durable saving remains a separate
   shortcut-bar action.
 - The same one-click run retains the top three parameter finalists for every
-  strategy and evaluates all `3 x 3` parameter pairings against every
-  non-equivalent strategy at the reference 60%/40% allocation, without a
+  strategy, ranks each strategy family's best final standalone result, and
+  evaluates all `3 x 3` parameter pairings among the top 95% of families at
+  the reference 60%/40% allocation, without a
   separate combination checkbox. Each strategy-ID pair keeps its best
   parameter pairing before allocation replay.
   Equivalent implementations such as the paired MACD-cross and Supertrend
   close-confirmation entries are not combined with themselves. It keeps up to
   4,096 pair finalists before replaying all allocation/mode alternatives. The
-  current 57-strategy catalog produces 1,594 unique non-equivalent strategy pairs,
-  so no pair is discarded. Both columns render every retained best row. The
-  second result column keeps only the best
+  current 57-strategy catalog contributes 55 families and at most 1,485
+  unordered pairs before declared equivalence exclusions, so no eligible pair
+  is discarded by the safety bound. Both columns render every retained best
+  row. The second result column keeps only the best
   parameter/allocation result for each unique strategy-ID pair.
   Each result shows which member was classified as relative long or short.
   Dual targets remain limited to 0%, 40%, 60%, or 100%, and every ranked
@@ -536,9 +542,10 @@ replayed through the allocation backtest, so exposure, costs, return,
 drawdown, and Sharpe affect its rank. The staged four-phase search is exhaustive
 across the full registered 45,196-parameter Cartesian product. EMA5-8 is a
   second-stage comparison over only the top 60 unfiltered candidates for each
-  eligible family. Combination screening retains each strategy's top three
-  final parameter sets, evaluates all nine parameter crossings for every
-  unordered non-equivalent strategy pair, keeps the best crossing per pair,
+  eligible family. Combination screening ranks family winners, retains the top
+  95% of families, then uses each retained family's top three final parameter
+  sets. It evaluates all nine parameter crossings for every eligible unordered
+  non-equivalent strategy pair, keeps the best crossing per pair,
   and compares 50/50, 60/40, 40/60, 70/30, and 30/70 assignments.
 This reduces combination work without eliminating overfitting.
 Close-confirmed changes execute at the following daily open, while

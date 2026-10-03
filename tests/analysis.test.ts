@@ -104,6 +104,7 @@ import {
 } from "../lib/analysis/intraday";
 import {
   COMBINATION_FINALISTS_PER_STRATEGY,
+  COMBINATION_STRATEGY_PERCENTILE,
   FIVE_STRATEGY_ALLOCATION_CANDIDATES,
   FOUR_STRATEGY_ALLOCATION_CANDIDATES,
   SIX_STRATEGY_ALLOCATION_CANDIDATES,
@@ -125,6 +126,7 @@ import {
   buildThreeStrategyPlanTimelineFromTargets,
   buildStrategyCombinationTarget,
   optimizeStrategyCombinations,
+  selectCombinationStrategyIds,
   runStrategyCombinationBacktest,
   resolveRelativeLongStrategy,
   summarizeStrategySignalHorizon,
@@ -4774,10 +4776,22 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
   );
 
   assert.equal(COMBINATION_FINALISTS_PER_STRATEGY, 3);
-  const distinctStrategyPairCount = STRATEGIES.reduce(
+  assert.equal(COMBINATION_STRATEGY_PERCENTILE, 95);
+  const combinationStrategyIds = selectCombinationStrategyIds(
+    outcome.singleCandidatePool,
+    "balanced",
+  );
+  assert.equal(
+    combinationStrategyIds.size,
+    Math.ceil((STRATEGIES.length * COMBINATION_STRATEGY_PERCENTILE) / 100),
+  );
+  const selectedStrategies = STRATEGIES.filter((strategy) =>
+    combinationStrategyIds.has(strategy.id),
+  );
+  const distinctStrategyPairCount = selectedStrategies.reduce(
     (count, strategyA, strategyAIndex) =>
       count +
-      STRATEGIES.slice(strategyAIndex + 1).filter(
+      selectedStrategies.slice(strategyAIndex + 1).filter(
         (strategyB) =>
           !areStrategiesEquivalent(strategyA.id, strategyB.id),
       ).length,
@@ -5246,11 +5260,22 @@ test("bounds allocation optimization to the retained strategy-pair shortlist", a
     },
   );
   const strategyCandidates = STRATEGIES.length * 2;
+  const combinationStrategyIds = selectCombinationStrategyIds(
+    STRATEGIES.map((strategy) =>
+      outcome.singleCandidatePool.find(
+        (candidate) => candidate.strategyId === strategy.id,
+      ),
+    ).filter((candidate) => candidate !== undefined),
+    "balanced",
+  );
+  const selectedStrategies = STRATEGIES.filter((strategy) =>
+    combinationStrategyIds.has(strategy.id),
+  );
   const pairCandidates =
-    STRATEGIES.reduce(
+    selectedStrategies.reduce(
       (count, strategyA, strategyAIndex) =>
         count +
-        STRATEGIES.slice(strategyAIndex + 1).filter(
+        selectedStrategies.slice(strategyAIndex + 1).filter(
           (strategyB) =>
             !areStrategiesEquivalent(strategyA.id, strategyB.id),
         ).length,

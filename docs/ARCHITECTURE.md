@@ -209,15 +209,19 @@ parameter combinations from the shared registry and apply one objective. For eac
 explicitly eligible trend, breakout, or momentum strategy, it retains compact
 metrics and raw execution state for the top 60 unfiltered
 parameter sets and compares EMA(5), EMA(6), EMA(7), and EMA(8) at a 0% slope.
-Every strategy contributes its top three final parameter sets to normal pair
-screening, which evaluates all nine crossings for each strategy-ID pair and
+Every strategy contributes its best final standalone result to one objective-
+ordered family ranking. The top `ceil(95%)` of completed families then
+contribute their top three final parameter sets to normal pair screening,
+which evaluates all nine crossings for each eligible strategy-ID pair and
 keeps the best crossing before allocation replay;
 rolling screening retains the best ten candidates per strategy for window
 aggregation before collapsing back to one displayed winner per strategy. The
-optimizer ranks every unordered pair of non-equivalent retained single results
+optimizer ranks every unordered pair of non-equivalent percentile-eligible
+single results
 and compares 50/50, 60/40, 40/60, 70/30, and 30/70 allocations under both
 base-then-add and full-then-reduce tactical modes. The current
-catalog produces 1,594 non-equivalent strategy-ID pairs. Final
+catalog contributes 55 of 57 families and at most 1,485 unordered pairs before
+declared-equivalence exclusions. Final
 combination output keeps only the best parameter/allocation result for each
 unique unordered strategy-ID set within each strategy-count category. Pair
 winners seed bounded triple discovery, and each retained count seeds the next

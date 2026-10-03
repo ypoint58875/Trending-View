@@ -21,7 +21,10 @@ three-to-nine-leg stages carry only retained parameters, compressed targets,
 scalar metrics, set keys, and exact cursors. Rejected candidates and display
 equity/trade/rebalance arrays never cross a stage boundary. Only compact ranked
 winners return to the browser, where a selected result is replayed for chart
-detail. This changes storage and transport, not enumeration or ranking.
+detail. Standalone parameter and EMA enumeration stays complete. The completed
+family winners are then ranked once under the active objective, and only the
+top `ceil(95%)` families flow into pair and higher-order stages. The same gate
+is inside the shared optimizer, so every screening orchestration follows it.
 
 This file separates QuantScope's current runtime behavior from possible future
 ingestion work. The application has no scheduled server-side market-data job

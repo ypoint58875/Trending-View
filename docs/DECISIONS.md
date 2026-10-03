@@ -978,3 +978,21 @@ canonical base. Keep the Tencent one-bar quote path for latest-only refreshes;
 it remains an in-memory overlay when canonical history already exists. Never
 rewrite confirmed canonical bars or combine raw and adjusted scales outside the
 existing promotion gates. Juhe remains the final quote-only fallback.
+
+## D-050: Evidence-bounded combination-family percentile
+
+Continue evaluating the complete registered parameter grid and eligible EMA
+refinements. After each strategy family's final standalone winner is known,
+rank families with the active production objective and tie-break chain. Only
+the top `ceil(95%)`, with a minimum of two, may enter pair and higher-order
+combination discovery. Apply this once in the shared optimizer so period,
+range, multi-period, rolling, shortcut-batch, and cycle-validation workflows
+cannot drift.
+
+The cutoff is empirical rather than theoretical. In 85 completed local result
+categories, 95% was the smallest tested threshold with a stored
+objective-equivalent alternative in every category; lower cutoffs removed
+complementary legs and caused measured total-return loss. Keep the cutoff as a
+named model constant, version checkpoints/results when it changes, and retain
+the read-only analysis command. Do not describe this conservative 7.1%
+theoretical pair-space reduction as a large end-to-end speedup.

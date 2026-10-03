@@ -123,8 +123,10 @@
   cancellation.
 - Browser and local-engine paths must call the same
   `screeningCheckpointInterval(...)` policy. Reduce peak heap by exact atomic
-  checkpoint-and-restart boundaries, not by truncating bars, pruning candidate
-  domains, lowering finalist breadth, or changing ranking precision.
+  checkpoint-and-restart boundaries, not by truncating bars, lowering
+  per-family parameter-finalist breadth, or changing ranking precision. The
+  one permitted family-domain gate is the shared, evidence-versioned top-95%
+  rule applied only after complete standalone and EMA ranking.
 
 ## Multi-strategy plan slots
 
@@ -482,8 +484,10 @@ not the UI. A candidate/observe-only presentation label may explain evidence
 quality but must not alter ranking. Tests enforce registry coverage, uniqueness,
 the exhaustive count, objective ordering, best-result sorting, progress
 completion, cancellation, and exact screening-card/application equality.
-Combination screening retains the top three final parameter sets per strategy,
-evaluates all nine parameter crossings per non-equivalent strategy-ID pair,
+Combination screening first ranks every completed standalone family winner and
+keeps the top `ceil(95%)` families under the active objective. It retains the
+top three final parameter sets per eligible strategy, evaluates all nine
+parameter crossings per eligible non-equivalent strategy-ID pair,
 and keeps one best crossing per pair before allocation replay. Do not collapse
 to the standalone winner before pairing.
 Generate each target from the complete loaded history so persistent state is
@@ -518,15 +522,17 @@ top 60 compact unfiltered results are compared under EMA(5), EMA(6), EMA(7),
 and EMA(8) at a fixed 0% threshold. Channel BreakOut and Price Channel belong
 to this family; reversal and candlestick strategies do not. Retain exactly one
 winner per strategy for standard display, but retain the top three final
-parameter sets per strategy for pairing. Rolling screening may retain the best
+parameter sets per strategy for possible pairing. Rolling screening may retain
+the best
 ten per strategy for window aggregation before collapsing the displayed list
 to one per strategy. Combination screening is always enabled: evaluate all
 nine parameter crossings for every unordered non-equivalent strategy-ID pair
-without catalog-horizon filtering, keep the best crossing per pair, and retain
+inside the top-95% family gate without catalog-horizon filtering, keep the best
+crossing per pair, and retain
 every pair up to the
-4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With 57 strategies
-and two equivalent ID pairs excluded, the current catalog creates
-`choose(57, 2) - 2 = 1,594` unique strategy-ID pairs. Store and replay
+4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With
+57 strategies, the current cutoff retains 55 families and creates at most
+`choose(55, 2) = 1,485` pairs before declared-equivalence exclusions. Store and replay
 `strategyAEntryFilter` and `strategyBEntryFilter` independently, including
 mixed filtered/unfiltered and different-EMA legs. Final presentation is a separate
 bounded view: keep one best result per unordered strategy-ID pair, then sort

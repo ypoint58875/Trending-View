@@ -49,7 +49,7 @@ import {
 export const DEFAULT_STRATEGY_A_ALLOCATION = 0.6;
 export const DEFAULT_STRATEGY_B_ALLOCATION = 0.4;
 export const SCREENING_POSITIONING_MODEL_VERSION = 2;
-export const SCREENING_RESULT_MODEL_VERSION = 4;
+export const SCREENING_RESULT_MODEL_VERSION = 5;
 export const DEFAULT_TACTICAL_ALLOCATION_MODE = "add-on-short-entry" as const;
 export const MULTI_STRATEGY_CORE_ALLOCATION = 0.6;
 export const MULTI_STRATEGY_BALANCED_ALLOCATION = 0.8;
@@ -83,6 +83,8 @@ export const STRATEGY_LAYER_ALLOCATION_CANDIDATES = [
   0.7,
 ] as const;
 export const COMBINATION_FINALISTS_PER_STRATEGY = 3;
+/** Empirical family gate; see scripts/analyze-screening-rank-pruning.mjs. */
+export const COMBINATION_STRATEGY_PERCENTILE = 95;
 export const ROLLING_SINGLE_FINALISTS_PER_STRATEGY = 10;
 export const SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 60;
 export const MAX_COMBINATION_PAIR_FINALISTS = 4_096;
@@ -497,6 +499,29 @@ export interface StrategyFinalist {
   target: Uint8Array;
   orderFills: ReadonlyMap<number, readonly StrategyOrderFill[]>;
   screeningHorizon: StrategySignalHorizon;
+}
+
+export function selectCombinationStrategyIds(
+  singleResults: readonly BacktestResult[],
+  objective: ScreeningObjective,
+): ReadonlySet<StrategyId> {
+  const ranked = [...singleResults].sort((left, right) =>
+    compareScreeningResults(left, right, objective),
+  );
+  const retainedCount = Math.min(
+    ranked.length,
+    Math.max(
+      2,
+      Math.ceil(
+        (ranked.length * COMBINATION_STRATEGY_PERCENTILE) / 100,
+      ),
+    ),
+  );
+  return new Set(
+    ranked
+      .slice(0, retainedCount)
+      .map((result) => result.strategyId),
+  );
 }
 
 export interface EntryFilterCandidate {
@@ -3765,12 +3790,17 @@ export async function optimizeStrategyCombinations(
   ).filter(
     (finalist): finalist is StrategyFinalist => Boolean(finalist),
   );
-  const pairingFinalists = STRATEGIES.flatMap(
-    (strategy) =>
-      (finalistsByStrategy.get(strategy.id) ?? []).slice(
-        0,
-        COMBINATION_FINALISTS_PER_STRATEGY,
-      ),
+  const combinationStrategyIds = selectCombinationStrategyIds(
+    singleFinalists.map((finalist) => finalist.result),
+    objective,
+  );
+  const pairingFinalists = STRATEGIES.filter((strategy) =>
+    combinationStrategyIds.has(strategy.id),
+  ).flatMap((strategy) =>
+    (finalistsByStrategy.get(strategy.id) ?? []).slice(
+      0,
+      COMBINATION_FINALISTS_PER_STRATEGY,
+    ),
   );
 
   if (!options.signal?.aborted) {

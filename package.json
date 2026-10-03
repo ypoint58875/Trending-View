@@ -11,6 +11,7 @@
     "start": "vinext start",
     "local:dev": "vinext dev -p 3000 -H 127.0.0.1",
     "local:db:migrate": "wrangler d1 migrations apply DB --local --config wrangler.local.jsonc --persist-to .wrangler/state",
+    "analyze:screening-pruning": "node scripts/analyze-screening-rank-pruning.mjs",
     "verify:market": "node scripts/verify-market-coverage.mjs",
     "test": "npm run typecheck && tsx --test tests/*.test.ts && npm run build && node --test tests/rendered-html.test.mjs",
     "typecheck": "tsc --noEmit",
