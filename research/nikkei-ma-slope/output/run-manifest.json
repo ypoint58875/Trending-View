@@ -1,0 +1,107 @@
+{
+  "study": "nikkei-225-multi-moving-average-slope",
+  "generatedAt": "2026-10-03T00:42:49.896Z",
+  "config": {
+    "symbol": "^N225",
+    "movingAverageTypes": [
+      "sma",
+      "ema",
+      "wma"
+    ],
+    "periods": [
+      3,
+      5,
+      10,
+      20,
+      50,
+      100,
+      200
+    ],
+    "thresholdQuantiles": [
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8
+    ],
+    "horizons": [
+      5,
+      10,
+      20,
+      60
+    ],
+    "selectionHorizon": 20,
+    "maxCombinationDepth": 5,
+    "eventStudyStart": "1965-01-05",
+    "executableStart": "1988-04-08",
+    "trainEnd": "1999-12-31",
+    "validationStart": "2000-01-01",
+    "validationEnd": "2015-12-31",
+    "holdoutStart": "2016-01-01",
+    "minimumTrainTrades": 30,
+    "minimumValidationTrades": 24,
+    "bootstrapSamples": 2000,
+    "bootstrapSeed": 2252026,
+    "costsBpsPerSide": [
+      0,
+      5,
+      10
+    ],
+    "dataCacheTtlHours": 24
+  },
+  "configHash": "a7337dbb1124e7081759f1065892eb36255bc603bdf98c7e8906749c29871fc5",
+  "dataHash": "4304b624acfbadbbb4fe992e7b7799d28505e84b91eccc88abf67fd751c38c77",
+  "data": {
+    "source": "Yahoo Chart ^N225",
+    "fetchedAt": "2026-10-03T00:26:03.342Z",
+    "cacheHit": true,
+    "firstDate": "1965-01-05",
+    "lastDate": "2026-10-01",
+    "barCount": 15177,
+    "adjustedCloseMatches": 15177,
+    "adjustedCloseObserved": 15177,
+    "officialValidation": {
+      "status": "ok",
+      "accessedAt": "2026-10-03T00:42:12.105Z",
+      "returnedBars": 916,
+      "firstDate": "2023-01-04",
+      "lastDate": "2026-10-02",
+      "overlapDates": 915,
+      "meanAbsoluteCloseErrorPct": 0.0000022680684959043217,
+      "maxAbsoluteCloseErrorPct": 0.000005683354420416009,
+      "rawStored": false
+    }
+  },
+  "splits": {
+    "train": {
+      "start": "1988-04-08",
+      "end": "1999-12-30",
+      "bars": 2894
+    },
+    "validation": {
+      "start": "2000-01-04",
+      "end": "2015-12-30",
+      "bars": 3925
+    },
+    "holdout": {
+      "start": "2016-01-04",
+      "end": "2026-10-01",
+      "bars": 2625
+    }
+  },
+  "search": {
+    "featureCount": 21,
+    "combinationCount": 27895,
+    "eligibleCombinationCount": 13874,
+    "selectedCandidateCount": 15,
+    "primaryCandidateCount": 5
+  },
+  "methodology": {
+    "slope": "(MA[t] / MA[t-1] - 1) * 100 percent per trading session",
+    "execution": "signal at close t; enter open t+1; exit close t+h; one non-overlapping position per rule",
+    "inference": "stationary bootstrap on non-overlapping trade returns with Benjamini-Hochberg exploratory correction",
+    "limitation": "price-index simulation; no dividend total return or directly tradable instrument"
+  }
+}

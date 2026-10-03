@@ -1,0 +1,21 @@
+{
+  "symbol": "^N225",
+  "movingAverageTypes": ["sma", "ema", "wma"],
+  "periods": [3, 5, 10, 20, 50, 100, 200],
+  "thresholdQuantiles": [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+  "horizons": [5, 10, 20, 60],
+  "selectionHorizon": 20,
+  "maxCombinationDepth": 5,
+  "eventStudyStart": "1965-01-05",
+  "executableStart": "1988-04-08",
+  "trainEnd": "1999-12-31",
+  "validationStart": "2000-01-01",
+  "validationEnd": "2015-12-31",
+  "holdoutStart": "2016-01-01",
+  "minimumTrainTrades": 30,
+  "minimumValidationTrades": 24,
+  "bootstrapSamples": 2000,
+  "bootstrapSeed": 2252026,
+  "costsBpsPerSide": [0, 5, 10],
+  "dataCacheTtlHours": 24
+}
