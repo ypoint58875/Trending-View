@@ -180,6 +180,46 @@ test("builds SMA lines from display parameters", () => {
   assert.equal(fast.yAxisIndex, 0);
 });
 
+test("distinguishes Bollinger tracks and makes SMA dashed only during coexistence", () => {
+  const lines = (id: "sma" | "bollinger", coexist: boolean, equal = false) =>
+    buildIndicatorSeries(chartBars, id, { fast: 2, slow: equal ? 2 : 3, period: 2, width: 2 },
+      indicatorLabels, 0, 0, coexist) as Array<{
+        lineStyle: { color: string; type?: string };
+        itemStyle: { color: string };
+      }>;
+  const bands = lines("bollinger", true);
+  assert.equal(bands.length, 3);
+  assert.deepEqual(bands.map((line) => line.lineStyle.color), ["#FF9800", "#2196F3", "#2196F3"]);
+  assert.ok(bands.every((line) => line.lineStyle.type === undefined));
+  for (const equal of [false, true]) {
+    const averages = lines("sma", true, equal);
+    assert.ok(averages.every((line) => line.lineStyle.type === "dashed"));
+    assert.ok(averages.every((line) => !bands.some((band) => band.lineStyle.color === line.lineStyle.color)));
+    assert.ok(lines("sma", false, equal).every((line) => line.lineStyle.type === undefined));
+  }
+  assert.ok([...bands, ...lines("sma", true)].every((line) => line.itemStyle.color === line.lineStyle.color));
+});
+
+test("fits visible overlay values without using offscreen or warm-up values", () => {
+  const window = { start: 50, end: 100 };
+  const baseline = buildVisiblePriceAxisRange(chartBars, window)!;
+  const range = buildVisiblePriceAxisRange(chartBars, window, [
+    [1_000_000, null, 12, 14],
+    [-1_000_000, Number.NaN, -3, -2],
+    [null, null, Number.POSITIVE_INFINITY, null],
+  ])!;
+  assert.ok(range.maximum > 14 && range.maximum < 20);
+  assert.ok(range.minimum < -3 && range.minimum > -10);
+  assert.deepEqual(buildVisiblePriceAxisRange(chartBars, window, [[null, null, null, null]]), baseline);
+  const bands = buildIndicatorSeries(chartBars, "bollinger", { period: 2, width: 4 }, indicatorLabels, 0, 0) as Array<{ data: Array<number | null> }>;
+  const fitted = buildVisiblePriceAxisRange(chartBars, { start: 0, end: 100 }, bands.map((line) => line.data))!;
+  for (const band of bands) {
+    for (const value of band.data) {
+      if (value !== null) assert.ok(value > fitted.minimum && value < fitted.maximum);
+    }
+  }
+});
+
 test("collapses equal moving-average periods into one chart series", () => {
   for (const indicator of ["sma", "ema", "wma", "dema"] as const) {
     const series = buildIndicatorSeries(
@@ -545,6 +585,13 @@ test("pans the visible time window horizontally without changing its span", () =
   });
 });
 
+test("cycle window panning follows the mouse direction and clamps both boundaries", () => {
+  assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, 100, 1000, "window"), { start: 32, end: 52 });
+  assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, -100, 1000, "window"), { start: 28, end: 48 });
+  assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, 10000, 1000, "window"), { start: 80, end: 100 });
+  assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, -10000, 1000, "window"), { start: 0, end: 20 });
+});
+
 test("builds readable zero, one, and multiple-pane chart layouts", () => {
   const empty = buildPriceChartLayout(["2026-01-01"], 0);
   const single = buildPriceChartLayout(["2026-01-01"], 1);
@@ -593,6 +640,22 @@ test("uses a scrolling legend above the reserved price-plot area", () => {
   assert.equal(legend.right, 8);
   assert.ok(Number(layout.grids[0].top) > Number(legend.top));
   assert.ok(Number(layout.grids[0].top) - Number(legend.top) >= 44);
+});
+
+test("preserves square trade legend paths and sell direction without shortening indicator line samples", () => {
+  const legend = buildPriceChartLegend([
+    { name: "buy", type: "scatter", symbol: "triangle" },
+    { name: "sell", type: "scatter", symbol: "triangle", symbolRotate: 180 },
+    { name: "range", type: "scatter", symbol: "diamond" },
+    { name: "indicator", type: "line" },
+  ]) as { itemWidth?: number; itemHeight?: number; symbolKeepAspect?: boolean; data?: { name: string; icon?: string; symbolKeepAspect?: boolean }[] };
+  assert.equal(legend.itemWidth, 28);
+  assert.equal(legend.itemHeight, 10);
+  assert.equal(legend.symbolKeepAspect, true);
+  assert.equal(legend.data?.[0]?.icon, "path://M5,0 L10,10 L0,10 Z");
+  assert.equal(legend.data?.[1]?.icon, "path://M0,0 L10,0 L5,10 Z");
+  assert.equal(legend.data?.[2]?.icon, "path://M5,0 L10,5 L5,10 L0,5 Z");
+  assert.equal(legend.data?.[3]?.icon, undefined);
 });
 
 test("renders confirmed support, resistance, and break markers without backpainting", () => {

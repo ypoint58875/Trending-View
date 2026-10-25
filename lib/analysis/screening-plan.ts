@@ -14,6 +14,7 @@ export function singleScreeningResultPlan(
       strategyId: result.strategyId,
       parameters: { ...result.parameters },
     },
+    ...(result.positionOverlay ? { positionOverlay: { ...result.positionOverlay } } : {}),
     strategyB: null,
     strategyAAllocation: 1,
     strategyBAllocation: 0,
@@ -41,6 +42,7 @@ export function combinationScreeningResultPlan(
         ];
       }),
     ),
+    ...(result.positionOverlay ? { positionOverlay: { ...result.positionOverlay } } : {}),
     tacticalMode: resolveTacticalAllocationMode(result.tacticalMode),
   } as StrategyAllocationPlan;
 }

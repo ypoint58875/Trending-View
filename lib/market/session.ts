@@ -280,12 +280,12 @@ export function resolveLatestDailyBarStatus(
       ? providerRegularSessionEndSeconds! * 1000
       : null;
 
-  const displayCurrent = dateTimeParts(
+  const tradingCurrent = dateTimeParts(
     fetchedAt,
-    MARKET_DISPLAY_TIME_ZONE,
+    session?.timeZone ?? MARKET_DISPLAY_TIME_ZONE,
   );
-  if (barDate < displayCurrent.date) return "complete";
-  if (barDate > displayCurrent.date) return "unknown";
+  if (barDate < tradingCurrent.date) return "complete";
+  if (barDate > tradingCurrent.date) return "unknown";
   if (!session && providerSessionEndMilliseconds === null) return "unknown";
 
   if (providerSessionEndMilliseconds !== null) {

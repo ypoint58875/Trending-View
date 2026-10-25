@@ -1,3 +1,4 @@
+import { normalizeSmaPositionOverlay, SmaPositionOverlay } from "./sma-position-overlay";
 import {
   runAllocationBacktest,
   type AllocationBacktestResult,
@@ -11,7 +12,31 @@ import {
   type StrategyAllocationPlan,
   type StrategySlot,
 } from "./strategy-combinations";
-import type { MarketBar, MarketInterval } from "@/lib/market/types";
+import type { MarketBar, MarketInterval, MarketInstrument, MarketSeries } from "@/lib/market/types";
+import { resolveCanonicalMarketProfile } from "@/lib/market/canonical";
+import { resolveLatestDailyBarStatus } from "@/lib/market/session";
+
+export const NIKKEI_CYCLE_MODEL = "nikkei-completed-close-v3";
+export const NIKKEI_CYCLE_CONFLICT_POLICY = "incoming-current-signals-on-conflict-v1";
+
+export function isNikkeiCycleInstrument(instrument: MarketInstrument): boolean {
+  return resolveCanonicalMarketProfile(instrument).key === "index:N225";
+}
+
+export function completedNikkeiCycleSeries(series: MarketSeries, now = new Date()): MarketSeries {
+  if (!isNikkeiCycleInstrument(series.instrument) || series.interval !== "1d") {
+    throw new Error("Cycle validation requires Nikkei 225 daily bars");
+  }
+  const currentDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(now);
+  const bars = series.bars.filter((bar) => {
+    if (resolveLatestDailyBarStatus(bar.time, "JPX", now) !== "complete") return false;
+    // An older session is complete even if the stored newest status is stale.
+    return bar.time < currentDate || series.latestBarStatus === "complete";
+  });
+  return { ...series, bars, latestBarStatus: "complete" };
+}
 
 export const DEFAULT_CYCLE_SCREENING_WINDOWS = [64, 128, 256] as const;
 export const DEFAULT_CYCLE_UPDATE_INTERVALS = [5, 10, 20, 40, 60] as const;
@@ -64,6 +89,9 @@ export interface StrategyCycleRollingReport {
   benchmarkReturn: number;
   updateReturn: number;
   rebalances: AllocationRebalance[];
+  conflictCount: number;
+  oldOnConflictReturn: number;
+  newOnConflictReturn: number;
 }
 
 export function buildStrategyCycleRollingSchedule(
@@ -76,14 +104,14 @@ export function buildStrategyCycleRollingSchedule(
     !Number.isInteger(screeningWindow) ||
     screeningWindow < MIN_CYCLE_SCREENING_WINDOW ||
     screeningWindow > MAX_CYCLE_SCREENING_WINDOW ||
-    evaluationSessions < 2 ||
+    evaluationSessions < 3 ||
     evaluationSessions > bars.length
   ) return null;
   const evaluationStartIndex = bars.length - evaluationSessions;
   if (evaluationStartIndex < screeningWindow) return null;
   const evaluationEndIndex = bars.length - 1;
-  const decisionIndexes = [evaluationStartIndex - 1];
-  for (let index = evaluationStartIndex; index < evaluationEndIndex; index += 1) {
+  const decisionIndexes = [evaluationStartIndex];
+  for (let index = evaluationStartIndex + 1; index <= evaluationEndIndex; index += 1) {
     if (shouldScreenStrategyCycleAtIndex(bars, index)) {
       decisionIndexes.push(index);
     }
@@ -131,36 +159,82 @@ export interface StrategyCycleRecentSignal {
   signals: AllocationSignalEvent[];
 }
 
+export function strategyCycleRecentSignals(
+  bars: MarketBar[],
+  snapshot: StrategyCycleSelectionSnapshot,
+  decisionIndex: number,
+): StrategyCycleRecentSignal[] {
+  const timeline = buildStrategyPlanTimeline(
+    barsAvailableAtCycleDecision(bars, decisionIndex), snapshot.plan, undefined,
+    snapshot.fixedRelativeLongStrategy ?? undefined,
+  );
+  const recent: StrategyCycleRecentSignal[] = [];
+  for (let index = Math.max(1, decisionIndex - 1); index <= decisionIndex; index += 1) {
+    const previous = timeline.target[index - 1] ?? 0;
+    const next = timeline.target[index] ?? previous;
+    if (Math.abs(next - previous) > 1e-10) recent.push({
+      direction: next > previous ? "increase" : "reduce",
+      targetAllocation: next,
+      signals: [...(timeline.signalEvents[index] ?? [])],
+    });
+  }
+  return recent;
+}
+
+export function strategyCycleSignalDirection(signals: readonly StrategyCycleRecentSignal[]): "increase" | "reduce" | null {
+  if (signals.some((signal, index) => signal.direction === "reduce" &&
+    signals.slice(index + 1).some((later) => later.direction === "increase"))) return null;
+  return signals.at(-1)?.direction ?? null;
+}
+
+export function strategyCycleSignalsOppose(
+  left: readonly StrategyCycleRecentSignal[], right: readonly StrategyCycleRecentSignal[],
+): boolean {
+  const leftDirection = strategyCycleSignalDirection(left);
+  const rightDirection = strategyCycleSignalDirection(right);
+  return leftDirection !== null && rightDirection !== null && leftDirection !== rightDirection;
+}
+
+/** Cycle-only Nikkei proxy fills at each decision close; ordinary backtests stay unchanged. */
+export function runStrategyCycleCloseBacktest(
+  bars: MarketBar[], target: number[], settings: BacktestSettings,
+  signalEvents?: AllocationSignalEvent[][],
+): AllocationBacktestResult {
+  if (settings.interval !== "1d") throw new Error("Cycle close replay requires daily bars");
+  const executions = bars.map((bar, index) =>
+    Math.abs(target[index]! - (target[index - 1] ?? 0)) > 1e-10
+      ? [{ targetAllocation: target[index]!, fillPrice: bar.close, signals: signalEvents?.[index] ?? [] }]
+      : []);
+    return runAllocationBacktest(bars, target, { ...settings, positionOverlay: undefined, executionPolicy: "hybrid" }, signalEvents, executions);
+}
+
 export function resolveStrategyCycleRecentSignals(
   inheritedAllocation: number,
   recentSignals: readonly StrategyCycleRecentSignal[],
 ): { targetAllocation: number; signals: AllocationSignalEvent[] } {
   const inherited = Math.min(1, Math.max(0, inheritedAllocation));
-  const hasReduceThenIncrease = recentSignals.some(
-    (signal, index) =>
-      signal.direction === "reduce" &&
-      recentSignals.slice(index + 1).some((later) => later.direction === "increase"),
-  );
-  if (hasReduceThenIncrease) return { targetAllocation: inherited, signals: [] };
-  const latestReduce = [...recentSignals].reverse().find(
-    (signal) => signal.direction === "reduce",
-  );
-  if (latestReduce) {
-    return {
-      targetAllocation: Math.min(inherited, latestReduce.targetAllocation),
-      signals: [...latestReduce.signals],
-    };
+  if (strategyCycleSignalDirection(recentSignals) === null) {
+    return { targetAllocation: inherited, signals: [] };
   }
-  const latestIncrease = [...recentSignals].reverse().find(
-    (signal) => signal.direction === "increase",
-  );
-  if (latestIncrease) {
-    return {
-      targetAllocation: Math.max(inherited, latestIncrease.targetAllocation),
-      signals: [...latestIncrease.signals],
-    };
-  }
-  return { targetAllocation: inherited, signals: [] };
+  const latest = recentSignals.at(-1);
+  if (!latest) return { targetAllocation: inherited, signals: [] };
+  return {
+    targetAllocation: latest.direction === "increase"
+      ? Math.max(inherited, latest.targetAllocation)
+      : Math.min(inherited, latest.targetAllocation),
+    signals: [...latest.signals],
+  };
+}
+
+const reportSignalsByBars = new WeakMap<MarketBar[], WeakMap<StrategyCycleSelectionSnapshot, Map<number, StrategyCycleRecentSignal[]>>>();
+function reportRecentSignals(bars: MarketBar[], snapshot: StrategyCycleSelectionSnapshot, index: number) {
+  let bySnapshot = reportSignalsByBars.get(bars);
+  if (!bySnapshot) { bySnapshot = new WeakMap(); reportSignalsByBars.set(bars, bySnapshot); }
+  let byIndex = bySnapshot.get(snapshot);
+  if (!byIndex) { byIndex = new Map(); bySnapshot.set(snapshot, byIndex); }
+  let signals = byIndex.get(index);
+  if (!signals) { signals = strategyCycleRecentSignals(bars, snapshot, index); byIndex.set(index, signals); }
+  return signals;
 }
 
 export function buildStrategyCycleRollingReport(
@@ -170,7 +244,7 @@ export function buildStrategyCycleRollingReport(
   screeningWindow: number,
   settings: Pick<
     BacktestSettings,
-    "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy"
+    "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy" | "positionOverlay"
   > & { interval: MarketInterval },
 ): StrategyCycleRollingReport {
   const schedule = buildStrategyCycleRollingSchedule(
@@ -192,13 +266,19 @@ export function buildStrategyCycleRollingReport(
     { length: bars.length },
     () => [] as AllocationSignalEvent[],
   );
-  const timelines = ordered.map((snapshot) => buildStrategyPlanTimeline(
-    bars,
-    snapshot.plan,
-    undefined,
-    snapshot.fixedRelativeLongStrategy ?? undefined,
-  ));
+  const oldTarget = new Array<number>(bars.length).fill(0);
+  const oldSignalEvents = Array.from({ length: bars.length }, () => [] as AllocationSignalEvent[]);
   let inheritedAllocation = 0;
+  let oldInheritedAllocation = 0;
+  const overlayOptions = normalizeSmaPositionOverlay(settings.positionOverlay);
+  const overlay = overlayOptions ? new SmaPositionOverlay(bars, overlayOptions) : null;
+  const oldOverlay = overlayOptions ? new SmaPositionOverlay(bars, overlayOptions) : null;
+  const applyOverlay = (account: SmaPositionOverlay, signals: readonly StrategyCycleRecentSignal[], index: number) => {
+    const direction = strategyCycleSignalDirection(signals);
+    if (direction) account.request(direction, signals.at(-1)!.targetAllocation, index);
+    return account.close(index, signals.length > 0);
+  };
+  let conflictCount = 0;
   const firstDecisionIndex = ordered[0]!.decisionIndex;
   let selectedIndex = -1;
   for (let index = firstDecisionIndex; index <= schedule.evaluationEndIndex; index += 1) {
@@ -206,55 +286,73 @@ export function buildStrategyCycleRollingReport(
       selectedIndex + 1 < ordered.length &&
       ordered[selectedIndex + 1]!.decisionIndex === index;
     if (!isDecision) {
+      if (overlay) {
+        const next = overlay.close(index, false);
+        if (Math.abs(next - inheritedAllocation) > 1e-10) signalEvents[index] = [next > inheritedAllocation ? "long-entry" : "long-exit"];
+        inheritedAllocation = next;
+      }
+      if (oldOverlay) {
+        const next = oldOverlay.close(index, false);
+        if (Math.abs(next - oldInheritedAllocation) > 1e-10) oldSignalEvents[index] = [next > oldInheritedAllocation ? "long-entry" : "long-exit"];
+        oldInheritedAllocation = next;
+      }
       target[index] = inheritedAllocation;
+      oldTarget[index] = oldInheritedAllocation;
       continue;
     }
     selectedIndex += 1;
-    const timeline = timelines[selectedIndex]!;
-    const recentSignals: StrategyCycleRecentSignal[] = [];
-    for (let signalIndex = Math.max(1, index - 1); signalIndex <= index; signalIndex += 1) {
-      const previousAllocation = timeline.target[signalIndex - 1] ?? 0;
-      const nextAllocation = timeline.target[signalIndex] ?? previousAllocation;
-      if (nextAllocation > previousAllocation + 1e-10) {
-        recentSignals.push({
-          direction: "increase",
-          targetAllocation: nextAllocation,
-          signals: [...(timeline.signalEvents[signalIndex] ?? [])],
-        });
-      } else if (nextAllocation < previousAllocation - 1e-10) {
-        recentSignals.push({
-          direction: "reduce",
-          targetAllocation: nextAllocation,
-          signals: [...(timeline.signalEvents[signalIndex] ?? [])],
-        });
-      }
-    }
+    const recentSignals = reportRecentSignals(bars, ordered[selectedIndex]!, index);
+    const previousSignals = selectedIndex > 0
+      ? strategyCyclePlanKey(ordered[selectedIndex]!) === strategyCyclePlanKey(ordered[selectedIndex - 1]!)
+        ? recentSignals
+        : reportRecentSignals(bars, ordered[selectedIndex - 1]!, index)
+      : [];
+    const conflict = strategyCycleSignalsOppose(recentSignals, previousSignals);
+    if (conflict) conflictCount += 1;
     const resolved = resolveStrategyCycleRecentSignals(
       inheritedAllocation,
       recentSignals,
     );
+    if (overlay) {
+      resolved.targetAllocation = applyOverlay(overlay, recentSignals, index);
+      if (!resolved.signals.length) resolved.signals = [resolved.targetAllocation > inheritedAllocation ? "long-entry" : "long-exit"];
+    }
     target[index] = resolved.targetAllocation;
     if (Math.abs(resolved.targetAllocation - inheritedAllocation) > 1e-10) {
       signalEvents[index] = resolved.signals;
     }
     inheritedAllocation = resolved.targetAllocation;
+    // Only the conflicting decision uses the previous selection's current signals.
+    // The next screen compares against its chronological previous winner again.
+    const oldResolved = resolveStrategyCycleRecentSignals(
+      oldInheritedAllocation, conflict ? previousSignals : recentSignals,
+    );
+    if (oldOverlay) {
+      oldResolved.targetAllocation = applyOverlay(oldOverlay, conflict ? previousSignals : recentSignals, index);
+      if (!oldResolved.signals.length) oldResolved.signals = [oldResolved.targetAllocation > oldInheritedAllocation ? "long-entry" : "long-exit"];
+    }
+    if (Math.abs(oldResolved.targetAllocation - oldInheritedAllocation) > 1e-10) {
+      oldSignalEvents[index] = oldResolved.signals;
+    }
+    oldInheritedAllocation = oldResolved.targetAllocation;
+    oldTarget[index] = oldInheritedAllocation;
   }
-  const updateResult: AllocationBacktestResult = runAllocationBacktest(
+  const replaySettings = {
+    ...settings,
+    startTime: bars[schedule.evaluationStartIndex]!.time,
+    endTime: bars[schedule.evaluationEndIndex]!.time,
+  };
+  const newResult = runStrategyCycleCloseBacktest(
     bars,
     target,
-    {
-      ...settings,
-      startTime: bars[schedule.evaluationStartIndex - 1]!.time,
-      endTime: bars[schedule.evaluationEndIndex]!.time,
-    },
+    replaySettings,
     signalEvents,
   );
+  const oldResult = runStrategyCycleCloseBacktest(bars, oldTarget, { ...replaySettings, summaryOnly: true }, oldSignalEvents);
   const benchmarkTarget = new Array<number>(bars.length).fill(0);
-  benchmarkTarget.fill(1, schedule.evaluationStartIndex - 1, schedule.evaluationEndIndex + 1);
-  const benchmarkReturn = runAllocationBacktest(bars, benchmarkTarget, {
-    ...settings,
-    startTime: bars[schedule.evaluationStartIndex - 1]!.time,
-    endTime: bars[schedule.evaluationEndIndex]!.time,
+  benchmarkTarget.fill(1, schedule.evaluationStartIndex, schedule.evaluationEndIndex + 1);
+  const benchmarkReturn = runStrategyCycleCloseBacktest(bars, benchmarkTarget, {
+    ...replaySettings,
     summaryOnly: true,
   }).totalReturn;
   return {
@@ -264,8 +362,11 @@ export function buildStrategyCycleRollingReport(
     decisionCount: ordered.length,
     skippedDecisionCount: Math.max(evaluationSessions - ordered.length, 0),
     benchmarkReturn,
-    updateReturn: updateResult.totalReturn,
-    rebalances: updateResult.rebalances,
+    updateReturn: newResult.totalReturn,
+    rebalances: newResult.rebalances,
+    conflictCount,
+    oldOnConflictReturn: oldResult.totalReturn,
+    newOnConflictReturn: newResult.totalReturn,
   };
 }
 

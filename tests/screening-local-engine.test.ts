@@ -10,6 +10,7 @@ import {
   LOCAL_SCREENING_ENGINE_VERSION,
   type LocalScreeningJobRequest,
 } from "../lib/analysis/screening-local-engine-protocol";
+import { buildScreeningCandidates } from "../lib/analysis/screening";
 import { STRATEGIES } from "../lib/analysis/strategies";
 import {
   packMarketBars,
@@ -223,4 +224,28 @@ test("local screening upload keeps bars columnar and lossless", () => {
     bars.slice(0, 5),
   );
   assert.ok(encoded.byteLength < JSON.stringify(request).length);
+});
+
+
+test("local screening child evaluates all supplied full-search candidates after disk restarts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "quantscope-full-engine-"));
+  const bars = makeBars(80);
+  const excludedStrategyIds = STRATEGIES.filter((row) => row.id !== "sma-cross").map((row) => row.id);
+  const candidates = buildScreeningCandidates(["long", "short"], excludedStrategyIds).slice(0, 10);
+  const request: LocalScreeningJobRequest = {
+    version: LOCAL_SCREENING_ENGINE_VERSION, bars,
+    settings: { initialCash: 100000, commissionRate: 0.0003, slippageRate: 0.0002, interval: "1d" },
+    config: { mode: "sample", periods: [{ sessions: 20, weight: 100 }] },
+    checkpoint: { key: "full-engine-test", signature: JSON.stringify(candidates) },
+    options: { objective: "totalReturn", excludedStrategyIds, candidates, maxCombinationStrategies: 2 },
+  };
+  try {
+    await writeFile(join(directory, "request.json"), JSON.stringify(request));
+    const expected = await runScreeningWithValidation(bars, request.settings, request.config, request.options);
+    await runChild(directory);
+    const actual = JSON.parse(await readFile(join(directory, "result.json"), "utf8"));
+    assert.equal(actual.totalCandidates, candidates.length);
+    assert.equal(actual.parameterLeaders, undefined);
+    assert.deepEqual(actual, JSON.parse(JSON.stringify(expected)));
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

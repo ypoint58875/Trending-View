@@ -1,0 +1,66 @@
+function relativeView(data, c, period, sample, bucket = "5-10") {
+  const e = (x) => String(x ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  const n = (x, d = 2) => x === null || x === undefined || !Number.isFinite(x) ? "—" : x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  const p = (x) => x === null || x === undefined ? "—" : `${n(x)}%`;
+  const probability = (x) => x === null || x === undefined ? "—" : p(x * 100);
+  const table = (headers, rows) => `<div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${e(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((v) => `<td>${e(v)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  const stats = data.statistics.filter((r) => r.period === period && r.sample === sample && r.bucket === bucket);
+  const statistics = table([c.direction, c.n, c.agreement, c.previousMedian, c.ratio20, c.ratio50, c.ratio80, c.maxRatio], stats.map((r) => [c[r.direction], r.n,
+    probability(r.directionAgreement), p(r.previousMedianPct), probability(r.ratioQ20), probability(r.ratioQ50), probability(r.ratioQ80), probability(r.maximumRatioMedian)]));
+  const crossings = ["down", "up"].map((direction) => `<h3>${e(c[direction])}</h3>` + table([c.rank, c.ratio, c.observedRatio, c.pending, c.continueP,
+    c.meanRemaining, c.continueMagnitude, c.reverseMagnitude, c.remainingDays, c.ended], data.crossingSummary.filter((r) => r.period === period && r.direction === direction && r.sample === sample && r.bucket === bucket).map((r) => [probability(r.quantileRank), probability(r.ratio), probability(r.medianObservedRatio), `${r.n} / ${r.unfinishedN}`,
+      probability(r.continuedProbability), p(r.meanRemainingPct), p(r.meanContinuationWhenOccursPct), p(r.meanReversalWhenOccursPct), n(r.medianRemainingSessions, 1), r.endedOnTriggerN]))).join("");
+  const selected = data.selected.find((r) => r.period === period);
+  const bucketExit = selected.thresholds?.find((r) => r.direction === "down" && r.bucket === bucket);
+  const bucketEntry = selected.thresholds?.find((r) => r.direction === "up" && r.bucket === bucket);
+  const brief = bucketExit && bucketEntry ? `<div class="verdict"><strong>${e(c.brief)} ${e(bucket)}%</strong><p>${e(c.exitRatio)} ${probability(bucketExit.ratio)} · ${e(c.entryRatio)} ${probability(bucketEntry.ratio)}</p>${bucket === "5-10" ? `<p>${e(c.exampleFive)} ${e(c.down)} ${p(5 * bucketExit.ratio)} / ${e(c.up)} ${p(5 * bucketEntry.ratio)}</p>` : ""}<p class="note">${e(c[selected.status])}</p></div>` : "";
+  const verdict = `<div class="verdict"><strong>${e(c[selected.status])}</strong></div>`;
+  const thresholdTable = table([c.bucket, c.exitRatio, c.entryRatio, c.trainingCount, c.fallback], data.config.previousAmplitudeBins.map((b) => {
+    const down = selected.thresholds?.find((r) => r.direction === "down" && r.bucket === b.id), up = selected.thresholds?.find((r) => r.direction === "up" && r.bucket === b.id);
+    return [b.id + "%", probability(down?.ratio), probability(up?.ratio), down && up ? `${down.positivePeakPairs} / ${up.positivePeakPairs}` : "—", down?.fallbackToPooled || up?.fallbackToPooled ? c.pooled : c.ownBucket];
+  }));
+  const metricTable = (rows) => table([c.mode, c.trades, c.cagr, c.drawdown, c.calmar, c.win, c.exposure], rows.map((r) => [c[r.mode], r.closedTrades,
+    p(r.cagrPct), p(r.maxDrawdownPct), n(r.calmar, 3), probability(r.winProbability), probability(r.exposure)]));
+  const policies = selected.evaluation ? [selected.evaluation, { ...selected.evaluationBaseline, mode: "baseline" }, selected.matchedEntryBaseline] : [];
+  const validationBase = data.benchmarks.find((r) => r.period === period && r.sample === "validation");
+  const cohorts = table([c.cohortSide, c.bucket, c.trades, c.win, c.cohortMean], data.operationCohorts.filter((r) => r.period === period && (bucket === "all" || r.bucket === bucket)).map((r) => [c[r.side + "Cohort"], r.bucket + "%", r.n, probability(r.winProbability), p(r.meanNetTradePct)]));
+  const strategy = verdict + thresholdTable + (selected.validation ? `<h3>${e(c.validation)}</h3>` + metricTable([selected.validation, validationBase]) + `<h3>${e(c.evaluation)}</h3>` + metricTable(policies) + `<h3>${e(c.cohortTitle)}</h3><p class="note">${e(c.cohortNote)}</p>` + cohorts : "");
+  const cost = table([c.cost, c.trades, c.cagr, c.drawdown, c.calmar], data.sensitivity.filter((r) => r.period === period).map((r) => [r.costBps, r.closedTrades, p(r.cagrPct), p(r.maxDrawdownPct), n(r.calmar, 3)]));
+  const current = data.current.find((r) => r?.period === period);
+  const currentTable = current ? table([c.direction, c.previousEnd, c.currentStart, c.previousMove, c.currentMove, c.currentRatio],
+    [[c[current.direction], current.previousEnd, current.startDate, p(current.previousMovePct), p(current.movePct), probability(current.finalRatio)]]) : "";
+  const currentBucket = current ? data.config.previousAmplitudeBins.find((b) => current.scalePct >= b.lower && (b.upper === null || current.scalePct < b.upper))?.id : null;
+  const defaultRatio = selected.thresholds?.find((r) => r.direction === current?.direction && r.bucket === currentBucket)?.ratio;
+  return { brief, statistics, crossings, strategy, cost, currentTable, calculator: current ? {
+    a: current.previousAnchorClose, b: current.previousEndClose, ratio: defaultRatio === undefined ? null : defaultRatio * 100,
+    entry: selected.evaluation?.openPosition?.entryPrice ?? data.lastClose } : null };
+}
+
+export function renderRelativeReport(data, c) {
+  const escape = (x) => String(x ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  const period = data.config.maPeriods[0], view = relativeView(data, c, period, "all");
+  const slot = (id, value) => `<div id="${id}">${value}</div>`;
+  const section = (id, title, note, body) => `<section id="${id}"><h2>${escape(title)}</h2><p class="note">${escape(note)}</p>${body}</section>`;
+  const input = (id, label, value) => `<label>${escape(label)}<input id="${id}" type="number" min="0" step="any" value="${value === null || value === undefined ? "" : value}"></label>`;
+  const calculator = `<div class="inputs">${input("a", c.a, view.calculator?.a)}${input("b", c.b, view.calculator?.b)}${input("ratio", c.r, view.calculator?.ratio)}${input("entry", c.entry, view.calculator?.entry)}</div><div id="calculation" class="calculation"></div>`;
+  const downloads = [["relative-pairs.csv", c.pairsFile], ["relative-ratio-candidates.csv", c.ratiosFile], ["relative-crossing-summary.csv", c.crossFile],
+    ["relative-exit-grid.csv", c.gridFile], ["relative-selected.json", c.selectedFile], ["relative-evaluation-trades.csv", c.tradesFile],
+    ["relative-manifest.json", c.manifestFile], ["ma-interval-report.zh-CN.html", c.priorReport]];
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="data:,"><title>${escape(c.title)}</title><style>
+  :root{color-scheme:light}*{box-sizing:border-box}body{background:#eff3f5;margin:0;color:#203b4c;font-family:"Microsoft YaHei",system-ui,sans-serif;line-height:1.75}main{max-width:1360px;margin:auto;background:white;padding:40px 45px 60px}h1{font-size:32px;margin:8px 0}h2{font-size:23px;margin:0 0 12px}h3{font-size:18px;margin:22px 0 8px}p{margin:10px 0}.note{font-size:13px;color:#637b8e}.intro{color:#526e83}.formula{padding:18px 22px;background:#edf4f5;border-left:4px solid #4b8198;font-size:18px}.controls,.inputs{display:grid;gap:17px;grid-template-columns:1fr 1fr;margin:20px 0}label{font-size:12px;color:#607b90}select,input{width:100%;display:block;margin-top:6px;padding:9px;border:1px solid #b9cbd6;border-radius:4px;font:inherit;color:#203e54;background:#fff}.inputs{grid-template-columns:repeat(4,1fr)}section{border-top:1px solid #dbe5ed;padding-top:26px;margin-top:27px}.table-wrap{overflow-x:auto;margin:18px 0}table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}td,th{padding:11px 9px;text-align:right;border-bottom:1px solid #e0e8ed;white-space:nowrap}th{white-space:normal;background:#eff5f8;color:#4a687e;font-weight:600}td:first-child,th:first-child{text-align:left}tr:nth-child(even){background:#fafcfd}.verdict,.calculation{padding:18px 22px;background:#f1f5f6;border-left:4px solid #7795a8}.verdict strong{font-size:18px}.calculation{margin-top:15px}.price{font-size:25px;font-weight:650;color:#214b66}.links{display:flex;gap:12px 25px;flex-wrap:wrap}a{color:#286f95;text-decoration:none;font-size:13px}footer{font-size:12px;color:#647d8f;margin-top:30px}.source{font-size:12px;padding:11px 15px;background:#faf3e5}@media(max-width:760px){main{padding:24px 17px}h1{font-size:27px;line-height:1.4}h2{font-size:20px}.inputs,.controls{grid-template-columns:1fr 1fr}.formula{font-size:15px;padding:14px}.price{font-size:22px}}@media print{main{padding:0}body{background:white}.table-wrap{overflow:visible}table{font-size:9px}td,th{padding:5px}}
+  </style></head><body><main><header><h1>${escape(c.title)}</h1><p class="intro">${escape(c.intro)}</p><p class="note">${escape(c.asof)} ${data.lastDate}</p><p class="source">${escape(c.sourceNote)}</p></header>
+  <div class="controls"><label>${escape(c.period)}<select id="period">${data.config.maPeriods.map((p) => `<option value="${p}">SMA(${p})</option>`).join("")}</select></label><label>${escape(c.sample)}<select id="sample">${["all", "training", "validation", "evaluation"].map((s) => `<option value="${s}">${escape(c[s])}</option>`).join("")}</select></label><label>${escape(c.bucket)}<select id="bucket"><option value="all">${escape(c.allBuckets)}</option>${data.config.previousAmplitudeBins.map((b) => `<option value="${b.id}" ${b.id === "5-10" ? "selected" : ""}>${b.id}%</option>`).join("")}</select></label></div>
+  ${slot("brief", view.brief)}
+  ${section("definition", c.definitionTitle, c.definition, `<div class="formula">${escape(c.formula)}</div><p>${escape(c.example)}</p><p class="note">${escape(c.denominator)}</p>`)}
+  ${section("statistics", c.statsTitle, c.statsNote, slot("statistics", view.statistics))}
+  ${section("crossings", c.crossTitle, c.crossNote, slot("crossingsTable", view.crossings))}
+  ${section("strategy", c.strategyTitle, c.assumption, `<p>${escape(c.rules)}</p><p>${escape(c.execution)}</p><p class="note">${escape(c.selection)}</p>${slot("strategyTable", view.strategy)}<h3>${escape(c.costTitle)}</h3>${slot("costTable", view.cost)}`)}
+  ${section("calculator", c.calculatorTitle, c.calculatorNote, calculator)}
+  ${section("current", c.currentTitle, "", slot("currentTable", view.currentTable))}
+  ${section("limits", c.limitsTitle, c.limits, `<h3>${escape(c.downloads)}</h3><div class="links">${downloads.map(([href, label]) => `<a href="${href}">${escape(label)}</a>`).join("")}</div><p class="links"><a href="https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-15">Investor.gov · stop orders</a><a href="https://www.tradingview.com/support/solutions/43000786181-broker-emulator/">Execution assumptions</a><a href="https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf">Backtest selection</a></p>`)}
+  <footer>${escape(c.unit)}<br>${escape(data.generatedAt)}</footer></main><script>"use strict";
+  const data=${JSON.stringify(data).replaceAll("<", "\\u003c")};const copy=${JSON.stringify(c).replaceAll("<", "\\u003c")};const relativeView=${relativeView.toString()};
+  function calculate(){const raw=["a","b","ratio","entry"].map(id=>document.getElementById(id).value);const vals=raw.map(Number);const[a,b,r,entry]=vals;const out=document.getElementById("calculation");if(raw.some(v=>v.trim()==="")||!vals.every(Number.isFinite)||a<=0||b<=0||entry<=0||a===b||r<0){out.textContent=copy.invalid;return;}const sign=Math.sign(b-a),scale=Math.abs(b/a-1),value=b*(1-sign*r/100*scale),points=b-sign*r/100*Math.abs(b-a);if(value<=0||points<=0){out.textContent=copy.invalid;return;}const number=v=>v.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});out.innerHTML='<div>'+copy.percentPrice+'</div><div class="price">'+number(value)+'</div><p>'+copy.pointPrice+'：'+number(points)+'</p><p>'+copy.pnl+'：'+number((value/entry-1)*100)+'%</p>';}
+  function update(){const p=Number(document.getElementById("period").value),s=document.getElementById("sample").value,b=document.getElementById("bucket").value;const v=relativeView(data,copy,p,s,b);for(const[id,key]of Object.entries({brief:"brief",statistics:"statistics",crossingsTable:"crossings",strategyTable:"strategy",costTable:"cost",currentTable:"currentTable"}))document.getElementById(id).innerHTML=v[key];if(v.calculator){for(const[id,key]of Object.entries({a:"a",b:"b",ratio:"ratio",entry:"entry"}))document.getElementById(id).value=v.calculator[key]??"";}calculate();}
+  for(const id of["period","sample","bucket"])document.getElementById(id).addEventListener("change",update);for(const id of["a","b","ratio","entry"])document.getElementById(id).addEventListener("input",calculate);window.addEventListener("pageshow",update);update();</script></body></html>`;
+}

@@ -12,6 +12,7 @@ import {
   resolveStrategyOrderFills,
 } from "./strategy-execution";
 import type { StrategyOrderSeries } from "./strategy-orders";
+import { normalizeSmaPositionOverlay, SmaPositionOverlay, type SmaPositionOverlayOptions } from "./sma-position-overlay";
 import {
   applyMovingAverageSlopeEntryFilter,
   cloneMovingAverageSlopeFilter,
@@ -26,6 +27,7 @@ import {
 } from "./intraday";
 
 export interface BacktestSettings {
+  positionOverlay?: SmaPositionOverlayOptions;
   initialCash: number;
   commissionRate: number;
   slippageRate: number;
@@ -84,6 +86,11 @@ export interface BacktestOpenPosition {
 }
 
 export interface BacktestPerformance {
+  positionOverlay?: SmaPositionOverlayOptions;
+  /** Latest completed-close overlay intent, possibly pending next-open execution. */
+  latestTargetAllocation?: number;
+  /** Last executed plan allocation, excluding a newest-close pending target. */
+  executedAllocation?: number;
   totalReturn: number;
   annualizedReturn: number;
   benchmarkReturn: number;
@@ -434,6 +441,9 @@ export function runAllocationBacktest(
     cash = openingEquity * (1 - openingAllocation);
   }
   let plannedAllocation = openingAllocation;
+  const positionOverlay = normalizeSmaPositionOverlay(settings.positionOverlay);
+  if (positionOverlay && intraday) throw new Error("SMA position overlays require daily bars");
+  const overlay = positionOverlay ? new SmaPositionOverlay(allBars, positionOverlay, openingAllocation) : null;
 
   const rebalanceAtPrice = (
     bar: MarketBar,
@@ -498,7 +508,7 @@ export function runAllocationBacktest(
       session.barsRemaining > DEFAULT_INTRADAY_ENTRY_CUTOFF_BARS;
     if (index > 0 && (!intraday || sameSessionAsPrevious)) {
       const nextAllocation = clampAllocation(
-        previousTimelineState?.targetAllocation ?? 0,
+        overlay ? overlay.allocation : previousTimelineState?.targetAllocation ?? 0,
       );
       if (
         Math.abs(nextAllocation - plannedAllocation) > 1e-10 &&
@@ -508,7 +518,9 @@ export function runAllocationBacktest(
           bar,
           bar.open,
           nextAllocation,
-          previousTimelineState?.signals ?? [],
+          overlay && !previousTimelineState?.signals.length
+            ? [nextAllocation > plannedAllocation ? "long-entry" : "long-exit"]
+            : previousTimelineState?.signals ?? [],
         );
         plannedAllocation = nextAllocation;
       }
@@ -518,7 +530,10 @@ export function runAllocationBacktest(
       ? []
       : currentTimelineState.intrabarExecutions;
     for (const execution of intrabarExecutions) {
-      const targetAllocation = clampAllocation(execution.targetAllocation);
+      const requestedTarget = clampAllocation(execution.targetAllocation);
+      const targetAllocation = overlay
+        ? overlay.request(requestedTarget >= plannedAllocation ? "increase" : "reduce", requestedTarget, originalIndex - 1)
+        : requestedTarget;
       if (
         Number.isFinite(execution.fillPrice) &&
         Math.abs(targetAllocation - plannedAllocation) > 1e-10 &&
@@ -543,6 +558,14 @@ export function runAllocationBacktest(
         "session-end",
       );
       plannedAllocation = 0;
+    }
+
+    if (overlay) {
+      const rawPrevious = previousTimelineState?.targetAllocation ?? 0;
+      const rawCurrent = currentTimelineState.targetAllocation;
+      const changed = Math.abs(rawCurrent - rawPrevious) > 1e-10;
+      if (changed && intrabarExecutions.length === 0) overlay.request(rawCurrent > rawPrevious ? "increase" : "reduce", rawCurrent, originalIndex);
+      overlay.close(originalIndex, changed || currentTimelineState.signals.length > 0 || intrabarExecutions.length > 0);
     }
 
     const currentEquity = cash + units * bar.close;
@@ -591,6 +614,9 @@ export function runAllocationBacktest(
   return {
     ...performance,
     rebalances,
+    ...(positionOverlay ? { positionOverlay } : {}),
+    ...(overlay ? { latestTargetAllocation: overlay.allocation } : {}),
+    executedAllocation: units > 0 ? plannedAllocation : 0,
     openingPosition:
       openingAllocation > 0
         ? {
@@ -808,6 +834,10 @@ export function runBacktestFromTarget(
     inheritedPosition = true;
   }
 
+  const positionOverlay = normalizeSmaPositionOverlay(settings.positionOverlay);
+  if (positionOverlay && intraday) throw new Error("SMA position overlays require daily bars");
+  const overlay = positionOverlay ? new SmaPositionOverlay(allBars, positionOverlay, units > 0 ? 1 : 0) : null;
+
   for (let index = 0; index < selectedBars.length; index += 1) {
     const bar = selectedBars[index]!;
     const originalIndex = context.startIndex + index;
@@ -819,6 +849,12 @@ export function runBacktestFromTarget(
     const canEnterIntraday =
       !intraday ||
       session.barsRemaining > DEFAULT_INTRADAY_ENTRY_CUTOFF_BARS;
+
+    if (overlay && index > 0) {
+      if (overlay.allocation > 0 && units === 0) openPosition(bar.open, bar.time);
+      else if (overlay.allocation <= 0 && units > 0) closePosition(bar.open, bar.time);
+    }
+    let hadOrderSignal = false;
 
     if (orders) {
       const allowEntry =
@@ -832,19 +868,31 @@ export function runBacktestFromTarget(
         allowEntry,
       );
       for (const fill of fills) {
+        hadOrderSignal = true;
+        if (overlay) {
+          const desired = overlay.request(fill.action === "buy" ? "increase" : "reduce", fill.action === "buy" ? 1 : 0, originalIndex - 1);
+          if ((fill.action === "sell" && desired > 0) || (fill.action === "buy" && (units > 0 || desired <= 0))) continue;
+        }
         if (fill.action === "sell") {
           closePosition(fill.fillPrice, bar.time);
         } else {
           openPosition(fill.fillPrice, bar.time);
         }
       }
-    } else if (index > 0 && (!intraday || sameSessionAsPrevious)) {
+    } else if (!overlay && index > 0 && (!intraday || sameSessionAsPrevious)) {
       const priorTarget = (effectiveTarget[originalIndex - 1] ?? 0) > 0 ? 1 : 0;
       if (priorTarget === 1 && units === 0 && canEnterIntraday) {
         openPosition(bar.open, bar.time);
       } else if (priorTarget === 0 && units > 0) {
         closePosition(bar.open, bar.time);
       }
+    }
+
+    if (overlay) {
+      const current = effectiveTarget[originalIndex] ?? 0, previous = effectiveTarget[originalIndex - 1] ?? 0;
+      const changed = Math.abs(current - previous) > 1e-10;
+      if (changed && (!fullOrders || (!hadOrderSignal && current > previous))) overlay.request(current > previous ? "increase" : "reduce", current > 0 ? 1 : 0, originalIndex);
+      overlay.close(originalIndex, changed || hadOrderSignal);
     }
 
     if (intraday && session.isLast && units > 0) {
@@ -898,11 +946,14 @@ export function runBacktestFromTarget(
     strategyId,
     parameters,
     ...performance,
+    ...(positionOverlay ? { positionOverlay } : {}),
+    ...(overlay ? { latestTargetAllocation: overlay.allocation } : {}),
     winRate:
       tradeCount === 0 ? 0 : (winningTradeCount / tradeCount) * 100,
     profitFactor:
       grossLoss === 0 ? (grossProfit > 0 ? 99 : 0) : grossProfit / grossLoss,
     trades,
+    executedAllocation: units > 0 ? 1 : 0,
     openPosition:
       units > 0 && !inheritedPosition
         ? {

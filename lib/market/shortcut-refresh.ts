@@ -11,6 +11,7 @@ import {
   type CanonicalMarketSourceDefinition,
 } from "./canonical";
 import { DAILY_HISTORY_LIMIT } from "./history";
+import { supplementNikkeiMissingBars } from "./nikkei-freshness";
 import { measureMarketSeriesQuality } from "./quality";
 import {
   mergeCanonicalMarketSeries,
@@ -182,6 +183,9 @@ export async function refreshShortcutMarketInstrument(
         DAILY_HISTORY_LIMIT,
         profile,
       );
+      const official = profile.backups.find((definition) => definition.provider === "nikkei");
+      if (official) canonical = await supplementNikkeiMissingBars(canonical, () =>
+        loadTrackedSeries(official, "latest", 10));
       await writeCanonicalMarketSeries(canonical, profile);
       return {
         canonicalSeries: canonical,

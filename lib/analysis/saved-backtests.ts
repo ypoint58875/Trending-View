@@ -1,4 +1,5 @@
 import type { BacktestPerformance } from "./backtest";
+import { MIXED_POSITION_OVERLAY_MODEL, normalizeSmaPositionOverlay, type SmaPositionOverlayOptions } from "./sma-position-overlay";
 import {
   parseIndicatorConfigurations,
   type IndicatorConfiguration,
@@ -720,6 +721,7 @@ export function strategyPlansEqual(
     key: string,
   ): unknown => (plan as unknown as Record<string, unknown>)[key];
   return (
+    JSON.stringify(normalizeSmaPositionOverlay(left.positionOverlay)) === JSON.stringify(normalizeSmaPositionOverlay(right.positionOverlay)) &&
     STRATEGY_SLOTS.every((slot) =>
       strategySelectionsEqual(left[slot] ?? null, right[slot] ?? null),
     ) &&
@@ -1011,7 +1013,11 @@ export function parseStrategyAllocationPlan(
         : null;
   if (!tacticalMode) return null;
 
-  return validatePlan(
+  const overlay = value.positionOverlay;
+  if (overlay !== undefined && (!overlay || typeof overlay !== "object" ||
+    Object.entries(overlay).some(([key, flag]) => key === "model" ? flag !== MIXED_POSITION_OVERLAY_MODEL
+      : !["supplementalEntry", "exitGuard", "entrySlopeGate"].includes(key) || typeof flag !== "boolean"))) return null;
+  const plan = validatePlan(
     readStrategySelection(value.strategyA),
     readStrategySelection(value.strategyB),
     readFiniteNumber(value.strategyAAllocation, 0, 1),
@@ -1041,6 +1047,8 @@ export function parseStrategyAllocationPlan(
     readFiniteNumber(value.strategyIAllocation ?? 0, 0, 1),
     strategyIEntryFilter ?? legacyEntryFilter,
   );
+  const positionOverlay = normalizeSmaPositionOverlay(overlay as SmaPositionOverlayOptions | undefined);
+  return plan && positionOverlay ? { ...plan, positionOverlay } : plan;
 }
 
 function primarySelection(plan: StrategyAllocationPlan): StrategySelection {
@@ -1073,6 +1081,8 @@ export function createSaveBacktestInput(
     strategyId: primary.strategyId,
     parameters: { ...primary.parameters },
     plan: {
+      ...(normalizeSmaPositionOverlay(result.positionOverlay ?? plan.positionOverlay)
+        ? { positionOverlay: normalizeSmaPositionOverlay(result.positionOverlay ?? plan.positionOverlay) } : {}),
       strategyA: plan.strategyA
         ? {
             ...plan.strategyA,

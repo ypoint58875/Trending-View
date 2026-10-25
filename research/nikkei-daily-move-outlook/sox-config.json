@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "symbol": "^SOX",
+  "sourceStart": "1999-12-01",
+  "analysisStart": "2000-01-04",
+  "analysisEnd": "2026-10-13",
+  "blockSize": 200,
+  "timeZone": "America/New_York",
+  "maximumBars": 20000,
+  "maximumResponseBytes": 12000000,
+  "overlapDays": 14,
+  "officialIdentityUrl": "https://indexes.nasdaq.com/Index/Overview/SOX"
+}

@@ -38,6 +38,7 @@ import {
   requestsExtendedDailyHistory,
 } from "./history";
 import { canonicalMarketInstrumentKey } from "./canonical";
+import { supplementNikkeiMissingBars } from "./nikkei-freshness";
 
 export {
   exchangeFromProviderLabels,
@@ -461,13 +462,19 @@ export async function fetchMarketSeries(
 
   if (instrument.provider === "yahoo") {
     try {
-      return await fetchYahooSeries(
+      const primary = await fetchYahooSeries(
         instrument,
         interval,
         limit,
         fetch,
         requestCache,
       );
+      const supplemented = await supplementNikkeiMissingBars(primary, () =>
+        fetchNikkei225DailySeries(instrument, 10, fetch, "no-store"));
+      if (supplemented === primary) return primary;
+      const sliceStart = Math.max(0, supplemented.bars.length - limit);
+      return { ...supplemented, bars: supplemented.bars.slice(sliceStart),
+        previousClose: sliceStart > 0 ? supplemented.bars[sliceStart - 1]!.close : supplemented.previousClose };
     } catch (error) {
       if (interval === "1d" && instrument.assetType !== "commodity") {
         const eodhdSeries = await tryEodhd();

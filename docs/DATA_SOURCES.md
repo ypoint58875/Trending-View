@@ -1,5 +1,67 @@
 # Data Sources
 
+## 2026-10-25 overlay stability source snapshot
+
+`research/nikkei-overlay-stability/data/input.json` freezes normalized N225 bars
+and1293 exact completed ten-session quick-screen plans for2018-08-08..2026-10-23.
+Read-only source endpoints are local
+`data/state/screening-engine/{job}/request.json` and `result.json`, with shared
+batch `bars.bin`. Record per-request/result SHA-256, causal-prefix verification,
+quick-library hashes, costs and access timestamp in the frozen input and
+`research/nikkei-overlay-stability/data/source_registry.jsonl`. Preserve the
+shared binary under `data/raw/bars.bin` within that isolated directory.
+No external price download is added. Two candidate fingerprints (159 and171
+tuples) occur; their historical training vintages are unverified. Later overlay
+evaluation is conditional on those actual supplied selections. Frozen inputs
+are local Git-ignored research artifacts; derived tables remain reproducible.
+
+## 2026-10-24 missed-rally study
+
+`research/nikkei-cycle-rallies/data/input.json` freezes normalized ^N225 daily
+bars and 298 exact-prefix selected winners from local batch
+`4055816d2e7c57dd0388e9fa`. Source request/result SHA-256, full normalized bar
+hash, access timestamp, and research URLs are retained alongside it in
+`data/source_registry.jsonl` within that research directory. No new market
+provider is called. Older 20/40 winners come from the prior frozen conflict
+study; full market-prefix equality and that file's SHA-256 are checked and
+recorded. Their different optimizer version/strategy ceiling is disclosed.
+
+## 2026-10-24 fixed-primary Nikkei missing-date repair
+
+Yahoo's successful latest response ended at 2026-10-22. Official Nikkei daily
+CSV confirmed 2026-10-23. The current fix retains Yahoo as primary and inserts
+only missing completed official dates after matching OHLC overlap.
+
+- Endpoint: https://indexes.nikkei.co.jp/nkave/historical/nikkei_stock_average_daily_en.csv.
+- Public reference: https://indexes.nikkei.co.jp/en/nkave/archives/data.
+- Accessed: 2026-10-24; bounded original wire-row sample:
+  `data/raw/nikkei-official-tail-2026-10-24.csv` (2026-10-19 through 2026-10-23).
+- `data/source_registry.jsonl` records URL, access time, row range and SHA-256.
+- Runtime official source snapshots remain separate in canonical IndexedDB.
+  Each inserted bar records `ohlcSource` with official provider and fetched time.
+  Yahoo stays the series primary; official missing volume remains zero, ready
+  for later same-primary volume enrichment without rewriting OHLC.
+
+## 2026-10-24 Nikkei cycle conflict replay
+
+- Market identity: canonical Nikkei 225 (`index:N225`, Yahoo `^N225` primary
+  with the existing validated backups). Live cycle starts request `mode=latest`,
+  `interval=1d`, `limit=5` and merge into cached full history; a cache miss uses
+  the existing history request capped at 10,000 bars.
+- Research uses the local serialized Nikkei bar archive (6,560 sessions,
+  2000-01-04 through 2026-10-16) and 1,573 completed cycle winners from
+  2025-09-04 through 2026-09-28. Every original request's causal OHLCV prefix
+  fingerprint matches; incomplete/non-cycle jobs are excluded. Ranking model
+  versions, original costs/options, and source batch are separated in cohorts.
+- `research/nikkei-cycle-conflicts/data/input.json` freezes raw normalized bars,
+  selected plans, source request/result SHA-256 hashes, and source archive hash.
+  Its `data/source_registry.jsonl` records access time; `output/` contains
+  derived events and summaries. Existing archives remain untouched.
+- Official session references, accessed 2026-10-24:
+  https://www.jpx.co.jp/english/equities/trading/domestic/01.html,
+  https://www.jpx.co.jp/english/corporate/news/news-releases/1030/20241103-01.html,
+  https://english.sse.com.cn/start/trading/schedule/.
+
 ## Canonical source policy
 
 Each instrument has one deterministic preferred definition. Provider responses

@@ -1,5 +1,152 @@
 # Architecture
 
+## Independent account overlays
+
+Current page controls use explicit model `ema7-sma11-wma14-v1`: supplemental
+entry on EMA7 slope crossing from nonpositive to positive, pending reductions
+protected while SMA11(t)/SMA11(t-1)-1 >0.00125, and flat entries rejected while
+WMA14(t)<WMA14(t-1). All flags are independent and default checked. Page setters
+always apply this model, including when restoring older flags. Historical plans
+without a model retain the legacy formulas described below; new settings, saved
+plans and ordinary parameter-library/checkpoint identities retain the model.
+No reoptimization of existing cycle winners is necessary for these report rules.
+
+For unversioned historical settings, the third independent option,
+`entrySlopeGate`, rejects new flat-account
+positions while SMA11 slope is negative; close(t)>=close(t-11) allows entry.
+Both original and supplemental entries are checked, while existing-position
+increases remain permitted. All three UI defaults are checked; absence of
+library/API flags remains legacy-off. A missing third flag in older page
+preferences migrates to checked, preserving the older two explicit choices.
+
+One `SmaPositionOverlay` owns the actual inherited target and a pending minimum
+sell target. Supplemental entry uses an SMA12 slope crossing from nonpositive
+to positive while flat with no original signal. Exit protection requires
+SMA12(t)/SMA12(t-1)-1 >0.002. Pending sells release daily when protection fails;
+new original increases cancel them. Enabling either flag never enables the
+other; all UI defaults are on, but absent library/API settings stay legacy-off.
+
+Ordinary ledgers process the original close signal once, then execute overlay
+intent at the following open. Native orders retain their execution price and
+may only consult the preceding completed average. Overlay position targets do
+not repeatedly reset to an independently flat original strategy. Existing
+opening range exposure, entry filters, costs and summary-only accounting remain.
+Latest completed-close intent is separate from executed allocation for guidance.
+
+Cycle validation applies the same state machine to permitted two-bar signals,
+including skipped-day supplemental entries/pending releases, before its explicit
+close ledger. That ledger disables a second overlay application. Benchmarks
+also exclude overlays. Preferences are report settings outside screening task
+identity, so completed winners/active durable queues are reusable. Ordinary
+screening includes flags in settings, checkpoint identities and result-plan
+metadata; saved plans preserve them through parse/clone/application.
+
+Immutable bar arrays weakly cache bounded SMA features; immutable bar/snapshot
+identities weakly cache original report signals, allowing rapid repeated flag
+comparisons without reranking or rebuilding every causal strategy prefix.
+
+## Full-only screening search policy
+
+Both workspaces run the complete current parameter grid. The removed quick
+mode has no controls, parameter-library modules, library writes, frozen quick
+candidate transports or restricted top-thirty expansion branch. Existing
+browser parameter-library data is left untouched but is no longer accessed.
+
+Each family contributes up to six final execution candidates. All eligible
+completed families participate in pair and higher-order search; explicit
+unsupported-data exclusions and mathematical-equivalence checks still apply.
+Each family pair crosses up to6 x6 candidates, retains its best crossing and
+replays the existing allocation choices. Wider full-search parent retention,
+per-primary diversity and final display limits remain unchanged.
+
+Screening result model6 invalidates previous search checkpoints and latest
+results. Child checkpoint metadata includes that shared result-model constant.
+Cycle task signatures also include the model and reject legacy quick inputs;
+old task records and job files are retained without being resumed as new work.
+Legacy quick requests fail with a localized reload/full-run message. The
+transport protocol version and endpoints are unchanged: current full requests
+retain their existing shape; only the optional retired quick field is removed.
+
+
+## Nikkei missing-date supplement with a fixed primary
+
+`lib/market/nikkei-freshness.ts` is shared by active chart refresh, background
+shortcut refresh, and non-strict Yahoo market requests used by cycle validation.
+Successful HTTP is not proof of freshness: a recent missing weekday or latest
+date behind the completed Tokyo weekday triggers a bounded official tail probe.
+Weekdays are only hints; official published data proves that a session exists.
+Holidays never create synthetic bars, and future/unclosed bars are excluded.
+
+The official source must be canonical Nikkei 225 daily data with at least two
+overlapping completed sessions and OHLC error at most 0.01% on every field.
+Only absent dates within the recent official tail are inserted. Existing OHLC
+and source volumes remain locked. The canonical series retains its original
+instrument, source and price-adjustment metadata; inserted bars carry
+`ohlcSource.provider` and `ohlcSource.fetchedAt`. Official index OHLC is allowed
+across raw/adjusted labels only after this explicit same-scale overlap check.
+This rule does not apply to ETFs or other markets.
+
+Source errors retain the primary result and emit a classified safe warning;
+cancellation propagates. The primary's health identity is not switched merely
+because it lags a date. Existing true-outage recovery is separate. A later
+same-primary update may enrich zero volume without rewriting official OHLC.
+Strict-provider API calls remain exact source observations. Non-strict latest
+responses are trimmed back to their requested count after supplementation.
+
+## 2026-10-24 Nikkei cycle execution exception
+
+The strategy-cycle page is Nikkei 225 only (`index:N225`, daily interval).
+`completedNikkeiCycleSeries` removes future/unclosed bars and requires an
+explicit complete status for today's newest bar after 15:30 JST (14:30 UTC+8).
+Earlier sessions are complete. JPX extended the close from 15:00 to 15:30 JST
+on 2024-11-05; the present China operating window is 14:30-15:00 UTC+8.
+
+Each screening decision consumes an inclusive causal prefix. The first
+decision is at the first evaluation close, with subsequent trend triggers
+including the final evaluation close. There is no pre-evaluation synthetic
+position. `strategyCycleRecentSignals` inspects the last two completed bars of
+the selected plan; the target immediately before those bars is context only.
+Same-direction changes use the latest target; reduce-then-increase holds;
+increase-then-reduce only reduces. A quiet final bar permits yesterday's
+signal. Directional clamps and target deduplication remain in force.
+
+`runStrategyCycleCloseBacktest` supplies explicit price executions at each
+changed target's same-day close to the shared allocation executor. This
+preserves commission, slippage, cash limits, continuity, and final valuation
+without modifying ordinary next-open execution or optimizer ranking. A new
+entry earns no price movement that ended before its decision close. Benchmark
+entry also uses the first evaluation close and pays matching entry costs.
+
+New and previous winners are compared on the same current decision prefix.
+Opposite permitted signal directions constitute a conflict, even when a
+full/empty account cannot execute one side. The comparison account uses the
+previous winner's current signal only on conflict dates; the next screen
+again compares chronological winners. Both accounts start with identical
+cash and never use subsequent returns to select a branch. The page retains
+the complete-period candle chart and actual four-action rebalance markers for
+the executed incoming-winner account and conflict count. The user selected
+incoming-winner execution and removed the old-policy return comparison from
+the UI. The comparison account remains available internally for research.
+No delay/three-bar branch runs in the product.
+
+The cycle timing identity is `nikkei-completed-close-v3`; task signatures also
+require conflict policy `incoming-current-signals-on-conflict-v1`. Tasks with
+the same close model and the previous policy key migrate their signature and
+replay saved winners without repeating screening. Other timing identities
+are not migrated. Screening engine protocol and historical
+ranking are unchanged. On an explicit new/continued run, the page incrementally
+fetches five latest bars over its full canonical history, using the existing
+primary/fallback validation and immutable-completed-bar merge rules. Report
+restoration and history-bound lookup can still read the canonical cache.
+
+Nikkei close is a user-requested research proxy, not an actual index/China ETF
+execution guarantee. Currency, ETF premium, different holidays, delivery delay,
+and screening time are unmodeled. The research study in
+`research/nikkei-cycle-conflicts/` freezes verifiable archived rankings and
+compares current-close event branches and continuous account policies.
+
+This section supersedes the older generic rolling-cycle execution description.
+
 ## Runtime
 
 QuantScope is a vinext App Router application compiled to a Cloudflare
@@ -157,9 +304,13 @@ live guidance, and trade markers. Save current strategy snapshots that applied
 chart plan and its matching metrics rather than unapplied lab edits.
 `PriceChart` renders the selected studies together with both selected
 strategies' qualified reference lines and actual trade/allocation markers. It
-derives an explicit visible price-axis range from OHLC highs and lows whenever
-data zoom changes; strategy overlays cannot expand that range, so one
+derives an explicit visible price-axis range from OHLC highs, lows, and enabled
+price-indicator line values whenever data zoom changes. Warm-up nulls and
+offscreen values are excluded. Strategy overlays cannot expand that range, so one
 instrument and zoom window retain the same K-line scale across saved plans.
+The Bollinger boundaries are solid blue and its basis is solid orange, using
+the TradingView Pine palette. SMA uses aqua/yellow and becomes dashed while Bollinger is enabled; removing
+Bollinger restores solid SMA lines without changing saved indicator settings.
 Useful references render as solid lines matching their legend symbols; empty
 reference series are omitted. Price detail tooltips and crosshair labels share
 a one-decimal formatter. Visible price-axis ticks remain integers when the
@@ -210,17 +361,17 @@ explicitly eligible trend, breakout, or momentum strategy, it retains compact
 metrics and raw execution state for the top 60 unfiltered
 parameter sets and compares EMA(5), EMA(6), EMA(7), and EMA(8) at a 0% slope.
 Every strategy contributes its best final standalone result to one objective-
-ordered family ranking. The top `ceil(95%)` of completed families then
-contribute their top three final parameter sets to normal pair screening,
-which evaluates all nine crossings for each eligible strategy-ID pair and
+ordered family ranking. All completed eligible families then
+contribute their top six final parameter sets to normal pair screening,
+which evaluates all 36 crossings for each eligible strategy-ID pair and
 keeps the best crossing before allocation replay;
 rolling screening retains the best ten candidates per strategy for window
 aggregation before collapsing back to one displayed winner per strategy. The
-optimizer ranks every unordered pair of non-equivalent percentile-eligible
+optimizer ranks every unordered pair of non-equivalent eligible
 single results
 and compares 50/50, 60/40, 40/60, 70/30, and 30/70 allocations under both
 base-then-add and full-then-reduce tactical modes. The current
-catalog contributes 55 of 57 families and at most 1,485 unordered pairs before
+catalog contributes all57 eligible families and at most1,596 unordered pairs before
 declared-equivalence exclusions. Final
 combination output keeps only the best parameter/allocation result for each
 unique unordered strategy-ID set within each strategy-count category. Pair

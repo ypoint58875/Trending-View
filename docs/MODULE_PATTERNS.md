@@ -1,5 +1,98 @@
 # Module Patterns
 
+## Past-block optimization and next-block deployment
+
+Use the isolated overlay study's shared configurable account, full-prefix
+average features and production local-slice allocation ledger. Reuse an
+execution context per training slice; never recompute rolling indicators from
+the short slice. Training accounts start empty, while the live policy keeps one
+account through switches. Common evaluation dates avoid comparing different
+market ranges for different lengths. Select length using development only and
+retain later results as evaluation; disclose exact tie handling and partial
+blocks. Keep frozen-lifetime accounts separate from actual live fold returns.
+
+## Conditional overlay-calibration research
+
+Independent stability research reuses `averageSlopes`, production two-bar
+signals and shared allocation ledgers. A configurable research account must
+reconcile every existing control combination against production before grid
+search. Parameter changes preserve the actual inherited target and pending
+sell. Score known counterfactual candidate histories only through the preceding
+session, then replay one actual adaptive account; never stitch independently
+optimized equity returns. Give all histories/cadences a common evaluation
+range, separate development policy selection from later evaluation, and label
+post-hoc follow-ups and missing underlying quick-library vintages explicitly.
+Use immutable source hashes and atomic bounded signal/grid chunks. Keep report
+Chinese strings in the research `ui-text.ts`; no production import of research.
+
+## Shared account overlays
+
+Account-level SMA12 rules live in a pure state machine shared by ordinary
+single/allocation ledgers and cycle replay. Callers own signal sequencing and
+execution timing; the controller owns inherited target, pending sells and
+optional entry/exit rules. Daily features are reused per immutable input array.
+UI controls and persistence are shared by both pages, with Chinese copy only
+in the locale. Keep research prototypes separate from production imports.
+
+Version formula changes explicitly inside overlay options. Current page controls
+always set `ema7-sma11-wma14-v1`; absent model preserves old saved formulas.
+Keep model identity through normalization, plan validation and cache keys, and
+include it in page memo dependencies. Cache features separately by model.
+
+## Full-only search pattern
+
+Both pages use the same unrestricted parameter grid and optimizer. Keep six
+execution finalists per family and every eligible family through pair/higher
+stages. Do not introduce a second restricted mode or reusable historical
+parameter library. Preserve wider parent beams and allocation semantics.
+Change the shared result-model identity when search semantics change; persist
+it in child checkpoints and cycle signatures. Reject obsolete tasks instead
+of silently converting their restricted candidates into full-search results.
+
+
+## Fixed-primary Nikkei gap supplementation
+
+- A successful stale primary should use the shared `nikkei-freshness.ts` probe
+  and insertion helper, not a second independent recovery implementation or a
+  whole-series source replacement. Keep active, background and cycle/API paths
+  consistent. Strict-provider audits remain exact source observations.
+- Insert only absent completed dates from verified official data, after at
+  least two OHLC overlaps match within 0.01%. Never infer an actual session
+  solely from a weekday, overwrite completed prices, manufacture volume, or
+  apply the raw/adjusted index exception to an ETF.
+- Preserve source provenance on inserted bars through canonical persistence
+  and later same-primary zero-volume enrichment. A repaired series is
+  idempotent and should stop unnecessary latest-date probes.
+
+## Nikkei cycle close-price proxy exception
+
+- Only the Nikkei cycle page accepts the same-day proxy. Filter daily inputs
+  through `completedNikkeiCycleSeries`; never manufacture a completed current
+  bar. Refresh the latest five bars only when an explicit cycle run starts.
+- Build one bounded causal plan timeline at a time rather than retaining one
+  full-history timeline per decision. Keep ranking requests on the existing
+  historical execution convention and disclose the close-replay distinction.
+- Route close fills through `runStrategyCycleCloseBacktest` and the shared
+  allocation executor. Include final-day fills, preserve costs, and never
+  attribute the decision day's earlier price change to a newly opened position.
+- Preserve reduce-then-increase hold, increase-then-reduce reduce-only, latest
+  same-direction target, inherited-allocation clamps, and no duplicate fills.
+- Compare old/new intent at the same decision prefix. A conflict-day policy
+  must be predetermined; use later returns for evaluation only. Preserve the
+  complete-period chart for the main policy and label comparison totals.
+- The selected execution policy uses incoming-winner current-date signals,
+  including conflict dates. Main chart and return must follow that same
+  account. Keep previous-winner returns internal for research;
+  delayed three-bar confirmation remains research-only.
+- Cycle canvas panning moves the date window in the drag direction. Shared
+  charts default to content panning; custom handlers only start inside a grid,
+  leaving native slider handles and legends independent.
+- Persist the new cycle model identity separately from screening-engine
+  protocol versions; neither numeric protocol literals nor global timing
+  changes are needed for this local execution exception.
+
+These rules supersede earlier generic cycle execution-timing guidance below.
+
 ## Committed numeric inputs
 
 - Reuse `app/components/CommittedNumberInput.tsx` for bounded numeric settings
@@ -125,8 +218,8 @@
   `screeningCheckpointInterval(...)` policy. Reduce peak heap by exact atomic
   checkpoint-and-restart boundaries, not by truncating bars, lowering
   per-family parameter-finalist breadth, or changing ranking precision. The
-  one permitted family-domain gate is the shared, evidence-versioned top-95%
-  rule applied only after complete standalone and EMA ranking.
+  search retains six execution finalists per family and all eligible families
+  after complete standalone and EMA ranking.
 
 ## Multi-strategy plan slots
 
@@ -393,7 +486,11 @@ Map pointer travel to the current visible data span rather than the complete
 history span so the plotted content follows the mouse at a direct visual rate.
 Preserve that live controller during React option updates so visible-window
 y-axis recalculation cannot interrupt an active drag. Derive the price y-axis
-only from visible OHLC bars. Resize-observer callbacks must coalesce into one
+from visible OHLC bars and enabled price-indicator lines, excluding strategy
+references, pane values, and warm-up nulls. Bollinger uses solid blue boundaries
+and a solid orange basis from the TradingView palette; coexisting aqua/yellow
+SMA lines use dashed strokes and restore solid strokes when
+Bollinger is removed. Resize-observer callbacks must coalesce into one
 animation frame and skip unchanged dimensions.
 
 When a formula gains a backward-compatible parameter, add it to the registry
@@ -485,8 +582,8 @@ quality but must not alter ranking. Tests enforce registry coverage, uniqueness,
 the exhaustive count, objective ordering, best-result sorting, progress
 completion, cancellation, and exact screening-card/application equality.
 Combination screening first ranks every completed standalone family winner and
-keeps the top `ceil(95%)` families under the active objective. It retains the
-top three final parameter sets per eligible strategy, evaluates all nine
+keeps the all eligible families under the active objective. It retains the
+top six final parameter sets per eligible strategy, evaluates all 36
 parameter crossings per eligible non-equivalent strategy-ID pair,
 and keeps one best crossing per pair before allocation replay. Do not collapse
 to the standalone winner before pairing.
@@ -521,18 +618,18 @@ trend/breakout/momentum EMA family continue to the filter stage, and only their
 top 60 compact unfiltered results are compared under EMA(5), EMA(6), EMA(7),
 and EMA(8) at a fixed 0% threshold. Channel BreakOut and Price Channel belong
 to this family; reversal and candlestick strategies do not. Retain exactly one
-winner per strategy for standard display, but retain the top three final
+winner per strategy for standard display, but retain the top six final
 parameter sets per strategy for possible pairing. Rolling screening may retain
 the best
 ten per strategy for window aggregation before collapsing the displayed list
 to one per strategy. Combination screening is always enabled: evaluate all
-nine parameter crossings for every unordered non-equivalent strategy-ID pair
-inside the top-95% family gate without catalog-horizon filtering, keep the best
+36 parameter crossings for every unordered non-equivalent strategy-ID pair
+inside the eligible-family domain without catalog-horizon filtering, keep the best
 crossing per pair, and retain
 every pair up to the
 4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With
-57 strategies, the current cutoff retains 55 families and creates at most
-`choose(55, 2) = 1,485` pairs before declared-equivalence exclusions. Store and replay
+57 strategies, all57 eligible families create at most
+`choose(57, 2) = 1,596` pairs before declared-equivalence exclusions. Store and replay
 `strategyAEntryFilter` and `strategyBEntryFilter` independently, including
 mixed filtered/unfiltered and different-EMA legs. Final presentation is a separate
 bounded view: keep one best result per unordered strategy-ID pair, then sort
@@ -606,6 +703,10 @@ equity through mark-to-market only and creates no trade, rebalance, marker, or
 cost.
 
 Current-bar guidance is a pure projection over the shared strategy
+registry. Shortcut current-position labels must consume the rolling backtest's
+`executedAllocation`; newest-close targets remain pending until an actual fill.
+Inherited exposure counts as held even without an in-range entry marker.
+Current-bar signal guidance is a separate projection over the shared strategy
 registry. Target strategies compare the newest desired position with the prior
 one. Price-order strategies replay their existing entry/exit stop plan through
 the newest OHLC range. Guidance must expose action (`buy`, `sell`, `hold`, or

@@ -1,5 +1,102 @@
 # Cache Policy
 
+## Expanded overlay window grids
+
+`research/nikkei-overlay-stability/data/block-cache/` contains146 bounded numeric
+grids for the declared5..16 menu and11 lengths, about46 MiB plus a single full
+grid partial checkpoint. Atomic replacement and source/design identity make
+same-command resume idempotent. These are derived local Git-ignored caches;
+retain original source snapshots and previous experiment output. No automatic
+TTL or deletion is introduced. Explicit research regeneration may remove only
+these derived caches after an incompatible implementation/design change.
+
+## 2000-session overlay stability research
+
+`research/nikkei-overlay-stability/data/input.json`, `data/raw/bars.bin` and its
+source registry are immutable local reproducibility artifacts, not TTL caches.
+Retain them. The bounded signal checkpoint is one overwrite record; one5839-row
+grid uses46 atomic binary chunks of at most128 rows, roughly94 MiB total.
+Only derived `output/cache/` may be manually regenerated after an incompatible
+design/implementation error; no raw source or original engine job is deleted.
+The source/design identity rejects accidental stale reuse. Compact summary,
+CSV, PNG/SVG and HTML outputs are replaceable and bounded by the declared menu.
+No automatic deletion, new refresh interval or scheduler is introduced.
+
+## Overlay preferences and derived features
+
+Current `quantscope-position-overlay-v3:research` and `:cycle` store the three
+independent boolean choices for model `ema7-sma11-wma14-v1`. First load preserves
+v2 explicit choices, otherwise v1 choices with the third flag default true.
+Older keys remain recoverable. The current model is explicit in active settings
+and ordinary cache identities, while old saved plans without a model retain
+legacy behavior. Feature WeakMaps isolate current/legacy models per bar array.
+
+`quantscope-sma12-position-overlay-v2:research` and `:cycle` each retain one
+set of three booleans, with no history or automatic expiration. Version-1
+preferences retain the older two explicit choices and initialize the new gate
+to true. Explicit version-2 false values override the defaults. Legacy keys
+remain recoverable; storage failures are shown.
+Pure indicator arrays and original cycle report signals use WeakMaps keyed by
+immutable bar/snapshot identities; garbage collection bounds their lifetime.
+No disk cache, raw-source deletion, new endpoint or durable queue is added.
+Ordinary checkpoint/library/history identities include enabled settings;
+cycle task identity excludes report-only overlay choices.
+
+## Missed-rally research retention
+
+Retain `research/nikkei-cycle-rallies/data/input.json` and its source registry as
+reproducibility inputs, without TTL or automatic deletion. The bounded variant
+checkpoint is one overwrite record; the fixed ledger outputs, summaries,
+diagnostics and allocation CSV are derived and regenerable. Limit source reads
+to 2048 jobs, 10000 bars, 16 MiB per result and 32 MiB for frozen inputs. No
+additional production cache, server process or market-data refresh is added.
+
+## Retired parameter-library storage
+
+The quick-screening modules and all runtime library reads/writes have been
+removed. Existing `quantscope-screening-parameters` browser records are inert;
+no destructive browser-database cleanup is performed. New result-model6
+identities prevent old optimizer/results/tasks from being reused as the new
+six-finalist/all-family search. Historical source/research/job artifacts retain
+their existing retention policy and are not relabeled or overwritten.
+
+
+## Nikkei fixed-primary date-gap repair
+
+Nikkei repair uses existing refresh cadence and canonical IndexedDB state.
+There is no new expiring server cache, source-switch schedule or cleanup job.
+An unresolved recent gap triggers an uncached official ten-bar tail request;
+after insertion, the canonical dates themselves make repeated repair
+idempotent. Holiday hints may re-probe on later normal refreshes but never
+insert dates absent from official data. Existing completed OHLC stays locked.
+Per-bar official OHLC source/fetched-time metadata follows the canonical bar's
+retention; the small committed wire-row fixture is traceability data and is
+not deleted automatically.
+
+## Nikkei cycle close-replay update
+
+Explicit cycle start/continue requests only five latest daily bars when full
+canonical history is present. Source validation and immutable completed-bar
+merging remain shared with the main workspace. Incomplete current bars remain
+in canonical storage but are excluded from cycle inputs until complete.
+Cached history can still restore reports and evaluation bounds. The cycle
+model signature `nikkei-completed-close-v3` prevents restoration of old reports
+under changed timing; optimizer checkpoints and engine protocol are unchanged.
+Task signatures additionally require conflict policy
+`incoming-current-signals-on-conflict-v1`. Same-model tasks with the previous
+policy key migrate their signature and rebuild the report from saved winners;
+screening results, frozen parameter tuples, and queue mappings are preserved.
+
+`research/nikkei-cycle-conflicts/data/input.json` is a frozen reproducibility
+artifact, not an expiring cache. Its state checkpoint is one bounded overwrite
+record, and `output/` is replaceable derived data. Retain frozen inputs and raw
+source hashes; no automatic deletion is authorized. If local screening caches
+expire, reruns remain possible from the frozen input. No network refresh or
+scheduled execution occurs in this study.
+The delayed-confirmation study keeps its own bounded `data/delayed-state.json`
+checkpoint and replaceable `output/delayed-*.json` summaries under the same
+retention policy. Its implementation is not part of product execution.
+
 QuantScope uses HTTP caching, one page-memory canonical series, and
 device-local IndexedDB stores for canonical history, provider snapshots,
 references, fingerprints, and source health. It has no server-side market-data
@@ -160,8 +257,8 @@ aliases unrelated data.
   Incomplete and completed job directories expire after seven days during the
   next coordinator submission. This state is reproducible cache/continuation
   data and is excluded from Git.
-- Screening result model version 5 includes the post-standalone top-95% family
-  gate. A changed result-model signature cannot resume an older checkpoint or
+- Screening result model version6 includes six execution finalists per family
+  and100% eligible-family participation. A changed result-model signature cannot resume an older checkpoint or
   restore an older latest-result cache into the new search domain.
 - Strategy-cycle validation may pre-submit up to its bounded 2048 units to this
   same directory. The coordinator executes an adaptively bounded child pool; queued

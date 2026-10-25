@@ -97,7 +97,7 @@ async function readCheckpoint(
         pairFinalists, tripleFinalists, higherOrderFinalists, results] =
         await Promise.all([
           readSection<Pick<CombinationOptimizationCheckpoint,
-            "version" | "progress" | "entryFilterCandidateCount">>("meta"),
+            "version" | "resultModelVersion" | "progress" | "entryFilterCandidateCount">>("meta"),
           readSection<CombinationOptimizationCheckpoint["finalistsByStrategy"]>("finalists"),
           readSection<CombinationOptimizationCheckpoint["entryFilterCandidatesByStrategy"]>("entryFilters"),
           readSection<CombinationOptimizationCheckpoint["pairFinalists"]>("pairs"),
@@ -161,6 +161,7 @@ async function writeCheckpoint(
       version: checkpoint.version,
       progress: checkpoint.progress,
       entryFilterCandidateCount: checkpoint.entryFilterCandidateCount,
+      resultModelVersion: checkpoint.resultModelVersion,
     },
     finalists: checkpoint.finalistsByStrategy,
     entryFilters: checkpoint.entryFilterCandidatesByStrategy,

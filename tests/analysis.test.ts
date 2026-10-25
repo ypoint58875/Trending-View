@@ -4775,8 +4775,8 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
     },
   );
 
-  assert.equal(COMBINATION_FINALISTS_PER_STRATEGY, 3);
-  assert.equal(COMBINATION_STRATEGY_PERCENTILE, 95);
+  assert.equal(COMBINATION_FINALISTS_PER_STRATEGY, 6);
+  assert.equal(COMBINATION_STRATEGY_PERCENTILE, 100);
   const combinationStrategyIds = selectCombinationStrategyIds(
     outcome.singleCandidatePool,
     "balanced",
@@ -4948,7 +4948,7 @@ test("optimizes automatic unique-winner two-strategy combinations", async () => 
   }
 });
 
-test("crosses the top three parameter finalists for every strategy pair", async () => {
+test("crosses the top six parameter finalists for every strategy pair", async () => {
   const bars = makeBars(
     Array.from({ length: 160 }, (_, index) =>
       40 + index * 0.04 + Math.sin(index / 5) * 2,

@@ -1,3 +1,4 @@
+import { normalizeSmaPositionOverlay } from "./sma-position-overlay";
 import type {
   MarketBar,
   MarketInterval,
@@ -46,10 +47,11 @@ import {
   type MovingAverageSlopeFilter,
 } from "./entry-filter";
 
+
 export const DEFAULT_STRATEGY_A_ALLOCATION = 0.6;
 export const DEFAULT_STRATEGY_B_ALLOCATION = 0.4;
 export const SCREENING_POSITIONING_MODEL_VERSION = 2;
-export const SCREENING_RESULT_MODEL_VERSION = 5;
+export const SCREENING_RESULT_MODEL_VERSION = 6;
 export const DEFAULT_TACTICAL_ALLOCATION_MODE = "add-on-short-entry" as const;
 export const MULTI_STRATEGY_CORE_ALLOCATION = 0.6;
 export const MULTI_STRATEGY_BALANCED_ALLOCATION = 0.8;
@@ -82,9 +84,9 @@ export const STRATEGY_LAYER_ALLOCATION_CANDIDATES = [
   0.6,
   0.7,
 ] as const;
-export const COMBINATION_FINALISTS_PER_STRATEGY = 3;
-/** Empirical family gate; see scripts/analyze-screening-rank-pruning.mjs. */
-export const COMBINATION_STRATEGY_PERCENTILE = 95;
+export const COMBINATION_FINALISTS_PER_STRATEGY = 6;
+/** Every eligible family participates in combination search. */
+export const COMBINATION_STRATEGY_PERCENTILE = 100;
 export const ROLLING_SINGLE_FINALISTS_PER_STRATEGY = 10;
 export const SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY = 60;
 export const MAX_COMBINATION_PAIR_FINALISTS = 4_096;
@@ -283,6 +285,7 @@ export interface StrategySelection {
 }
 
 export interface StrategyAllocationPlan {
+  positionOverlay?: BacktestSettings["positionOverlay"];
   strategyA: StrategySelection | null;
   strategyB: StrategySelection | null;
   strategyC?: StrategySelection | null;
@@ -602,6 +605,7 @@ export interface StrategyGroupFinalist {
 }
 
 export interface CombinationOptimizationCheckpoint {
+  resultModelVersion: typeof SCREENING_RESULT_MODEL_VERSION;
   version: 1;
   progress: CombinationScreeningProgress;
   entryFilterCandidateCount?: number;
@@ -1939,8 +1943,20 @@ export function buildLiveAllocationGuidance(
     liveLegs.length >= 3 ? buildMultiStrategyVolatilityRiskCaps(bars) : undefined,
   );
   const target = timeline.target;
-  const targetAllocation = target.at(-1) ?? 0;
-  const previousAllocation = target.at(-2) ?? 0;
+  let targetAllocation = target.at(-1) ?? 0;
+  let previousAllocation = target.at(-2) ?? 0;
+  if (normalizeSmaPositionOverlay(plan.positionOverlay)) {
+    const completed = latestBarStatus === "complete" ? bars : bars.slice(0, -1);
+    if (completed.length >= 3) {
+      const actual = buildStrategyPlanTimeline(completed, plan, roleWindow);
+      const result = runAllocationBacktest(completed, actual.target, {
+        ...roleWindow, initialCash: 100000, commissionRate: 0, slippageRate: 0, interval: "1d",
+        executionPolicy: "hybrid", summaryOnly: true, positionOverlay: plan.positionOverlay,
+      }, actual.signalEvents, actual.intrabarExecutions);
+      targetAllocation = result.latestTargetAllocation ?? 0;
+      previousAllocation = result.executedAllocation ?? 0;
+    }
+  }
   const action =
     targetAllocation > previousAllocation
       ? "increase"
@@ -2367,6 +2383,7 @@ function retainCombinationResult(
   results: StrategyCombinationResult[],
   result: StrategyCombinationResult,
   objective: ScreeningObjective,
+  perPrimaryLimit = MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY,
 ) {
   const index = getCombinationResultIndex(results);
   const resultKey = combinationStrategySetKey(result);
@@ -2398,7 +2415,7 @@ function retainCombinationResult(
         primaryCount += 1;
       }
     }
-    if (primaryCount > MAX_MULTI_STRATEGY_RESULTS_PER_PRIMARY) {
+    if (primaryCount > perPrimaryLimit) {
       removeWorstCombinationResult(
         results,
         index,
@@ -2766,6 +2783,7 @@ function retainTripleFinalist(
   finalist: StrategyTripleFinalist,
   objective: ScreeningObjective,
   limit: number,
+  perPrimaryLimit = MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
 ) {
   retainPrimaryDiverseFinalist(
     finalists,
@@ -2773,7 +2791,7 @@ function retainTripleFinalist(
     (candidate) => candidate.referenceResult,
     objective,
     limit,
-    MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
+    perPrimaryLimit,
   );
 }
 
@@ -2782,6 +2800,7 @@ function retainStrategyGroupFinalist(
   finalist: StrategyGroupFinalist,
   objective: ScreeningObjective,
   limit: number,
+  perPrimaryLimit = MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
 ) {
   retainPrimaryDiverseFinalist(
     finalists,
@@ -2789,7 +2808,7 @@ function retainStrategyGroupFinalist(
     (candidate) => candidate.referenceResult,
     objective,
     limit,
-    MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
+    perPrimaryLimit,
   );
 }
 
@@ -3195,6 +3214,9 @@ export async function optimizeStrategyCombinations(
   },
   options: OptimizeStrategyCombinationsOptions = {},
 ): Promise<CombinationOptimizationResult> {
+  if (Reflect.get(options, "quickScreening")) {
+    throw new Error("Quick screening has been removed. Reload and start a full screening run.");
+  }
   settings = { ...settings, summaryOnly: true };
   settings = {
     ...settings,
@@ -3397,6 +3419,7 @@ export async function optimizeStrategyCombinations(
     : Number.POSITIVE_INFINITY;
   const resumeCheckpoint =
     options.resumeCheckpoint?.version === 1 &&
+      options.resumeCheckpoint.resultModelVersion === SCREENING_RESULT_MODEL_VERSION &&
     OPTIMIZATION_STAGE_ORDER.includes(options.resumeCheckpoint.progress.stage)
       ? options.resumeCheckpoint
       : null;
@@ -3520,6 +3543,7 @@ export async function optimizeStrategyCombinations(
     };
     options.onCheckpoint?.({
       version: 1,
+      resultModelVersion: SCREENING_RESULT_MODEL_VERSION,
       progress,
       entryFilterCandidateCount,
       finalistsByStrategy: [...finalistsByStrategy].map(
@@ -3732,17 +3756,18 @@ export async function optimizeStrategyCombinations(
               candidate.rawOrders,
             );
             const target = execution.target ?? [];
-            retainFinalist(
-              finalistsByStrategy,
-              {
-                result: runBacktestFromTarget(
+            const filteredResult = runBacktestFromTarget(
                   bars,
                   strategyId,
                   candidate.result.parameters,
                   target,
                   filterSettings,
                   execution.orders,
-                ),
+                );
+            retainFinalist(
+              finalistsByStrategy,
+              {
+                result: filteredResult,
                 target: compactTarget(target),
                 orderFills: compactOrderFills(execution.orderFills),
                 screeningHorizon: summarizeStrategySignalHorizonForWindow(
@@ -3991,7 +4016,7 @@ export async function optimizeStrategyCombinations(
       includeTriples &&
       referenceTripleAllocation
     ) {
-      const tripleParentPairs = selectPrimaryDiverseCandidates(
+      const tripleParentPairs: StrategyPairFinalist[] = selectPrimaryDiverseCandidates(
         pairFinalists,
         (candidate) => candidate.referenceResult,
         objective,

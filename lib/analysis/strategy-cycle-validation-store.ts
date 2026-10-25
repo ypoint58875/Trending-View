@@ -1,8 +1,13 @@
+import {
+  NIKKEI_CYCLE_MODEL,
+  NIKKEI_CYCLE_CONFLICT_POLICY,
+} from "./strategy-cycle-validation";
 import type { MarketInstrument } from "@/lib/market/types";
 import type {
   StrategyCycleSelectionSnapshot,
 } from "./strategy-cycle-validation";
 import type { ScreeningObjective } from "./screening";
+import { SCREENING_RESULT_MODEL_VERSION } from "./strategy-combinations";
 
 const DATABASE_NAME = "quantscope-strategy-cycle-validation";
 const DATABASE_VERSION = 1;
@@ -36,6 +41,31 @@ export interface StoredStrategyCycleValidationTask {
   updatedAt: string;
   status: "running" | "paused" | "completed" | "error";
   lastError: string | null;
+}
+
+/** Only the report policy changes; selected winners and queued screening jobs stay valid. */
+export function migrateCycleConflictPolicySignature(signature: string): string {
+  try {
+    const parsed = JSON.parse(signature) as Record<string, unknown>;
+    if (
+      parsed.rollingSchedule !== NIKKEI_CYCLE_MODEL ||
+      parsed.conflictPolicy !== "previous-current-signals-on-conflict-v1"
+    ) return signature;
+    parsed.conflictPolicy = NIKKEI_CYCLE_CONFLICT_POLICY;
+    return JSON.stringify(parsed);
+  } catch {
+    return signature;
+  }
+}
+
+export function isCurrentCycleScreeningSignature(signature: string): boolean {
+  try {
+    const value = JSON.parse(signature) as Record<string, unknown>;
+    return value.resultModelVersion === SCREENING_RESULT_MODEL_VERSION
+      && !("quickCandidatesByWindow" in value) && !("quickLibraryKey" in value);
+  } catch {
+    return false;
+  }
 }
 
 function openDatabase(): Promise<IDBDatabase | null> {
@@ -82,8 +112,14 @@ export async function readLatestStrategyCycleValidationTask(): Promise<
     },
   );
   database.close();
-  if (!result) return null;
-  if (result.version === 2) return result;
+  if (!result || !isCurrentCycleScreeningSignature(result.signature)) return null;
+  if (result.version === 2) {
+    const signature = migrateCycleConflictPolicySignature(result.signature);
+    if (signature === result.signature) return result;
+    const migrated = { ...result, signature };
+    await writeStrategyCycleValidationTask(migrated);
+    return migrated;
+  }
   if ((result as { version?: number }).version === 1) {
     return {
       ...result,

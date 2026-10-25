@@ -44,6 +44,7 @@ interface EChartProps {
   dataZoomResetKey?: string;
   onDataZoomChange?: (window: DataZoomWindow) => void;
   horizontalPanDataZoomIds?: readonly string[];
+  horizontalPanDirection?: "content" | "window";
 }
 
 export interface DataZoomWindow {
@@ -75,11 +76,15 @@ export function panDataZoomWindow(
   window: DataZoomWindow,
   dragPixels: number,
   chartWidth: number,
+  direction: "content" | "window" = "content",
 ): DataZoomWindow {
   const span = Math.max(0, Math.min(100, window.end - window.start));
   const maximumStart = 100 - span;
   const delta = chartWidth > 0 ? (dragPixels / chartWidth) * span : 0;
-  const start = Math.max(0, Math.min(maximumStart, window.start - delta));
+  const start = Math.max(
+    0,
+    Math.min(maximumStart, window.start + (direction === "window" ? delta : -delta)),
+  );
   return { start, end: start + span };
 }
 
@@ -127,6 +132,7 @@ export function EChart({
   dataZoomResetKey,
   onDataZoomChange,
   horizontalPanDataZoomIds = [],
+  horizontalPanDirection = "content",
 }: EChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<EChartsType | null>(null);
@@ -134,6 +140,7 @@ export function EChart({
   const dataZoomResetKeyRef = useRef<string | undefined>(undefined);
   const onDataZoomChangeRef = useRef(onDataZoomChange);
   const horizontalPanDataZoomIdsRef = useRef(horizontalPanDataZoomIds);
+  const horizontalPanDirectionRef = useRef(horizontalPanDirection);
 
   useEffect(() => {
     onDataZoomChangeRef.current = onDataZoomChange;
@@ -141,7 +148,8 @@ export function EChart({
 
   useEffect(() => {
     horizontalPanDataZoomIdsRef.current = horizontalPanDataZoomIds;
-  }, [horizontalPanDataZoomIds]);
+    horizontalPanDirectionRef.current = horizontalPanDirection;
+  }, [horizontalPanDataZoomIds, horizontalPanDirection]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -156,7 +164,11 @@ export function EChart({
         (args[0] ?? {}) as DataZoomEvent,
       );
       dataZoomWindowRef.current = window;
-      if (window) onDataZoomChangeRef.current?.(window);
+      if (window) {
+        containerRef.current?.setAttribute("data-zoom-start", String(window.start));
+        containerRef.current?.setAttribute("data-zoom-end", String(window.end));
+        onDataZoomChangeRef.current?.(window);
+      }
     };
     chart.on("datazoom", handleDataZoom);
     const readCurrentZoomWindow = () => {
@@ -167,13 +179,24 @@ export function EChart({
         ? { start: Number(first.start), end: Number(first.end) }
         : null;
     };
-    const handlePanStart = (event: { offsetX: number; event?: MouseEvent }) => {
+    const handlePanStart = (event: {
+      offsetX: number;
+      offsetY: number;
+      event?: MouseEvent;
+    }) => {
       if (
         horizontalPanDataZoomIdsRef.current.length === 0 ||
         event.event?.button !== 0
       ) {
         return;
       }
+      // Custom canvas panning must never compete with native slider handles or the legend.
+      const grids = chart.getOption().grid;
+      const gridCount = Array.isArray(grids) ? grids.length : 1;
+      const insidePlot = Array.from({ length: gridCount }, (_, gridIndex) =>
+        chart.containPixel({ gridIndex }, [event.offsetX, event.offsetY]),
+      ).some(Boolean);
+      if (!insidePlot) return;
       const window = readCurrentZoomWindow();
       if (!window || window.end - window.start >= 100) return;
       panStart = { x: event.offsetX, window };
@@ -186,6 +209,7 @@ export function EChart({
         panStart.window,
         event.offsetX - panStart.x,
         chart.getWidth(),
+        horizontalPanDirectionRef.current,
       );
       chart.dispatchAction({
         type: "dataZoom",
@@ -275,6 +299,7 @@ export function EChart({
       style={height === undefined ? undefined : { height }}
       role="img"
       aria-label={ariaLabel}
+      data-pan-direction={horizontalPanDirection}
     />
   );
 }

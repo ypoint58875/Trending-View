@@ -1,3 +1,4 @@
+import { normalizeSmaPositionOverlay, type SmaPositionOverlayOptions } from "./sma-position-overlay";
 import {
   compareScreeningResults,
   SCREENING_OBJECTIVES,
@@ -55,6 +56,7 @@ export interface ScreeningRunMetrics {
 }
 
 export interface ScreeningRunCandidate {
+  positionOverlay?: SmaPositionOverlayOptions;
   rank: number;
   key: string;
   kind: "single" | "combination";
@@ -205,6 +207,7 @@ export function screeningRunCandidateKey(
       DEFAULT_TACTICAL_ALLOCATION_MODE
         ? []
         : [resolveTacticalAllocationMode(result.tacticalMode)]),
+      ...(result.positionOverlay ? [JSON.stringify(normalizeSmaPositionOverlay(result.positionOverlay))] : []),
     ].join(":");
   }
   return [
@@ -212,6 +215,7 @@ export function screeningRunCandidateKey(
     result.strategyId,
     stableParameters(result.parameters),
     stableFilter(result.entryFilter),
+    ...(result.positionOverlay ? [JSON.stringify(normalizeSmaPositionOverlay(result.positionOverlay))] : []),
   ].join(":");
 }
 
@@ -244,6 +248,7 @@ export function screeningRunCandidateKeyForPlan(
       selection.strategyId,
       stableParameters(selection.parameters),
       stableFilter(entryFilter),
+      ...(plan.positionOverlay ? [JSON.stringify(normalizeSmaPositionOverlay(plan.positionOverlay))] : []),
     ].join(":");
   }
   const [primary, secondary] = selected;
@@ -267,6 +272,7 @@ export function screeningRunCandidateKeyForPlan(
     DEFAULT_TACTICAL_ALLOCATION_MODE
       ? []
       : [resolveTacticalAllocationMode(plan.tacticalMode)]),
+    ...(plan.positionOverlay ? [JSON.stringify(normalizeSmaPositionOverlay(plan.positionOverlay))] : []),
   ].join(":");
 }
 
@@ -338,6 +344,7 @@ function compactCandidate(
     return {
       rank,
       key: screeningRunCandidateKey(result),
+      ...(result.positionOverlay ? { positionOverlay: { ...result.positionOverlay } } : {}),
       kind: "combination",
       strategyAId: result.strategyAId,
       strategyAParameters: { ...result.strategyAParameters },
@@ -408,6 +415,7 @@ function compactCandidate(
   return {
     rank,
     key: screeningRunCandidateKey(result),
+    ...(result.positionOverlay ? { positionOverlay: { ...result.positionOverlay } } : {}),
     kind: "single",
     strategyAId: result.strategyId,
     strategyAParameters: { ...result.parameters },
@@ -725,6 +733,7 @@ function parseCandidate(
   return {
     rank: value.rank as number,
     key: value.key,
+    ...(value.positionOverlay ? { positionOverlay: normalizeSmaPositionOverlay(value.positionOverlay as SmaPositionOverlayOptions) } : {}),
     kind,
     strategyAId: strategyA.id as StrategyId,
     strategyAParameters: strategyA.parameters as StrategyParameters,

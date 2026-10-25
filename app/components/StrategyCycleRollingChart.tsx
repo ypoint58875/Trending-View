@@ -104,7 +104,7 @@ export function buildStrategyCycleRollingChartOption(
       splitLine: { lineStyle: { color: "#1b2723", type: "dashed" } },
     },
     dataZoom: [
-      { type: "inside", id: "cycle-rolling-zoom-inside", start: 0, end: 100 },
+      { type: "inside", id: "cycle-rolling-zoom-inside", start: 0, end: 100, moveOnMouseMove: false, moveOnMouseWheel: false, zoomOnMouseWheel: true },
       { type: "slider", id: "cycle-rolling-zoom-slider", start: 0, end: 100, height: 18, bottom: 9, borderColor: "#26332f", fillerColor: "rgba(56,189,248,.12)", backgroundColor: "#0d1613", textStyle: { color: "#6f807a", fontSize: 9 } },
     ],
     series: [
@@ -136,5 +136,5 @@ export function StrategyCycleRollingChart({
     () => buildStrategyCycleRollingChartOption(bars, rebalances, labels),
     [bars, rebalances, labels],
   );
-  return <EChart option={option} className="cycle-transition-chart" height={430} ariaLabel={ariaLabel} preserveDataZoom dataZoomResetKey={dataKey} horizontalPanDataZoomIds={["cycle-rolling-zoom-inside", "cycle-rolling-zoom-slider"]} />;
+  return <EChart option={option} className="cycle-transition-chart" height={430} ariaLabel={ariaLabel} preserveDataZoom dataZoomResetKey={dataKey} horizontalPanDataZoomIds={["cycle-rolling-zoom-inside", "cycle-rolling-zoom-slider"]} horizontalPanDirection="window" />;
 }

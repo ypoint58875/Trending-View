@@ -1,4 +1,5 @@
 "use client";
+import { SmaPositionOverlayControls, useSmaPositionOverlayPreferences } from "./components/SmaPositionOverlayControls";
 
 import {
   Activity,
@@ -199,6 +200,7 @@ import type {
   MarketTemporaryQuote,
 } from "@/lib/market/types";
 import { DAILY_HISTORY_LIMIT } from "@/lib/market/history";
+import { supplementNikkeiMissingBars } from "@/lib/market/nikkei-freshness";
 import {
   mergeCanonicalMarketSeries,
   mergePreferredTemporaryQuote,
@@ -415,6 +417,7 @@ function cloneStrategyPlan(
       }),
     ),
     tacticalMode: resolveTacticalAllocationMode(plan.tacticalMode),
+    ...(plan.positionOverlay ? { positionOverlay: { ...plan.positionOverlay } } : {}),
   } as StrategyAllocationPlan;
 }
 
@@ -528,6 +531,7 @@ function runStrategyPlanRangeBacktest(
   plan: StrategyAllocationPlan,
   settings: BacktestSettings,
 ): BacktestResult | AllocationBacktestResult {
+  settings = { ...settings, positionOverlay: plan.positionOverlay };
   const singleSelection =
     STRATEGY_SLOTS.map((slot) => plan[slot] ?? null).filter(Boolean)
       .length === 1
@@ -1195,6 +1199,7 @@ export function MarketWorkspace() {
   const [shortcutRefreshRequestVersion, setShortcutRefreshRequestVersion] =
     useState(0);
   const [screening, setScreening] = useState(false);
+  const smaOverlay = useSmaPositionOverlayPreferences("research");
   const [screeningError, setScreeningError] = useState<
     ScreeningValidationErrorCode | "volume-unavailable" | "run" | ""
   >("");
@@ -2006,12 +2011,15 @@ export function MarketWorkspace() {
             primaryLimit,
             currentSeries,
           );
-          const payload = mergeCanonicalMarketSeries(
+          let payload = mergeCanonicalMarketSeries(
             currentSeries,
             primary,
             seriesLimit,
             profile,
           );
+          const official = profile.backups.find((definition) => definition.provider === "nikkei");
+          if (official) payload = await supplementNikkeiMissingBars(payload, () =>
+            loadTrackedSeries(official, "latest", 10, payload, true));
           applyLoadedSeries(payload);
           cachedSeriesActiveRef.current = false;
           primaryBackoffRef.current = {
@@ -2704,6 +2712,7 @@ export function MarketWorkspace() {
       strategyCEntryFilter: activeMovingAverageSlopeFilter(
         strategyCEntryFilterDraft,
       ),
+      positionOverlay: smaOverlay.settings,
     };
   }, [
     strategyAParameters,
@@ -2719,6 +2728,10 @@ export function MarketWorkspace() {
     strategyBEntryFilterDraft,
     strategyCEntryFilterDraft,
     tacticalAllocationMode,
+    smaOverlay.settings?.supplementalEntry,
+    smaOverlay.settings?.exitGuard,
+    smaOverlay.settings?.entrySlopeGate,
+    smaOverlay.settings?.model,
   ]);
   const singleSelection =
     strategyPlan &&
@@ -3043,6 +3056,7 @@ export function MarketWorkspace() {
     }
     try {
       const settings = {
+        positionOverlay: strategyPlan.positionOverlay,
         initialCash,
         commissionRate: commissionPercent / 100,
         slippageRate: slippagePercent / 100,
@@ -3211,6 +3225,7 @@ export function MarketWorkspace() {
         singleSelection.strategyId,
         singleSelection.parameters,
         {
+          positionOverlay: strategyPlan.positionOverlay,
           initialCash,
           commissionRate: commissionPercent / 100,
           slippageRate: slippagePercent / 100,
@@ -3320,7 +3335,9 @@ export function MarketWorkspace() {
     entryFilter?: MovingAverageSlopeFilter | null,
     screeningWindows?: ScreeningDateWindow[],
     shouldScrollToChart = true,
+    positionOverlay: BacktestSettings["positionOverlay"] = smaOverlay.settings,
   ) => {
+    smaOverlay.setOptions(positionOverlay ?? {});
     const next = getStrategy(nextStrategyId);
     const mergedParameters = {
       ...next.defaultParameters,
@@ -3346,6 +3363,7 @@ export function MarketWorkspace() {
       createMovingAverageSlopeFilterDraft(),
     );
     setAppliedStrategyPlan({
+      positionOverlay,
       strategyA: {
         strategyId: nextStrategyId,
         parameters: { ...mergedParameters },
@@ -3597,6 +3615,7 @@ export function MarketWorkspace() {
     screeningWindows?: ScreeningDateWindow[],
     shouldScrollToChart = true,
   ) => {
+    smaOverlay.setOptions(result.positionOverlay ?? {});
     setStrategyAId(result.strategyAId);
     setStrategyAParameters({ ...result.strategyAParameters });
     setStrategyBId(result.strategyBId);
@@ -3671,6 +3690,8 @@ export function MarketWorkspace() {
           entry.result,
           validationReport,
         ),
+        true,
+        entry.result.positionOverlay ?? {},
       );
       return;
     }
@@ -4046,6 +4067,7 @@ export function MarketWorkspace() {
       clearMarketSeries();
       setRefreshVersion((value) => value + 1);
     }
+    smaOverlay.setOptions(saved.plan.positionOverlay ?? {});
     setStrategyAId(saved.plan.strategyA?.strategyId ?? "");
     setStrategyAParameters(
       saved.plan.strategyA ? { ...saved.plan.strategyA.parameters } : {},
@@ -4712,7 +4734,7 @@ export function MarketWorkspace() {
       });
       return;
     }
-    const configSignature = createShortcutBatchConfigSignature({
+    const baseConfigSignature = createShortcutBatchConfigSignature({
       sessions,
       objective: screeningObjective,
       initialCash,
@@ -4720,6 +4742,8 @@ export function MarketWorkspace() {
       slippagePercent,
       entryFilterEnabled: screeningEntryFilterDraft.enabled,
     });
+    const configSignature = smaOverlay.settings
+      ? JSON.stringify([baseConfigSignature, smaOverlay.settings]) : baseConfigSignature;
     const storedCheckpoint = parseShortcutBatchCheckpoint(
       window.localStorage.getItem(SHORTCUT_BATCH_CHECKPOINT_KEY),
     );
@@ -4815,6 +4839,7 @@ export function MarketWorkspace() {
               endTime: range.endTime,
               interval: DAILY_INTERVAL,
               executionPolicy: HISTORICAL_EXECUTION_POLICY,
+              positionOverlay: smaOverlay.settings,
               entryFilter: activeMovingAverageSlopeFilter(
                 screeningEntryFilterDraft,
               ),
@@ -5053,7 +5078,7 @@ export function MarketWorkspace() {
           startDate,
           endDate || latestDate,
         );
-    const validationConfig: ScreeningValidationConfig =
+    let validationConfig: ScreeningValidationConfig =
       screeningValidationMode === "sample"
         ? {
             mode: "sample",
@@ -5100,9 +5125,8 @@ export function MarketWorkspace() {
     setValidationReport(null);
     setScreenProgress(emptyCombinationProgress());
     try {
-      const outcome = await runScreeningInWorker(
-        runSeries.bars,
-        {
+      const runSettings = {
+          positionOverlay: smaOverlay.settings,
           initialCash,
           commissionRate: commissionPercent / 100,
           slippageRate: slippagePercent / 100,
@@ -5113,7 +5137,10 @@ export function MarketWorkspace() {
           entryFilter: activeMovingAverageSlopeFilter(
             screeningEntryFilterDraft,
           ),
-        },
+        };
+      const outcome = await runScreeningInWorker(
+        runSeries.bars,
+        runSettings,
         validationConfig,
         {
           objective: runObjective,
@@ -5445,6 +5472,7 @@ export function MarketWorkspace() {
       number,
       {
         action: "increase" | "reduce" | "hold" | "wait";
+        currentAllocation: number;
         targetAllocation: number;
         strategyCount: number;
         activeStrategyCount: number;
@@ -5512,6 +5540,7 @@ export function MarketWorkspace() {
           });
           guidance.set(saved.id, {
             action: allocation.action,
+            currentAllocation: evaluation.performance.executedAllocation ?? 0,
             targetAllocation: allocation.targetAllocation,
             strategyCount: allocation.strategyCount,
             activeStrategyCount: allocation.activeStrategyCount,
@@ -5856,6 +5885,7 @@ export function MarketWorkspace() {
         single.entryFilter,
         resolveScreeningResultChartWindows(single, validationReport),
         false,
+        single.positionOverlay ?? {},
       );
       return;
     }
@@ -6268,6 +6298,9 @@ export function MarketWorkspace() {
                        {copy.chart.canonicalSource}{" "}
                        {copy.sources[series.source]}
                      </span>
+                     {series.bars.some((bar) => bar.ohlcSource?.provider === "nikkei") && <span>
+                       {copy.chart.officialSupplement.replace("{count}", String(series.bars.filter((bar) => bar.ohlcSource?.provider === "nikkei").length))}
+                     </span>}
                      <span
                        title={
                          sourceHealthSummary ||
@@ -7103,8 +7136,8 @@ export function MarketWorkspace() {
                                         <>
                                           <small>
                                             <span>{copy.savedBacktests.currentPosition}：</span>
-                                            <b className={`position-value ${shortcutGuidance.targetAllocation > 0 ? "positive" : "negative"}`}>
-                                              {Math.round(shortcutGuidance.targetAllocation * 100)}%
+                                            <b className={`position-value ${shortcutGuidance.currentAllocation > 0 ? "positive" : "negative"}`}>
+                                              {Math.round(shortcutGuidance.currentAllocation * 100)}%
                                             </b>
                                           </small>
                                           <small>
@@ -7114,15 +7147,15 @@ export function MarketWorkspace() {
                                           <small>
                                             <span>{copy.savedBacktests.currentAction}：</span>
                                             <b>
-                                              {shortcutGuidance.action === "increase"
-                                                ? shortcutGuidance.targetAllocation >= 1
-                                                  ? copy.savedBacktests.establishPosition
-                                                  : copy.savedBacktests.increasePosition
-                                                : shortcutGuidance.action === "reduce"
+                                              {shortcutGuidance.targetAllocation > shortcutGuidance.currentAllocation + 1e-10
+                                                ? shortcutGuidance.currentAllocation <= 0
+                                                  ? copy.savedBacktests.pendingEstablish
+                                                  : copy.savedBacktests.pendingIncrease
+                                                : shortcutGuidance.targetAllocation < shortcutGuidance.currentAllocation - 1e-10
                                                   ? shortcutGuidance.targetAllocation <= 0
-                                                    ? copy.savedBacktests.clearPosition
-                                                    : copy.savedBacktests.reducePosition
-                                                  : shortcutGuidance.targetAllocation > 0
+                                                    ? copy.savedBacktests.pendingClear
+                                                    : copy.savedBacktests.pendingReduce
+                                                  : shortcutGuidance.currentAllocation > 0
                                                     ? copy.savedBacktests.continueHolding
                                                     : copy.savedBacktests.continueWaiting}
                                             </b>
@@ -7135,8 +7168,8 @@ export function MarketWorkspace() {
                                       ) : (
                                         <small>
                                           <span>{copy.savedBacktests.currentPosition}：</span>
-                                          <b className={`position-value ${shortcutGuidance.targetAllocation > 0 ? "positive" : "negative"}`}>
-                                            {Math.round(shortcutGuidance.targetAllocation * 100)}%
+                                          <b className={`position-value ${shortcutGuidance.currentAllocation > 0 ? "positive" : "negative"}`}>
+                                            {Math.round(shortcutGuidance.currentAllocation * 100)}%
                                           </b>
                                         </small>
                                       )}
@@ -7909,10 +7942,8 @@ export function MarketWorkspace() {
                       ))}
                     </select>
                   </label>
-                  <div className="screening-control-field screening-full-traversal">
-                    <span>{copy.screening.parameterTraversal}</span>
-                    <strong>{copy.screening.fullTraversal}</strong>
-                  </div>
+                  <SmaPositionOverlayControls options={smaOverlay.options} onChange={smaOverlay.setOptions}
+                    disabled={screeningBusy || !smaOverlay.ready} error={smaOverlay.error} />
                 </div>
               </fieldset>
               <MovingAverageSlopeFilterFields
@@ -8827,6 +8858,8 @@ export function MarketWorkspace() {
                             result,
                             validationReport,
                           ),
+                          true,
+                          result.positionOverlay ?? {},
                         )
                       }
                       onKeyDown={(event) => {
@@ -8840,6 +8873,8 @@ export function MarketWorkspace() {
                             result,
                             validationReport,
                           ),
+                          true,
+                          result.positionOverlay ?? {},
                         );
                       }}
                     >

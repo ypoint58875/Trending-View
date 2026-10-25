@@ -1,5 +1,142 @@
 # Data Pipeline
 
+## Expanded overlay segmentation search
+
+Run `npx tsx research/nikkei-overlay-stability/block-study.ts`. Reuse the frozen
+2000-session source and verified decision cache; no new market or screening
+request occurs. Complete13824-row training windows commit compact numeric
+return/drawdown/trade-count arrays atomically under `data/block-cache/` in that
+study. The full2000 grid additionally checkpoints every512 candidates. Source
+and implementation/design hashes reject incompatible resume; interruption stops
+at work-unit boundaries.146 finite grids are about46 MiB, with one window in
+working memory and1.5 GiB RSS stop. Then regenerate `block-report.ts` and
+`block-plot.py`; raw inputs, earlier experiments and original jobs are retained.
+
+## 2000-session overlay stability recovery
+
+Run `npx tsx research/nikkei-overlay-stability/analyze.ts`. Initial collection
+reads existing complete quick jobs without queue mutation, verifies every
+causal market prefix, checks schedule completeness and atomically freezes
+normalized bars/plans/source hashes. A separate raw shared-bars backup is
+retained. Later runs reuse this input. `data/signals.json` commits every32
+completed signals with source/implementation identity; `output/cache/grid-N.bin`
+commits each complete128-candidate chunk with source/design identity. Invalid
+identity fails explicitly; incomplete work units replay, committed work resumes.
+SIGINT/SIGTERM are handled at work-unit boundaries. Output commits precede
+progress markers. Grid histories use roughly94 MiB; per-input and1.5 GiB RSS
+limits stop safely. Adaptive policy and age stages are small bounded replays.
+Generate the user report with `report.ts`, then `plot.py` in that directory.
+Post-hoc one-parameter output is identified separately. No update schedule,
+network collection or automatic cleanup is installed.
+
+## Expanded average-type overlay research
+
+Run `npx tsx research/nikkei-cycle-rallies/ma-threshold-grid.ts`. The frozen
+source/model checks and SMA fill reconciliation precede calculation. Each of
+eight thresholds has 27 atomic 729-row chunks in
+`research/nikkei-cycle-rallies/output/ma-threshold-grid/t*/`; chunk source and
+implementation/design hashes, exact expected IDs and finite returns/drawdowns
+are checked before reuse. Restart the same command after interruption. A crash
+inside a chunk repeats only that chunk. Incompatible chunks fail explicitly.
+Each threshold summary commits after its chunks; final index after selected
+full ledgers and next-open sensitivity. Keep only one 19683-row threshold and
+bounded selected leaders in memory. Raw inputs remain intact. Compact outputs
+are regenerable and follow the existing research retention policy, without a
+new source fetch, schedule or automatic deletion. Earlier narrower grid outputs
+remain provenance; the final 157464-configuration index is authoritative.
+
+## Missed-rally research recovery
+
+`entry-slope-gate.ts` sequentially replays 20 fixed SMA3..12 entry gates using
+the frozen input and verified signal cache. It reconciles both ungated baselines
+before atomic per-variant output and summary/CSV replacement. Whole-run restart
+is bounded and idempotent; no new source refresh or checkpoint is necessary.
+
+`exit-guard.ts` reuses the source/model-verified SMA signal cache and reconciles
+the entire no-guard fill ledger against SMA12. It sequentially replays 34
+bounded guards, writes each ledger atomically, then commits the summary/CSV.
+Rerun the same command after interruption; this few-second local calculation
+needs no new checkpoint, market refresh, source retention policy or scheduler.
+Older longer-average derived ledgers are retained but excluded from the new
+summary after the user's SMA12 cap. Fixed input and output counts bound memory.
+
+`sma-flat-entry.ts` uses the frozen source and a source/model-verified derived
+decision-signal cache; six ledger files and summary/trade CSV are atomically
+regenerated. The complete source is bounded to 32 MiB, 10000 bars, 2048
+decisions. No network refresh or screening repetition occurs. Future-incompatible
+cache/model identity fails explicitly; existing raw input is never overwritten.
+
+`joint-cycles.ts` commits each date's five causal longer-window selections
+before `data/joint-state.json`; input/menu/design fingerprints reject stale
+checkpoints. It resumes those 298 dates idempotently. `joint-confirmation.ts`
+reuses the same frozen selections and verifies source/menu identity, then
+atomically replaces its twenty-one confirmation-rule outputs/summary/CSV.
+The candidate timelines, one prefix and one ranking context per period are
+bounded; there are no additional market requests or local-engine queue changes.
+
+Run `npx tsx research/nikkei-cycle-rallies/analyze.ts`. The first run freezes
+verified current request/result winners and shared bars. Later runs read that
+input, validate its model/hash, and reuse atomically committed per-variant
+results listed in `data/state.json` in the research folder. Output commits
+precede checkpoint commits; interrupted work resumes without duplicate rows.
+The short archived-cycle comparison uses the prior frozen input and atomic
+output; whole-file replay is proportional (102 decisions per cycle).
+No network refresh, background schedule or mutation of screening state occurs.
+
+## Full-only screening recovery
+
+Search result model6 identifies six execution finalists per family and100%
+family participation. New exact checkpoint identities, optimizer metadata and
+cycle task signatures isolate older search results. Interrupted current-model
+runs continue from their committed checkpoint; obsolete models recompute.
+Parameter-library collection and reuse have been removed. Existing raw source,
+research snapshots, old task records and engine job files are retained under
+existing policies; no migration deletes them or schedules new work.
+
+
+## Fixed-primary Nikkei tail reconciliation
+
+Active workspace, background shortcuts and the ordinary Yahoo API path call
+the shared Nikkei supplementation helper after a successful primary response.
+Current canonical data is merged first in browser flows, so a previously
+repaired newest date stops another unnecessary probe. Recent missing-weekday
+hints cause one official ten-bar tail query; only published completed missing
+dates are inserted. No full-history overwrite or synthetic holiday bar occurs.
+The existing explicit/session-aware refresh schedule drives this incremental
+and idempotent update; no scheduler or durable job is added. Market values
+remain bounded to 10,000 retained bars. Supplemental OHLC source/time metadata
+persists with canonical bars; screening's numeric transfer format is unchanged.
+
+## Nikkei cycle same-day replay and conflict study
+
+The cycle page filters canonical data to complete Nikkei daily bars, reuses
+full history, and refreshes only five latest bars on explicit start/continue.
+It retains the existing immutable-bar merge, provider validation, durable queue,
+and IndexedDB progress mechanisms. Only the cycle report model/signature changes;
+engine protocol and optimizer ranking do not. No scheduled execution is added.
+
+`npx tsx research/nikkei-cycle-conflicts/analyze.ts` freezes verified source
+inputs once, then resumes by completed period/cohort group from
+`research/nikkei-cycle-conflicts/data/state.json`. The checkpoint records the
+input hash and cycle model and is atomically committed only after the group's
+events are complete. SIGINT leaves the last committed group available; replay
+is idempotent. Missing decisions are excluded from consecutive-winner analysis;
+continuous comparisons require complete trigger coverage between endpoints.
+The final evaluation is recomputed deterministically from that durable state.
+
+Raw normalized inputs, derived `output/` files, and continuation state are
+separate files. Work is sequential and bounded to the local frozen archive,
+with one causal timeline at a time; it does not enumerate new strategy grids.
+No automatic source update, raw-data deletion, or cleanup job is introduced.
+
+`npx tsx research/nikkei-cycle-conflicts/delayed-confirmation.ts` reuses the same
+frozen input. Its separately versioned `data/delayed-state.json` commits complete
+groups atomically, validates the input hash/timing model/study rule, and resumes
+idempotently. Only conflicting decisions wait one trading session; confirmation
+requires that exact next day's archived winner. Missing next-day results are
+excluded explicitly. Output is `output/delayed-{events,summary}.json`. Product
+execution uses the user-selected incoming-winner policy, not this delay.
+
 ## Local screening compute flow
 
 The browser submits binary columnar bars, settings, validation configuration,
@@ -23,7 +160,7 @@ equity/trade/rebalance arrays never cross a stage boundary. Only compact ranked
 winners return to the browser, where a selected result is replayed for chart
 detail. Standalone parameter and EMA enumeration stays complete. The completed
 family winners are then ranked once under the active objective, and only the
-top `ceil(95%)` families flow into pair and higher-order stages. The same gate
+all eligible families flow into pair and higher-order stages. The same gate
 is inside the shared optimizer, so every screening orchestration follows it.
 
 This file separates QuantScope's current runtime behavior from possible future

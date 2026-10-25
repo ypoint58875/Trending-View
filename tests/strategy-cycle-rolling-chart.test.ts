@@ -47,6 +47,9 @@ test("full-cycle chart shows every candle and classifies all four rebalance acti
     targetAllocation: "Target",
     fillPrice: "Fill",
   });
+  const zoom = option.dataZoom as Array<{ id: string; moveOnMouseMove?: boolean; moveOnMouseWheel?: boolean }>;
+  assert.equal(zoom.find((row) => row.id === "cycle-rolling-zoom-inside")?.moveOnMouseMove, false);
+  assert.equal(zoom.find((row) => row.id === "cycle-rolling-zoom-inside")?.moveOnMouseWheel, false);
   const series = option.series as Array<{
     name?: string;
     data?: Array<number | { value?: [string, number]; symbolRotate?: number }>;

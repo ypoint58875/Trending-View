@@ -8,6 +8,25 @@ technical indicators, strategy backtests, parameter sensitivity diagnostics,
 and staged exhaustive parameter screening in one responsive page. It does not place
 trades or run unattended jobs.
 
+Nikkei date-gap recovery keeps Yahoo as the primary and only inserts missing,
+completed dates from the existing official Nikkei adapter after matching OHLC
+overlap. Existing prices are locked, per-bar OHLC provenance is retained, and
+the chart identifies the official supplement. This also covers successful but
+date-lagged responses, shared by active charts, shortcut refresh and cycle input.
+
+Strategy-cycle validation is now Nikkei 225 only. It screens completed daily
+bars, examines the last two completed bars of the selected plan, and simulates
+the allowed rebalance at that decision day's Nikkei close, including fees and
+slippage. This is a proxy for China-market operations after Japan's 14:30 and
+before China's 15:00 close (UTC+8), not an executable domestic-product quote.
+Reduce-then-increase holds; increase-then-reduce only reduces; same-direction
+signals use the final target. See `research/nikkei-cycle-conflicts/README.md`
+for the reproducible old/new conflict study and its limitations. On opposing
+new/previous signals, the execution policy follows the incoming winner's
+current-date signals. Main returns and chart fills use that policy; the old
+policy is retained internally for research without a UI comparison. Delayed three-bar confirmation is not
+enabled.
+
 ## Included
 
 - Search global indexes, exchange-traded funds, and commodity futures quote
@@ -17,22 +36,24 @@ trades or run unattended jobs.
 - One daily research workspace. Intraday intervals are not exposed by the UI
   or market API, and no synthetic resampling is performed. Legacy non-daily
   saved records remain readable provenance and reopen against daily bars.
-- A separate strategy-cycle validation page selects an instrument from the
+- A separate strategy-cycle validation page selects Nikkei 225 from the
   saved-backtest shortcut bar. An inclusive trailing-window range with an
   integer step (default 128 to 128) defines screening periods evaluated
   independently over the chosen evaluation
   history. The evaluation-history input
   loads the selected instrument's daily series and uses its complete K-line
   count as the dynamic upper bound instead of a fixed 512-session ceiling. The
-  first winner is selected from the complete window before evaluation begins.
+  first winner is selected at the first evaluation close using the complete
+  trailing window; the final evaluation close may also trigger and execute.
   Later exhaustive selections occur only when a normalized two-session moving
   average is neutral, the latest candle opposes a trend of at least 30 degrees,
   or the candle is a doji; same-direction strong-trend candles keep the current
   plan. Each selected plan inherits the continuous account's allocation and may
   change it only from its last two bars: increase-only and reduce-only sequences
   use their final target, reduce-then-increase does nothing, and
-  increase-then-reduce may only reduce. The page shows only this cost-adjusted
-  every-update return and the same-period buy-and-hold benchmark. Its
+  increase-then-reduce may only reduce. The page shows this cost-adjusted
+  every-update return, an old-on-conflict alternative, the opposite-intent
+  count, and the same-period close-entry buy-and-hold benchmark. Its
   full-evaluation candlestick chart plots only actual executed rebalances and
   switches among the completed screening-period results. The maximum
   combination size is configurable from two through six strategies.
@@ -199,7 +220,7 @@ trades or run unattended jobs.
   traverses all 45,196 finite registered parameter combinations; there is no
   per-strategy sampling control or hidden cap. One shared objective drives the
   complete single-and-combination workflow. After every standalone family is
-  ranked, the top 95% of completed family winners (55 of the current 57) enter
+  ranked, the all completed family winners (57 of the current 57) enter
   pair and higher-order combination discovery. This evidence-bounded gate is
   shared by every screening mode; standalone and EMA refinement remain
   exhaustive.
@@ -242,8 +263,8 @@ trades or run unattended jobs.
   before the selected start, the simulation inherits the position at the
   first selected open without a trade or cost. The EMA stage
   keeps only compact metrics for each eligible strategy's top 60 unfiltered
-  parameter sets. The top three final parameter sets per strategy keep their
-  complete execution state for `3 x 3` pair replay.
+  parameter sets. The top six final parameter sets per strategy keep their
+  complete execution state for `6 x 6` pair replay.
 - Four-through-six-strategy screening reuses full-history causal strategy
   targets but executes each repeated combination only across the selected
   scoring window plus one preceding bar. Its streaming core-satellite state and
@@ -285,16 +306,16 @@ trades or run unattended jobs.
   the view to that chart; selector/parameter edits do not change chart lines,
   markers, or live guidance before Apply. Durable saving remains a separate
   shortcut-bar action.
-- The same one-click run retains the top three parameter finalists for every
+- The same one-click run retains the top six parameter finalists for every
   strategy, ranks each strategy family's best final standalone result, and
-  evaluates all `3 x 3` parameter pairings among the top 95% of families at
+  evaluates all `6 x 6` parameter pairings among the all eligible families at
   the reference 60%/40% allocation, without a
   separate combination checkbox. Each strategy-ID pair keeps its best
   parameter pairing before allocation replay.
   Equivalent implementations such as the paired MACD-cross and Supertrend
   close-confirmation entries are not combined with themselves. It keeps up to
   4,096 pair finalists before replaying all allocation/mode alternatives. The
-  current 57-strategy catalog contributes 55 families and at most 1,485
+  current 57-strategy catalog contributes 57 families and at most 1,596
   unordered pairs before declared equivalence exclusions, so no eligible pair
   is discarded by the safety bound. Both columns render every retained best
   row. The second result column keeps only the best
@@ -543,8 +564,8 @@ drawdown, and Sharpe affect its rank. The staged four-phase search is exhaustive
 across the full registered 45,196-parameter Cartesian product. EMA5-8 is a
   second-stage comparison over only the top 60 unfiltered candidates for each
   eligible family. Combination screening ranks family winners, retains the top
-  95% of families, then uses each retained family's top three final parameter
-  sets. It evaluates all nine parameter crossings for every eligible unordered
+  100% of eligible families, then uses each retained family's top six final parameter
+  sets. It evaluates all 36 parameter crossings for every eligible unordered
   non-equivalent strategy pair, keeps the best crossing per pair,
   and compares 50/50, 60/40, 40/60, 70/30, and 30/70 assignments.
 This reduces combination work without eliminating overfitting.

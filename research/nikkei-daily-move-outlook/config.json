@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "symbol": "^N225",
+  "analysisStart": "2000-01-01",
+  "evaluationStart": "2016-01-01",
+  "horizons": [1, 5, 10, 20],
+  "trainingSessions": 2520,
+  "minimumSamples": 80,
+  "dailyBoundariesPct": [-3, -2, -1, 0, 1, 2, 3],
+  "waveThresholdsPct": [3, 5, 10],
+  "maximumBars": 20000,
+  "maximumResponseBytes": 12000000,
+  "sourceTtlHours": 24,
+  "seedPath": "../nikkei-ma-slope/data/processed/nikkei225-normalized.csv",
+  "seedManifestPath": "../nikkei-ma-slope/output/run-manifest.json"
+}

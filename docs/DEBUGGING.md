@@ -463,7 +463,7 @@ trade only to make a test pass.
    combinations. There is no production cap or sampling control.
 3. Confirm only compact metrics and reusable execution state for each eligible
    strategy's top 60 unfiltered
-   candidates survive into the EMA stage. The top three final parameter sets
+   candidates survive into the EMA stage. The top six final parameter sets
    per strategy should retain complete execution state for pair replay.
 4. Confirm the unified run advances through parameter, entry-filter, pair, and allocation
    stages. The single-strategy column is produced by the parameter stage; the
@@ -472,11 +472,11 @@ trade only to make a test pass.
    Channel BreakOut and Price Channel must participate; reversal and
    candlestick families must remain unfiltered.
 6. Confirm all completed standalone family winners are ranked with the active
-   objective and only the top `ceil(95%)` enter combination stages. With 57
-   strategies this retains 55 and permits at most 1,485 unordered pairs before
+   objective and only the all completed families enter combination stages. With 57
+   strategies this retains all57 and permits at most1,596 unordered pairs before
    declared-equivalence exclusions. Each eligible pair must still cross its
-   top three retained parameter sets, use the exact independent A/B entry
-   filters, retain the best of all nine crossings before allocation replay,
+   top six retained parameter sets, use the exact independent A/B entry
+   filters, retain the best of all 36 crossings before allocation replay,
    and compare 50/50, 60/40, 40/60, 70/30, and 30/70.
 7. Use the stop action when a run is no longer useful.
 8. Confirm `screening.worker.ts` was emitted by the production build and that

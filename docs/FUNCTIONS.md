@@ -1,5 +1,86 @@
 # Function Map
 
+## Position overlays
+
+- `MIXED_POSITION_OVERLAY_MODEL`: current explicit EMA7/SMA11/WMA14 rule set.
+  The existing shared controller selects model-specific cached features; its
+  inherited-account, pending-sell and execution-timing responsibilities persist.
+- Page preferences force the current model and migrate existing three choices.
+  Saved-plan parsing accepts the explicit model and rejects unknown versions;
+  absent model retains legacy behavior for historical/library data.
+
+- `normalizeSmaPositionOverlay`: omits disabled settings for legacy identity.
+- `SmaPositionOverlay.request` / `close`: one inherited account, original signal
+  priority, optional positive-turn entry, deferred reductions, daily release
+  and fresh-buy cancellation. Optional SMA11 negative-slope gate blocks flat
+  entries, including supplements/native orders; adds/exits stay independent.
+  No clock or future-bar access.
+- `useSmaPositionOverlayPreferences` / `SmaPositionOverlayControls`: independent
+  default-checked controls with per-page versioned storage and visible failures.
+- Ordinary ledgers expose `latestTargetAllocation` separately from actual
+  executed allocation. Cycle replay applies the controller before close fills;
+  its chart, returns and monitoring use those actual rebalances.
+
+## Full-only search compatibility
+
+- `COMBINATION_FINALISTS_PER_STRATEGY`: six final execution candidates.
+- `COMBINATION_STRATEGY_PERCENTILE`:100, preserving every eligible family.
+- `SCREENING_RESULT_MODEL_VERSION`: shared search identity; obsolete optimizer
+  checkpoints and latest-result snapshots cannot resume under the new policy.
+- `isCurrentCycleScreeningSignature`: prevents restoring old search winners
+  and queues, including legacy quick tasks. Stored files remain untouched.
+- Removed reusable parameter-library modules, metadata capture, controls and
+  quick-stage expansion. Legacy requests are explicitly rejected.
+
+
+## Nikkei missing-date repair
+
+- `nikkeiNeedsMissingBarProbe`: checks a completed Tokyo weekday and bounded
+  recent weekday gaps only as official-probe hints, not a holiday calendar.
+- `mergeNikkeiMissingBars`: requires canonical identity, complete official
+  sessions and two matching OHLC overlaps, inserts only absent dates, and keeps
+  the original primary metadata and immutable bars. Added bars retain OHLC
+  provider/access-time provenance; no volume is invented.
+- `supplementNikkeiMissingBars`: lazily calls the existing official adapter only
+  when probing is necessary, retains primary data on classified source failure,
+  and propagates cancellation. Active chart, shortcut and non-strict API flows
+  share it; no source-selection oscillation is introduced by date-gap repair.
+
+## 2026-10-24 Nikkei cycle close replay
+
+- `isNikkeiCycleInstrument`: restricts the cycle page to canonical `index:N225`.
+- `completedNikkeiCycleSeries`: accepts daily Nikkei series, excludes incomplete
+  and future bars, and requires today's provider-complete status after the JPX
+  close. It never changes the shared canonical source data.
+- `buildStrategyCycleRollingSchedule`: now starts at the first evaluation close
+  and allows a final-day trigger; at least three evaluation bars are required.
+- `strategyCycleRecentSignals`: builds only a causal prefix and returns the
+  final two completed bar-to-bar allocation changes of one selected plan.
+- `strategyCycleSignalDirection` / `strategyCycleSignalsOppose`: apply the
+  existing reduce-then-increase hold exception before comparing signal intent.
+- `runStrategyCycleCloseBacktest`: uses explicit close-price executions through
+  the shared allocation ledger without modifying ordinary backtest timing.
+- `buildStrategyCycleRollingReport`: `updateReturn` and `rebalances` now follow
+  the user-selected incoming-winner execution policy. `newOnConflictReturn`
+  aliases the executed total; `oldOnConflictReturn` holds an internal research
+  comparison using preceding-winner signals only on conflict dates. No old
+  return comparison is shown in the UI. Benchmark entry remains at the
+  first evaluation close; the full chart plots the executed account fills.
+- `NIKKEI_CYCLE_CONFLICT_POLICY`: versions this user choice separately from
+  close-execution timing and engine protocol in task persistence/restoration.
+- `migrateCycleConflictPolicySignature`: upgrades only the previous conflict
+  policy under the same close model, preserving saved winners and job mappings.
+
+These definitions supersede earlier next-open rolling-cycle descriptions below.
+
+`BacktestPerformance.executedAllocation` reports the last executed normalized
+allocation from single-strategy and allocation backtests, including inherited
+opening exposure. Shortcut current-position labels consume this field instead
+of the latest desired close target. The original shortcut layout is unchanged.
+`resolveLatestDailyBarStatus(...)` compares trading dates in the known venue's
+timezone before checking its close, preventing Shanghai midnight from completing
+a still-active US trading session. Unknown venues retain the existing fallback.
+
 ## 2026-09-26 trend-triggered cycle validation
 
 - `buildCycleScreeningWindows(...)`: expands an inclusive integer screening
@@ -369,9 +450,14 @@
   rounded lag only when the newest minute bar is at least three minutes behind
   the fetch time; the workspace displays it while the venue refresh policy is
   enabled.
-- `buildVisiblePriceAxisRange(bars, window)`: derives padded minimum and maximum
-  values only from visible candle lows and highs, independent of indicators,
-  strategy references, and trade markers.
+- `buildVisiblePriceAxisRange(bars, window, overlayValues)`: derives padded
+  minimum and maximum values from visible candle lows/highs and finite enabled
+  price-indicator line values. Strategy references, pane values, offscreen
+  values, warm-up nulls, and trade markers do not determine the range.
+  `buildIndicatorSeries` accepts the current Bollinger visibility to make SMA
+  dashed during coexistence; Bollinger blue boundaries and orange basis remain
+  solid, while SMA uses aqua/yellow from the TradingView palette. Legend samples
+  are widened to make dashed strokes readable.
 - `applyDataZoomWindow(option, window)`: reapplies the user's current zoom
   start/end percentages when chart series or indicators update.
 - `panDataZoomWindow(window, dragPixels, chartWidth)`: translates a direct
@@ -570,8 +656,8 @@
 - `compareScreeningResults(left, right, objective)`: orders candidates under
   the selected objective and deterministic metric tie-breakers.
 - `selectCombinationStrategyIds(singleResults, objective)`: applies the shared
-  evidence-bounded family gate after complete standalone and EMA evaluation.
-  It keeps `ceil(95%)` of completed strategy families, with a minimum of two,
+  complete eligible-family selection after complete standalone and EMA evaluation.
+  It keeps 100% of completed eligible strategy families
   for every pair and higher-order screening path.
 - `areStrategiesEquivalent(...)`: reports identical IDs or registry entries
   declared as the same mathematical signal family, preventing meaningless
@@ -585,9 +671,9 @@
 - `optimizeStrategyCombinations(...)`: evaluates every supplied standalone
   candidate unfiltered. For each eligible strategy it keeps compact metrics for
   the top 60 and evaluates those sets under EMA5-8. It normally keeps the top
-  three final parameter sets per strategy; rolling callers can request a
+  six final parameter sets per strategy; rolling callers can request a
   Top-10 per-strategy pool. It ranks the completed family winners and allows
-  only the top 95% into combinations. It evaluates all nine parameter
+  all eligible families into combinations. It evaluates all 36 parameter
   crossings for every eligible unordered non-equivalent strategy pair, keeps
   the best crossing for each pair, retains up to 4,096 pairs, and compares
   50/50, 60/40, 40/60,
@@ -603,7 +689,7 @@
   primary and 30 total. Intermediate pools use cached unordered-set keys and
   stable binary insertion; this is result-equivalent to sorting the complete
   pool after every candidate but avoids that repeated allocation. The current
-  registry contributes 55 families and at most 1,485 unordered pairs before
+  registry contributes 57 families and at most 1,596 unordered pairs before
   declared-equivalence exclusions, so every eligible pair reaches allocation
   comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets

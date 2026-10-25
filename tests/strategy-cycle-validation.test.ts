@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { MarketBar } from "../lib/market/types";
+import { migrateCycleConflictPolicySignature } from "../lib/analysis/strategy-cycle-validation-store";
+import { NIKKEI_CYCLE_MODEL, NIKKEI_CYCLE_CONFLICT_POLICY } from "../lib/analysis/strategy-cycle-validation";
+import type { MarketBar, MarketSeries } from "../lib/market/types";
 import {
   buildStrategyCycleDailyValidationReport,
   buildStrategyCycleDailySchedule,
@@ -18,11 +20,17 @@ import {
   MIN_CYCLE_DAILY_EVALUATION_SESSIONS,
   normalizeCycleValues,
   resolveStrategyCycleRecentSignals,
+  completedNikkeiCycleSeries,
+  isNikkeiCycleInstrument,
+  runStrategyCycleCloseBacktest,
+  strategyCycleSignalsOppose,
+  strategyCycleRecentSignals,
   shouldScreenStrategyCycleAtIndex,
   strategyCycleTrendAngle,
   type StrategyCycleSelectionSnapshot,
 } from "../lib/analysis/strategy-cycle-validation";
 import type { AllocationBacktestResult } from "../lib/analysis/backtest";
+import { buildStrategyPlanTimeline, SCREENING_RESULT_MODEL_VERSION } from "../lib/analysis/strategy-combinations";
 
 function makeBars(count: number): MarketBar[] {
   return Array.from({ length: count }, (_, index) => {
@@ -106,14 +114,15 @@ test("trend trigger skips continuation candles and screens reversal candles", ()
   assert.equal(shouldScreenStrategyCycleAtIndex(flat, 2), true);
 });
 
-test("rolling schedule always screens before evaluation and then only on trend triggers", () => {
+test("rolling schedule screens at the first evaluation close and includes final-day triggers", () => {
   const bars = makeBars(55);
   const schedule = buildStrategyCycleRollingSchedule(bars, 14, 20);
-  assert.deepEqual(schedule?.decisionIndexes, [40]);
+  assert.deepEqual(schedule?.decisionIndexes, [41]);
   assert.equal(schedule?.evaluationStartIndex, 41);
   assert.equal(schedule?.evaluationEndIndex, 54);
   bars[45] = { ...bars[45]!, open: bars[45]!.close + 1 };
-  assert.deepEqual(buildStrategyCycleRollingSchedule(bars, 14, 20)?.decisionIndexes, [40, 45]);
+  bars[54] = { ...bars[54]!, open: bars[54]!.close + 1 };
+  assert.deepEqual(buildStrategyCycleRollingSchedule(bars, 14, 20)?.decisionIndexes, [41, 45, 54]);
   assert.equal(buildStrategyCycleRollingSchedule(makeBars(100), 90, 20), null);
   assert.equal(buildStrategyCycleRollingSchedule(makeBars(20), 2, 20), null);
   assert.ok(buildStrategyCycleRollingSchedule(makeBars(20), 10, 5));
@@ -139,6 +148,39 @@ test("two-bar signal resolver inherits position and applies the six supported se
   assert.equal(resolveStrategyCycleRecentSignals(0.8, [increase(0.9), reduce(0.4)]).targetAllocation, 0.4);
 });
 
+test("Nikkei cycle inputs exclude unclosed, unknown, future, and non-Nikkei bars", () => {
+  const series: MarketSeries = {
+    instrument: { secid: "^N225", code: "^N225", name: "Nikkei 225", exchange: "JPX", assetType: "index", provider: "yahoo" },
+    interval: "1d", priceAdjustment: "raw", source: "yahoo", previousClose: 100,
+    fetchedAt: "2026-10-23T06:30:00Z", latestBarStatus: "complete",
+    bars: makeBars(3).map((bar, index) => ({ ...bar, time: `2026-10-${22 + index}` })),
+  };
+  assert.ok(isNikkeiCycleInstrument(series.instrument));
+  assert.equal(completedNikkeiCycleSeries(series, new Date("2026-10-23T06:29:59Z")).bars.length, 1);
+  assert.equal(completedNikkeiCycleSeries(series, new Date("2026-10-23T06:30:00Z")).bars.length, 2);
+  assert.equal(completedNikkeiCycleSeries({ ...series, latestBarStatus: "unknown" }, new Date("2026-10-23T06:30:00Z")).bars.length, 1);
+  assert.throws(() => completedNikkeiCycleSeries({ ...series, interval: "1m" }));
+  assert.throws(() => completedNikkeiCycleSeries({ ...series, instrument: { ...series.instrument, secid: "^GSPC", code: "^GSPC" } }));
+});
+
+test("cycle proxy fills at the current close without earning the signal-day move or missing the final fill", () => {
+  const closes = [100, 200, 220, 210, 230];
+  const bars = makeBars(5).map((bar, index) => ({ ...bar, open: 50, close: closes[index]!, high: 300, low: 40 }));
+  const result = runStrategyCycleCloseBacktest(bars, [0, 1, 1, 0, 1], {
+    initialCash: 100_000, commissionRate: 0, slippageRate: 0, interval: "1d",
+  });
+  assert.deepEqual(result.rebalances.map((fill) => fill.time), [bars[1]!.time, bars[3]!.time, bars[4]!.time]);
+  assert.deepEqual(result.rebalances.map((fill) => fill.fillPrice), [200, 210, 230]);
+  assert.equal(result.equity[1]!.equity, 100_000);
+  assert.ok(Math.abs(result.totalReturn - 5) < 1e-9);
+  assert.equal(result.executedAllocation, 1);
+  const increase = { direction: "increase" as const, targetAllocation: 1, signals: [] };
+  const reduce = { direction: "reduce" as const, targetAllocation: 0, signals: [] };
+  assert.ok(strategyCycleSignalsOppose([increase], [reduce]));
+  assert.equal(strategyCycleSignalsOppose([reduce, increase], [reduce]), false);
+  assert.ok(strategyCycleSignalsOppose([increase, reduce], [increase]));
+});
+
 test("rolling report keeps only event-triggered updates and the benchmark", () => {
   const bars = makeBars(55);
   const plan = (strategyId: "roc-momentum" | "rsi-reversal") => ({
@@ -150,7 +192,7 @@ test("rolling report keeps only event-triggered updates and the benchmark", () =
     strategyBAllocation: 0,
   });
   const snapshots: StrategyCycleSelectionSnapshot[] = [
-    { decisionIndex: 40, plan: plan("roc-momentum") },
+    { decisionIndex: 41, plan: plan("roc-momentum") },
   ].map(({ decisionIndex, plan }) => ({
     decisionIndex,
     decisionTime: bars[decisionIndex]!.time,
@@ -177,10 +219,112 @@ test("rolling report keeps only event-triggered updates and the benchmark", () =
   assert.ok(Number.isFinite(result.benchmarkReturn));
   const expectedBenchmark = (
     bars[54]!.close /
-    (bars[41]!.open * (1 + settings.slippageRate) * (1 + settings.commissionRate)) - 1
+    (bars[41]!.close * (1 + settings.slippageRate) * (1 + settings.commissionRate)) - 1
   ) * 100;
   assert.ok(Math.abs(result.benchmarkReturn - expectedBenchmark) < 1e-9);
   assert.throws(() => buildStrategyCycleRollingReport(bars, [], 14, 20, settings));
+});
+
+test("replacement plans catch up yesterday's signal without duplicate or older fills", () => {
+  const cases = [
+    { name: "clear", tail: [126, 90, 89, 88, 87, 86], entry: 1, expected: [1, 0] },
+    { name: "establish", tail: [90, 110, 110, 110, 110, 110], entry: 1_000, expected: [1] },
+    { name: "ignore older clear", tail: [90, 89, 88, 87, 86, 85], entry: 1, expected: [1] },
+  ];
+  for (const scenario of cases) {
+    const closes = [...Array<number>(9).fill(100), 120, 122, 124, ...scenario.tail];
+    const bars = makeBars(closes.length).map((bar, index) => ({
+      ...bar,
+      open: closes[index]!,
+      close: closes[index]!,
+      high: closes[index]! + 1,
+      low: closes[index]! - 1,
+    }));
+    const plan = (entry: number, exit: number) => ({
+      strategyA: { strategyId: "roc-momentum" as const, parameters: { period: 1, entry, exit } },
+      strategyB: null,
+      strategyAAllocation: 1,
+      strategyBAllocation: 0,
+    });
+    const replacement = plan(1, -1);
+    const timeline = buildStrategyPlanTimeline(bars, replacement);
+    // The replacement has no new signal today; yesterday's signal must survive.
+    assert.equal(timeline.target[14], timeline.target[13], scenario.name);
+    assert.equal(
+      timeline.target[13] !== timeline.target[12],
+      scenario.name !== "ignore older clear",
+      scenario.name,
+    );
+    const schedule = buildStrategyCycleRollingSchedule(bars, 8, 5)!;
+    const snapshots = schedule.decisionIndexes.map((decisionIndex) => ({
+      decisionIndex,
+      decisionTime: bars[decisionIndex]!.time,
+      screeningWindow: 5,
+      plan: decisionIndex < 14 ? plan(scenario.entry, -50) : replacement,
+      fixedRelativeLongStrategy: null,
+      label: String(decisionIndex),
+    }));
+    const result = buildStrategyCycleRollingReport(bars, snapshots, 8, 5, {
+      initialCash: 100_000,
+      commissionRate: 0.001,
+      slippageRate: 0.001,
+      interval: "1d",
+      executionPolicy: "hybrid",
+    });
+    assert.deepEqual(result.rebalances.map((fill) => fill.targetAllocation), scenario.expected, scenario.name);
+    assert.deepEqual(
+      result.rebalances.map((fill) => fill.time),
+      scenario.name === "clear" ? [bars[10]!.time, bars[14]!.time]
+        : [bars[scenario.name === "establish" ? 14 : 10]!.time],
+      scenario.name,
+    );
+    const fill = result.rebalances.at(-1)!;
+    assert.ok(Math.abs(fill.fillPrice - bars[scenario.name === "ignore older clear" ? 10 : 14]!.close *
+      (scenario.name === "clear" ? 0.999 : 1.001)) < 1e-9, scenario.name);
+  }
+});
+
+test("opposing replacements execute incoming signals while comparing fixed policies without future selection", () => {
+  const closes = [...Array<number>(9).fill(100), 120, 122, 124, 126, 90, 89, 95, 100, 105];
+  const bars = makeBars(closes.length).map((bar, index) => ({
+    ...bar, open: closes[index]!, close: closes[index]!, high: closes[index]! + 1, low: closes[index]! - 1,
+  }));
+  const oldPlan = {
+    strategyA: { strategyId: "roc-momentum" as const, parameters: { period: 1, entry: 1, exit: -1 } },
+    strategyB: null, strategyAAllocation: 1, strategyBAllocation: 0,
+  };
+  const newPlan = {
+    ...oldPlan, strategyA: { strategyId: "rsi-reversal" as const, parameters: { period: 2, entry: 50, exit: 90 } },
+  };
+  const snapshots = buildStrategyCycleRollingSchedule(bars, 8, 5)!.decisionIndexes.map((decisionIndex) => ({
+    decisionIndex, decisionTime: bars[decisionIndex]!.time, screeningWindow: 5,
+    plan: decisionIndex < 14 ? oldPlan : newPlan,
+    fixedRelativeLongStrategy: null, label: String(decisionIndex),
+  }));
+  const atReplacement = snapshots.find((snapshot) => snapshot.decisionIndex === 14)!;
+  const signals = strategyCycleRecentSignals(bars, atReplacement, 14);
+  const changedFuture = bars.map((bar, index) => index > 14 ? { ...bar, close: 1_000 } : bar);
+  assert.deepEqual(strategyCycleRecentSignals(changedFuture, atReplacement, 14), signals);
+  const report = buildStrategyCycleRollingReport(bars, snapshots, 8, 5, {
+    initialCash: 100_000, commissionRate: 0.001, slippageRate: 0.001, interval: "1d",
+  });
+  assert.ok(report.conflictCount > 0);
+  assert.equal(report.updateReturn, report.newOnConflictReturn);
+  assert.notEqual(report.updateReturn, report.oldOnConflictReturn);
+  assert.ok(report.rebalances.some((fill) => fill.time === bars[13]!.time && fill.targetAllocation === 0));
+  assert.ok(report.rebalances.some((fill) => fill.time === bars[14]!.time && fill.targetAllocation > 0));
+});
+
+test("report-policy migration preserves screening inputs and is idempotent", () => {
+  const original = { rollingSchedule: NIKKEI_CYCLE_MODEL, conflictPolicy: "previous-current-signals-on-conflict-v1",
+    instrumentKey: "index:N225", screeningWindows: [10], evaluationSessions: 504,
+    resultModelVersion: SCREENING_RESULT_MODEL_VERSION };
+  const migrated = migrateCycleConflictPolicySignature(JSON.stringify(original));
+  assert.deepEqual(JSON.parse(migrated), { ...original, conflictPolicy: NIKKEI_CYCLE_CONFLICT_POLICY });
+  assert.equal(migrateCycleConflictPolicySignature(migrated), migrated);
+  const stale = JSON.stringify({ ...original, rollingSchedule: "obsolete-model" });
+  assert.equal(migrateCycleConflictPolicySignature(stale), stale);
+  assert.equal(migrateCycleConflictPolicySignature("invalid-json"), "invalid-json");
 });
 
 test("daily validation requires the screening window plus 20 forward sessions and one decision day", () => {

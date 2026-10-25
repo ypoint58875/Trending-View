@@ -1,5 +1,5 @@
 import type { BacktestSettings } from "./backtest";
-import type { ScreeningObjective } from "./screening";
+import type { ScreeningObjective, ScreeningCandidate } from "./screening";
 import type { CombinationScreeningProgress } from "./strategy-combinations";
 import type {
   ScreeningValidationConfig,
@@ -26,6 +26,7 @@ export interface LocalScreeningJobRequest {
     signature: string;
   };
   options: {
+    candidates?: ScreeningCandidate[];
     objective?: ScreeningObjective;
     entryFilters?: MovingAverageSlopeFilter[];
     excludedStrategyIds?: StrategyId[];

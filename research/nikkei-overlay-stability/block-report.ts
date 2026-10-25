@@ -1,0 +1,37 @@
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { output } from "./block-study";
+import { t } from "./block-ui-text";
+
+const s = JSON.parse(await readFile(join(output, "summary.json"), "utf8"));
+const pct = (v: number) => `${v.toFixed(2)}%`;
+const esc = (v: unknown) => String(v).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll('"', "&quot;");
+const table = (headers: string[], rows: unknown[][]) => `<div class="scroll"><table><thead><tr>${headers.map(x => `<th>${esc(x)}</th>`).join("")}</tr></thead><tbody>${rows.map(r => `<tr>${r.map(x => `<td>${esc(x)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+const p = s.fullBest.parameters;
+const id = (p: { entry: number; exit: number; gate: number; threshold: number }) => `EMA${p.entry} / SMA${p.exit} / WMA${p.gate} / ${(p.threshold * 100).toFixed(3)}%`;
+const a = s.selected, h = s.controls.holding;
+const policyRows = [...s.policies].sort((a: any, b: any) => a.length - b.length).map((r: any) => [r.length + (r.length === s.selectedLength ? " *" : ""), pct(r.development.totalReturn), pct(r.final500.totalReturn), pct(r.common.totalReturn), pct(r.common.maxDrawdown), r.fullFolds, `${r.beatHoldingFolds}/${r.folds}`]);
+policyRows.push([t.holding, pct(h.development.totalReturn), pct(h.final500.totalReturn), pct(h.common.totalReturn), pct(h.common.maxDrawdown), "", ""]);
+policyRows.push([t.fixed, pct(s.controls.current.development.totalReturn), pct(s.controls.current.final500.totalReturn), pct(s.controls.current.common.totalReturn), pct(s.controls.current.common.maxDrawdown), "", ""]);
+const ageTable = (scope: string) => table([t.ageDays, t.n, t.median, t.mean, t.win], s.ageRows.filter((r: any) => r.length === s.selectedLength && r.scope === scope).map((r: any) => [r.age, r.vintages, pct(r.medianRelativeHolding), pct(r.meanRelativeHolding), pct(r.beatHoldingPercent)]));
+const policy = JSON.parse(await readFile(join(output, `policy-${s.selectedLength}.json`), "utf8"));
+const foldLines = (await readFile(join(output, "folds.csv"), "utf8")).trim().split("\n");
+const cells = (line: string) => [...line.matchAll(/"((?:[^"]|"")*)"/g)].map(m => m[1]!.replaceAll('""', '"'));
+const foldHeaders = cells(foldLines[0]!);
+const selectedFolds = foldLines.slice(1).map(line => Object.fromEntries(cells(line).map((value, i) => [foldHeaders[i]!, value])))
+  .filter(row => Number(row.length) === s.selectedLength);
+const urls = ["full-grid.csv", "policies.csv", "folds.csv", "parameter-age.csv", "age-vintages.csv", "lifetime.csv", "daily-equity.csv", "cost-timing.csv", "summary.json"];
+const html = `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${t.title}</title><style>
+body{margin:0;background:#0c171b;color:#e7efe9;font:16px/1.8 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1180px;margin:auto;padding:40px 26px 80px}h1{font-size:32px;line-height:1.4}h2{margin-top:42px;color:#91deb9;font-size:23px}h3{font-size:18px}p{color:#d0dcd6}.lead,.chosen{padding:18px 22px;background:#16372d;border-left:4px solid #8de4ba;font-size:19px}.note{padding:16px 20px;background:#302b1d;border:1px solid #74613a;font-size:14px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:right;border-bottom:1px solid #334f43;padding:12px;white-space:nowrap}th{background:#183026}td:first-child,th:first-child{text-align:left}a{color:#8de4ba}img{width:100%;border-radius:8px}.files{display:flex;gap:14px 26px;flex-wrap:wrap}.hash{font:12px/1.7 monospace;word-break:break-all;color:#98b6a7}</style><main>
+<h1>${t.title}</h1><p>${t.subtitle}</p><div class="lead">${t.lead}</div><h2>${t.design}</h2><p>${t.designBody}</p><p>${t.execution}</p><p>${t.separation}</p><p>${s.commonStart} — ${s.end} · ${s.final500Start} — ${s.end}</p><p class="note">${t.caveat}</p>
+<h2>${t.full}</h2>${table([t.method, t.ret, t.dd], [[t.old, pct(s.fullCurrent.totalReturn), pct(s.fullCurrent.maxDrawdown)], [t.best + ": " + id(p), pct(s.fullBest.totalReturn), pct(s.fullBest.maxDrawdown)], [t.holding, pct(s.fullHolding.totalReturn), pct(s.fullHolding.maxDrawdown)]])}<p>${t.fullNote}</p>
+<h2>${t.policies}</h2>${table([t.length, t.dev, t.test, t.common, t.dd, t.folds, t.beat], policyRows)}
+<div class="chosen">${t.selected}：${s.selectedLength} ${t.sessions}。${t.later}：${pct(a.final500.totalReturn)} / ${t.holding} ${pct(h.final500.totalReturn)}。${a.final500.totalReturn > h.final500.totalReturn ? t.selectedWins : t.selectedLoses} ${a.common.totalReturn > h.common.totalReturn ? t.fullWins : t.fullLoses}</div><p>${t.stability}</p><img src="block-analysis.png" alt="Chronological segmentation policies and parameter ages">
+<h2>${t.age}</h2><p>${t.ageBody}</p><h3>${s.selectedLength} ${t.sessions} · ${t.devAge}</h3>${ageTable("development-only")}<h3>${s.selectedLength} ${t.sessions} · ${t.allAge}</h3>${ageTable("all-available")}<p>${t.ageWarning}</p>
+<h2>${t.costs}</h2>${table([t.timing, t.extra, t.common, t.dd, t.test], s.sensitivity.filter((r: any) => r.length === s.selectedLength).map((r: any) => [r.execution === "close-proxy" ? t.close : t.next, `${r.extraBps} ${t.basis}`, pct(r.common.totalReturn), pct(r.common.maxDrawdown), pct(r.final500.totalReturn)]))}<p>${t.costNote}</p>
+<h2>${t.trades}</h2>${table([t.interval, t.id, t.trained, t.future, t.benchmark, t.ties], selectedFolds.map(w => [w.deployStart + " — " + w.deployEnd,
+  id({ entry: Number(w.entry), exit: Number(w.exit), gate: Number(w.gate), threshold: Number(w.threshold) }), pct(Number(w.trainingReturn)), pct(Number(w.deploymentReturn)), pct(Number(w.holdingReturn)), w.tiedOptima]))}
+<h2>${t.files}</h2><div class="files">${urls.map((url, i) => `<a href="${url}">${t.links[i]}</a>`).join("")}</div><p>${t.evidence}</p><p><a href="https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html">TimeSeriesSplit</a> · <a href="https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf">The Probability of Backtest Overfitting</a></p><p class="hash">source: ${s.sourceHash}<br>design: ${s.designHash}</p></main></html>`;
+await writeFile(join(output, "report.html"), html, "utf8");
+await writeFile(join(output, "REPORT.md"), `# Expanded overlay grid and segmentation selection\n\nGrid: 13824, periods5..16, thresholds0.025%..0.2%.\n\nFull-sample best: ${id(p)}, return ${pct(s.fullBest.totalReturn)}, drawdown ${pct(s.fullBest.maxDrawdown)}. Holding ${pct(s.fullHolding.totalReturn)}.\n\nDevelopment-selected length: ${s.selectedLength}. Common1500 return ${pct(a.common.totalReturn)} versus holding ${pct(h.common.totalReturn)}. Final500 return ${pct(a.final500.totalReturn)} versus holding ${pct(h.final500.totalReturn)}.\n\nSee policies.csv for all11 lengths and folds.csv for the actual train/deploy boundaries, selected parameters, ties and subsequent account results. Lifetime diagnostics never feed back into historical parameter selection. Training and deployment lengths are equal. All accounts have matching entry costs and maintain inherited holdings across updates.\n\nThis is conditional historical research on quick-screen winners with unverified historical library vintages and previously explored history.\n`, "utf8");
+console.log(JSON.stringify({ selectedLength: s.selectedLength, final500: a.final500, benchmark: h.final500, report: join(output, "report.html") }));

@@ -15,6 +15,14 @@
 - Close-derived target signals are evaluated at bar close and execute no
   earlier than the next bar open. Price-order strategies may place stop orders
   from completed-bar data for execution inside the following bar.
+- Exception: the Nikkei-only strategy-cycle validation page uses completed
+  daily bars and the screening day's Nikkei close as an explicit proxy for
+  China-market operations after 14:30 and before 15:00 UTC+8. Preserve its
+  two-bar sequence rules and do not extend this exception to ordinary
+  backtests or optimizer ranking. See `docs/ARCHITECTURE.md`.
+- Cycle conflicts execute the incoming winner's current-date
+  two-bar signals. Do not enable delayed three-bar confirmation. The main
+  report/chart follows this policy; previous-winner returns are research-only.
 - Never hard-code credentials. The default Eastmoney website adapter requires
   no private credential.
 - Run `npm test` before handing off a feature change.

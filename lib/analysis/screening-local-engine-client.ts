@@ -83,6 +83,7 @@ export function screeningJobRequest(
     config,
     checkpoint,
     options: {
+      candidates: options.candidates ? [...options.candidates] : undefined,
       objective: options.objective,
       entryFilters: options.entryFilters
         ? [...options.entryFilters]
@@ -101,6 +102,17 @@ export async function enqueueScreeningBatchInLocalEngine(
   signal?: AbortSignal,
 ): Promise<string[] | null> {
   if (signal?.aborted) throw abortError();
+  // Candidate tuples are repeated per unit in the compatible wire format.
+  // Bound uploads without changing ordinary batches or the coordinator protocol.
+  if (jobs.length > 64 && jobs.some((job) => job.options.candidates)) {
+    const jobIds: string[] = [];
+    for (let offset = 0; offset < jobs.length; offset += 64) {
+      const chunk = await enqueueScreeningBatchInLocalEngine(bars, jobs.slice(offset, offset + 64), signal);
+      if (!chunk) return null;
+      jobIds.push(...chunk);
+    }
+    return jobIds;
+  }
   const requestBody = encodeLocalScreeningJobBatchRequest({
     version: LOCAL_SCREENING_ENGINE_VERSION,
     bars,

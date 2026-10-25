@@ -79,6 +79,7 @@ export type ScreeningValidationConfig =
   | ScreeningRollingValidationConfig;
 
 export type ScreeningValidationErrorCode =
+  | "unsupported-screening-mode"
   | "invalid-sample-periods"
   | "insufficient-sample-data"
   | "invalid-range-order"
@@ -1685,6 +1686,9 @@ export async function runScreeningWithValidation(
   config: ScreeningValidationConfig,
   options: RunScreeningWithValidationOptions = {},
 ): Promise<ScreeningValidationOutcome> {
+  if (Reflect.get(options, "quickScreening") || Reflect.get(config, "parameterSearch")) {
+    throw new ScreeningValidationError("unsupported-screening-mode");
+  }
   if (
     settings.interval !== "1d" &&
     !hasIntradayScreeningEvidence(

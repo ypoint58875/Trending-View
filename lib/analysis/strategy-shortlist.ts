@@ -142,6 +142,7 @@ function singleCandidate(
     kind: "single",
     result,
     plan: {
+      ...(result.positionOverlay ? { positionOverlay: { ...result.positionOverlay } } : {}),
       strategyA: {
         strategyId: result.strategyId,
         parameters: { ...result.parameters },
@@ -180,6 +181,7 @@ function combinationCandidate(
   const first = legs[0]!;
   const second = legs[1]!;
   const plan: StrategyAllocationPlan = {
+    ...(result.positionOverlay ? { positionOverlay: { ...result.positionOverlay } } : {}),
     strategyA: { strategyId: first.strategyId, parameters: { ...first.parameters } },
     strategyB: { strategyId: second.strategyId, parameters: { ...second.parameters } },
     strategyAAllocation: first.allocation,

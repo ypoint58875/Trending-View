@@ -1,5 +1,768 @@
 # Codex State
 
+## 2026-10-25 full-only screening with six finalists and all families
+
+- User explicitly removed quick screening and expanded full search to six
+  execution finalists per family and100% eligible family participation.
+  `COMBINATION_FINALISTS_PER_STRATEGY` is6; family selection is100; each pair
+  crosses up to36 parameter combinations. Existing full-mode parent beams,
+  allocations, execution timing, volume exclusions and mathematical-equivalence
+  rules remain. This supersedes earlier top-three/top95% policy entries.
+- Removed both page controls/state, reusable parameter-library client/storage
+  modules, metadata capture, quick transport fields and top-thirty quick
+  expansion. Shared overlay checkbox CSS uses neutral overlay class names.
+  Compatibility-only guards explicitly reject obsolete quick requests instead
+  of silently computing a restricted candidate search as a full result.
+- Search result model is6. Optimizer checkpoints include its shared constant;
+  browser/child identities, latest-result cache and cycle task restoration
+  reject old model/task signatures. Old task records, engine jobs, browser
+  library records, research snapshots and reports are retained without being
+  resumed or relabeled as new full-search results. Protocol version/endpoints
+  are unchanged; coordinator/relay/launcher keep their shared protocol source.
+- Deleted `screening-parameter-client.ts` and `screening-parameter-library.ts`
+  because their sole runtime purpose was the removed feature. Recoverable
+  pre-edit copies live under Git-ignored `outputs/full-screening-migration/`
+  with `.bak` extensions. The existing parameter-library test file is preserved
+  and repurposed into13 full-only policy/removal/resume tests; overlay identity
+  tests now exercise active screening checkpoints instead of deleted libraries.
+- Focused tests confirm complete family grids, six finalists,36 pair crossings,
+  weakest eligible-family retention, exact current-model resume, obsolete model
+  restart, legacy-mode rejection and full-stage recovery. Final `npm test`
+  passes342 unit tests, the production build and4 rendered-route tests;
+  typecheck and final source/diff audits pass. The13 repurposed policy tests
+  also pass independently. No historical market data,
+  strategy-cycle return ledger or prior research source was changed.
+
+## 2026-10-25 full-screen versus quick-screen return reconciliation
+
+- User correctly recalled91.4477% for original EMA7/SMA11/WMA14/0.125%.
+  Reproduced it from the old full-screen504-session snapshot,2024-09-27..
+  2026-10-23,45 fills and8.2619% drawdown. The new45.8243% is the final500
+  segment of a different quick-screen2000-session account; it must not be
+  presented as the earlier full-screen result. Underlying OHLC arrays match.
+- Matched dates2024-10-03..2026-10-23, both starting flat: full-screen original
+  parameters91.9439%, new EMA8/SMA10/WMA14/0.10%73.1478%; quick-screen original
+  38.2139%, new50.2945%. Thus the new combination improves only the tested
+  quick path and worsens the original full-screen path. Four extra days and
+  inherited state do not account for the principal source-path difference.
+- Narrowed report labels to the actual quick-screen provenance and added the
+  matched-source caveat. The earlier broad implication that the new parameters
+  upgrade the original full-screen strategy is not supported. No product
+  settings, source data, strategy winners or existing research results change.
+
+## 2026-10-25 expanded5..16 grid and adaptive segmentation research
+
+- User clarified the desired direct train-block/next-block experiment and that
+  100/300 sessions were illustrative. Added `BLOCK_DESIGN.md`, `block-study.ts`,
+  four focused tests, localized report generator and matplotlib chart in the
+  existing isolated overlay study. Only research/docs change; no production
+  rule, preference, source request/result or active queue is modified.
+- Full grid is13824 independent EMA/SMA/WMA5..16/eight0.025%..0.2% thresholds,
+  all three controls on. Full2000 best remains EMA8/SMA10/WMA14/0.10%,166.2851%
+  return/-29.0334% drawdown, versus holding176.7222%/-31.7989%.
+- Compare equal training/update lengths40,60,80,100,126,160,200,252,300,400,500.
+  Common1500 deployment starts2020-09-02. Training starts empty in each past
+  window with causal full-history indicator warm-up; one actual live account
+  preserves holdings/pending sells across updates. Winner ties prefer current
+  settings and report their count. Full-grid plus145 training windows means
+  2,018,304 candidate-window evaluations;146 atomic numeric caches use46 MiB.
+- Only development1000 days select length252: development36.9597%, final500
+  17.0804%, common1500 60.3530%, drawdown25.8075%. Holding respectively62.5570%,
+  65.8165%,169.5463%; current fixed common63.0324%. None of11 policies beats
+  holding over common1500 or final500.100-day common22.8515%, last20.0059%;
+  300-day common27.1982%, last8.0081%. This does not support profitable periodic
+  retuning within the tested equal-length policy class.
+- 252-day winners beat holding in1/6 actual deployment blocks. Empty-start
+  frozen versions have median relative holding wealth+0.3486% at20 days,
+  +0.0159% at40,-2.1894% at60,-4.9653% at126; small overlapping cohorts prevent
+  reliable expiry inference. Age tables also isolate development-only outcomes.
+- Report: `research/nikkei-overlay-stability/output/blocks-5-16/report.html`.
+  Run `block-study.ts`, `block-report.ts`, then `block-plot.py`. Four new tests
+  and five existing research tests pass. Full `npm test` passes341 unit tests,
+  build and4 rendered-route tests. Same-command resume reuses all146 grids;
+  all5832 overlapping old-grid settings match within1e-9, every policy's fold
+  returns compound to its actual continuous return, and report links/source
+  identities pass. Historical quick-library vintage limitations
+  and previously explored dates remain explicit.
+
+## 2026-10-25 2000-session mixed-overlay stability research
+
+- Added isolated `research/nikkei-overlay-stability/`: declared design, bounded
+  actual quick-job reconstruction, frozen raw bars/plans/hashes, atomic signal
+  and 128-candidate grid checkpoints, focused tests, Chinese report locale,
+  report generator and matplotlib chart export. Production rules, preferences,
+  local engine and original results are unchanged; pre-existing working changes
+  remain intact. No network price refresh or new screening is performed.
+- Source is1293 actual decisions over2000 sessions,2018-08-08..2026-10-23.
+  Exact market prefixes, completed results and matching costs are verified.
+  Quick candidates change159->171 on2024-11-22. Historical training vintages
+  are unverified; final500 overlaps previously studied dates. These are
+  conditional historical checks, not an independent end-to-end holdout.
+- Current controls128.6533%/-30.3825%; all off48.3488%/-26.4044%;
+  holding176.7222%/-31.7989%. Current500-block returns40.3264%,-1.2027%,
+  13.1001%,45.8243%. Full-grid best EMA8/SMA10/WMA14/0.10% returns166.2851%
+  with29.0334% drawdown, but nearby81-setting median118.8389% exposes fragility.
+- All70 rolling policies use past-only training, a common1244-session interval,
+  development offsets756..1499 and final500 separate. Development-selected
+  return/756-history/252-update gives29.8558% development and10.0244% final500;
+  fixed current gives1.5542% and45.8243%. Automatic updating is not supported.
+- Post-hoc single-dimension follow-up finds EMA8 alone as the first1500's
+  best entry period: full152.5533%/-28.4933%, last50058.0582%. Matching
+  next-open sensitivity120.1782% versus current106.7989%. Keep it as a small
+  prospective research candidate; the website's EMA7 constant was not changed.
+- Frozen age analysis uses50 overlapping252-day vintages per history/score.
+  756-day return-selected settings show only0.16..0.29 percentage point mean
+  advantage over current in the first120 days, then-1.6795 points in121..252.
+  No fixed useful lifetime or reliable cadence can be inferred from these
+  overlapping historical samples. Report complete policy/fixed menus and costs.
+- Reproduce with `npx tsx research/nikkei-overlay-stability/analyze.ts`, then
+  `npx tsx research/nikkei-overlay-stability/report.ts` and
+  `python research/nikkei-overlay-stability/plot.py` (matplotlib required).
+  All8 controls reconcile2000 daily targets with production. Five focused
+  research tests pass. Full `npm test` passes341 unit tests, production build
+  and4 rendered-route tests; typecheck passes. A second matching-identity run
+  reuses all46 grid chunks successfully; stale-identity rejection was also
+  observed and only this task's reproducible derived chunks were regenerated
+  after a script type fix. Report links, source/design identities and absence
+  of undefined content pass. The existing extensive user work is not reverted.
+
+## 2026-10-25 EMA8..14 fallback entry comparison
+
+- User requested backup EMA8..14 entry after EMA7 is vetoed by negative WMA14.
+  `ema-fallback-entry.ts` compares seven backup positive turns, same-day versus
+  strictly-later confirmation, and persistent versus invalidation-aware intent.
+  Backup supplements bypass WMA; original buys and SMA11 exit policy stay intact.
+  This is28 variants plus a complete91.44772% baseline fill reconciliation.
+- Persistent same-day backups return75.14/75.14/75.14/73.04/73.69/77.85/77.85%,
+  drawdown11.22-11.23%. Strictly-later returns91.45/89.48/89.48/88.33/88.33/
+  88.33/88.33%, drawdown8.26%. Cancelling invalid later intents yields current
+  equality for EMA8..10 and90.29% for EMA11..14. None beats current.
+- Four monitored rally metrics remain unchanged within numerical tolerance.
+  July31 same-day backups clear August3; strict persistent EMA9..14 buy August5
+  then clear August6. Two tests cover all28 modes' causality and selective
+  execution; typecheck passes. Outputs are `output/ema-fallback-entry*` under
+  the rally study. No production change, source refresh or queue reset occurred.
+
+## 2026-10-25 deferred EMA7 entry comparison
+
+- User proposed remembering EMA7 turns rejected by negative WMA14 and buying
+  after WMA14 turns positive. `deferred-ema-entry.ts` compares persistent waiting
+  with cancellation on nonpositive EMA7 or any original reduce signal. Deferred
+  execution requires flat/no raw signal/positive WMA; newer blocked turns renew
+  intent and any normal entry consumes it. No production rule was changed.
+- Full control fill ledger reconciles91.44772%/8.26194% drawdown/45 fills.
+  Persistent intent gives89.37312%/8.26194%/53; cancellation-aware intent
+  92.35439%/8.26194%/49. Four rally coverage/returns remain identical.
+  August5,2026 buy clears August6 in persistent mode; conservative mode cancels
+  July31 intent on August3's original sell. Next-open sensitivity99.40
+  ->91.25/96.22%, so the small close-proxy gain is not robust to timing.
+- Three research tests and typecheck pass. Atomic ledgers/events and summary
+  are under `research/nikkei-cycle-rallies/output/deferred-ema-entry*`.
+
+## 2026-10-25 WMA3 exit-assist comparison
+
+- User asked for WMA3 assistance on clears. `wma-exit-assist.ts` compares
+  nonpositive slope releasing pending original reductions, and a positive-to-
+  nonpositive crossing forcing flat with same-day buy suppression. Original
+  EMA7/SMA11/WMA14 entry policy remains the primary base; prior unadopted EMA
+  priority is tested separately. Both baseline full fill ledgers reconcile.
+- Current base91.44772%/8.26194% drawdown/45 fills becomes66.91016%/8.87415%/64
+  for pending-only release and33.98694%/11.18295%/80 for forced clear.
+  May21,2026 buys clear May28 instead of June8; fourth rally coverage
+  90.91 ->45.45%, account return10.84 ->4.77%. Faster signals interrupt rallies
+  under current reentry rules. EMA-priority comparison also worsens70.70
+  ->48.82/20.95%. No production rule was changed.
+- Three focused tests and typecheck pass. Full ledgers, transitions, sensitivity
+  and summary are `research/nikkei-cycle-rallies/output/wma-exit-assist*`.
+
+## 2026-10-25 EMA7 supplemental-entry priority comparison
+
+- User asked to let an EMA7 positive-turn supplement bypass a negative WMA14.
+  `ema-entry-priority.ts` preserves original flat-buy WMA filtering, raw-signal
+  precedence, inherited partial adds and SMA11 >0.125% deferred-exit behavior.
+  No production option, queue or source was changed.
+- Full baseline fill reconciliation passes. Return91.44772 ->70.70105%,
+  drawdown magnitude8.26194 ->13.02249%, fills45 ->66. Twelve supplemental
+  entries bypass negative WMA in the altered path. Four monitored ranges stay
+  unchanged. July31,2026 buys but the original strategy clears August3.
+- Next-open sensitivity99.40 ->86.72%. Two causality/priority tests and
+  typecheck pass. Atomic ledgers and summary live under
+  `research/nikkei-cycle-rallies/output/ema-entry-priority*`.
+
+## 2026-10-25 downward-turn menu expanded to3..12
+
+- User specified3..12 rather than the initial7..15 range. Updated diagnostics
+  and causality tests for30 profiles /60 warning-confirmation combinations.
+  Final summary is `output/downturn-signals-3-12-summary.json`; earlier output
+  remains provenance. Same frozen source,22 retrospective peak labels.
+- WMA3:74 signals,22/22 coverage within ten sessions, mean1.55-session delay,
+  18/22 before the first3% decline. EMA3:78 signals, same coverage/timing.
+  WMA4:67 signals,22/22,1.77 sessions,17 timely; WMA5:62,22/22,2.09,16 timely.
+  These suggest short-period research candidates, not general predictive accuracy.
+- Forward-ten-day endpoint losses>=2% occur after about22-25% of these signals;
+  greater sensitivity includes recoveries/ordinary pullbacks. No exit-return
+  simulation, production replacement or active-job change occurred. Two tests
+  and typecheck pass with the final expanded menu.
+
+## 2026-10-25 downward-turn slope diagnostics
+
+- User requested SMA/EMA/WMA periods for more downward turning points.
+  `downturn-signals.ts` compares7..15:27 positive-to-nonpositive confirmations
+  and27 still-positive weakening warnings. It uses frozen504-session data;
+  no production model, trade rule, queue or source changed.
+- Retrospective local-peak/next-ten-session3% decline labels yield22 targets.
+  EMA7/WMA7 confirm22/22 within ten sessions at mean2.27-session lag, but
+  only14/22 before the first3% drop. Counts are60/52 respectively. WMA9
+  confirms22/22 at2.95 sessions with46 signals and13 timely labels.
+  SMA11 confirms17/22 at4.41 sessions with37 signals and6 timely labels.
+- Coverage is not predictive accuracy. Roughly one-fifth of EMA7/WMA7 signals
+  precede a10-day endpoint loss>=2%. Historical label criteria and overlapping
+  forward windows are disclosed. No automatic clear/override was backtested.
+- Two causality/label tests and typecheck pass. Summary and complete signal
+  dates are `research/nikkei-cycle-rallies/output/downturn-signals-summary.json`.
+
+## 2026-10-25 entry/exit timing review
+
+- User asked for earlier entries/clears on the current mixed model. Research
+  `timing-review.ts` checks matched WMA13/WMA7 gate, SMA10 exit, threshold0.15%,
+  and a new EMA7-positive / WMA14-negative-to-nonnegative unlock supplement.
+  It preserves raw signal priority and current gate through the production
+  controller. No production rule change or optimization rerun was issued.
+- Current 91.45%/8.26% drawdown fully reconciles. Alternatives return 75.04,
+  75.18, 73.78, 65.84 and83.02%, respectively. Unlock draws down10.88%, adds
+  six supplemental entries in its path, and leaves all four monitored ranges
+  unchanged. Threshold0.15 clears Oct23,2025 instead of Nov12, lowering that
+  rally's coverage from100% to20%. Earlier is not a consistent improvement.
+- One focused test and typecheck passed. Full ledgers and summary are under
+  `research/nikkei-cycle-rallies/output/timing-review*`; short atomic reruns
+  need no new checkpoint. Existing source bars and active task remain unchanged.
+
+## 2026-10-25 WMA14 gate scope comparison
+
+- User requested comparison of negative WMA14 blocking all adds/entries instead
+  of only flat entries. `wma-add-gate.ts` preserves current mixed-model rules,
+  source winners, costs, original signal priority and pending-sell cancellation.
+  No production rule or checkbox changed.
+- Full baseline fill ledger reconciles. Expanded gate returns 91.0546315%
+  versus 91.4477169%; maximum drawdown stays -8.2619391%; fills 44 versus45.
+  Only August 25, 2026's 60% ->100% add is blocked (slope -0.15467595%).
+  Original next-day clear was profitable; all four monitored rally coverage
+  and returns remain unchanged. Next-open sensitivity 99.40 ->98.08%.
+- Three focused research tests and typecheck passed. Atomic full ledgers and
+  summary live under `research/nikkei-cycle-rallies/output/wma-add-gate*`.
+  This is a one-event same-sample difference, not evidence of general superiority.
+
+## 2026-10-24 current controls adopt mixed averages
+
+- User selected EMA7 positive-turn flat supplement, SMA11 daily slope >0.125%
+  deferred reductions/clears, and WMA14 negative-slope flat-entry prohibition.
+  Both page controls retain independent choices and default checked.
+- Added explicit `ema7-sma11-wma14-v1` in shared overlay options, feature cache,
+  saved-plan validation, settings/cache identities and page memo dependencies.
+  No-model old plans preserve the legacy SMA formulas. Shared UI setters always
+  choose the new model when applying old flags, so labels match active behavior.
+- Preference v3 preserves v2/v1 booleans without deleting recoverable keys.
+  Ordinary ledgers remain next-open; cycle close-proxy timing and original
+  signal priority/pending-sell semantics remain unchanged. Existing-position
+  increases are still exempt from the flat-entry gate.
+- Production mixed controller fully reconciles the frozen research result:
+  91.44771689225757% / -8.261939052687188%, all 45 fills identical.
+  Four new focused tests plus ten legacy tests passed. Final `npm test` passed
+  typecheck, 341 unit tests, production build and four rendered tests. One earlier
+  full attempt hit the existing coordinator stall/restart test's timeout; the
+  final full rerun passed without modifying that test or engine behavior.
+- Browser verified both pages' three checked new labels and research independent
+  gate toggling, false persistence after reload and restoration to all checked.
+  Current running 40/80 cycle task remains active; no queue restart was issued.
+
+## 2026-10-24 positive accelerating SMA12 entry research
+
+- User asked to supplement on an SMA12 positive turn OR a positive daily
+  normalized slope strictly greater than yesterday. `accelerating-entry.ts`
+  reuses the production controller, so raw-signal priority, SMA11 gate and
+  SMA12 >0.2% pending-exit behavior remain unchanged. No production change.
+- Frozen cycle10 control fully reconciles. Extension gives 72.3968133%
+  versus 83.0576889%, drawdown -9.6757634% versus -8.1092907%, 70 versus57
+  fills. Range coverage improves to 71.05/80/78.57/90.91%, but range returns
+  are 9.65/0.46/17.37/10.84%. Six acceleration entries are path-specific.
+- Without SMA11 gate, return also falls 74.62731 ->65.09698%. Gate-on
+  next-open sensitivity falls 79.00647 ->77.16046%. This is same-sample
+  research; increased coverage is not evidence of better overall performance.
+- Outputs and complete ledgers: `output/accelerating-entry*` under the study.
+  Design and focused tests cover equality, negative improvement, causality,
+  raw-signal precedence and independent gate enforcement.
+
+## 2026-10-24 SMA/EMA/WMA overlay research
+
+- User expanded all three overlay periods to 7..15 and exit thresholds to
+  0.025/0.05/0.075/0.1/0.125/0.15/0.175/0.2 percent. This supersedes the earlier
+  12-session cap. Frozen cycle10 winners and costs remain unchanged.
+- `research/nikkei-cycle-rallies/ma-type.ts` shares registry average formulas,
+  causal cached features and the production-equivalent account semantics.
+  `ma-threshold-grid.ts` computes 157464 combinations in 216 atomic chunks;
+  restart validates identities and reuses completed chunks. One threshold's
+  compact metrics remains in memory; selected leaders retain complete ledgers.
+- Current SMA12/SMA12/SMA11 0.2% fully reconciles 83.0576889% and all fills.
+  Fixed-period uniform EMA/WMA return 36.8643/29.4912%. Uniform-type grid bests
+  are SMA12/SMA8/SMA11 0.075%: 83.43%; EMA15/EMA13/EMA13 0.15%: 53.21%;
+  WMA7/WMA11/WMA14 0.025%: 82.87%.
+- Exploratory best: EMA7 supplemental entry, SMA11 exit guard >0.125%, WMA14
+  nonnegative flat-entry gate. Return 91.4477169%, drawdown -8.2619391%,
+  45 rebalances; coverage 73.68/100/89.29/90.91%. Next-open sensitivity 99.40%.
+  Threshold 0.075% on the same averages gives 88.14% / -6.98% drawdown.
+  Period neighborhood has only 2/18 above current control, median 62.38%.
+  Results are repeatedly inspected history, not independent validation.
+- Thirty focused research tests and typecheck passed. Full compatible-chunk
+  resume reproduced the final summary SHA-256 exactly. No production options,
+  preferences, screening task state or source bars were changed. Standalone
+  Chinese report and complete CSV are in this thread's visualization directory.
+
+## 2026-10-24 SMA11 gate controls and cycle explanation
+
+- Added an independent SMA11 negative-slope flat-entry checkbox to both pages.
+  User explicitly requested default checked, matching the existing two defaults.
+  Version-2 preferences migrate the older two choices and default the third
+  flag to true; explicit new false choices persist. Saved-plan validation and normalized cache identities carry
+  `entrySlopeGate`; disabling it preserves previous two-flag behavior.
+- The shared state machine blocks original and supplemental entries only while
+  flat and close(t)<close(t-11); zero slope is allowed. Existing-position adds
+  and exits are unchanged. Native orders consult completed previous bars, and
+  rejected buys cannot bypass the ledger gate. No automatic delayed entry.
+- User requested deletion of the overlay explanation text and the unused
+  parameter-traversal display box. Removed that explanatory paragraph from the
+  shared controls and the display box from research; retained the controls.
+- Reconciled all dates/targets/prices: three flags on the frozen cycle10 give
+  83.0576889336516% (57 fills); gate alone 36.48897124790938% (27 fills);
+  previous two flags 74.62731173084941% (75 fills). Benchmarks unchanged.
+- Clarified schedule: evaluation has 504 account dates, warmup comes from prior
+  source history, and 206 strong-trend/same-direction candles skip reoptimization,
+  leaving 298 tasks. The gate depends on bars, not trailing screening length.
+- Audited the user's screenshot against completed cycle128 (+28.4434%). It
+  held 60% from 2026-01-26; actual close weights were 60.2504% on April 6 and
+  60.2575% on April 7. SMA12 was falling April 6 and turned positive April 7,
+  but the account was not flat, so no supplemental entry was permitted.
+- Final `npm test` passed: typecheck, 337 unit tests, production build and four
+  rendered/source tests. Updated the obsolete traversal-box assertion to expect
+  its user-requested removal. Browser verified three default-checked controls,
+  deletion of the explanation/box, independent gate toggling and persistence
+  of explicit false after reload; restored the requested all-checked state.
+
+## 2026-10-24 negative SMA slope flat-entry research
+
+- User requested cycle10 with no flat-account entry while SMA X slope <0,
+  X=3..12. `entry-slope-gate.ts` reuses the production state machine and frozen
+  298 signals; tests original cycle10 and supplement+0.2%-guard bases separately.
+  Original and supplemental flat entries are gated; existing-position adds and
+  exits are unchanged. Equality permits entry; rejected requests are not queued.
+- Ungated ledgers reconcile all executed dates/targets/prices and returns:
+  33.46158% and 74.62731%. All 20 variant ledgers, blocked attempts, summaries,
+  range/subperiod metrics, next-open sensitivity and comparison CSV are atomic.
+- Historical best original-only gate is SMA10: 39.57%/-3.67% drawdown. Best
+  combined-account gate is SMA11: 83.05769%/-8.10929%, 57 fills, 19 original
+  and 2 supplemental attempts blocked. Four range coverage/returns unchanged
+  from the 74.63% control: 63.16/20/78.57/90.91% coverage. Improvements arise
+  outside the four monitored ranges. Not every block is an avoided loss.
+- Nearby SMA10/12 combined returns 68.04/72.29%, so the SMA11 optimum is not
+  a broad stable plateau. These are repeatedly seen data, not independent
+  validation. No production option or live screening task was changed.
+- Verification: 25 research tests and typecheck passed; baseline fills tie out.
+
+## 2026-10-24 trade legend proportions
+
+- Wide 28x6 global legend boxes flattened built-in triangle/diamond symbols;
+  the sell legend also lost its series rotation. `buildPriceChartLegend`
+  now supplies square custom paths for trade markers, explicit sell direction,
+  aspect preservation and 10px icon height while retaining 28px line samples.
+  Chart marker positions, trade behavior and indicator line styles are unchanged.
+- Verification: browser shows upright buy, downward sell and regular diamond
+  legend symbols. Full `npm test` passed: typecheck, 334 unit tests, production
+  build and four rendered/source tests.
+
+## 2026-10-24 production SMA12 position overlays
+
+- User requested independent checkboxes on the research workspace and cycle
+  validation, then explicitly changed both defaults to checked. Shared controls
+  retain each page's explicit choices in versioned localStorage preferences.
+- `lib/analysis/sma-position-overlay.ts` owns one account's SMA12 positive-turn
+  supplemental entry and daily normalized slope >0.2% deferred exit. Sell
+  requests remain pending until protection fails; an original increase cancels
+  stale requests. Original signals block supplemental entry, even when unfilled.
+- Ordinary single/allocation ranking, applied charts, live allocation guidance,
+  shortlist plans, saved plans and screening history carry overlay settings.
+  Close-derived overlay intent executes at the following open; native price
+  orders retain fill prices and consult only the preceding completed SMA.
+  Daily-only guards fail explicitly for legacy intraday callers. Both flags
+  absent/off preserve legacy behavior and identity. Full/quick parameter
+  libraries and screening/shortcut checkpoints isolate enabled configurations.
+- Cycle flags only replay inherited account decisions from existing selected
+  winners. They do not rerank winners, change task signatures, modify queued
+  requests or restart active jobs. Completed results recompute on flag changes;
+  current active runs keep configuration locked. Same-close proxy timing and
+  two-bar sequence rules remain intact; holding benchmark stays unmodified.
+- Production cycle replay of the frozen 298 selections reconciles all 75
+  executed dates, targets and prices against the 0.2% research ledger:
+  return 74.62731173084941%, holding 57.32493037836347%.
+- Final full `npm test`: typecheck, 333 unit tests, production build and four
+  rendered/source tests passed, including rendered default-checked controls.
+  Browser confirmed defaults on both pages, independent toggling and
+  reload persistence on research; cycle controls correctly lock during the
+  user's active 128-session validation run. The active queue was not changed.
+
+## 2026-10-24 supplemental-entry deferred exit study
+
+- User capped guard averages at 12 sessions. `exit-guard.ts` replays the frozen
+  SMA12 entry account with 30 guards (SMA7..12 x slope 0/0.1/0.2%, price, both)
+  and four explicit scope/discard/hysteresis/persistence diagnostics. Initial
+  longer-average outputs are superseded and excluded from the current summary.
+- Guarded sell requests remain pending and execute at the first unprotected
+  completed close, including skipped screening dates. A fresh original increase
+  cancels pending sells. The guard never opens a flat account by itself.
+- Coverage-oriented candidate SMA12 slope >0.1% daily: return 71.35%, drawdown
+  -12.85%, 63 fills; range coverage 68.42/100/78.57/90.91%; range returns
+  9.03/4.42/17.37/10.84%. Unguarded SMA12: 71.82%, -11.76%, 90 fills.
+  Slope >0.2% gives 74.63%/-11.83% but only 20% second-range coverage.
+  Slope >0 gives 50.98%/-19.46%; discarding protected sells (price + slope)
+  gives 47.64%/-25.10%. Do not equate improved rally coverage with better risk.
+- Candidate slope-0.1% returns -5.23% in 2026-06-30..10-23, versus unguarded
+  SMA12 about +9.25%; all subperiods are reused data, not fresh holdouts.
+  Source/model identity, full baseline fill/return tie-out, atomic bounded
+  replay and next-open sensitivity are retained. No production or queue change.
+- Verification: twenty research tests and `npm run typecheck` passed.
+  Tests cover prefix invariance, pending/released exits, new-buy cancellation,
+  partial targets, scope and hysteresis/persistence.
+
+## 2026-10-24 SMA flat-account entry comparison
+
+- User requested six overlays on the actual ten-session selections: SMA7..12
+  slope turns positive, account empty and no original signal -> full entry.
+  `research/nikkei-cycle-rallies/sma-flat-entry.ts` preserves all 298 selections
+  and resolves later original signals on the actual inherited holding.
+- Primary no-signal definition is no last-two-bar signal on a screening date;
+  even an unfilled reduce or a sequence-suppressed signal blocks supplementation.
+  Skipped screening dates have no permitted execution signal. No new SMA exit,
+  fund split, screening run or production change is introduced.
+- Same-source/cost comparison: SMA7..12 total returns respectively
+  33.82/33.51/43.62/31.85/36.55/71.82%; drawdowns
+  -9.20/-7.22/-9.55/-14.50/-13.74/-11.76%. SMA12 beats historical holding
+  57.32% and prior 40/80 prototype 48.89%, but all six miss the second rally.
+  Prior 40/80 has 73.68/100/75/100% holding-day coverage of the four ranges;
+  SMA12 has 34.21/0/10.71/27.27%. Do not equate coverage with captured price return.
+- Signal cache is source/model-verified, all outputs atomic, resource bounds
+  and retention reuse the prior frozen study. Baseline fills/return and prior
+  40/80 source identity are checked before comparison. Original live tasks,
+  production modules and preexisting changes remain untouched.
+- Verification: all fourteen research tests and final typecheck passed;
+  no-supplement ledger and previous 40/80 input identities reconcile. Repeated
+  replay summary SHA-256 is unchanged:
+  `b237db3d66a747a265547adea2df1078b4e69d0a0d83577e21c3ec51cecc7ef6`.
+  Standalone Chinese comparison report/chart were rendered and inspected,
+  including the complete nine-row coverage table. Comparison and trade CSVs
+  expose exact interval return/coverage counts and supplemental dates.
+
+## 2026-10-24 configurable cycle monitoring ranges
+
+- Validation settings support zero or more inclusive date ranges, initially
+  2025-04-21..2025-06-16, 2025-10-21..2025-11-04,
+  2026-03-30..2026-05-12 and 2026-05-20..2026-06-03.
+- `strategy-cycle-monitoring.ts` computes held trading sessions divided by
+  available evaluation sessions from the selected report's executed rebalances.
+  A positive partial allocation counts as held after the close; entries count
+  that date and exits do not. State carries into each monitoring range.
+  Overlapping ranges are independent. Dates outside the evaluation are excluded;
+  actual covered dates and counts are shown, and no-data is distinct from 0%.
+- One versioned localStorage preference (`quantscope-cycle-monitoring-ranges-v1`)
+  retains edits including an empty list. Changes recompute completed results
+  without changing screening task identity, queues or recovery. Invalid date
+  drafts show an error until corrected. Storage failures are visible.
+- This is a synchronous calculation over the existing bounded evaluation bars;
+  no new source, cache, background job or progress checkpoint is required.
+  Preferences are one replaceable user configuration, with no TTL/history.
+- Verification: typecheck, all 326 unit tests in a serial pass, production
+  build and all four rendered/source tests passed. Browser inspection confirmed
+  all four default ranges and unclipped date controls. Initial parallel
+  `npm test` passed 325/326; the existing launcher process-exit test timed out
+  under load and passed unchanged in the complete serial rerun.
+
+## 2026-10-24 ten-session missed-rally study
+
+- Current user objective supersedes the initial fund-split/fixed-switch framing:
+  independently screened longer-cycle strategies jointly judge one account's
+  rebalances with cycle10. Strategy identity changes over time; the causal
+  selection/decision procedure is fixed. See `JOINT_DESIGN.md` and follow-ups.
+- The research prototype ranks 22 fixed registered trend tuples over five
+  longer windows at each of 298 exact-prefix dates. It uses the shared ordinary
+  next-open ranking ledger, durable atomic per-date choices and current target
+  evidence on skipped screening days. This is a bounded standalone menu, not
+  an exhaustive full-family/combination result presented as such.
+- Thirty joint rules were compared. 40/80 plus ADX/DMI direction confirmation
+  gives 48.89%/-12.16% under the primary close proxy; cycle10 remains
+  33.46%/-8.28%, holding 57.32%/-22.70%. Four-rally candidate returns are
+  3.98/4.42/11.37/14.38%. The primary outperformance goal is not achieved.
+  Next-open sensitivity is 66.62% versus holding 60.19%; do not mix conventions
+  or describe the alternative fills as validated China-product execution.
+- Current hero evidence is `output/joint-confirmation-summary.json` and
+  `output/joint-confirmed-decision-plan.csv` within the research folder. Earlier
+  blended allocation CSV and fixed-switch results are retained experiments.
+- Joint selection resume produced the identical summary SHA-256
+  `705debe8cfe38e68be0d9a67eb956e2540baa950e5cbcfa269c8c2b208f3fabc`.
+  A standalone Chinese reader report and comparison chart were generated in
+  the task visualization directory; its date selector was browser-verified
+  against the 2026-04-08 40-day Donchian / 80-day ROC joint decision.
+- Independent monitoring source/test files appeared in the shared checkout
+  during this research. They and all earlier production edits were preserved;
+  this study only adds research files and updates its linked documentation.
+- Verification: full `npm test` passed (320 unit tests, production build, four
+  rendered/source checks); all ten additional research checks and final
+  typecheck passed. Prefix causality, single-account decisions and baseline
+  ledger equivalence are covered. Raw/archive inputs and preexisting code
+  changes are preserved; no live queue or product task was touched.
+
+- Added isolated research in `research/nikkei-cycle-rallies/`; no production
+  screening/execution behavior, active task, or queue is changed. Frozen input
+  reproduces all 298 decisions and the live 33.46% return / 62 fills exactly.
+- Four user-selected rally windows expose inherited empty positions, reversal
+  exits, and no recent entry despite a theoretically long selected plan.
+  Simply checking signals daily or synchronizing target state worsens the full
+  historical return. Thirty disclosed trend/core/weight diagnostics do not beat
+  matched-convention buy-and-hold. A 70% EMA10/30 + 30% cycle10 research candidate
+  returns 40.80% versus 33.46% for cycle10 and 57.32% for holding, with greater
+  drawdown than cycle10. A 504-row CSV makes the candidate targets reproducible.
+- Archived 20/40 horizons have 102 verified shared decisions over 185 sessions;
+  both miss the fourth rally. They use older ranking model/max-three settings,
+  so the report distinguishes this from a same-model period comparison.
+- Atomic per-variant output/checkpoint enables idempotent reruns. Inputs are
+  bounded, hash-verified, frozen and retained; no scheduled refresh or cleanup.
+  Main data/summary and source hashes are in the research folder. The live UI
+  still shows separate period reports and has no blended-target trading feature.
+
+## 2026-10-24 incoming-winner execution and chart navigation
+
+- Supersedes the earlier retained-previous policy below: the user selected the
+  incoming winner on conflicting signals. Main return and all chart markers
+  now use that account; the old-policy return card and comparison copy were
+  removed at the user's request. Internal research totals remain reproducible.
+- Same-close-model tasks migrate the previous conflict-policy signature to
+  `incoming-current-signals-on-conflict-v1`, preserving completed snapshots,
+  frozen quick parameters, settings, and queue mappings. The live completed
+  298-unit task restored without rescreening: execution +33.46%, benchmark
+  +57.32% for the selected complete period.
+- Cycle canvas dragging moves the date window in the drag direction. Native
+  inside panning is disabled, custom panning starts only inside a plot grid,
+  and slider/legend interactions remain independent. Other charts retain
+  their default content-pan direction. Live right drag increased window start
+  from 55.40% to 58.04% with unchanged width; slider right drag also moved later.
+- Regression coverage includes main-policy fills/return, signature migration,
+  both pan directions and boundaries, and cycle inside-zoom configuration.
+- Verification: typecheck passed; all 320 tests passed with test concurrency
+  limited to one; production build and all four rendered/source checks passed.
+  Standard `npm test` first hit the pre-existing timing-sensitive coordinator
+  intentional-stall assertion under parallel load. No assertions were removed.
+
+## 2026-10-24 opt-in top-three quick screening
+
+- Added a checkbox in research Optimization scope and cycle Validation settings.
+  Full future screens collect compact per-family top-ten complete tuples without
+  changing ordinary full mode. Quick mode uses three distinct execution finalists
+  per family, all covered eligible families, 3 x 3 pair crossings, and the
+  previous category's top thirty allocated results for each subsequent layer.
+- Shared period-specific IndexedDB libraries match instrument, window, objective,
+  costs, filters, exclusions and model/grid versions. Missing profiles are an
+  actionable error, never an implicit full traversal or missing-family search.
+- Cycle tasks freeze candidate lists and include them in recovery identity.
+  Worker and local engine receive identical candidate lists; exact disk restart
+  carries compact ranking metadata. Cycle winner compaction preserves metadata.
+- Existing queued requests/required protocol and ordinary task identity are
+  unchanged. Current legacy results cannot reconstruct all families' top ten;
+  the user chose future full screenings as the source and no supplementary rerun.
+- Libraries retain the newest full single-window decision for each key (at most
+  32 keys). Quick mode cannot train itself. Multi-range/rolling quick mode is
+  explicitly unsupported. Historical profile reuse is adaptive research.
+- Work is bounded to ten metric rows per family plus the existing finalists;
+  IndexedDB writes/eviction are atomic, out-of-order older decisions do not replace
+  newer profiles, frozen cycle lists survive pause/refresh, and quick uploads are
+  bounded to 64 units per batch. No background monitor or external source added.
+- The user reduced quick mode from ten to three tuples per family to avoid
+  the 10 x 10 pair-search expansion. Full libraries still retain ten compact
+  metric rows for compatibility; quick mode loads and executes only three.
+  For the current 53 volume-excluded families this is 159 versus 39,934
+  standalone evaluations. Category expansion remains top thirty per layer;
+  whole-run time savings remain workload-dependent.
+- Layout follows the clarified request: the research checkbox sits below the
+  optimization objective; the cycle checkbox is a 40px field below initial cash
+  with a 20px checkbox. Quick mode is distinct from ordinary exhaustive mode.
+- Verification: typecheck, all 318 unit tests in a serial final pass, production
+  build and all four rendered/source checks passed; 17 targeted parameter/local
+  child checks passed. Browser checks confirmed both checkbox positions, 40px
+  cycle field/20px checkbox, missing-library failure before compute, durable
+  profile round-trip/newest-decision protection and bounded tuple replay.
+  Default parallel `npm test` intermittently hits the existing coordinator
+  intentional-stall timing assertion under the seven-child active workload;
+  that suite passed independently, and the final serial suite passed unchanged.
+- The active 298-unit batch was never cancelled or restarted. A cost audit
+  found 25 units with 53 eligible families and 273 with 57. For a captured
+  57-family/five-strategy ordinary checkpoint the projected full evaluation
+  count is 665,896; the quick-mode conservative bound is 50,733 (92.38% fewer
+  evaluations, not a measured wall-clock speedup). Detailed formulas and the
+  aggregate estimate are preserved in `TECH_RESEARCH.md`.
+
+
+## 2026-10-24 Bollinger visibility and SMA coexistence
+
+- Fixed clipped Bollinger tracks by including finite enabled price-indicator
+  line values in the current visible OHLC range. Offscreen values, warm-up
+  nulls, pane studies, strategy references, and trade markers are excluded.
+- Bollinger boundaries use blue (#2196F3), its basis uses orange (#FF9800),
+  and all three remain solid. SMA uses aqua (#00BCD4) and yellow (#FDD835),
+  automatically dashed only while Bollinger is enabled. Wider legend samples
+  match the actual strokes. No saved configuration or formulas change.
+- Palette reference checked on 2026-10-24:
+  https://www.tradingview.com/pine-script-docs/concepts/colors/
+  This adopts named Pine colors rather than claiming a fixed TradingView
+  indicator preset, which users can customize.
+- The change is a short synchronous chart calculation over existing bounded
+  bars; it adds no network calls, cache, background job, or recovery state.
+- Verification: typecheck, all 305 unit tests, production build, and all four
+  rendered/source tests pass. Live N225 chart shows complete bands and dashed
+  dual SMA; existing pan/zoom, strategy styles, and precision checks pass.
+
+## 2026-10-24 missing 2026-10-23 Nikkei candle
+
+- Reproduced a stale successful Yahoo response ending at 2026-10-22 while the
+  official Nikkei source had published the complete 2026-10-23 candle. Primary
+  transport success had prevented missing-date recovery.
+- Added one shared fixed-primary supplement used by active workspace refresh,
+  background shortcuts and the non-strict Yahoo API used by cycle validation.
+  Recent date gaps trigger an official tail probe. Two completed overlapping
+  OHLC bars must match within 0.01%; only missing completed dates are inserted.
+- The primary remains Yahoo; existing OHLC is immutable and supplemental bars
+  carry provider/time provenance. Official volume is not invented; later Yahoo
+  catch-up can fill zero volume without rewriting prices. Source failures retain
+  existing data with a classified warning, and abort propagates normally.
+- Runtime work uses the existing incremental refresh and canonical persistence,
+  bounded to a ten-bar official query and 10,000 retained bars. No full refresh,
+  separate scheduler, durable job, new cache or automatic raw-data deletion is
+  needed. Unresolved older gaps remain outside the bounded tail repair.
+- Live verification now shows 6,565 bars, 2026-10-23 close 62693.16, primary
+  Yahoo Finance, and one officially supplemented bar. The latest API returns
+  five bars through 2026-10-23 with per-bar official provenance. Raw tail sample
+  and source registry preserve the original public evidence.
+- Verification passed: full `npm test` (TypeScript, 303 unit tests, production
+  build and four rendered route/source tests), all six targeted supplement
+  tests, and `git diff --check`. Live API and browser both show 2026-10-23 while
+  retaining Yahoo as the primary. Existing user edits remain intact.
+
+## 2026-10-24 retained previous strategy on conflict
+
+- After testing conflict-only next-day confirmation, the user explicitly chose
+  to retain the previous strategy on conflict. Product `updateReturn` and chart
+  `rebalances` now use that executed account. `newOnConflictReturn` is the
+  incoming-winner comparison; `oldOnConflictReturn` remains a compatible alias
+  of the selected executed total. Signal labels come from the actual chosen
+  branch. The usual two-bar sequence constraints and same-day close proxy stay.
+- Only the conflicting decision follows the previous chronological winner's
+  CURRENT-date signals; subsequent screens reconsider normally. There is no
+  product wait/three-bar workflow. Task signatures/restoration now require
+  `previous-current-signals-on-conflict-v1` as well as the existing timing model.
+- `research/nikkei-cycle-conflicts/delayed-confirmation.ts` evaluates the user's
+  clarified experiment: hold only on conflict, then use the exact next trading
+  session's newly selected winner and its final three bars. Ordinary decisions
+  still use two bars. The two-bar-delay control isolates waiting from lookback.
+  The existing reduce-before-later-increase hold constraint extends to three
+  bars explicitly; due confirmation takes precedence over another day's wait.
+- Of 37 conflicts, 27 on 14 dates have a next-session archived winner; ten are
+  excluded. At 10 sessions, three-bar delay versus two-bar delay is 0 wins,
+  14 losses, 13 ties. Among 13 complete continuous histories with conflicts,
+  three-bar delay loses to previous-on-conflict in nine and wins in four.
+  Overlap, sparse dates, archived hybrid rankings and missing-next-day selection
+  limit the evidence. The detailed report retains all assumptions and outcomes.
+- The extension reuses frozen input and has its own atomic hash/model-validated
+  group checkpoint and bounded sequential replay. No existing raw data or prior
+  study results are removed. The original study reads `newOnConflictReturn`
+  explicitly so its historical baseline remains reproducible after this choice.
+- Verification passed: full `npm test` (TypeScript, 297 unit tests, production
+  build, four rendered route/source tests), all four research tests, and
+  `git diff --check`. Both original and delayed studies resume successfully;
+  both summary hashes are unchanged after excluding generation timestamps.
+
+## 2026-10-24 Nikkei same-day cycle execution and conflict analysis
+
+- The user clarified that cycle validation is only for Nikkei 225. Japan's
+  present 14:30 UTC+8 close permits analysis before China's 15:00 close.
+  Completed Nikkei daily closes are an explicitly requested same-day proxy;
+  domestic ETF prices, FX/premiums, different holidays and computation delay
+  are not modeled. JPX's 2024-11-05 session extension is documented.
+- The cycle page now filters non-Nikkei instruments and incomplete/future bars.
+  Explicit start/continue merges five latest bars into canonical full history
+  through shared primary/fallback validation. Cached restoration remains fast.
+- Cycle-only close-price executions reuse the allocation ledger. First and
+  final evaluation-day decisions can execute at their own close, with fees,
+  slippage, and no earlier signal-day return attributed to new exposure.
+  Ordinary backtests, historical optimizer ranking, and engine protocol stay
+  unchanged. `nikkei-completed-close-v3` isolates task/report identity.
+- The user explicitly retained reduce-then-increase hold and
+  increase-then-reduce reduce-only. Same-direction signals use their final
+  target; a quiet newest completed bar falls back to the previous bar. All
+  signals belong to the final two complete bars of the CURRENT decision prefix.
+- The full-period candle chart and establish/increase/reduce/clear markers
+  remain. The page also displays opposite-intent count and continuous
+  old-on-conflict return. Only conflict dates use the previous chronological
+  winner's current signals; later screens reconsider. Policies never select
+  branches based on subsequent returns.
+- `research/nikkei-cycle-conflicts/` freezes 1,573 exact-prefix-verified archived
+  winners across 12 windows and replays both event branches and continuous
+  policies. Replacement conflicts: 37 on 19 dates; cross-window conflicts: 73
+  on 11 dates. Among 21 complete histories containing conflicts, old-on-conflict
+  wins 15 and incoming-winner wins six. The report discloses overlapping
+  periods, only 19 distinct replacement dates, archived hybrid rankings, cost
+  and inherited-position sensitivities, and unstable five-session subperiods.
+  This supports a visible comparison, not a universal automatic policy switch.
+- Inputs and resumable group state are hash-validated and atomically persisted;
+  processing is sequential with bounded jobs, bars, input bytes, and one causal
+  timeline at a time. Existing source caches/research are not modified.
+- Verification passed: full `npm test` (TypeScript, 297 unit tests, production
+  build, four rendered route/source tests), the research ledger-equivalence
+  test, `git diff --check`, and a resumed study run with an identical complete
+  summary hash after excluding its generation timestamp. The first page test
+  run exposed an obsolete subtitle expectation; it was updated to the new
+  Nikkei close-replay title and the full rerun passed.
+
+## 2026-10-24 cycle replacement signal catch-up verification
+
+- Confirmed the rolling report already checks both final trading sessions of
+  each selected plan, including yesterday's signal when today has none. The
+  existing directional sequence rules and next-open execution remain intact.
+- Added end-to-end report regressions for inherited-position liquidation,
+  delayed establishment, repeated-signal deduplication, the two-session cutoff,
+  actual fill dates, and slippage. The page now explains catch-up explicitly.
+- This bounded replay uses the existing task snapshots and needs no additional
+  checkpoint, cache, or long-running resource mechanism.
+- Verification passed: full `npm test` (TypeScript, 294 unit tests, production
+  build, four rendered route/source tests) and `git diff --check`. The initial
+  run hit the coordinator restart timing assertion; its isolated six-test
+  suite and the complete rerun both passed without coordinator changes.
+
+## 2026-10-18 shortcut display rollback with bug fixes retained
+
+- Verification passed: full `npm test` (TypeScript, 293 unit tests, production
+  build, four rendered route/source tests) and `git diff --check`.
+- Reverted the new signal-date/operation-price presentation and automatic
+  rebalance projection feature at the user's request. The original shortcut
+  layout, single/dual per-slot prices, and multi-leg support/risk fields are
+  restored. Forecast workers, queue/cache code, feature-only tests, and their
+  documentation were removed. No existing research data or user database was
+  deleted; an earlier browser forecast cache, if present, is now unused.
+- Retained `BacktestPerformance.executedAllocation`. Current shortcut position
+  reads actual executed exposure from the same replay as chart fills, rather
+  than a newest-close target still waiting for the next open. Inherited
+  exposure remains held without a synthetic entry. Existing multi-leg action
+  text identifies pending changes explicitly.
+- Retained venue-local daily completion in `market/session.ts`. Shanghai's
+  midnight must not prematurely complete a still-trading US daily bar.
+- `tests/execution-state.test.ts` preserves regression coverage for pending
+  entry/exit versus fills, inherited exposure, intrabar allocations, and Japan,
+  China, and US closing boundaries. Forecast-specific tests were removed only
+  because the corresponding feature was explicitly rolled back.
+
 ## 2026-10-03 evidence-based combination-family pruning
 
 - Added `scripts/analyze-screening-rank-pruning.mjs` and

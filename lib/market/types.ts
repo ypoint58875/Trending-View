@@ -63,6 +63,8 @@ export interface MarketInstrument {
 }
 
 export interface MarketBar {
+  /** OHLC provenance for a verified missing-date supplement; base source stays fixed. */
+  ohlcSource?: { provider: MarketDataProvider; fetchedAt: string };
   time: string;
   timestamp: number;
   open: number;

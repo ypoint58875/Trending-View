@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "analysisStart": "2000-01-01",
+  "maPeriods": [7, 20],
+  "groupQuantiles": [0.3333333333333333, 0.6666666666666666],
+  "maximumBars": 20000,
+  "definition": "Completed daily close-return runs partitioned into one, exactly two, and at least three sessions. One-session runs are checked for strictly opposite daily returns on both sides. Amplitude terciles are descriptive and fitted separately by direction and duration over the fixed snapshot.",
+  "context": "MA direction at close immediately before the run. Countertrend run is turn-associated if opposite MA sign appears through its confirming reversal close; otherwise internal if all signs unchanged. Same-direction, flat and unavailable contexts stay separate.",
+  "futureAnchor": "Pattern confirmation close; report next-session and N-session forward returns only when fully available. No trading-return claim."
+}

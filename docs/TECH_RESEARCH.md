@@ -1,5 +1,337 @@
 # Technical Research
 
+## 2026-10-25 remove quick search and widen full search by explicit request
+
+Compared hiding the quick UI while keeping its library/search branches with
+removing the complete feature boundary. The user explicitly chose removal.
+Keeping dormant branches would preserve historical-library timing risks and
+an alternative search policy. Remove controls, client/storage modules, metric
+capture, transport fields and quick parent expansion; retain a rejection guard
+for stale clients/jobs. No new framework, data provider or external integration
+is introduced, so the existing shared optimizer/ledger architecture suffices.
+
+Six finalists per family replace three, and all completed eligible families
+replace the former95% ranking gate. Pair crossings grow from9 to36; higher
+levels retain their previous full-mode beams and allocation search. Wider
+search can cost more time and memory and does not prove future return gains.
+Use a new shared search-result model to isolate older caches/checkpoints/tasks;
+persist it in child metadata and cycle signatures. Retain old files and dormant
+browser records rather than perform destructive data cleanup. No engine wire
+protocol version or endpoint change is required for current full requests.
+
+## 2026-10-25 choosing segmentation length with an expanded overlay grid
+
+User corrected the earlier experiment: expand periods to5..16 and infer a
+segment length instead of treating100/300 as fixed. Compare retrospective full
+optimization with strict previous-block/next-block deployment, retaining the
+latter as the test of periodic retuning. Rechecked official TimeSeriesSplit
+and Bailey backtest-overfitting references on2026-10-25; same URLs below.
+Declare11 segment lengths before evaluation; all use matching1500-day ranges,
+development-only length selection, independent flat training starts and one
+continuous live account. Explicit current-distance tie-breaking handles identical
+training paths without silently selecting arbitrary periods.40-session training
+has a median72 tied winners, highlighting effective information scarcity.
+
+13824 full-period settings still select EMA8/SMA10/WMA14/0.10%,166.2851%,
+below holding176.7222%. Development selects252-day blocks; its last500 return
+17.0804% and common1500 return60.3530% trail holding65.8165% and169.5463%.
+Every declared block policy trails holding on both ranges. Frozen age profiles
+show no dependable initial edge from which to estimate a profitable expiry.
+These are conditional findings, not proof that all unequal train/update pairs
+or all future strategies fail. The quick-library vintage and prior-observation
+limitations remain. Design/code and source hashes identify new independent
+derived window caches; original research outputs are preserved.
+
+## 2026-10-25 2000-session overlay calibration stability
+
+User confirmed the latest ten-session-window run used quick screening. Compare
+fixed retrospective parameter sensitivity with chronological rolling calibration;
+the latter is preferred for estimating deployment degradation, but both remain
+conditional on original quick winners and unverified historical library vintages.
+Primary references checked 2026-10-25: scikit-learn TimeSeriesSplit,
+https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html;
+Bailey et al., https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf.
+The references inform chronology and multiple-testing caution; they do not
+validate any particular parameter or justify an independent holdout claim.
+
+`research/nikkei-overlay-stability/DESIGN.md` declares 5839 fixed configurations,
+four 500-session segments, five calibration histories, seven cadences and two
+selection scores before calculation. The same inherited account and pending
+sells continue through parameter changes. Training ends before deployment day.
+The actual 1293 quick selections cover 2018-08-08..2026-10-23. Candidate
+fingerprints change from 159 to171 tuples on 2024-11-22. Underlying historical
+library-training dates cannot be verified from the persisted request evidence.
+
+Current mixed controls return128.6533%/-30.3825% drawdown; holding176.7222%/
+-31.7989%. Full-grid best EMA8/SMA10/WMA14/0.10% returns166.2851%/-29.0334%,
+but only23/81 adjacent settings exceed current; adjacent median is118.8389%.
+The development-selected 756-session history/252-session cadence returns29.8558%
+in development but10.0244% in the final500, versus current45.8243%. The whole
+common-period best cadence (60 sessions) is a post-selection diagnostic and
+also trails current in the final500. No dependable automatic cadence is proven.
+
+Supplementary one-dimensional diagnostics were added after the primary results
+and are labeled post hoc. EMA8 alone is selected using the first1500 among
+entry periods7..15; it returns152.5533%/-28.4933%, final50058.0582% versus
+current45.8243%. Next-open sensitivity120.1782% exceeds current106.7989%,
+conditional on unchanged original winners. This is a minimal forward-testing
+candidate, not a production change. Other single-dimension training winners
+fail to beat current in the final block. Frozen-vintage age bands overlap;
+their modest first120-session mean advantage and later decline do not identify
+a statistically established expiry date. No new external market data was used.
+
+## 2026-10-24 overlay average-type experiment
+
+Two approaches were assessed: replace all three overlay averages uniformly,
+or independently select their types/periods. Uniform replacement is easier to
+interpret but cannot isolate entry, gate and exit interactions. Independent
+replacement provides matched controls and flexibility but raises multiple-test
+risk. Research compares both, without changing production rules.
+
+Reuse existing `sma`, `ema` and `wma` from `lib/analysis/indicators.ts` rather
+than introducing a second formula implementation. EMA seeds from the full
+source history, WMA gives the latest window's newest close the greatest weight.
+Only SMA permits the exact close(t)-close(t-N) sign identity. All three use
+consecutive normalized average changes for exit thresholds. Prefix-causality,
+strict threshold equality, production parity and resume identity tests pass.
+The 7..15 / eight-threshold menu is user-directed. No external data or library
+selection is involved. Baseline reconciliation and next-open sensitivity expose
+implementation/execution differences; neither resolves same-sample overfitting.
+
+## 2026-10-24 shipping the fixed SMA11 flat-entry gate
+
+Reuse the shared account controller instead of adding separate page-specific
+target rewrites. The fixed gate uses the exact SMA slope sign identity, rejects
+negative slopes only, and checks native buys against preceding completed data.
+The production cycle10 three-flag ledger reconciles the research 83.05769%
+result and all 57 fills. The user chose a default-checked independent control;
+this product choice does not add independent validation of the historical best.
+
+## 2026-10-24 shipping independent SMA12 controls
+
+Compared duplicating research replay in each page versus extracting a shared
+account state machine. Choose the shared controller so ordinary next-open and
+cycle-close callers preserve their distinct execution contracts. Native order
+fills keep their price and consult only completed previous-bar indicators.
+Cycle selections remain unchanged to reproduce the tested 74.6273% account;
+ordinary research optimizes candidates with its own enabled settings and may
+select different winners. Defaults are checked by explicit user direction.
+The earlier AQR/overfitting references supply research context, not approval
+or evidence of prospective performance. No additional integration is introduced.
+
+## 2026-10-24 deferred exit guards capped at SMA12
+
+Compare slope-only, price-only, and conjunctive guards on the same inherited
+SMA12 supplemental-entry account. Pending sells release daily when protection
+fails; discard-only and supplemental-only rules are separate diagnostics.
+User superseded the initial longer-average grid with SMA7..12. Daily slopes
+are normalized SMA ratios, not chart angles. Thirty fixed guards plus four
+policy/stability diagnostics are disclosed, including failures. Favor pending
+requests for interpretability; do not ship a historical highest-return rule.
+SMA12 >0.1% improves range coverage but slightly reduces full return and worsens
+drawdown versus unguarded SMA12. Raising the threshold loses the second rally.
+All sample splits have been seen and do not establish independent validation.
+Primary references rechecked 2026-10-24: trend persistence background,
+https://www.aqr.com/insights/research/journal-article/a-century-of-evidence-on-trend-following-investing;
+multiple-testing risk, https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf.
+Neither source validates this particular instrument, guard or threshold.
+
+## 2026-10-24 missed Nikkei rallies and allocation ensembles
+
+- Current clarified design: combine current selected-strategy states from
+  independent trailing windows with the existing cycle10 evidence into one
+  account decision; do not split funds or assume future phase switches.
+  A 22-tuple registered trend menu is screened causally at 298 dates over
+  20/40/60/80/120 sessions. Nine joint rules plus twenty-one confirmation rules
+  are disclosed. Primary candidate 40/80 + ADX14>=20/+DI>-DI gives 48.89%,
+  still below close-proxy holding 57.32%; larger full-grid validation remains
+  unavailable. The menu is not represented as exhaustive engine output.
+- Additional primary indicator reference accessed 2026-10-24:
+  https://www.tradingview.com/support/solutions/43000502250-directional-movement-dmi/
+  distinguishes ADX strength from +DI/-DI direction. An explicit persistence
+  follow-up tests this interpretation without fitting per-window boundaries.
+  All rounds share already seen data and have selection bias.
+- User supplied four retrospective rally intervals. Compare multiple trailing
+  screening horizons against an independent fixed trend core plus the existing
+  ten-session tactical account. The former preserves optimizer architecture but
+  can share the same empty-position failure; the latter is inexpensive and keeps
+  trend exposure independent of recent-window reversal winners.
+- Primary references accessed 2026-10-24: AQR Hurst/Ooi/Pedersen trend-following
+  research, https://www.aqr.com/insights/research/journal-article/a-century-of-evidence-on-trend-following-investing;
+  Bailey et al. backtest-overfitting paper,
+  https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf.
+  These justify hypotheses and validation discipline, not specific Nikkei returns.
+- Research implementation is isolated in `research/nikkei-cycle-rallies/`.
+  Freeze exact current source prefixes/winners, reconcile the primary ledger,
+  disclose all thirty fixed alternatives, test close/next-open conventions,
+  retain costs and compare the full period as well as selected rally intervals.
+- Results do not establish benchmark outperformance. The 70% EMA10/30 plus
+  30% cycle10 candidate improves full return to 40.80% but buy-and-hold returns
+  57.32%; drawdowns are -12.81% and -22.70%. This is a conditional research
+  allocation design, not a validated alpha claim. The four intervals were
+  supplied after observing prices, so they cannot serve as holdout validation.
+- Archived 20/40-cycle results cover three intervals under a different ranking
+  model/strategy ceiling. Exact prefix and complete shared-date checks permit
+  an explicitly exploratory comparison only. Both miss the fourth rally.
+
+## 2026-10-24 period-specific quick screening
+
+Official references accessed 2026-10-24:
+https://scikit-learn.org/stable/modules/grid_search.html and
+https://scikit-learn.org/stable/common_pitfalls.html#data-leakage.
+Exhaustive grids and bounded candidate searches both rerank on the active data;
+reusing parameter-selection data does not establish independent validation.
+Compared: (1) infer ranges from winner-only archives, which is cheap but misses
+all losing families and cannot reconstruct their top ten; (2) retain compact
+per-family top-ten complete tuples during exhaustive traversal. Choose (2).
+It adds at most ten metric records per family, preserves parameter dependencies,
+and leaves ordinary full mode unchanged. The user clarified that quick mode
+uses the top three distinct execution finalists in combination search and expands
+each category's top thirty allocated parents; it does not reuse the ordinary
+three-finalist/95-percent/wider-parent policy.
+Existing cycle results are supplemental winner observations only, never a complete
+library. The user chose future full runs to create libraries rather than rerunning
+this active batch. A missing/incomplete library blocks quick mode explicitly.
+Use the latest complete single-window screen for each instrument/window/objective/
+cost/exclusion/model key; do not compare raw returns across different windows.
+Freeze the chosen tuples for a run and persist them with resumable cycle tasks.
+Quick results never retrain their own library. Reusing a later library over earlier
+historical decisions is adaptive research, not independent out-of-sample evidence.
+The optional candidate transport uses existing JSON options forwarding; no endpoint
+or required protocol change, relay restart, or active-batch migration is necessary.
+
+
+The user initially requested ten quick tuples per family. The N225 grid has
+53 eligible volume-excluded families and 39,934 tuples; retaining ten would
+produce 503 standalone tuples but 123,869 pair crossings, substantially more
+than ordinary top-three pairing. After reviewing that trade-off, the user
+changed quick mode to three tuples. It now traverses 159 standalone tuples,
+a 99.6% reduction at that stage, uses 3 x 3 crossings and expands only the
+previous category's thirty best allocated parents. Compact full-run libraries
+still retain ten metric rows for compatibility; only their top three are loaded
+for quick work. Overall speedup is not a guaranteed percentage.
+
+### Detailed five-strategy cost audit
+
+Read-only local audit on 2026-10-24 of batch
+`4055816d2e7c57dd0388e9fa`: 298 ten-session units, maximum five strategies,
+no EMA-refinement filters. Twenty-five requests exclude four volume-dependent
+families (53 families); 273 use all 57. The earlier 53-family-only illustration
+is not the scope of every unit in this batch.
+
+Captured ordinary checkpoint: job `3a7d0dfecfbc1f1991662189`, completed
+quintuple discovery at 557,896 evaluations. Its remaining five-strategy
+allocation replay is 864 * 125 = 108,000, yielding 665,896 evaluations.
+The stored finalist pools contained 55 combination-eligible families, 165
+parameter finalists, 1,483 pair finalists, 744 triple parents and 864 finalists
+each for triples, quadruples and quintuples. Allocation-grid sizes for two
+through six legs are respectively 10, 36, 84, 126 and 126. The reference
+allocation is already evaluated during discovery; replay uses grid size minus
+one, avoiding double counting.
+
+| Stage | Ordinary checkpoint-derived evaluations | Quick conservative bound |
+| --- | ---: | ---: |
+| Standalone | 45,196 | 57 * 3 = 171 |
+| Pair discovery | 1,483 * 9 = 13,347 | 1,594 * 9 = 14,346 |
+| Pair allocation replay | 1,483 * 9 = 13,347 | 1,594 * 9 = 14,346 |
+| Triple discovery | 117,987 | 30 * (57 - 2) * 3 = 4,950 |
+| Triple allocation replay | 864 * 35 = 30,240 | 30 * 35 = 1,050 |
+| Quadruple discovery | 134,391 | 30 * (57 - 3) * 3 = 4,860 |
+| Quadruple allocation replay | 864 * 83 = 71,712 | 30 * 83 = 2,490 |
+| Quintuple discovery | 131,676 | 30 * (57 - 4) * 3 = 4,770 |
+| Quintuple allocation replay | 864 * 125 = 108,000 | 30 * 125 = 3,750 |
+| Total | 665,896 | 50,733 |
+
+Quick pair sets are C(57,2) minus two declared-equivalent pairs = 1,594;
+ordinary C(55,2) minus those pairs = 1,483 for this checkpoint. Quick three-
+and higher-leg discovery bounds exclude used IDs but ignore equivalence
+exclusions, so actual quick counts may be lower. Its top-thirty pools are
+assumed full; fewer valid results also reduce work. Reduction versus this
+ordinary example is 92.3812%, or 7.6188% of the evaluation count. Per-stage
+costs are not equal, so 13.1255x fewer evaluations is not a speed claim.
+
+At the 231-completed-unit audit snapshot, 53-family results had a median
+584,049 evaluations (25 observations), and 57-family results a median 665,512
+(206 observations). The quick bound with 53 families is 45,717 evaluations.
+Using those observed medians to estimate the entire frozen request manifest:
+ordinary = 25 * 584,049 + 273 * 665,512 = 196,286,001;
+quick bound = 25 * 45,717 + 273 * 50,733 = 14,993,034.
+This projects 92.3616% fewer evaluations across the 298-unit batch, rather
+than reporting the unfinished ordinary jobs or unrun quick jobs as measured.
+The dominant savings come from replacing hundreds of intermediate parents
+with thirty, not merely limiting final display to thirty. Search results can
+differ because candidate pruning is not an equivalent-result acceleration.
+
+## 2026-10-24 successful but date-lagged Nikkei primary
+
+- Reproduced the live failure: Yahoo daily requests returned through 2026-10-22
+  with successful HTTP/status-complete while official CSV/archives already
+  included 2026-10-23 (open 62667.05, high 62786.89, low 61462.61, close 62693.16).
+  Official source checked 2026-10-24:
+  https://indexes.nikkei.co.jp/en/nkave/archives/data and
+  https://indexes.nikkei.co.jp/nkave/historical/nikkei_stock_average_daily_en.csv.
+- Compared source replacement with missing-date insertion. Replacement would
+  switch health/source identity and can truncate full Yahoo history because
+  the official recent CSV has raw metadata and shorter coverage. Chosen approach:
+  keep the configured primary, compare two overlapping completed OHLC bars,
+  and insert only missing official dates with per-bar provenance.
+- Recent weekday gaps and the last completed Tokyo weekday only trigger a
+  verification request. A holiday, unavailable publication, price mismatch,
+  insufficient overlap or unclosed bar never generates an invented candle.
+- Reuse the existing official adapter and canonical merge for later primary
+  catch-up. No new provider credential, scheduler, or persistent server cache is
+  needed. The repair is bounded to the ten-bar official tail and 10,000 retained
+  canonical bars; older unresolved holes require separate history recovery.
+
+## 2026-10-24 conflict-only next-day confirmation experiment
+
+- Compared immediate incoming-winner, immediate previous-winner, conflict-only
+  one-day wait with a two-bar next-winner lookback, and the requested three-bar
+  lookback. Non-conflict decisions remain on two bars in both wait variants.
+  Reused exact causal prefixes, existing directional/sequence rules and shared
+  close-price ledger; no new external library or market feed is required.
+- Of 37 archived replacement conflicts, 27 have an exact next-session winner
+  (14 dates). Ten cannot be evaluated and are not filled with stale winners.
+  Paired 10-session outcomes at 50% inherited exposure and 5 bps commission plus
+  5 bps slippage: three-bar delay versus two-bar delay is 0 wins, 14 losses,
+  13 ties, averaging -1.330 percentage points. Versus immediate previous-winner,
+  it is 5 wins, 21 losses, one tie, averaging -2.759 points.
+- Thirteen continuous histories containing conflicts have every required next
+  winner: delayed-three beats old-on-conflict in four and loses in nine. These
+  histories overlap. Missing next-session results exclude eight other histories.
+  No universal statistical conclusion is justified by 14 distinct dates.
+- The user chose to retain old-on-conflict for product execution. Delayed-three
+  remains a reproducible research artifact only. Its assumptions and results
+  are documented in `research/nikkei-cycle-conflicts/DELAYED_CONFIRMATION.md`.
+
+## 2026-10-24 Nikkei cycle same-day proxy execution
+
+- Verified JPX's current cash session closes at 15:30 JST (14:30 UTC+8),
+  following the 2024-11-05 extension from 15:00 JST. SSE closes at 15:00 UTC+8.
+  Sources accessed 2026-10-24:
+  https://www.jpx.co.jp/english/equities/trading/domestic/01.html and
+  https://www.jpx.co.jp/english/corporate/news/news-releases/1030/20241103-01.html
+  and https://english.sse.com.cn/start/trading/schedule/.
+- Compared default next-open execution with explicit close execution. TradingView
+  documents `process_orders_on_close`; Backtrader documents `set_coc`. Both
+  distinguish close simulation from ordinary next-open orders:
+  https://www.tradingview.com/pine-script-docs/concepts/strategies/ and
+  https://www.backtrader.com/docu/broker/.
+- Choose a cycle-only close-price replay using the existing allocation executor's
+  explicit price fills. This reuses costs, account continuity, and marker semantics
+  without changing ordinary backtests or historical optimizer rankings. A global
+  execution-policy change would also alter ranking, checkpoint compatibility, and
+  every other feature; that broader migration is excluded.
+- Only Nikkei 225 completed daily bars qualify. The last two bars end at the
+  screening decision itself. Include the final evaluation close. Never apply a
+  new target retroactively to the return that ended at that close.
+- Nikkei close is a user-requested proxy for a later China-market operation,
+  not an executable index quote or a domestic ETF NAV/price guarantee. Currency,
+  premium, calendars, data delivery, and computation latency are not modeled.
+- Conflict policies must be fixed before observing future returns. Compare both
+  from the same inherited account, report overlapping event samples separately,
+  and never choose a winner per event using its future performance.
+
 ## 2026-10-03 evidence-based standalone-rank pruning
 
 ### Question and evidence

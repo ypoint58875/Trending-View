@@ -21,6 +21,7 @@ import type { LocalScreeningEngineStatus } from "./screening-local-engine-protoc
 
 export type WorkerScreeningOptions = Pick<
   RunScreeningWithValidationOptions,
+  | "candidates"
   | "objective"
   | "entryFilters"
   | "excludedStrategyIds"
@@ -77,6 +78,7 @@ export function buildCheckpointIdentity(
     entryFilters: options.entryFilters,
     excludedStrategyIds: options.excludedStrategyIds,
     maxCombinationStrategies: options.maxCombinationStrategies,
+    candidates: options.candidates,
   });
   return {
     key: `screening:${options.checkpointNamespace ?? "default"}`,
@@ -114,6 +116,7 @@ function runScreeningInBrowserWorker(
         config,
         checkpoint,
         options: {
+          candidates: options.candidates ? [...options.candidates] : undefined,
           objective: options.objective,
           entryFilters: options.entryFilters
             ? [...options.entryFilters]

@@ -427,6 +427,7 @@ export function buildIndicatorSeries(
   labels: Record<string, string>,
   xAxisIndex: number,
   yAxisIndex: number,
+  bollingerVisible = false,
 ): SeriesOption[] {
   const parameters = {
     ...getDefaultIndicatorParameters(indicator),
@@ -437,7 +438,12 @@ export function buildIndicatorSeries(
     name: string,
     data: NumericSeries | number[],
     color: string,
-  ) => lineSeries(name, data, color, xAxisIndex, yAxisIndex);
+  ): SeriesOption => {
+    const series = lineSeries(name, data, color, xAxisIndex, yAxisIndex);
+    return indicator === "sma" && bollingerVisible
+      ? { ...series, lineStyle: { width: 2, color, type: "dashed" } }
+      : series;
+  };
   const configuredName = (
     name: string,
     ...values: number[]
@@ -469,6 +475,7 @@ export function buildIndicatorSeries(
     slowName: string,
     calculate: (period: number) => NumericSeries,
     slowColor: string,
+    fastColor = colors.cyan,
   ) => {
     const fastData = calculate(parameters.fast);
     if (parameters.fast === parameters.slow) {
@@ -476,7 +483,7 @@ export function buildIndicatorSeries(
         indicatorLine(
           configuredName(name, parameters.fast),
           fastData,
-          colors.cyan,
+          fastColor,
         ),
       ];
     }
@@ -484,7 +491,7 @@ export function buildIndicatorSeries(
       indicatorLine(
         configuredName(fastName, parameters.fast),
         fastData,
-        colors.cyan,
+        fastColor,
       ),
       indicatorLine(
         configuredName(slowName, parameters.slow),
@@ -500,7 +507,8 @@ export function buildIndicatorSeries(
       labels.smaFast,
       labels.smaSlow,
       (period) => sma(closes, period),
-      colors.amber,
+      "#FDD835",
+      "#00BCD4",
     );
   }
   if (indicator === "ema") {
@@ -554,9 +562,9 @@ export function buildIndicatorSeries(
       ),
     };
     return [
-      indicatorLine(configuredLabels.middle, bands.middle, colors.amber),
-      indicatorLine(configuredLabels.upper, bands.upper, colors.cyan),
-      indicatorLine(configuredLabels.lower, bands.lower, colors.cyan),
+      indicatorLine(configuredLabels.middle, bands.middle, "#FF9800"),
+      indicatorLine(configuredLabels.upper, bands.upper, "#2196F3"),
+      indicatorLine(configuredLabels.lower, bands.lower, "#2196F3"),
     ];
   }
   if (indicator === "vwap") {
@@ -1185,15 +1193,25 @@ const paneChartHeight = 150;
 const legendTop = 4;
 const priceGridTop = 54;
 
-export function buildPriceChartLegend(): LegendComponentOption {
+export function buildPriceChartLegend(series: SeriesOption[] = []): LegendComponentOption {
   return {
     type: "scroll",
     top: legendTop,
     left: 8,
     right: 8,
     textStyle: { color: "#8ea099", fontSize: 10 },
-    itemWidth: 12,
-    itemHeight: 6,
+    itemWidth: 28,
+    itemHeight: 10,
+    symbolKeepAspect: true,
+    ...(series.length ? { data: series.map((item) => {
+      if (item.type !== "scatter") return { name: String(item.name ?? "") };
+      const icon = item.symbol === "triangle"
+        ? item.symbolRotate === 180
+          ? "path://M0,0 L10,0 L5,10 Z"
+          : "path://M5,0 L10,10 L0,10 Z"
+        : item.symbol === "diamond" ? "path://M5,0 L10,5 L5,10 L0,5 Z" : undefined;
+      return { name: String(item.name ?? ""), ...(icon ? { icon, symbolKeepAspect: true } : {}) };
+    }) } : {}),
     pageIconColor: "#22c55e",
     pageIconInactiveColor: "#42534d",
     pageTextStyle: { color: "#8ea099", fontSize: 10 },
@@ -1417,6 +1435,7 @@ export function formatPriceAxisValue(value: number, precision: 0 | 2): string {
 export function buildVisiblePriceAxisRange(
   bars: readonly MarketBar[],
   window: DataZoomWindow,
+  overlayValues: readonly (readonly unknown[])[] = [],
 ): PriceAxisRange | null {
   if (bars.length === 0) return null;
   const startPercent = Math.min(Math.max(window.start, 0), 100);
@@ -1437,6 +1456,13 @@ export function buildVisiblePriceAxisRange(
   for (let index = startIndex; index <= endIndex; index += 1) {
     minimum = Math.min(minimum, bars[index].low);
     maximum = Math.max(maximum, bars[index].high);
+    for (const values of overlayValues) {
+      const value = values[index];
+      if (typeof value === "number" && Number.isFinite(value)) {
+        minimum = Math.min(minimum, value);
+        maximum = Math.max(maximum, value);
+      }
+    }
   }
   if (!Number.isFinite(minimum) || !Number.isFinite(maximum)) return null;
   const span = maximum - minimum;
@@ -1524,9 +1550,29 @@ export function PriceChart({
       (configuredIndicator) =>
         getIndicator(configuredIndicator.id).placement === "pane",
     ).length;
+    const bollingerVisible = chartIndicators.some(({ id }) => id === "bollinger");
+    let nextPaneAxisIndex = 2;
+    const indicatorSeries = chartIndicators.flatMap((configuredIndicator) => {
+      const overlay = getIndicator(configuredIndicator.id).placement === "overlay";
+      const targetAxisIndex = overlay ? 0 : nextPaneAxisIndex++;
+      return buildIndicatorSeries(
+        bars,
+        configuredIndicator.id,
+        configuredIndicator.parameters,
+        labels.series,
+        targetAxisIndex,
+        targetAxisIndex,
+        bollingerVisible,
+      );
+    });
     const priceAxisRange = buildVisiblePriceAxisRange(
       bars,
       activeZoomWindow,
+      indicatorSeries.flatMap((series) =>
+        series.type === "line" && series.yAxisIndex === 0 && Array.isArray(series.data)
+          ? [series.data]
+          : [],
+      ),
     );
     const layout = buildPriceChartLayout(
       times,
@@ -1603,22 +1649,7 @@ export function PriceChart({
       tooltip: { valueFormatter: formatVolumeTooltipValue },
     });
 
-    let nextPaneAxisIndex = 2;
-    for (const configuredIndicator of chartIndicators) {
-      const overlay =
-        getIndicator(configuredIndicator.id).placement === "overlay";
-      const targetAxisIndex = overlay ? 0 : nextPaneAxisIndex++;
-      series.push(
-        ...buildIndicatorSeries(
-          bars,
-          configuredIndicator.id,
-          configuredIndicator.parameters,
-          labels.series,
-          targetAxisIndex,
-          targetAxisIndex,
-        ),
-      );
-    }
+    series.push(...indicatorSeries);
 
     const configuredStrategies =
       strategyConfigurations ??
@@ -1647,7 +1678,7 @@ export function PriceChart({
     const option: EChartsOption = {
       animation: false,
       backgroundColor: "transparent",
-      legend: buildPriceChartLegend(),
+      legend: buildPriceChartLegend(series),
       axisPointer: {
         link: [{ xAxisIndex: "all" }],
         label: { backgroundColor: "#26332f" },

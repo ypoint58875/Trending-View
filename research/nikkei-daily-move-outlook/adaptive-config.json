@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "maPeriods": [7, 20],
+  "analysisStart": "2000-01-01",
+  "trainingEnd": "2009-12-31",
+  "validationStart": "2010-01-01",
+  "validationEnd": "2015-12-31",
+  "evaluationStart": "2016-01-01",
+  "maximumGroups": 4,
+  "excludeSmallestGroups": [0, 1, 2],
+  "minimumGroupTrainingPairs": 30,
+  "minimumPositiveTrainingPairs": 20,
+  "ratioQuantiles": [0.1, 0.25, 0.4, 0.55, 0.7, 0.85],
+  "minimumValidationTrades": 20,
+  "minimumEvaluationTrades": 30,
+  "minimumValidationPredictionEvents": 10,
+  "coordinatePasses": 2,
+  "selectionCostBpsPerSide": 5,
+  "costBpsPerSide": [0, 5, 10],
+  "maximumBars": 20000,
+  "selectionObjective": "Maximum validation net CAGR; ties prefer shallower drawdown. Start with shared ranks then refine each group in fixed order for at most two passes. Never rank by evaluation results.",
+  "execution": "Long/flat, no leverage, close-confirmed signal, next actual open, zero cash interest. Relative rebound buys and relative retracement sells; MA defines intervals only. Cold flat at each independent window; terminal position marked at close without exit fee."
+}

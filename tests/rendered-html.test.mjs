@@ -29,6 +29,17 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
+  for (const name of ["research-ema7-supplemental-entry", "research-sma11-exit-guard", "research-wma14-entry-slope-gate"]) {
+    const input = html.match(new RegExp(`<input[^>]*name="${name}"[^>]*>`))?.[0];
+    assert.ok(input, `${name} must render`);
+    assert.match(input, /checked/);
+  }
+  assert.match(html, /EMA7/);
+  assert.match(html, /SMA11/);
+  assert.match(html, /0\.125%/);
+  assert.match(html, /WMA14/);
+  assert.doesNotMatch(html, /class="[^"]*screening-full-traversal/);
+  assert.doesNotMatch(html, /每策略前 3 组参数|screening-quick-toggle/);
   assert.match(html, /<html lang="zh-CN">/i);
   assert.match(html, /<title>QuantScope \| Market Strategy Lab<\/title>/i);
   assert.match(html, /QuantScope/);
@@ -170,7 +181,7 @@ test("server-renders the QuantScope research workspace", async () => {
     /\u5148\u5b8c\u6574\u904d\u5386\u5168\u90e8 34 \u7c7b\u5355\u7b56\u7565\u53c2\u6570/,
   );
   assert.doesNotMatch(html, /50\/50、60\/40、40\/60、70\/30、30\/70/);
-  assert.match(html, /\u5168\u90e8\u6709\u9650\u53c2\u6570\u7ec4\u5408/);
+  assert.doesNotMatch(html, /\u5168\u90e8\u6709\u9650\u53c2\u6570\u7ec4\u5408/);
   assert.doesNotMatch(html, /name="strategy-max-parameter-sets"/);
   assert.match(
     html,
@@ -284,8 +295,11 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
+  // The cycle form appears after browser storage/shortcut hydration, not in its loading HTML.
+  assert.match(workspace, /c\.initialCash[\s\S]*SmaPositionOverlayControls/);
+  assert.doesNotMatch(workspace, /quickScreening|screening-parameter/);
   assert.match(html, /\u7b56\u7565\u5468\u671f\u9a8c\u8bc1/);
-  assert.match(html, /\u8d8b\u52bf\u89e6\u53d1\u7b5b\u9009\u4e0e\u8fde\u7eed\u6301\u4ed3\u6536\u76ca\u9a8c\u8bc1/);
+  assert.match(html, /\u65e5\u7ecf\u5b8c\u6574\u65e5\u7ebf\u7b5b\u9009\u4e0e\u5f53\u65e5\u6536\u76d8\u4ef7\u6a21\u62df\u6210\u4ea4/);
   assert.match(html, /\u6bcf\u6b21\u66f4\u65b0\u4e0e\u6536\u76ca\u57fa\u51c6/);
   assert.match(html, /\u8fd4\u56de\u7814\u7a76\u53f0/);
   assert.match(
@@ -295,9 +309,17 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(workspace, /loadStrategyValidationMarketSeries/);
   assert.match(
     workspace,
-    /readCanonicalMarketSeriesEntry\([\s\S]*?if \(cached\?\.series\.bars\.length\) return cached\.series;[\s\S]*?fetch\(marketRequestUrl/,
+    /readCanonicalMarketSeriesEntry\([\s\S]*?cached\?\.series\.bars\.length && !refreshLatest[\s\S]*?completedNikkeiCycleSeries\(cached\.series\)[\s\S]*?fetch\(marketRequestUrl/,
   );
   assert.match(workspace, /writeCanonicalMarketSeries\(series, profile\)/);
+  assert.match(workspace, /isNikkeiCycleInstrument\(group\.instrument\)/);
+  assert.match(workspace, /rollingSchedule: NIKKEI_CYCLE_MODEL/);
+  assert.match(workspace, /conflictPolicy: NIKKEI_CYCLE_CONFLICT_POLICY/);
+  assert.doesNotMatch(workspace, /\[c\.rollingOldOnConflict,\s*rollingReport\.oldOnConflictReturn\]/);
+  assert.match(workspace, /rebalances=\{rollingReport\.rebalances\}/);
+  assert.match(workspace, /signature\.includes\(`"conflictPolicy"/);
+  assert.match(workspace, /\[c\.rollingLatest,\s*rollingReport\.updateReturn\]/);
+  assert.match(workspace, /selectedGroup\.instrument,\s*controller\.signal,\s*true/);
   assert.match(workspace, /storedTask\.status !== "completed"/);
   assert.doesNotMatch(workspace, /cycleScreeningInterval/);
   assert.match(workspace, /buildStrategyCycleRollingReport/);
@@ -701,7 +723,7 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   );
   assert.match(
     combinations,
-    /COMBINATION_FINALISTS_PER_STRATEGY = 3/,
+    /COMBINATION_FINALISTS_PER_STRATEGY = 6/,
   );
   assert.match(combinations, /THREE_STRATEGY_ALLOCATION_CANDIDATES/);
   assert.match(
@@ -1138,6 +1160,10 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.doesNotMatch(workspace, /copy\.savedBacktests\.notRanked/);
   assert.doesNotMatch(workspace, /saved\.rankHistory\.map/);
   assert.match(workspace, /savedBacktestLiveGuidance/);
+  assert.match(workspace, /currentAllocation: evaluation\.performance\.executedAllocation \?\? 0/);
+  assert.match(workspace, /Math\.round\(shortcutGuidance\.currentAllocation \* 100\)/);
+  assert.match(workspace, /shortcutGuidance\.orderPrices\.flatMap/);
+  assert.doesNotMatch(workspace, /ShortcutRebalanceOutlook|savedBacktestOutlooks|savedBacktests\.signalDate/);
   assert.match(workspace, /saved-shortcut-guidance/);
   assert.doesNotMatch(workspace, /className={`saved-shortcut-validation/);
   assert.match(
