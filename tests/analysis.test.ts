@@ -92,6 +92,7 @@ import {
   LONG_HORIZON_STRATEGY_IDS,
   SHORT_HORIZON_STRATEGY_IDS,
   VOLUME_REQUIRED_STRATEGY_IDS,
+  LEGACY_STRATEGY_ALIASES,
   areStrategiesEquivalent,
   getStrategy,
   getStrategiesByHorizon,
@@ -2453,7 +2454,7 @@ test("builds aligned long-only signals for every strategy", () => {
     }),
   );
 
-  assert.equal(STRATEGIES.length, 57);
+  assert.equal(STRATEGIES.length, 55);
   assert.equal(TRADINGVIEW_BUILT_IN_STRATEGY_IDS.length, 20);
   assert.deepEqual(
     STRATEGIES.filter((strategy) => strategy.id.startsWith("tv-")).map(
@@ -2482,10 +2483,8 @@ test("classifies every registered strategy into one explicit holding horizon", (
   assert.deepEqual(LONG_HORIZON_STRATEGY_IDS, [
     "sma-cross",
     "ema-cross",
-    "macd-momentum",
     "donchian-breakout",
     "donchian-intrabar",
-    "supertrend-trend",
     "supertrend-stop",
     "ichimoku-trend",
     "roc-momentum",
@@ -2850,6 +2849,53 @@ test("accepts two strategies from the same catalog horizon", () => {
         allocation === 1,
     ),
   );
+});
+
+test("offers one canonical strategy per equivalent family and preserves legacy replay", () => {
+  const candidates = buildScreeningCandidates();
+  for (const [alias, canonical] of Object.entries(LEGACY_STRATEGY_ALIASES)) {
+    assert.ok(!STRATEGIES.some((strategy) => strategy.id === alias));
+    assert.ok(STRATEGIES.some((strategy) => strategy.id === canonical));
+    assert.ok(!candidates.some((candidate) => candidate.strategyId === alias));
+    assert.ok(candidates.some((candidate) => candidate.strategyId === canonical));
+    const legacyStrategy = getStrategy(alias as keyof typeof LEGACY_STRATEGY_ALIASES);
+    const canonicalStrategy = getStrategy(canonical);
+    const variants = canonical === "tv-macd"
+      ? [{ fast: 4, slow: 16, signal: 3 }, { fast: 12, slow: 26, signal: 9 }, { fast: 20, slow: 52, signal: 15 }]
+      : [{ period: 5, multiplier: 1 }, { period: 10, multiplier: 3 }, { period: 50, multiplier: 6 }];
+    const paths = [
+      Array.from({ length: 240 }, () => 100),
+      Array.from({ length: 240 }, (_, i) => 100 + i * 0.2),
+      Array.from({ length: 240 }, (_, i) => 150 - i * 0.2),
+      Array.from({ length: 240 }, (_, i) => 100 + Math.sin(i / 5) * 8 + Math.cos(i / 19) * 3),
+    ];
+    for (const closes of paths) {
+      const bars = makeBars(closes);
+      for (const parameters of variants) {
+        assert.ok(isValidStrategyParameters(legacyStrategy.id, parameters));
+        assert.ok(isValidStrategyParameters(canonical, parameters));
+        assert.deepEqual(
+          legacyStrategy.buildTarget(bars, parameters),
+          canonicalStrategy.buildTarget(bars, parameters),
+        );
+      }
+    }
+    assert.ok(parseStrategyAllocationPlan({
+      strategyA: { strategyId: alias, parameters: legacyStrategy.defaultParameters },
+      strategyB: null,
+      strategyAAllocation: 1,
+      strategyBAllocation: 0,
+    }));
+    const archived = parseScreeningRunCandidates([{
+      kind: "single", key: alias, rank: 1,
+      strategyAId: alias, strategyAParameters: legacyStrategy.defaultParameters,
+      strategyAAllocation: 1, strategyBId: null, strategyBParameters: null,
+      strategyBAllocation: 0, relativeLongStrategy: null, selectionScore: null,
+      metrics: { totalReturn: 10, maxDrawdown: -2, sharpe: 1, tradeCount: 3, score: 8 },
+    }]);
+    assert.equal(archived?.[0]?.strategyAId, alias);
+  }
+  assert.ok(STRATEGIES.some((strategy) => strategy.id === "supertrend-stop"));
 });
 
 test("groups mathematically equivalent strategies and rejects duplicate pairs", () => {
@@ -4461,7 +4507,7 @@ test("excludes volume-dependent strategies from screening when requested", () =>
     ["long", "short"],
     VOLUME_REQUIRED_STRATEGY_IDS,
   );
-  assert.equal(candidates.length, 39_934);
+  assert.equal(candidates.length, 34_886);
   assert.ok(
     candidates.every(
       (candidate) => !VOLUME_REQUIRED_STRATEGY_IDS.includes(
@@ -5497,10 +5543,10 @@ test("keeps the allocation-free screening comparator exactly rank-equivalent", (
 test("builds every unique parameter set without per-strategy sampling", () => {
   assert.equal(DEFAULT_SCREENING_YIELD_EVERY, 128);
   assert.equal(SCREENING_ENTRY_FILTER_FINALISTS_PER_STRATEGY, 60);
-  assert.equal(buildScreeningCandidates().length, 45_196);
+  assert.equal(buildScreeningCandidates().length, 40_148);
 
   const screeningCandidates = buildScreeningCandidates();
-  assert.equal(screeningCandidates.length, 45_196);
+  assert.equal(screeningCandidates.length, 40_148);
   const candidatesByStrategy = new Map<
     string,
     Array<Record<string, number>>

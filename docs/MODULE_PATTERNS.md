@@ -1,5 +1,14 @@
 # Module Patterns
 
+## Retiring equivalent strategy entries
+
+Filter aliases once at the shared active registry, rather than maintaining
+separate exclusions in each page, worker and local engine. Preserve historical
+lookup, parameter spaces and locale metadata for archived IDs. Verify equal
+signals on flat, rising, falling and oscillating prices at boundary and common
+parameters. Change the shared screening-result model whenever the active catalog
+changes so cached searches cannot resume with a different candidate universe.
+
 ## Past-block optimization and next-block deployment
 
 Use the isolated overlay study's shared configurable account, full-prefix
@@ -628,8 +637,8 @@ inside the eligible-family domain without catalog-horizon filtering, keep the be
 crossing per pair, and retain
 every pair up to the
 4,096 safety bound, then compare 50/50, 60/40, 40/60, 70/30, and 30/70. With
-57 strategies, all57 eligible families create at most
-`choose(57, 2) = 1,596` pairs before declared-equivalence exclusions. Store and replay
+55 strategies, all55 eligible families create at most
+`choose(55, 2) = 1,485` pairs before declared-equivalence exclusions. Store and replay
 `strategyAEntryFilter` and `strategyBEntryFilter` independently, including
 mixed filtered/unfiltered and different-EMA legs. Final presentation is a separate
 bounded view: keep one best result per unordered strategy-ID pair, then sort

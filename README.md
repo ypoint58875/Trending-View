@@ -216,11 +216,11 @@ enabled.
   parameter shape and requires 120 in-range daily observations, two completed
   base trades, and a nearby variant before showing stable/sensitive. It never
   selects or applies a replacement parameter.
-- One-click exhaustive strategy screening across all 57 strategies. It
+- One-click exhaustive strategy screening across all 55 strategies. It
   traverses all 45,196 finite registered parameter combinations; there is no
   per-strategy sampling control or hidden cap. One shared objective drives the
   complete single-and-combination workflow. After every standalone family is
-  ranked, the all completed family winners (57 of the current 57) enter
+  ranked, the all completed family winners (55 of the current 55) enter
   pair and higher-order combination discovery. This evidence-bounded gate is
   shared by every screening mode; standalone and EMA refinement remain
   exhaustive.
@@ -312,10 +312,11 @@ enabled.
   the reference 60%/40% allocation, without a
   separate combination checkbox. Each strategy-ID pair keeps its best
   parameter pairing before allocation replay.
-  Equivalent implementations such as the paired MACD-cross and Supertrend
-  close-confirmation entries are not combined with themselves. It keeps up to
+  MACD and Supertrend each expose one common built-in entry. Their retired
+  duplicate IDs remain readable in historical plans but are not screened again.
+  Equivalent historical entries cannot be combined with themselves. It keeps up to
   4,096 pair finalists before replaying all allocation/mode alternatives. The
-  current 57-strategy catalog contributes 57 families and at most 1,596
+  current 55-strategy catalog contributes 55 families and at most 1,485
   unordered pairs before declared equivalence exclusions, so no eligible pair
   is discarded by the safety bound. Both columns render every retained best
   row. The second result column keeps only the best

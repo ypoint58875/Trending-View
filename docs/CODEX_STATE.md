@@ -1,5 +1,28 @@
 # Codex State
 
+## 2026-10-25 canonical MACD and Supertrend strategy selection
+
+- Active strategy selection and full screening expose 55 families, retaining
+  the familiar built-in MACD (`tv-macd`) and Supertrend (`tv-supertrend`).
+  Historical `macd-momentum` and `supertrend-trend` definitions remain available
+  through `getStrategy` for saved plans and archived result replay, but are
+  removed from active menus, horizon lists and default parameter enumeration.
+- `LEGACY_STRATEGY_ALIASES` records the shared catalog policy. Both retained
+  strategies use the same parameter spaces as their aliases. Supertrend stop
+  orders remain a distinct active strategy. Six execution finalists and 100%
+  eligible family participation remain unchanged.
+- Result-model version 7 prevents old catalog checkpoints and latest results
+  from restoring as current searches. No protocol or endpoint change, market
+  refresh, historical winner migration, raw-data deletion or batch job is added.
+  This is a bounded registry change; no additional checkpoint mechanism is needed.
+- Saved-plan and screening-history validators share `KNOWN_STRATEGY_IDS`, so
+  historical IDs remain accepted independently of new menu/grid eligibility.
+- Verification: signal/grid/legacy compatibility checks pass on flat, rising,
+  falling and oscillating data with boundary and common parameters. Full
+  `npm test` passes typecheck, 343 unit tests, production build and 4 rendered
+  route tests. Daily grids shrink from 45,196 to 40,148 candidates (34,886 when
+  volume-dependent strategies are excluded). Documentation and diff checks pass.
+
 ## 2026-10-25 full-only screening with six finalists and all families
 
 - User explicitly removed quick screening and expanded full search to six

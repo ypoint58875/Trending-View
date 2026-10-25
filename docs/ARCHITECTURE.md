@@ -1,5 +1,14 @@
 # Architecture
 
+## Active strategy catalog and historical lookup
+
+The active `STRATEGIES` registry excludes IDs in `LEGACY_STRATEGY_ALIASES`.
+MACD and Supertrend retain their common built-in entries, while the original
+57-definition lookup remains internal to `getStrategy` for historical plans.
+Do not migrate archived IDs or reinterpret their execution semantics. New menus,
+horizon lists and default screening grids share the 55-entry active registry.
+Supertrend stop-order execution is distinct and remains active.
+
 ## Independent account overlays
 
 Current page controls use explicit model `ema7-sma11-wma14-v1`: supplemental
@@ -371,7 +380,7 @@ optimizer ranks every unordered pair of non-equivalent eligible
 single results
 and compares 50/50, 60/40, 40/60, 70/30, and 30/70 allocations under both
 base-then-add and full-then-reduce tactical modes. The current
-catalog contributes all57 eligible families and at most1,596 unordered pairs before
+catalog contributes all55 eligible families and at most1,485 unordered pairs before
 declared-equivalence exclusions. Final
 combination output keeps only the best parameter/allocation result for each
 unique unordered strategy-ID set within each strategy-count category. Pair

@@ -15,7 +15,7 @@ import {
   type StrategySelection,
 } from "./strategy-combinations";
 import {
-  STRATEGIES,
+  KNOWN_STRATEGY_IDS,
   areStrategiesEquivalent,
   getStrategy,
   type StrategyId,
@@ -329,7 +329,7 @@ const intervals = new Set<MarketInterval>([
   "60m",
   "1d",
 ]);
-const strategyIds = new Set(STRATEGIES.map((strategy) => strategy.id));
+const strategyIds = KNOWN_STRATEGY_IDS;
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

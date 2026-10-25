@@ -1,5 +1,13 @@
 # Function Map
 
+## Canonical strategy catalog
+
+- `LEGACY_STRATEGY_ALIASES`: retired MACD and Supertrend IDs and active equivalents.
+- `STRATEGIES`: 55 active strategy definitions used for menus and full grids.
+- `KNOWN_STRATEGY_IDS`: active and archived IDs accepted by saved-plan and
+  screening-history validation.
+- `getStrategy`: resolves active and historical definitions for unchanged replay.
+
 ## Position overlays
 
 - `MIXED_POSITION_OVERLAY_MODEL`: current explicit EMA7/SMA11/WMA14 rule set.
@@ -689,7 +697,7 @@ a still-active US trading session. Unknown venues retain the existing fallback.
   primary and 30 total. Intermediate pools use cached unordered-set keys and
   stable binary insertion; this is result-equivalent to sorting the complete
   pool after every candidate but avoids that repeated allocation. The current
-  registry contributes 57 families and at most 1,596 unordered pairs before
+  registry contributes 55 families and at most 1,485 unordered pairs before
   declared-equivalence exclusions, so every eligible pair reaches allocation
   comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets

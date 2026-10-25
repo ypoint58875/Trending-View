@@ -529,7 +529,13 @@ function vwapReversion(
   return target;
 }
 
-export const STRATEGIES: StrategyDefinition[] = [
+/** Historical IDs remain executable but are not offered for new selections. */
+export const LEGACY_STRATEGY_ALIASES = {
+  "macd-momentum": "tv-macd",
+  "supertrend-trend": "tv-supertrend",
+} as const satisfies Partial<Record<StrategyId, StrategyId>>;
+
+const strategyDefinitions: StrategyDefinition[] = [
   {
     id: "sma-cross",
     horizon: "long",
@@ -649,6 +655,15 @@ export const STRATEGIES: StrategyDefinition[] = [
   ...COMMUNITY_STRATEGIES,
 ];
 
+export const STRATEGIES: StrategyDefinition[] = strategyDefinitions.filter(
+  (strategy) => !Object.hasOwn(LEGACY_STRATEGY_ALIASES, strategy.id),
+);
+
+/** Persistence accepts archived IDs as well as the active catalog. */
+export const KNOWN_STRATEGY_IDS = new Set<StrategyId>(
+  strategyDefinitions.map((strategy) => strategy.id),
+);
+
 export const LONG_HORIZON_STRATEGY_IDS: StrategyId[] = STRATEGIES.filter(
   (strategy) => strategy.horizon === "long",
 ).map((strategy) => strategy.id);
@@ -678,7 +693,7 @@ export function getStrategiesForInterval(
 }
 
 export function getStrategy(id: StrategyId): StrategyDefinition {
-  const strategy = STRATEGIES.find((candidate) => candidate.id === id);
+  const strategy = strategyDefinitions.find((candidate) => candidate.id === id);
   if (!strategy) throw new Error(`Unknown strategy: ${id}`);
   return strategy;
 }

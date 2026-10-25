@@ -137,7 +137,7 @@ test("full screening batch uploads remain bounded and preserve deterministic ord
 
 test("full staged expansion resumes exactly through higher-order combinations", async () => {
   const grid = buildScreeningCandidates();
-  const candidates = ["sma-cross", "ema-cross", "rsi-reversal", "macd-momentum", "bollinger-reversion"]
+  const candidates = ["sma-cross", "ema-cross", "rsi-reversal", "tv-macd", "bollinger-reversion"]
     .flatMap(id => grid.filter(row => row.strategyId === id).slice(0, 2));
   const settingsForRun = { candidates, objective: "totalReturn" as const, maxCombinationStrategies: 4,
     allocationCandidates: TWO_STRATEGY_ALLOCATION_CANDIDATES.slice(0, 1),

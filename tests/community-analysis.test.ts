@@ -98,7 +98,7 @@ test("community catalog is complete and registry-backed", () => {
     COMMUNITY_INDICATOR_IDS,
   );
   assert.equal(INDICATORS.length, 40);
-  assert.equal(STRATEGIES.length, 57);
+  assert.equal(STRATEGIES.length, 55);
 });
 
 test("community indicator ports return aligned causal series", () => {

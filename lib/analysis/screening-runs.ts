@@ -17,7 +17,7 @@ import {
   type MovingAverageSlopeFilter,
 } from "./entry-filter";
 import {
-  STRATEGIES,
+  KNOWN_STRATEGY_IDS,
   type StrategyId,
   type StrategyParameters,
 } from "./strategies";
@@ -585,7 +585,7 @@ export function compareScreeningRuns(
   };
 }
 
-const strategyIds = new Set(STRATEGIES.map((strategy) => strategy.id));
+const strategyIds = KNOWN_STRATEGY_IDS;
 const validationModes = new Set(SCREENING_VALIDATION_MODES);
 const objectives = new Set(SCREENING_OBJECTIVES);
 const assetTypes = new Set<MarketAssetType>([
