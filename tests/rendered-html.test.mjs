@@ -917,7 +917,9 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   );
   assert.doesNotMatch(workspace, /getStrategiesByHorizon/);
   assert.match(combinations, /resolveRelativeLongStrategy/);
-  assert.match(combinations, /strategyBIndex = strategyAIndex \+ 1/);
+  assert.match(combinations, /pairingFinalists\.slice\(strategyAIndex \+ 1\)/);
+  assert.match(combinations, /const start = Math\.min\(skippedPairCount, eligible\.length\)/);
+  assert.match(combinations, /strategyBIndex = start/);
   assert.match(workspace, /applyCombinationResult/);
   assert.equal(
     workspace.match(/className="clickable-result-row"/g)?.length,

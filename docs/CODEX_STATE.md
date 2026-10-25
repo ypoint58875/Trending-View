@@ -1,5 +1,70 @@
 # Codex State
 
+## 2026-10-25 exact screening replay and direct resume implemented
+
+- User authorized the two measured speedups with unchanged best-strategy
+  selection. `lib/analysis/strategy-combinations.ts` now initializes three-
+  or-more-leg summary replay after a strictly earlier proven zero caused by
+  an inactive core or zero volatility cap. One subsequent transition preserves
+  signal attribution; complete causal targets, role/risk warm-up, inherited
+  holdings and full-history fallback remain. Two-leg order replay is unchanged.
+- Recovery restores evaluated/failed/total counters from committed progress,
+  skips completed stages and seeks ordered candidate rows or finalist/weight
+  offsets within the active stage. The old scalar skip branches are replaced,
+  not the search domain. Six finalists, all families, beams, weights, ranking,
+  tie order and execution rules are unchanged. Existing checkpoint, result-
+  model and wire versions remain compatible; no queue/cache/data reset occurs.
+- Added `tests/screening-exact-performance.test.ts` and a synthetic pre-edit
+  fixture. All 36 complete pre-change output hashes, 144 interior/boundary
+  checkpoint continuations, repeated interruption/failure-count recovery and
+  five complete-grid interior allocation cursors pass. Independent before/
+  after comparisons pass 200 actual-data timeline/chart cases (108 inherited
+  positions) and 12 complete validation mode/objective outcomes.
+- Finishing the real 4,677-bar checkpoint's remaining 100,000 allocations
+  produces identical complete final results at 1,256,829 cumulative
+  evaluations: 31.068 s before versus 3.698 s after. Zero-new-work recovery is
+  3.244 versus 0.023 s. These are bounded stage measurements, not whole-search
+  guarantees. Local scripts, frozen references, timings and logs are retained
+  under ignored `outputs/performance-integration-2026-10-25/`.
+- Full `npm test` passes typecheck, all 384 unit tests, production build and
+  all four rendered/source tests. Scoped ESLint and diff checks pass. The
+  rendered source contract was added to the plan after it rejected obsolete
+  loop syntax; replacement assertions retain subsequent-candidate traversal
+  and exact row-seek coverage. No assertions/tests were deleted.
+- Architecture, functions, module patterns, feature map, data pipeline and
+  technical research document the equivalent shared behavior. Existing raw
+  data and untracked research work are preserved. Live relay health remains
+  ready with seven children; the observed batch has no error jobs.
+
+## 2026-10-25 screening performance audit without production changes
+
+- Reviewed the current full-only model-7 optimizer, disposable local children,
+  checkpoint recovery and active seven-child pool on the eight-CPU/64-GiB
+  host. All prescribed project context files exist. Existing untracked market
+  and research artifacts are preserved. No production source, job, queue,
+  historical winner, market input or runtime setting is changed.
+- A frozen committed checkpoint supplies 4,677 Nikkei bars and a ten-session
+  window. The audit-only prototype starts three-to-six-leg streaming replay
+  after a preceding guaranteed zero, preserving full signals/risk warm-up,
+  inherited state and full-history fallback. 200 exact timeline/chart/metric
+  cases pass, including 108 inherited positions. Both same-cursor 8,227-new-
+  evaluation samples preserve complete returned-result hashes: 5.613/6.138 s
+  baseline versus 3.356/3.605 s prototype. A separate 8,192-candidate kernel
+  takes 2.592 versus 0.292 s with matching hashes. These are local sample
+  speedups, not full-job guarantees or a shipped feature.
+- A near-empty resume probe takes 3.348 s through its first 35 new evaluations;
+  previous completed-stage loops still revisit 1,156,829 ordinals. Recommend
+  exact state initialization first, then direct completed-stage/cursor restore,
+  then materializing compact state only for retained scalar-ranked candidates.
+  Keep all six finalists, all eligible families and deterministic ranking.
+- `docs/TECH_RESEARCH.md` records approaches, official references, evidence,
+  limitations and the follow-up validation scope. Reproduce with
+  `node --import tsx outputs/performance-review-2026-10-25/audit.mjs` while the
+  reviewed source hash matches. Local frozen input, generated modules, profiles
+  and `summary.json` are Git-ignored, bounded review artifacts. No feature
+  linkage/status changes require a feature-map edit. Audit assertions pass;
+  no production regression suite is claimed for this documentation-only task.
+
 ## 2026-10-25 canonical MACD and Supertrend strategy selection
 
 - Active strategy selection and full screening expose 55 families, retaining

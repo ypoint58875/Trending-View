@@ -702,10 +702,15 @@ a still-active US trading session. Unknown venues retain the existing fallback.
   comparison. Each pair stores and replays
   independent `strategyAEntryFilter` and `strategyBEntryFilter` values. Targets
   are built once from complete loaded history and retained only for finalists.
-  Four-through-six-leg candidate execution then slices those causal targets to
-  the scoring window plus one preceding bar; a backward decisive-state scan
-  preserves inherited core-satellite and volatility state without generating
-  per-candidate out-of-window equity.
+  Three-through-six-leg summary execution starts at the first requested state
+  after finding an earlier guaranteed zero caused by the inactive core or a
+  zero volatility cap. It retains a later transition to preserve signal events
+  and inherited holdings, with full-history fallback when no reset exists.
+  All causal targets, role selection and volatility warm-up remain complete.
+  Checkpoint recovery restores cumulative progress/failures and skips completed
+  stages using their saved pools. Ordered row offsets seek within discovery;
+  division/remainder seek within allocation grids without replaying earlier
+  candidates. Existing checkpoint and search-model identities remain valid.
   Price-order candidates build their order plan once and derive their target
   from that plan instead of also constructing an unused close target. The
   default optimizers yield before their first evaluation, at every stage

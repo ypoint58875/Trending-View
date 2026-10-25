@@ -1,5 +1,20 @@
 # Data Pipeline
 
+## Exact screening recovery without replaying completed work
+
+The optimizer restores cumulative evaluated/failed/total progress from the
+existing checkpoint metadata and reads finalized stage pools directly.
+Completed stages no longer enumerate their old candidate ordinals. Within the
+active stage, ordered row offsets or finalist/weight division seek to the next
+unevaluated candidate. Original tie order and pending-result commitment remain
+unchanged. Existing atomic child checkpoint storage, job identity, restart
+policy, cancellation, retention and browser/relay protocol are unchanged.
+
+Three-to-six-leg summary timelines may skip a historical prefix only after a
+proven zero-allocation reset preceding the first requested state. Full-history
+signals, risk warm-up and inherited execution remain reproducible. This adds
+no external requests, persistent cache, growing state or cleanup policy.
+
 ## Expanded overlay segmentation search
 
 Run `npx tsx research/nikkei-overlay-stability/block-study.ts`. Reuse the frozen

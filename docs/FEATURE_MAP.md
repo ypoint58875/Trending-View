@@ -1,5 +1,22 @@
 # Feature Map
 
+## Exact screening performance
+
+`lib/analysis/strategy-combinations.ts` links lazy proven-reset summary replay
+and direct checkpoint stage/row seeking for every screening consumer. Keep
+candidate grids, six finalists, all eligible families, deterministic ranking,
+weight grids, entry filters and causal execution linked and unchanged.
+`tests/screening-exact-performance.test.ts` and the frozen synthetic
+`tests/fixtures/screening-exact-selection.json` compare complete pre-change
+selection outputs and stage-interior/boundary recovery, ties, failed counts,
+repeated interruption and all weight-grid cursor offsets. Existing validation,
+local-engine and coordinator tests retain orchestration/disk recovery coverage.
+`tests/rendered-html.test.mjs` checks the ordered subsequent-candidate slice
+and row-seek structure rather than requiring the obsolete scalar loop syntax.
+Architecture, functions, module patterns, data pipeline, technical research and
+project state document the same behavior. No UI, wire/checkpoint schema,
+search-result version, data source or cache identity change is involved.
+
 ## Canonical equivalent strategy catalog
 
 `lib/analysis/strategies.ts` exposes 55 active strategies through `STRATEGIES`

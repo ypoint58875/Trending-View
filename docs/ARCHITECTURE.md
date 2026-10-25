@@ -1,5 +1,26 @@
 # Architecture
 
+## Exact screening replay and checkpoint seeking
+
+The shared optimizer preserves its candidate grids, six execution finalists,
+eligible families, beams, allocations, comparator and stable traversal order.
+Three-or-more-leg summary timelines initialize lazily at the first requested
+bar. An earlier inactive core or zero causal volatility cap proves a zero
+allocation independent of older hysteresis. Replay starts after that reset,
+retaining at least one transition before the first requested state so signal
+events also agree. Without a proven reset the timeline replays all history.
+Two-leg intrabar/layer execution remains a complete replay; indicator/target
+construction, relative-core selection and volatility warm-up remain causal
+and use complete history.
+
+Recovery restores evaluated, failed and total counters from committed
+checkpoint progress. Completed stages use their saved finalist/result pools
+directly. The active stage seeks through ordered candidate rows, or divides
+its allocation ordinal into finalist-row and weight-column offsets. Skipping
+work never re-ranks its retained pools or changes subsequent candidate order.
+The existing version-1 checkpoint shape, search result model and local wire
+protocol remain compatible; no existing jobs or caches need invalidation.
+
 ## Active strategy catalog and historical lookup
 
 The active `STRATEGIES` registry excludes IDs in `LEGACY_STRATEGY_ALIASES`.

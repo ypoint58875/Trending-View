@@ -1,5 +1,22 @@
 # Module Patterns
 
+## Exact screening acceleration
+
+- Keep performance changes inside the shared optimizer so ordinary, cycle,
+  batch, rolling and multi-range consumers use identical search semantics.
+- Skip historical state only after an earlier inactive core or zero risk cap
+  proves a reset. Preserve one subsequent transition for signal attribution;
+  keep full causal inputs and fall back to complete replay without proof.
+- Restore committed stage pools and cumulative counters once. Seek through
+  candidate rows in original order, and use finalist/weight offsets for
+  rectangular allocation stages. Never re-sort or prune a restored beam.
+- Preserve stable tie order, pending-result flush behavior, independent entry
+  filters and old-format checkpoints. An equivalent implementation requires
+  no protocol/result-model bump or task/cache deletion.
+- Compare complete pre-change results, not just the leading return. Keep
+  stage-interior/boundary recovery, ties, full weight grids, failures and
+  repeated interruption under regression coverage.
+
 ## Retiring equivalent strategy entries
 
 Filter aliases once at the shared active registry, rather than maintaining

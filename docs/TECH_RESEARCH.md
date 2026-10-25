@@ -1,5 +1,177 @@
 # Technical Research
 
+## 2026-10-25 production integration of exact replay and resume acceleration
+
+User authorized the first two measured improvements, conditional on unchanged
+best-strategy selection. Compare persisting a new physical cursor/schema with
+deriving a row/block offset from the existing checkpoint stage, completed
+ordinal, cumulative counts and restored finalist pools. Choose the latter:
+skip entire completed stages, seek within ordered candidate rows and preserve
+the existing checkpoint/wire/search-model identities. Restore failed counts
+as well as evaluated/total counts; no past stage is re-ranked or re-evaluated.
+
+Initialize three-or-more-leg replay lazily on its first requested index. Only
+an earlier inactive core or zero risk cap proves an allocation reset; advance
+at least one transition after that reset to preserve requested signal events.
+Without a proven reset, replay all history. Keep two-leg intrabar execution,
+full-history signal construction, role selection and volatility warm-up intact.
+
+Freeze complete pre-edit output hashes on a bounded all-stage matrix covering
+all three objectives, ties, direction changes, gaps and different windows.
+Compare full ranked results/parameters/weights and counts, not merely a winning
+return. Exercise old-format atomic checkpoints at stage boundaries and inside
+stages, failures, repeated interruption, multi-window consumers and full npm
+tests. Keep the earlier audit snapshot and baseline source for independent
+production differential measurements. No new network dependency or provider
+access is needed; official Node profiling/recovery references and the measured
+alternative comparison are recorded in the preceding review below.
+
+
+Implemented in `lib/analysis/strategy-combinations.ts` after isolated
+verification. No candidate domain, beam, weight grid, ordering/comparator,
+execution rule, schema or version change is introduced. Removed the old
+per-candidate skip branches because committed counters plus stage/row seeking
+replace that recovery work. Restored failed counts now survive interruption.
+
+Verification evidence:
+
+- 36 frozen pre-change full-result hashes match for all three objectives,
+  flat/rising/falling/volatile data and 10/128/160-bar windows. The hash covers
+  all output rows, ordering, parameters, allocations, metrics and counts.
+- 144 stage-interior/boundary checkpoint continuations match uninterrupted
+  complete outputs under all three objectives on flat and volatile data.
+  Additional repeated interruption/failure-count checks and five interior
+  allocation cursors cover the complete production weight grids.
+- An independent before/after timeline comparison on the frozen 4,677-bar
+  actual source passes all 200 cases, including 108 inherited positions.
+  Twelve complete range/sample/multi-range/rolling validation outcomes match
+  across all objectives, with multi-year rolling folds.
+- Completing the actual checkpoint's remaining 100,000 six-leg allocations
+  yields identical complete outputs and 1,256,829 total evaluations. Baseline
+  takes 31.068 s; integrated code takes 3.698 s (about 8.4x for this final
+  stage including recovery/materialization, not the complete search).
+- Same-cursor 8,227-evaluation samples take 5.385/5.728 s before and
+  0.370/0.379 s after; result hashes match. A zero-new-evaluation recovery
+  probe takes 3.244 s before and 0.023 s after with identical partial output.
+  These comparisons use the original committed stage boundary, rather than
+  the earlier audit's synthesized next-stage progress metadata.
+- Scoped ESLint passes. The first full run passes all 384 unit tests and
+  the production build, then exposes one old rendered/source assertion tied
+  to `strategyBIndex = strategyAIndex + 1`. Updated that linked contract to
+  verify the subsequent-candidate slice and exact row seek; all four rendered
+  tests pass independently. No assertion is removed; the structural check
+  remains backed by exact runtime selection/continuation tests.
+- The final full `npm test` rerun passes typecheck, all 384 unit tests,
+  the production build and all four rendered/source checks. Final diff checks
+  pass, and the live seven-child queue remains healthy without error jobs.
+
+`tests/screening-exact-performance.test.ts` and its synthetic fixture preserve
+the independent pre-edit evidence. Ignored local reproduction scripts and
+measurements live under `outputs/performance-integration-2026-10-25/`:
+`benchmark.mjs`, `complete-parity.mjs`, `kernel-parity.mjs`,
+`validation-parity.mjs` and their JSON/log outputs. The original audit input
+and baseline are retained; production jobs, market data and caches are not
+manually deleted or rewritten. Existing child rotation adopts the equivalent
+core naturally without resetting the queue.
+
+## 2026-10-25 exact screening performance review
+
+Scope: read-only review of production computation, with disposable local
+experiments under `outputs/performance-review-2026-10-25/`. Do not change active
+jobs, source bars, production search breadth, execution rules or ranking.
+
+Compared approaches before prototyping:
+
+1. Optimize the existing serial kernel while preserving candidate order. The
+   summary streaming timeline currently advances from index zero even for a
+   ten-session scoring window. For three or more legs, a prior inactive core
+   or zero volatility cap forces allocation to zero independently of older
+   hysteresis. An exact reset-point start may avoid most prefix replay. Keep
+   full causal signal construction, role selection, volatility warm-up and a
+   full-history fallback. Equivalence must include inherited positions,
+   signals, costs, return, drawdown and deterministic retained rankings.
+2. Add intra-job Worker threads or raise job concurrency. Workers suit CPU
+   work, but require bounded pools and deterministic reduction. The live host
+   already advertises seven concurrent children on eight logical CPUs; this
+   leaves less parallel headroom and adds merge/memory complexity. Prefer
+   measuring and removing repeated work first.
+3. Separate checkpoint persistence from compulsory process rotation. Current
+   checkpoints always abort/restart the child. Adaptive rotation could retain
+   JIT state while preserving atomic recovery, but needs actual heap/resource
+   measurements and bounded fallbacks before implementation.
+
+Use Node's in-process Inspector CPU profiler for a bounded isolated sample;
+do not attach to or interrupt an active child. Record source identities,
+profile limitations, measurements and prototype parity before recommending a
+production change. Local artifacts are bounded, replaceable audit outputs;
+no new recurring pipeline, cache or durable task is introduced.
+
+Findings and bounded verification:
+
+- Host: i7-9700, eight logical CPUs, approximately 64 GiB RAM. The existing
+  relay health endpoint reports seven screening children. Leave the active
+  pool and queued jobs unchanged during this review.
+- A committed model-7 checkpoint from job `91892abf80d6b7359d94fc04`
+  contains 4,677 causal Nikkei bars through 2019-01-24, with a ten-session
+  scoring window starting 2019-01-10. The completed sextuple-discovery
+  boundary supplies an isolated start of sextuple allocation. The original
+  committed metadata is retained separately in the local snapshot.
+- The audit-only reset prototype preserves full signals and risk caps and
+  starts the three-or-more-leg state machine after its last guaranteed zero
+  before the requested predecessor state. It retains full-history fallback,
+  and leaves two-leg execution unchanged. All 200 comparisons across two
+  through six legs, both tactical modes and five window lengths match exactly
+  for requested timeline states, signals, chart fills, costs and performance;
+  108 cases inherit an opening position.
+- Two same-cursor optimizer samples each evaluate 8,227 new allocations.
+  Baseline wall times are 5.613 and 6.138 seconds; prototype times are 3.356
+  and 3.605 seconds. CPU times are 5.860/5.921 versus 3.563/3.547 seconds.
+  Complete returned-result hashes match in all four samples. This is about
+  1.69x wall speed, or 41% less time, for this resumed sample only.
+- A separate 8,192-candidate six-leg kernel comparison takes 2.592 seconds
+  versus 0.292 seconds, approximately 8.88x, with matching result hashes.
+  This excludes cursor restoration and is not an end-to-end speed claim.
+- The resume-cursor probe still spends 3.348 seconds reaching its first
+  progress callback after only 35 new evaluations. Earlier completed work
+  comprises 1,156,829 evaluations; current resume code revisits its nested
+  loops, eligibility checks and ordinal skips. This probe includes setup and
+  those 35 evaluations, not a pure isolated cursor-restoration measurement.
+- In the sampled baseline CPU profile, `stateAt` and descendants account
+  for about 38% of sampled elapsed time. The remaining profile includes
+  completed-stage traversal and retention/setup. TSX emits anonymous/minified
+  frames, so exact attribution of every anonymous frame is unavailable.
+- Lower-priority code opportunity: compare scalar candidate rank before
+  eagerly constructing `compactTarget`, compact order-fill maps and signal
+  horizons for rejected standalone/entry-filter candidates. A bounded,
+  immutable-input indicator cache is another opportunity. Neither has a
+  measured speedup here. Do not introduce unbounded target caches.
+
+Recommended production order is exact three-to-six-leg reset initialization,
+direct restoration of completed-stage cursors/counters, then lazy finalist
+materialization. Adaptive child rotation is secondary: observed checkpoint
+writes are only about 15-26 ms, and restart/JIT benefits were not isolated.
+Do not reduce the six-finalist/all-family domain or change ranking semantics.
+A production implementation still needs full-suite execution, interruption/
+resume parity and representative longer-history/multi-window validation.
+
+Reproduce with
+`node --import tsx outputs/performance-review-2026-10-25/audit.mjs`.
+The saved input is hash-bound to the reviewed source; a changed source fails
+explicitly. `summary.json`, two CPU profiles, the frozen local input and both
+generated module copies remain under that ignored output directory. The
+bounded audit completes in tens of seconds and uses approximately 300 MB RSS;
+no new checkpoint/resume machinery is justified for the audit itself. These
+are replaceable local review artifacts, with no automatic cleanup of source
+jobs or raw data. Production code is unchanged; `npm test` is not rerun for
+this documentation/audit-only task.
+
+Primary documentation checked on 2026-10-25 (the local runtime is Node 24.11.1):
+
+- https://nodejs.org/api/inspector.html#cpu-profiler
+- https://nodejs.org/docs/latest-v24.x/api/worker_threads.html
+- https://nodejs.org/api/v8.html#v8getheapstatistics
+
+
 ## 2026-10-25 remove quick search and widen full search by explicit request
 
 Compared hiding the quick UI while keeping its library/search branches with

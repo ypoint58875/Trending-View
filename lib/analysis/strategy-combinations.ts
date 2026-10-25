@@ -1743,6 +1743,21 @@ function createStreamingCombinationTimeline(
         if (index < lastIndex) {
           throw new Error("Streaming timeline indexes must be monotonic");
         }
+        // A forced zero erases older allocation hysteresis. Replay at least
+        // one later transition to preserve the requested state's signals too.
+        // Two-leg order/layer state keeps its existing complete replay.
+        if (lastIndex === -1 && legs.length >= 3) {
+          for (let resetIndex = index - 1; resetIndex >= 0; resetIndex -= 1) {
+            if (
+              (coreLeg.execution.target?.[resetIndex] ?? 0) <= 0 ||
+              volatilityRiskCaps[resetIndex] === 0
+            ) {
+              lastIndex = resetIndex;
+              coreSatelliteTarget = 0;
+              break;
+            }
+          }
+        }
         while (lastIndex < index) {
           lastIndex += 1;
           lastState = advance(lastIndex);
@@ -3484,25 +3499,28 @@ export async function optimizeStrategyCombinations(
     }
     pendingCombinationResults.clear();
   };
-  let evaluatedCount = 0;
-  let failedCount = 0;
+  let evaluatedCount = resumeCheckpoint?.progress.completed ?? 0;
+  let failedCount = resumeCheckpoint?.progress.failed ?? 0;
   const strategyCandidateCount = candidates.length;
-  let totalCandidates = candidates.length;
+  let totalCandidates = resumeCheckpoint?.progress.total ?? candidates.length;
 
   const resumeStageIndex = resumeCheckpoint
     ? OPTIMIZATION_STAGE_ORDER.indexOf(resumeCheckpoint.progress.stage)
     : -1;
-  const shouldSkipCheckpointedEvaluation = (
-    stage: CombinationScreeningStage,
-    ordinal: number,
-  ): boolean => {
-    if (!resumeCheckpoint) return false;
-    const stageIndex = OPTIMIZATION_STAGE_ORDER.indexOf(stage);
-    return (
-      stageIndex < resumeStageIndex ||
-      (stageIndex === resumeStageIndex &&
-        ordinal <= resumeCheckpoint.progress.stageCompleted)
+  // Committed pools already include completed work. Restore counters once
+  // and seek within the active stage without re-enumerating prior stages.
+  const stageCompleted = (stage: CombinationScreeningStage): number =>
+    resumeCheckpoint?.progress.stage === stage
+      ? resumeCheckpoint.progress.stageCompleted : 0;
+  const stagePending = (stage: CombinationScreeningStage): boolean => {
+    const index = OPTIMIZATION_STAGE_ORDER.indexOf(stage);
+    return index > resumeStageIndex || (
+      index === resumeStageIndex && resumeCheckpoint !== null &&
+      resumeCheckpoint.progress.stageCompleted < resumeCheckpoint.progress.stageTotal
     );
+  };
+  const addStageCandidates = (stage: CombinationScreeningStage, count: number) => {
+    if (OPTIMIZATION_STAGE_ORDER.indexOf(stage) > resumeStageIndex) totalCandidates += count;
   };
   const originalOnProgress = options.onProgress;
   const reportProgress = (progress: CombinationScreeningProgress) => {
@@ -3594,12 +3612,12 @@ export async function optimizeStrategyCombinations(
   });
   await yieldForScreening();
 
-  for (const candidate of candidates) {
+  for (
+    let candidateIndex = stagePending("strategies") ? stageCompleted("strategies") : candidates.length;
+    candidateIndex < candidates.length; candidateIndex += 1
+  ) {
     if (options.signal?.aborted) break;
-    if (shouldSkipCheckpointedEvaluation("strategies", evaluatedCount + 1)) {
-      evaluatedCount += 1;
-      continue;
-    }
+    const candidate = candidates[candidateIndex];
     try {
       const selection = {
         strategyId: candidate.strategyId,
@@ -3690,20 +3708,12 @@ export async function optimizeStrategyCombinations(
         0,
       );
   }
-  const entryFilterStageIndex = OPTIMIZATION_STAGE_ORDER.indexOf("entryFilters");
-  const entryFilterStageAlreadyComplete = Boolean(
-    resumeCheckpoint &&
-      (resumeStageIndex > entryFilterStageIndex ||
-        (resumeStageIndex === entryFilterStageIndex &&
-          resumeCheckpoint.progress.stageCompleted ===
-            resumeCheckpoint.progress.stageTotal)),
-  );
   if (
     !options.signal?.aborted &&
     requestedEntryFilters.length > 0 &&
-    !entryFilterStageAlreadyComplete
+    stagePending("entryFilters")
   ) {
-    totalCandidates += entryFilterCandidateCount;
+    addStageCandidates("entryFilters", entryFilterCandidateCount);
   reportProgress({
       completed: evaluatedCount,
       total: totalCandidates,
@@ -3716,7 +3726,8 @@ export async function optimizeStrategyCombinations(
     });
     await yieldForScreening();
 
-    let evaluatedEntryFilterCount = 0;
+    let evaluatedEntryFilterCount = stageCompleted("entryFilters");
+    let skippedEntryFilterCount = evaluatedEntryFilterCount;
     entryFilterLoop: for (const entryFilter of requestedEntryFilters) {
       const cachedEntryAllowed = options.entryFilterAllowedByKey?.get(
         entryFilterKey(entryFilter),
@@ -3731,18 +3742,11 @@ export async function optimizeStrategyCombinations(
       };
       for (const [strategyId, candidatesForStrategy] of
         entryFilterCandidatesByStrategy) {
-        for (const candidate of candidatesForStrategy) {
+        const start = Math.min(skippedEntryFilterCount, candidatesForStrategy.length);
+        skippedEntryFilterCount -= start;
+        for (let candidateIndex = start; candidateIndex < candidatesForStrategy.length; candidateIndex += 1) {
           if (options.signal?.aborted) break entryFilterLoop;
-          if (
-            shouldSkipCheckpointedEvaluation(
-              "entryFilters",
-              evaluatedEntryFilterCount + 1,
-            )
-          ) {
-            evaluatedCount += 1;
-            evaluatedEntryFilterCount += 1;
-            continue;
-          }
+          const candidate = candidatesForStrategy[candidateIndex];
           try {
             const selection = {
               strategyId,
@@ -3805,9 +3809,6 @@ export async function optimizeStrategyCombinations(
       }
     }
   }
-  if (entryFilterStageAlreadyComplete) {
-    evaluatedCount += entryFilterCandidateCount;
-  }
   entryFilterCandidatesByStrategy.clear();
 
   const singleFinalists = STRATEGIES.map(
@@ -3829,115 +3830,112 @@ export async function optimizeStrategyCombinations(
   );
 
   if (!options.signal?.aborted) {
-    const pairCount = referenceAllocation
-      ? pairingFinalists.reduce(
-          (count, strategyAFinalist, strategyAIndex) =>
-            count +
-            pairingFinalists
-              .slice(strategyAIndex + 1)
-              .filter(
-                (strategyBFinalist) =>
-                  strategyAFinalist.result.strategyId !==
-                    strategyBFinalist.result.strategyId &&
-                  !areStrategiesEquivalent(
-                    strategyAFinalist.result.strategyId,
-                    strategyBFinalist.result.strategyId,
-                  ),
-              ).length,
-          0,
-        )
-      : 0;
-    totalCandidates = strategyCandidateCount + pairCount;
-    totalCandidates += entryFilterCandidateCount;
-
-  reportProgress({
-      completed: evaluatedCount,
-      total: totalCandidates,
-      stageCompleted: 0,
-      stageTotal: pairCount,
-      failed: failedCount,
-      stage: "pairs",
-      strategyAId: null,
-      strategyBId: null,
-    });
-    await yieldForScreening();
-    let evaluatedPairCount = 0;
     const pairSettings: StrategyCombinationBacktestSettings = {
       ...settings,
       entryFilter: null,
       entryFilterAllowed: undefined,
     };
+    if (stagePending("pairs")) {
+      const pairCount = referenceAllocation
+        ? pairingFinalists.reduce(
+            (count, strategyAFinalist, strategyAIndex) =>
+              count +
+              pairingFinalists
+                .slice(strategyAIndex + 1)
+                .filter(
+                  (strategyBFinalist) =>
+                    strategyAFinalist.result.strategyId !==
+                      strategyBFinalist.result.strategyId &&
+                    !areStrategiesEquivalent(
+                      strategyAFinalist.result.strategyId,
+                      strategyBFinalist.result.strategyId,
+                    ),
+                ).length,
+            0,
+          )
+        : 0;
+      addStageCandidates("pairs", pairCount);
 
-    pairLoop: for (
-      let strategyAIndex = 0;
-      strategyAIndex < pairingFinalists.length;
-      strategyAIndex += 1
-    ) {
-      const strategyAFinalist = pairingFinalists[strategyAIndex];
-      for (
-        let strategyBIndex = strategyAIndex + 1;
-        strategyBIndex < pairingFinalists.length;
-        strategyBIndex += 1
+    reportProgress({
+        completed: evaluatedCount,
+        total: totalCandidates,
+        stageCompleted: 0,
+        stageTotal: pairCount,
+        failed: failedCount,
+        stage: "pairs",
+        strategyAId: null,
+        strategyBId: null,
+      });
+      await yieldForScreening();
+      let evaluatedPairCount = stageCompleted("pairs");
+      let skippedPairCount = evaluatedPairCount;
+
+      pairLoop: for (
+        let strategyAIndex = 0;
+        strategyAIndex < pairingFinalists.length;
+        strategyAIndex += 1
       ) {
-        const strategyBFinalist = pairingFinalists[strategyBIndex];
-        const strategyAId = strategyAFinalist.result.strategyId;
-        const strategyBId = strategyBFinalist.result.strategyId;
-        if (strategyAId === strategyBId) continue;
-        if (areStrategiesEquivalent(strategyAId, strategyBId)) continue;
-        if (options.signal?.aborted || !referenceAllocation) break pairLoop;
-        if (
-          shouldSkipCheckpointedEvaluation("pairs", evaluatedPairCount + 1)
-        ) {
+        const strategyAFinalist = pairingFinalists[strategyAIndex];
+        const eligible = pairingFinalists.slice(strategyAIndex + 1).filter((finalist) =>
+          strategyAFinalist.result.strategyId !== finalist.result.strategyId &&
+          !areStrategiesEquivalent(strategyAFinalist.result.strategyId, finalist.result.strategyId),
+        );
+        const start = Math.min(skippedPairCount, eligible.length);
+        skippedPairCount -= start;
+        for (let strategyBIndex = start; strategyBIndex < eligible.length; strategyBIndex += 1) {
+          const strategyBFinalist = eligible[strategyBIndex];
+          const strategyAId = strategyAFinalist.result.strategyId;
+          const strategyBId = strategyBFinalist.result.strategyId;
+          if (strategyAId === strategyBId) continue;
+          if (areStrategiesEquivalent(strategyAId, strategyBId)) continue;
+          if (options.signal?.aborted || !referenceAllocation) break pairLoop;
+          try {
+            const referenceResult = runCombinationCandidate(
+              bars,
+              strategyAFinalist,
+              strategyBFinalist,
+              referenceAllocation,
+              pairSettings,
+            );
+            retainPairFinalist(
+              pairFinalists,
+              {
+                strategyA: strategyAFinalist,
+                strategyB: strategyBFinalist,
+                referenceResult,
+                settings: pairSettings,
+              },
+              objective,
+              pairFinalistLimit,
+            );
+          } catch {
+            failedCount += 1;
+          }
           evaluatedCount += 1;
           evaluatedPairCount += 1;
-          continue;
-        }
-        try {
-          const referenceResult = runCombinationCandidate(
-            bars,
-            strategyAFinalist,
-            strategyBFinalist,
-            referenceAllocation,
-            pairSettings,
-          );
-          retainPairFinalist(
-            pairFinalists,
-            {
-              strategyA: strategyAFinalist,
-              strategyB: strategyBFinalist,
-              referenceResult,
-              settings: pairSettings,
-            },
-            objective,
-            pairFinalistLimit,
-          );
-        } catch {
-          failedCount += 1;
-        }
-        evaluatedCount += 1;
-        evaluatedPairCount += 1;
 
-        if (
-          evaluatedCount % yieldEvery === 0 ||
-          evaluatedPairCount === pairCount
-        ) {
-  reportProgress({
-            completed: evaluatedCount,
-            total: totalCandidates,
-            stageCompleted: evaluatedPairCount,
-            stageTotal: pairCount,
-            failed: failedCount,
-            stage: "pairs",
-            strategyAId,
-            strategyBId,
-          });
-          await yieldForScreening();
+          if (
+            evaluatedCount % yieldEvery === 0 ||
+            evaluatedPairCount === pairCount
+          ) {
+    reportProgress({
+              completed: evaluatedCount,
+              total: totalCandidates,
+              stageCompleted: evaluatedPairCount,
+              stageTotal: pairCount,
+              failed: failedCount,
+              stage: "pairs",
+              strategyAId,
+              strategyBId,
+            });
+            await yieldForScreening();
+          }
         }
       }
-    }
 
-    if (!options.signal?.aborted) {
-      totalCandidates += pairFinalists.length * remainingAllocations.length;
+    }
+    if (!options.signal?.aborted && stagePending("allocations")) {
+      addStageCandidates("allocations", pairFinalists.length * remainingAllocations.length);
   reportProgress({
         completed: evaluatedCount,
         total: totalCandidates,
@@ -3950,22 +3948,19 @@ export async function optimizeStrategyCombinations(
         strategyBId: null,
       });
       await yieldForScreening();
-      let evaluatedAllocationCount = 0;
+      let evaluatedAllocationCount = stageCompleted("allocations");
 
-      allocationLoop: for (const finalist of pairFinalists) {
+      allocationLoop: for (
+        let finalistIndex = remainingAllocations.length > 0
+          ? Math.floor(evaluatedAllocationCount / remainingAllocations.length) : 0;
+        finalistIndex < pairFinalists.length; finalistIndex += 1
+      ) {
+        const finalist = pairFinalists[finalistIndex];
         retainPendingCombinationResult(finalist.referenceResult);
-        for (const allocation of remainingAllocations) {
+        for (let allocationIndex = evaluatedAllocationCount % Math.max(remainingAllocations.length, 1);
+          allocationIndex < remainingAllocations.length; allocationIndex += 1) {
+          const allocation = remainingAllocations[allocationIndex];
           if (options.signal?.aborted) break allocationLoop;
-          if (
-            shouldSkipCheckpointedEvaluation(
-              "allocations",
-              evaluatedAllocationCount + 1,
-            )
-          ) {
-            evaluatedCount += 1;
-            evaluatedAllocationCount += 1;
-            continue;
-          }
           try {
             retainPendingCombinationResult(
               runCombinationCandidate(
@@ -4016,114 +4011,110 @@ export async function optimizeStrategyCombinations(
       includeTriples &&
       referenceTripleAllocation
     ) {
-      const tripleParentPairs: StrategyPairFinalist[] = selectPrimaryDiverseCandidates(
-        pairFinalists,
-        (candidate) => candidate.referenceResult,
-        objective,
-        tripleParentPairLimit,
-        MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
-      );
-      const isEligibleThirdStrategy = (
-        parent: StrategyPairFinalist,
-        candidate: StrategyFinalist,
-      ) => {
-        const candidateId = candidate.result.strategyId;
-        const strategyAId = parent.strategyA.result.strategyId;
-        const strategyBId = parent.strategyB.result.strategyId;
-        return (
-          candidateId !== strategyAId &&
-          candidateId !== strategyBId &&
-          !areStrategiesEquivalent(candidateId, strategyAId) &&
-          !areStrategiesEquivalent(candidateId, strategyBId)
+      if (stagePending("triples")) {
+        const tripleParentPairs: StrategyPairFinalist[] = selectPrimaryDiverseCandidates(
+          pairFinalists,
+          (candidate) => candidate.referenceResult,
+          objective,
+          tripleParentPairLimit,
+          MAX_MULTI_STRATEGY_FINALISTS_PER_PRIMARY,
         );
-      };
-      const tripleCount = tripleParentPairs.reduce(
-        (count, parent) =>
-          count +
-          pairingFinalists.filter((candidate) =>
-            isEligibleThirdStrategy(parent, candidate),
-          ).length,
-        0,
-      );
-      totalCandidates += tripleCount;
-  reportProgress({
-        completed: evaluatedCount,
-        total: totalCandidates,
-        stageCompleted: 0,
-        stageTotal: tripleCount,
-        failed: failedCount,
-        stage: "triples",
-        strategyAId: null,
-        strategyBId: null,
-        strategyCId: null,
-      });
-      await yieldForScreening();
-      let evaluatedTripleCount = 0;
+        const isEligibleThirdStrategy = (
+          parent: StrategyPairFinalist,
+          candidate: StrategyFinalist,
+        ) => {
+          const candidateId = candidate.result.strategyId;
+          const strategyAId = parent.strategyA.result.strategyId;
+          const strategyBId = parent.strategyB.result.strategyId;
+          return (
+            candidateId !== strategyAId &&
+            candidateId !== strategyBId &&
+            !areStrategiesEquivalent(candidateId, strategyAId) &&
+            !areStrategiesEquivalent(candidateId, strategyBId)
+          );
+        };
+        const tripleCount = tripleParentPairs.reduce(
+          (count, parent) =>
+            count +
+            pairingFinalists.filter((candidate) =>
+              isEligibleThirdStrategy(parent, candidate),
+            ).length,
+          0,
+        );
+        addStageCandidates("triples", tripleCount);
+    reportProgress({
+          completed: evaluatedCount,
+          total: totalCandidates,
+          stageCompleted: 0,
+          stageTotal: tripleCount,
+          failed: failedCount,
+          stage: "triples",
+          strategyAId: null,
+          strategyBId: null,
+          strategyCId: null,
+        });
+        await yieldForScreening();
+        let evaluatedTripleCount = stageCompleted("triples");
+        let skippedTripleCount = evaluatedTripleCount;
 
-      tripleLoop: for (const parent of tripleParentPairs) {
-        for (const strategyCFinalist of pairingFinalists) {
-          if (!isEligibleThirdStrategy(parent, strategyCFinalist)) continue;
-          if (options.signal?.aborted) break tripleLoop;
-          if (
-            shouldSkipCheckpointedEvaluation(
-              "triples",
-              evaluatedTripleCount + 1,
-            )
-          ) {
+        tripleLoop: for (const parent of tripleParentPairs) {
+          const eligible = pairingFinalists.filter((candidate) => isEligibleThirdStrategy(parent, candidate));
+          const start = Math.min(skippedTripleCount, eligible.length);
+          skippedTripleCount -= start;
+          for (let candidateIndex = start; candidateIndex < eligible.length; candidateIndex += 1) {
+            const strategyCFinalist = eligible[candidateIndex];
+            if (options.signal?.aborted) break tripleLoop;
+            try {
+              const referenceResult = runTripleCombinationCandidate(
+                bars,
+                parent.strategyA,
+                parent.strategyB,
+                strategyCFinalist,
+                referenceTripleAllocation,
+                parent.settings,
+              );
+              retainTripleFinalist(
+                tripleFinalists,
+                {
+                  strategyA: parent.strategyA,
+                  strategyB: parent.strategyB,
+                  strategyC: strategyCFinalist,
+                  referenceResult,
+                  settings: parent.settings,
+                },
+                objective,
+                tripleFinalistLimit,
+              );
+            } catch {
+              failedCount += 1;
+            }
             evaluatedCount += 1;
             evaluatedTripleCount += 1;
-            continue;
-          }
-          try {
-            const referenceResult = runTripleCombinationCandidate(
-              bars,
-              parent.strategyA,
-              parent.strategyB,
-              strategyCFinalist,
-              referenceTripleAllocation,
-              parent.settings,
-            );
-            retainTripleFinalist(
-              tripleFinalists,
-              {
-                strategyA: parent.strategyA,
-                strategyB: parent.strategyB,
-                strategyC: strategyCFinalist,
-                referenceResult,
-                settings: parent.settings,
-              },
-              objective,
-              tripleFinalistLimit,
-            );
-          } catch {
-            failedCount += 1;
-          }
-          evaluatedCount += 1;
-          evaluatedTripleCount += 1;
-          if (
-            evaluatedCount % yieldEvery === 0 ||
-            evaluatedTripleCount === tripleCount
-          ) {
-  reportProgress({
-              completed: evaluatedCount,
-              total: totalCandidates,
-              stageCompleted: evaluatedTripleCount,
-              stageTotal: tripleCount,
-              failed: failedCount,
-              stage: "triples",
-              strategyAId: parent.strategyA.result.strategyId,
-              strategyBId: parent.strategyB.result.strategyId,
-              strategyCId: strategyCFinalist.result.strategyId,
-            });
-            await yieldForScreening();
+            if (
+              evaluatedCount % yieldEvery === 0 ||
+              evaluatedTripleCount === tripleCount
+            ) {
+    reportProgress({
+                completed: evaluatedCount,
+                total: totalCandidates,
+                stageCompleted: evaluatedTripleCount,
+                stageTotal: tripleCount,
+                failed: failedCount,
+                stage: "triples",
+                strategyAId: parent.strategyA.result.strategyId,
+                strategyBId: parent.strategyB.result.strategyId,
+                strategyCId: strategyCFinalist.result.strategyId,
+              });
+              await yieldForScreening();
+            }
           }
         }
-      }
 
-      if (!options.signal?.aborted) {
+      }
+      if (!options.signal?.aborted && stagePending("tripleAllocations")) {
         const tripleAllocationCount =
           tripleFinalists.length * remainingTripleAllocations.length;
-        totalCandidates += tripleAllocationCount;
+        addStageCandidates("tripleAllocations", tripleAllocationCount);
   reportProgress({
           completed: evaluatedCount,
           total: totalCandidates,
@@ -4136,22 +4127,19 @@ export async function optimizeStrategyCombinations(
           strategyCId: null,
         });
         await yieldForScreening();
-        let evaluatedTripleAllocationCount = 0;
+        let evaluatedTripleAllocationCount = stageCompleted("tripleAllocations");
 
-        tripleAllocationLoop: for (const finalist of tripleFinalists) {
+        tripleAllocationLoop: for (
+          let finalistIndex = remainingTripleAllocations.length > 0
+            ? Math.floor(evaluatedTripleAllocationCount / remainingTripleAllocations.length) : 0;
+          finalistIndex < tripleFinalists.length; finalistIndex += 1
+        ) {
+          const finalist = tripleFinalists[finalistIndex];
           retainPendingCombinationResult(finalist.referenceResult);
-          for (const allocation of remainingTripleAllocations) {
+          for (let allocationIndex = evaluatedTripleAllocationCount % Math.max(remainingTripleAllocations.length, 1);
+            allocationIndex < remainingTripleAllocations.length; allocationIndex += 1) {
+            const allocation = remainingTripleAllocations[allocationIndex];
             if (options.signal?.aborted) break tripleAllocationLoop;
-            if (
-              shouldSkipCheckpointedEvaluation(
-                "tripleAllocations",
-                evaluatedTripleAllocationCount + 1,
-              )
-            ) {
-              evaluatedCount += 1;
-              evaluatedTripleAllocationCount += 1;
-              continue;
-            }
             try {
               retainPendingCombinationResult(
                 runTripleCombinationCandidate(
@@ -4251,138 +4239,133 @@ export async function optimizeStrategyCombinations(
         );
         const finalists = higherOrderFinalists.get(strategyCount) ?? [];
         higherOrderFinalists.set(strategyCount, finalists);
-        const discoveryCount = parents.reduce(
-          (count, parent) =>
-            count +
-            pairingFinalists.filter((candidate) =>
-              isEligibleNextStrategy(parent.strategies, candidate),
-            ).length,
-          0,
-        );
-        totalCandidates += discoveryCount;
-  reportProgress({
-          completed: evaluatedCount,
-          total: totalCandidates,
-          stageCompleted: 0,
-          stageTotal: discoveryCount,
-          failed: failedCount,
-          stage: stages.discovery,
-          ...progressStrategyIds(),
-        });
-        await yieldForScreening();
-        let evaluatedDiscoveryCount = 0;
+        if (stagePending(stages.discovery)) {
+          const discoveryCount = parents.reduce(
+            (count, parent) =>
+              count +
+              pairingFinalists.filter((candidate) =>
+                isEligibleNextStrategy(parent.strategies, candidate),
+              ).length,
+            0,
+          );
+          addStageCandidates(stages.discovery, discoveryCount);
+    reportProgress({
+            completed: evaluatedCount,
+            total: totalCandidates,
+            stageCompleted: 0,
+            stageTotal: discoveryCount,
+            failed: failedCount,
+            stage: stages.discovery,
+            ...progressStrategyIds(),
+          });
+          await yieldForScreening();
+          let evaluatedDiscoveryCount = stageCompleted(stages.discovery);
+          let skippedDiscoveryCount = evaluatedDiscoveryCount;
 
-        for (const parent of parents) {
-          for (const candidate of pairingFinalists) {
-            if (!isEligibleNextStrategy(parent.strategies, candidate)) continue;
-            if (options.signal?.aborted) break higherOrderLoop;
-            const strategies = [...parent.strategies, candidate];
-            if (
-              shouldSkipCheckpointedEvaluation(
-                stages.discovery,
-                evaluatedDiscoveryCount + 1,
-              )
-            ) {
+          for (const parent of parents) {
+            const eligible = pairingFinalists.filter((candidate) => isEligibleNextStrategy(parent.strategies, candidate));
+            const start = Math.min(skippedDiscoveryCount, eligible.length);
+            skippedDiscoveryCount -= start;
+            for (let candidateIndex = start; candidateIndex < eligible.length; candidateIndex += 1) {
+              const candidate = eligible[candidateIndex];
+              if (options.signal?.aborted) break higherOrderLoop;
+              const strategies = [...parent.strategies, candidate];
+              try {
+                const referenceResult = runHigherOrderCombinationCandidate(
+                  bars,
+                  strategies,
+                  referenceAllocation,
+                  parent.settings,
+                );
+                retainStrategyGroupFinalist(
+                  finalists,
+                  { strategies, referenceResult, settings: parent.settings },
+                  objective,
+                  higherOrderFinalistLimits.get(strategyCount) ??
+                    MAX_QUINTUPLE_REFERENCE_FINALISTS,
+                );
+              } catch {
+                failedCount += 1;
+              }
               evaluatedCount += 1;
               evaluatedDiscoveryCount += 1;
-              continue;
-            }
-            try {
-              const referenceResult = runHigherOrderCombinationCandidate(
-                bars,
-                strategies,
-                referenceAllocation,
-                parent.settings,
-              );
-              retainStrategyGroupFinalist(
-                finalists,
-                { strategies, referenceResult, settings: parent.settings },
-                objective,
-                higherOrderFinalistLimits.get(strategyCount) ??
-                  MAX_QUINTUPLE_REFERENCE_FINALISTS,
-              );
-            } catch {
-              failedCount += 1;
-            }
-            evaluatedCount += 1;
-            evaluatedDiscoveryCount += 1;
-            if (
-              evaluatedCount % yieldEvery === 0 ||
-              evaluatedDiscoveryCount === discoveryCount
-            ) {
-  reportProgress({
-                completed: evaluatedCount,
-                total: totalCandidates,
-                stageCompleted: evaluatedDiscoveryCount,
-                stageTotal: discoveryCount,
-                failed: failedCount,
-                stage: stages.discovery,
-                ...progressStrategyIds(strategies),
-              });
-              await yieldForScreening();
+              if (
+                evaluatedCount % yieldEvery === 0 ||
+                evaluatedDiscoveryCount === discoveryCount
+              ) {
+    reportProgress({
+                  completed: evaluatedCount,
+                  total: totalCandidates,
+                  stageCompleted: evaluatedDiscoveryCount,
+                  stageTotal: discoveryCount,
+                  failed: failedCount,
+                  stage: stages.discovery,
+                  ...progressStrategyIds(strategies),
+                });
+                await yieldForScreening();
+              }
             }
           }
+
         }
-
         if (options.signal?.aborted) break;
-        const remainingAllocations =
-          higherOrderRemainingAllocations.get(strategyCount) ?? [];
-        const allocationCount = finalists.length * remainingAllocations.length;
-        totalCandidates += allocationCount;
-  reportProgress({
-          completed: evaluatedCount,
-          total: totalCandidates,
-          stageCompleted: 0,
-          stageTotal: allocationCount,
-          failed: failedCount,
-          stage: stages.allocations,
-          ...progressStrategyIds(),
-        });
-        await yieldForScreening();
-        let evaluatedAllocationCount = 0;
+        if (stagePending(stages.allocations)) {
+          const remainingAllocations =
+            higherOrderRemainingAllocations.get(strategyCount) ?? [];
+          const allocationCount = finalists.length * remainingAllocations.length;
+          addStageCandidates(stages.allocations, allocationCount);
+    reportProgress({
+            completed: evaluatedCount,
+            total: totalCandidates,
+            stageCompleted: 0,
+            stageTotal: allocationCount,
+            failed: failedCount,
+            stage: stages.allocations,
+            ...progressStrategyIds(),
+          });
+          await yieldForScreening();
+          let evaluatedAllocationCount = stageCompleted(stages.allocations);
 
-        for (const finalist of finalists) {
-          retainPendingCombinationResult(finalist.referenceResult);
-          for (const allocation of remainingAllocations) {
-            if (options.signal?.aborted) break higherOrderLoop;
-            if (
-              shouldSkipCheckpointedEvaluation(
-                stages.allocations,
-                evaluatedAllocationCount + 1,
-              )
-            ) {
+          for (
+            let finalistIndex = remainingAllocations.length > 0
+              ? Math.floor(evaluatedAllocationCount / remainingAllocations.length) : 0;
+            finalistIndex < finalists.length; finalistIndex += 1
+          ) {
+            const finalist = finalists[finalistIndex];
+            retainPendingCombinationResult(finalist.referenceResult);
+            for (let allocationIndex = evaluatedAllocationCount % Math.max(remainingAllocations.length, 1);
+              allocationIndex < remainingAllocations.length; allocationIndex += 1) {
+              const allocation = remainingAllocations[allocationIndex];
+              if (options.signal?.aborted) break higherOrderLoop;
+              try {
+                retainPendingCombinationResult(
+                  runHigherOrderCombinationCandidate(
+                    bars,
+                    finalist.strategies,
+                    allocation,
+                    finalist.settings,
+                  ),
+                );
+              } catch {
+                failedCount += 1;
+              }
               evaluatedCount += 1;
               evaluatedAllocationCount += 1;
-              continue;
-            }
-            try {
-              retainPendingCombinationResult(
-                runHigherOrderCombinationCandidate(
-                  bars,
-                  finalist.strategies,
-                  allocation,
-                  finalist.settings,
-                ),
-              );
-            } catch {
-              failedCount += 1;
-            }
-            evaluatedCount += 1;
-            evaluatedAllocationCount += 1;
-            if (
-              evaluatedCount % yieldEvery === 0 ||
-              evaluatedAllocationCount === allocationCount
-            ) {
-  reportProgress({
-                completed: evaluatedCount,
-                total: totalCandidates,
-                stageCompleted: evaluatedAllocationCount,
-                stageTotal: allocationCount,
-                failed: failedCount,
-                stage: stages.allocations,
-                ...progressStrategyIds(finalist.strategies),
-              });
-              await yieldForScreening();
+              if (
+                evaluatedCount % yieldEvery === 0 ||
+                evaluatedAllocationCount === allocationCount
+              ) {
+    reportProgress({
+                  completed: evaluatedCount,
+                  total: totalCandidates,
+                  stageCompleted: evaluatedAllocationCount,
+                  stageTotal: allocationCount,
+                  failed: failedCount,
+                  stage: stages.allocations,
+                  ...progressStrategyIds(finalist.strategies),
+                });
+                await yieldForScreening();
+              }
             }
           }
         }
