@@ -1,5 +1,33 @@
 # Codex State
 
+## 2026-10-25 compact cycle validation settings
+
+- Removed the monitoring-range fieldset, long calculation explanation and
+  maximum-combination input from the validation settings, along with their
+  unused localized editor copy. Removed the obsolete monitoring write effect
+  because the page no longer edits those preferences. Existing saved/default
+  ranges still drive result coverage; read failures appear beside the report.
+- New cycle requests use a fixed six-strategy ceiling in signatures, saved
+  tasks and both batch/Worker execution paths. Stored historical report
+  metadata is preserved. Different-ceiling running tasks do not auto-resume
+  into a different search; explicit Start retains the existing signature-based
+  replacement policy. No task, queue, market data or checkpoint is deleted.
+- Updated rendered/source contracts for the removed controls, fixed ceiling,
+  preserved monitoring coverage and differing-task auto-resume guard.
+  Architecture and feature linkage describe the compact presentation.
+- Full `npm test` passes typecheck, all 384 unit tests, the production build
+  and four rendered/source tests. Final diff checks pass.
+- Read-only runtime verification before push confirms healthy application and
+  relay endpoints and seven concurrent children. Across two samples the active
+  1,190-unit submitted batch advances from six to nine completed units, with
+  seven running, 1,174 queued and no error jobs at the later sample. All seven
+  sampled jobs advance; three finish, and candidate failure counts remain zero.
+  No running job, checkpoint or queue is modified by the inspection.
+- Scoped lint still reports three pre-existing synchronous-effect errors and
+  two hook-dependency warnings. Comparing HEAD through the same linter shows
+  four such errors and the same two warnings before this change; no new lint
+  violation is introduced. These unrelated effect patterns remain unchanged.
+
 ## 2026-10-25 exact screening replay and direct resume implemented
 
 - User authorized the two measured speedups with unchanged best-strategy

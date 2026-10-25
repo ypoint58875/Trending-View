@@ -82,6 +82,7 @@ import { mergeCanonicalMarketSeries, selectCanonicalFallbackSeries } from "@/lib
 import type { MarketInstrument, MarketSeries } from "@/lib/market/types";
 
 const DAILY_INTERVAL = "1d" as const;
+const CYCLE_MAX_COMBINATION_STRATEGIES = 6;
 const MONITORING_STORAGE_KEY = "quantscope-cycle-monitoring-ranges-v1";
 const HISTORICAL_EXECUTION_POLICY = "hybrid" as const;
 interface ProgressState {
@@ -198,7 +199,7 @@ export function StrategyValidationWorkspace() {
   const [screeningWindow, setScreeningWindow] = useState(CYCLE_DAILY_SCREENING_WINDOW);
   const [screeningWindowMaximum, setScreeningWindowMaximum] = useState(CYCLE_DAILY_SCREENING_WINDOW);
   const [screeningWindowStep, setScreeningWindowStep] = useState(2);
-  const [maxCombinationStrategies, setMaxCombinationStrategies] = useState(6);
+  const maxCombinationStrategies = CYCLE_MAX_COMBINATION_STRATEGIES;
   const smaOverlay = useSmaPositionOverlayPreferences("cycle");
   const reportInputsRef = useRef<{
     series: MarketSeries; snapshots: StrategyCycleSelectionSnapshot[]; sessions: number; windows: readonly number[];
@@ -219,7 +220,6 @@ export function StrategyValidationWorkspace() {
   const [monitoringRanges, setMonitoringRanges] = useState<CycleMonitoringRange[]>(
     () => DEFAULT_CYCLE_MONITORING_RANGES.map((range) => ({ ...range })),
   );
-  const [monitoringLoaded, setMonitoringLoaded] = useState(false);
   const [monitoringStorageError, setMonitoringStorageError] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const pauseRequestedRef = useRef(false);
@@ -258,18 +258,7 @@ export function StrategyValidationWorkspace() {
     } catch {
       setMonitoringStorageError(true);
     }
-    setMonitoringLoaded(true);
   }, []);
-
-  useEffect(() => {
-    if (!monitoringLoaded) return;
-    try {
-      localStorage.setItem(MONITORING_STORAGE_KEY, JSON.stringify(monitoringRanges));
-      setMonitoringStorageError(false);
-    } catch {
-      setMonitoringStorageError(true);
-    }
-  }, [monitoringLoaded, monitoringRanges]);
 
   useEffect(() => {
     let active = true;
@@ -299,7 +288,6 @@ export function StrategyValidationWorkspace() {
         setScreeningWindowStep(task.screeningWindows.length > 1
           ? task.screeningWindows[1]! - task.screeningWindows[0]!
           : 2);
-        setMaxCombinationStrategies(task.maxCombinationStrategies ?? 6);
         setSelectedReportWindow(restoredWindow);
         setEvaluationSessions(Math.max(3, task.evaluationSessions));
         setObjective(task.objective);
@@ -787,13 +775,14 @@ export function StrategyValidationWorkspace() {
       running ||
       !selectedGroup ||
       storedTask?.status !== "running" ||
+      (storedTask.maxCombinationStrategies ?? CYCLE_MAX_COMBINATION_STRATEGIES) !== maxCombinationStrategies ||
       autoResumeSignatureRef.current === storedTask.signature
     ) {
       return;
     }
     autoResumeSignatureRef.current = storedTask.signature;
     void start();
-  }, [loading, running, selectedGroup, start, storedTask]);
+  }, [loading, running, selectedGroup, start, storedTask, maxCombinationStrategies]);
 
   const reset = async () => {
     pauseRequestedRef.current = true;
@@ -842,19 +831,6 @@ export function StrategyValidationWorkspace() {
                 <label><span>{c.cycleScreeningPeriodStep}</span><CommittedNumberInput value={screeningWindowStep} min={1} max={MAX_CYCLE_SCREENING_WINDOW - MIN_CYCLE_SCREENING_WINDOW} step={1} integer disabled={running} onCommit={setScreeningWindowStep} /></label>
               </div>
               <label><span>{c.evaluationSessions}</span><CommittedNumberInput value={evaluationSessions} min={Math.min(3, evaluationSessionMaximum)} max={evaluationSessionMaximum} step={1} integer disabled={running} onCommit={setEvaluationSessions} /></label>
-              <fieldset className="cycle-monitoring-settings" disabled={!monitoringLoaded}>
-                <legend>{c.monitoringRanges}</legend>
-                {monitoringRanges.map((range, index) => <div className="cycle-monitoring-row" key={index}>
-                  <label><span>{c.monitoringStart} {index + 1}</span><input type="date" value={range.startTime} aria-invalid={!isValidCycleMonitoringRange(range)} onChange={(event) => setMonitoringRanges((current) => current.map((item, position) => position === index ? { ...item, startTime: event.target.value } : item))} /></label>
-                  <label><span>{c.monitoringEnd} {index + 1}</span><input type="date" value={range.endTime} aria-invalid={!isValidCycleMonitoringRange(range)} onChange={(event) => setMonitoringRanges((current) => current.map((item, position) => position === index ? { ...item, endTime: event.target.value } : item))} /></label>
-                  <button type="button" aria-label={`${c.monitoringRemove} ${index + 1}`} onClick={() => setMonitoringRanges((current) => current.filter((_, position) => position !== index))}>{c.monitoringRemove}</button>
-                </div>)}
-                <button type="button" onClick={() => setMonitoringRanges((current) => [...current, { startTime: "", endTime: "" }])}>{c.monitoringAdd}</button>
-                <p className="cycle-hint">{c.monitoringHint}</p>
-                {!monitoringValid && <p className="cycle-warning" role="alert">{c.monitoringInvalid}</p>}
-                {monitoringStorageError && <p className="cycle-warning" role="alert">{c.monitoringStorageError}</p>}
-              </fieldset>
-              <label><span>{c.maxCombinationStrategies}</span><CommittedNumberInput value={maxCombinationStrategies} min={2} max={6} step={1} integer disabled={running} onCommit={setMaxCombinationStrategies} /></label>
               <label><span>{c.objective}</span><select value={objective} disabled={running} onChange={(event) => setObjective(event.target.value as ScreeningObjective)}>
                 {SCREENING_OBJECTIVES.map((value) => <option key={value} value={value}>{c.objectives[value]}</option>)}
               </select></label>
@@ -865,7 +841,6 @@ export function StrategyValidationWorkspace() {
               </div>
               <SmaPositionOverlayControls options={smaOverlay.options} onChange={smaOverlay.setOptions}
                 disabled={running || loading || !smaOverlay.ready} cycle error={smaOverlay.error} />
-              <p className="cycle-hint">{c.calculationHint.replace("{start}", String(screeningWindow)).replace("{end}", String(screeningWindowMaximum)).replace("{step}", String(screeningWindowStep)).replace("{count}", String(screeningWindows.length)).replace("{strategies}", String(maxCombinationStrategies))}</p>
               <div className="cycle-actions">
                 <button type="button" className="primary" disabled={running || !selectedGroup} onClick={() => void start()}><Play size={15} />{storedTask ? c.resume : c.start}</button>
                 <button type="button" disabled={!running} onClick={pause}><Pause size={15} />{c.pause}</button>
@@ -895,6 +870,7 @@ export function StrategyValidationWorkspace() {
                 <b className={value >= 0 ? "positive" : "negative"}>{formatReturn(value)}</b>
               </article>)}</div>
               <p className="cycle-hint">{c.rollingConflictHint.replace("{count}", String(rollingReport.conflictCount))}</p>
+              {monitoringStorageError && <p className="cycle-warning" role="alert">{c.monitoringStorageError}</p>}
               {monitoringCoverage.length > 0 && <section aria-label={c.monitoringCoverage}>
                 <strong>{c.monitoringCoverage}</strong>
                 <p className="cycle-hint">{c.monitoringCoverageHint}</p>

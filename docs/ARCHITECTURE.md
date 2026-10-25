@@ -1,5 +1,16 @@
 # Architecture
 
+## Cycle settings presentation
+
+The cycle page uses a fixed six-strategy maximum for new computations; the
+settings form has no maximum-combination input, monitoring-range editor or
+long calculation hint. Existing monitoring preferences are read without
+rewriting them and still drive report coverage. Historical task metadata
+remains authoritative for restoring its report; a differing legacy ceiling
+cannot silently auto-resume into a new six-strategy search. Explicit Start
+uses the existing signature-based replacement policy. Screening/close-proxy
+execution semantics remain as documented below.
+
 ## Exact screening replay and checkpoint seeking
 
 The shared optimizer preserves its candidate grids, six execution finalists,

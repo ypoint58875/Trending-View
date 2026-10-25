@@ -1,5 +1,16 @@
 # Feature Map
 
+## Compact cycle validation settings
+
+`StrategyValidationWorkspace.tsx` and its locale remove the monitoring-range
+editor, long calculation hint and maximum-combination control. New cycle runs
+always pass the fixed six-strategy ceiling through signatures, saved tasks,
+batch jobs and Worker requests. Historical reports and stored monitoring
+coverage remain readable. A running historical task with a different ceiling
+is not automatically replaced; an explicit start follows the existing task-
+signature replacement behavior. Rendered/source checks cover the removed
+controls, fixed ceiling and preserved coverage/legacy guard.
+
 ## Exact screening performance
 
 `lib/analysis/strategy-combinations.ts` links lazy proven-reset summary replay
@@ -186,8 +197,9 @@ No UI, queue, screening identity or production strategy changes are made.
 Cycle monitoring ranges link `lib/analysis/strategy-cycle-monitoring.ts`,
 `app/strategy-validation/StrategyValidationWorkspace.tsx`, `app/globals.css`,
 `app/i18n/zh-CN.ts`, and `tests/strategy-cycle-monitoring.test.ts`.
-Zero-to-many inclusive ranges persist as a separate local preference and update
-the selected completed cycle report without rescreening. Coverage is the share
+Previously saved zero-to-many inclusive ranges remain a separate local
+preference, read without rewriting by the now read-only coverage display.
+The settings editor is removed. Coverage is the share
 of available evaluation trading dates with an executed positive holding after
 the close; counts and actual intersecting dates expose partial data coverage.
 The four requested 2025/2026 ranges are initial defaults. No-data, invalid input,

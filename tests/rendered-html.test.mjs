@@ -338,7 +338,12 @@ test("server-renders the strategy cycle validation route", async () => {
   );
   assert.match(workspace, /cycleScreeningPeriodEnd[\s\S]{0,350}setScreeningWindowMaximum/);
   assert.match(workspace, /cycleScreeningPeriodStep[\s\S]{0,300}onCommit=\{setScreeningWindowStep\}/);
-  assert.match(workspace, /maxCombinationStrategies[\s\S]{0,300}max=\{6\}/);
+  assert.match(workspace, /const CYCLE_MAX_COMBINATION_STRATEGIES = 6;/);
+  assert.match(workspace, /const maxCombinationStrategies = CYCLE_MAX_COMBINATION_STRATEGIES;/);
+  assert.doesNotMatch(workspace, /setMaxCombinationStrategies|c\.maxCombinationStrategies/);
+  assert.doesNotMatch(workspace, /cycle-monitoring-settings|c\.calculationHint/);
+  assert.match(workspace, /cycleMonitoringCoverage\(reportBars, rollingReport\.rebalances, monitoringRanges\)/);
+  assert.match(workspace, /storedTask\.maxCombinationStrategies \?\? CYCLE_MAX_COMBINATION_STRATEGIES\) !== maxCombinationStrategies/);
   assert.match(
     workspace,
     /evaluationSessions[\s\S]{0,300}<CommittedNumberInput[\s\S]{0,300}onCommit=\{setEvaluationSessions\}/,
