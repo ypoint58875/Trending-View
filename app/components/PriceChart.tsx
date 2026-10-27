@@ -120,6 +120,8 @@ interface PriceChartProps {
     closePosition: string;
     shortBuy: string;
     shortSell: string;
+    increasePosition?: string;
+    reducePosition?: string;
     rangeExit: string;
     series: Record<string, string>;
   };
@@ -258,6 +260,8 @@ interface TradeMarkerLabels {
   rangeExit: string;
   shortBuy: string;
   shortSell: string;
+  increasePosition?: string;
+  reducePosition?: string;
 }
 
 function allocationMarkerLabel(
@@ -270,6 +274,8 @@ function allocationMarkerLabel(
     carry: labels.carryPosition,
     "short-buy": labels.shortBuy,
     "short-sell": labels.shortSell,
+    increase: labels.increasePosition ?? labels.shortBuy,
+    reduce: labels.reducePosition ?? labels.shortSell,
     close: labels.closePosition,
   } as const;
   return marker.action ? actionLabels[marker.action] : fallback;
@@ -440,7 +446,7 @@ export function buildIndicatorSeries(
     color: string,
   ): SeriesOption => {
     const series = lineSeries(name, data, color, xAxisIndex, yAxisIndex);
-    return indicator === "sma" && bollingerVisible
+    return (indicator === "sma" || indicator === "ema" || indicator === "wma") && bollingerVisible
       ? { ...series, lineStyle: { width: 2, color, type: "dashed" } }
       : series;
   };

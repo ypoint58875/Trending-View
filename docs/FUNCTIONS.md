@@ -1,5 +1,83 @@
 # Function Map
 
+## Saved shortcut128-session chart focus
+
+openSavedBacktest sets saved-recent and advances savedChartOpenRevision.
+appliedChartFocusRange now includes saved-recent's encompassing applied windows,
+which come from SAVED_BACKTEST_ROLLING_SESSIONS=128. The chart data key includes
+the open revision only in saved-recent mode, resetting each shortcut click without
+changing backtest inputs or unrelated chart viewport behavior.
+
+## Portfolio marker classification
+
+buildAllocationTradeMarkers derives open/increase/reduce/close from actual
+allocation before/after execution. Component long-exit does not imply a full
+portfolio liquidation. Skip no-op strategy allocations, preserve provenance and
+range-end/carry semantics. PriceChart maps optional increase/reduce action labels
+without changing native single-strategy marker support or execution records.
+
+## Current-rule cycle preview
+
+- validatedCyclePreviewKey/cachedValidatedCyclePreview validate account revision,
+  model/conflict, bounds and execution settings; identical stored rules reuse report.
+- buildValidatedCyclePreview replays original snapshots under current overlay
+  with original calendar/start/costs. It does not mutate or re-screen the account.
+- requestValidatedCyclePreview uses one worker with abort/error/message validation
+  and120s timeout; saveValidatedCyclePreview atomically rejects invalid identity
+  and ignores stale account revisions without altering confirmed history.
+- validatedCycleRulesMatch and promoteValidatedCycleProfile build a complete
+  adopted-rule account while backing up prior settings/report. Store
+  promoteValidatedCycleRules atomically commits once using existing-account CAS.
+- Shared useValidatedCycles synchronizes from either page and publishes updates;
+  later appends naturally inherit current account settings, not an old version.
+- StrategyValidationWorkspace restores task/profile data independently of static
+  shortcut fetch; showValidatedCycle displays the synchronized account.report.
+  StrategyCycleRollingChart uses EChart content panning, not window panning.
+- openValidatedCycle increments a view reset revision, restoring latest128 bars
+  on every shortcut click while preserving complete data. No chart banner is rendered.
+
+## RSI shape overlay v8
+
+- SmaPositionOverlay.close(index, hasOriginalSignal, originalIncrease) evaluates
+  guarded shape clearing, existing policy and last-fallback E. The optional
+  originalIncrease flag carries intrabar buy intent; tracked same-bar requests
+  cover ordinary close signals. Neither flag disables hard risk exits.
+- Shared cached features calculate RSI7/10, the causal nine-percent decline,
+  higher-low breakout and strict four-high descent only for v8. Archived
+  ATR_POSITION_OVERLAY_OPTIONS select unchanged v7 behavior.
+- rsi-shape-integration.test.ts verifies production target hash, frozen return
+  metrics and cycle report economics against the adopted research candidate.
+
+## Continuing validated-cycle strategies
+
+- createValidatedCycleStrategy: validate a complete strict historical report,
+  clone and freeze its execution context as an independent dynamic account.
+- continueValidatedCycleStrategy: reject history changes/gaps, replace a
+  provisional tail, or replay and append one completed research winner.
+- mergeValidatedCycleRepair: extend the original account using only newly
+  validated selections, preserving all previously confirmed history.
+- assertValidatedCycleHistory: reject incompatible market input before repair.
+- validatedCycleFocusRange: focus the latest128 available sessions without
+  discarding the account's full stored history or rebalance markers.
+- publishValidatedCycle/appendValidatedCycle: bounded atomic revision retries.
+- seedCompletedValidatedCycles: import the existing completed task or retry a
+  completed repair without resetting a newer dynamic profile.
+- useValidatedCycles/ValidatedCycleShortcuts: durable hydration, cross-page
+  subscription and full-history shortcut display; no static-plan API forgery.
+
+## ATR shock exit and archived rebound model
+
+- `CURRENT_POSITION_OVERLAY_MODEL`: v7 default, v6 entries plus priorATR2 exit.
+- `REBOUND_POSITION_OVERLAY_MODEL/OPTIONS`: explicit archived v6 behavior.
+- `features`: shared WilderATR14, previous completed value, belowEMA7 risk gate.
+- `SmaPositionOverlay.finishPolicyBar`: native early stop first; independent
+  ATR exit next, clearing account-local state without new recovery/cooldown.
+- `SmaPositionOverlayControls`: localized entry/exit groups and risk precedence.
+- `tests/atr-position-policy.test.ts`: boundary, archived identity, guard override,
+  cleanup, simultaneous-stop timing, warmup, causality and next-open execution.
+- `research/nikkei-overlay-stability/rebound-integration.test.ts`: archived v5/v6
+  and v7 full2000 frozen target parity, including next-open return parity.
+
 ## Canonical strategy catalog
 
 - `LEGACY_STRATEGY_ALIASES`: retired MACD and Supertrend IDs and active equivalents.
@@ -10,21 +88,37 @@
 
 ## Position overlays
 
-- `MIXED_POSITION_OVERLAY_MODEL`: current explicit EMA7/SMA11/WMA14 rule set.
+- `CURRENT_POSITION_OVERLAY_MODEL` / `DEFAULT_POSITION_OVERLAY_OPTIONS`: fixed
+  v6 EMA7/SMA20 supplement plus decline/engulfing and daily EMA3/rebound entry, WMA7 ordinary entry/sell
+  confirmation, SMA11 protection, hold7, first-five cumulative4% stop, wait5
+  and trend-recovery policy. `ENGULF_POSITION_OVERLAY_MODEL` and its immutable
+  options retain v5 without rebound. `FIXED_HOLD5_POSITION_OVERLAY_MODEL` retains v4.
+  `HOLD5_POSITION_OVERLAY_MODEL` retains v3; `PREVIOUS_POSITION_OVERLAY_MODEL`
+  retains v2 without the holding lock.
+  `MIXED_POSITION_OVERLAY_MODEL` retains historical EMA7/SMA11 >0.125%/WMA14.
   The existing shared controller selects model-specific cached features; its
   inherited-account, pending-sell and execution-timing responsibilities persist.
-- Page preferences force the current model and migrate existing three choices.
-  Saved-plan parsing accepts the explicit model and rejects unknown versions;
+- New page calculations always use the fixed model without preference storage.
+  Saved-plan parsing accepts all six explicit models and rejects unknown versions;
   absent model retains legacy behavior for historical/library data.
 
-- `normalizeSmaPositionOverlay`: omits disabled settings for legacy identity.
+- `normalizeSmaPositionOverlay`: forces v4/v5/v6 flags on without changing their version;
+  omits disabled historical optional settings.
+- `SUPPLEMENTAL_MINIMUM_HOLD_BARS` is seven for v5/v6; `EARLY_POSITION_STOP_BARS`
+  remains five. Archived v3/v4 retain five-session supplemental protection.
 - `SmaPositionOverlay.request` / `close`: one inherited account, original signal
   priority, optional positive-turn entry, deferred reductions, daily release
   and fresh-buy cancellation. Optional SMA11 negative-slope gate blocks flat
   entries, including supplements/native orders; adds/exits stay independent.
   No clock or future-bar access.
-- `useSmaPositionOverlayPreferences` / `SmaPositionOverlayControls`: independent
-  default-checked controls with per-page versioned storage and visible failures.
+- `SmaPositionOverlay.reboundReady`: causal preceding10-flat-close low and
+  pre-low10-close peak, decline5% and rebound4%, excluding today. The v6 caller
+  additionally requires three positive EMA7 slopes, WMA7>=0, close<=SMA20,
+  no originals/pending sells/cooldown, and native-entry/recovery priority.
+- `useSmaPositionOverlayPreferences` / `SmaPositionOverlayControls`: retain their
+  caller names but provide constant settings and a nine-rule compact display,
+  expandable precise reversal/rebound definitions and execution note, with
+  no checkboxes, mutable preference state or storage writes.
 - Ordinary ledgers expose `latestTargetAllocation` separately from actual
   executed allocation. Cycle replay applies the controller before close fills;
   its chart, returns and monitoring use those actual rebalances.
@@ -452,8 +546,9 @@ a still-active US trading session. Unknown venues retain the existing fallback.
   price, volume, and all indicator axes to one inside zoom and one directly
   draggable timeline slider, initializing the real x-axis window from the same
   focus window used to derive the visible price-axis range,
-  showing the latest 120 bars initially and preventing one-minute views from
-  shrinking below 120 visible bars when enough history exists.
+  showing the latest60 daily bars initially. Inside zoom requires Ctrl+wheel,
+  leaving ordinary wheel events to scroll the page. One-minute views cannot
+  shrink below120 visible bars when enough history exists.
 - `estimateIntradayDataDelayMinutes(barTimestamp, fetchedAt)`: returns a
   rounded lag only when the newest minute bar is at least three minutes behind
   the fetch time; the workspace displays it while the venue refresh policy is
@@ -462,7 +557,7 @@ a still-active US trading session. Unknown venues retain the existing fallback.
   minimum and maximum values from visible candle lows/highs and finite enabled
   price-indicator line values. Strategy references, pane values, offscreen
   values, warm-up nulls, and trade markers do not determine the range.
-  `buildIndicatorSeries` accepts the current Bollinger visibility to make SMA
+  `buildIndicatorSeries` accepts the current Bollinger visibility to make SMA/EMA/WMA
   dashed during coexistence; Bollinger blue boundaries and orange basis remain
   solid, while SMA uses aqua/yellow from the TradingView palette. Legend samples
   are widened to make dashed strokes readable.

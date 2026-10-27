@@ -136,5 +136,5 @@ export function StrategyCycleRollingChart({
     () => buildStrategyCycleRollingChartOption(bars, rebalances, labels),
     [bars, rebalances, labels],
   );
-  return <EChart option={option} className="cycle-transition-chart" height={430} ariaLabel={ariaLabel} preserveDataZoom dataZoomResetKey={dataKey} horizontalPanDataZoomIds={["cycle-rolling-zoom-inside", "cycle-rolling-zoom-slider"]} horizontalPanDirection="window" />;
+  return <EChart option={option} className="cycle-transition-chart" height={430} ariaLabel={ariaLabel} preserveDataZoom dataZoomResetKey={dataKey} horizontalPanDataZoomIds={["cycle-rolling-zoom-inside", "cycle-rolling-zoom-slider"]} horizontalPanDirection="content" />;
 }

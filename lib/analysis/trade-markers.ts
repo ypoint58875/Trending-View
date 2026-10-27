@@ -10,7 +10,7 @@ export interface TradeMarker {
   time: string;
   price: number;
   event: "entry" | "exit" | "range-exit";
-  action?: "open" | "carry" | "short-buy" | "short-sell" | "close";
+  action?: "open" | "carry" | "short-buy" | "short-sell" | "increase" | "reduce" | "close";
   signals?: AllocationSignalEvent[];
 }
 
@@ -76,6 +76,7 @@ export function buildAllocationTradeMarkers(
   }
 
   rebalances.forEach((rebalance) => {
+    if (rebalance.reason !== "range-end" && Math.abs(rebalance.targetAllocation - rebalance.fromAllocation) <= 1e-10) return;
     const event =
       rebalance.reason === "range-end"
         ? "range-exit"
@@ -89,15 +90,9 @@ export function buildAllocationTradeMarkers(
       action:
         event === "range-exit"
           ? undefined
-          : rebalance.signals?.includes("long-exit") ||
-              (event === "exit" && rebalance.targetAllocation === 0)
-            ? "close"
-            : rebalance.signals?.includes("short-exit") || event === "exit"
-              ? "short-sell"
-              : rebalance.signals?.includes("long-entry") ||
-                  rebalance.fromAllocation === 0
-                ? "open"
-                : "short-buy",
+          : event === "exit"
+            ? rebalance.targetAllocation <= 1e-10 ? "close" : "reduce"
+            : rebalance.fromAllocation <= 1e-10 ? "open" : "increase",
       signals: rebalance.signals,
     };
     if (event === "range-exit") {

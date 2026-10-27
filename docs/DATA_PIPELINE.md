@@ -1,5 +1,414 @@
 # Data Pipeline
 
+## Adopted rule synchronization across both workspaces
+
+Shared hydration checks each dynamic account against the current overlay, reuses
+an available preview or runs one bounded worker, then promotes settings/report
+with a backup and CAS. No new market fetch or strategy selection. Commit requires
+the source account to exist at the expected revision; stale work refreshes rather
+than overwriting or recreating it. Failed writes preserve old data. Refresh/unmount
+cancels unfinished work; the next open safely resumes from the unchanged account
+or cached preview. One upgrade per refresh is committed before rereading shared
+records; subsequent appends/repairs inherit current rules and preserve the backup.
+Ordinary static saved plans are outside this migration.
+
+## Nonblocking cycle restore and preview cache
+
+Restore local task/accounts before depending on optional static shortcut API.
+Replay current overlay from existing bars, winners and explicit decision calendar;
+do not refresh data or re-screen. Save derived report atomically only after full
+success and a transaction-time identity check. Interruption/navigation discards
+unfinished preview and retains the confirmed account. A bounded deterministic
+replay is the recovery path; no per-bar checkpoint is needed for this short task.
+One worker/10000 bars/snapshots/120s timeout bounds work. One cached preview per
+profile is replaced on identity change. Confirmed incremental updates and gap
+repair remain untouched.
+
+## RSI first-pullback short research run
+
+rsi-first-pullback.ts verifies frozen input/source and ordered decision hashes,
+then replays55 bounded policies with current v8 and shared Wilder RSI10. Reuses
+existing raw data without network refresh. Writes one atomic summary containing
+source/code identity, events and omission audits under research/nikkei-overlay-
+stability/output/rsi-first-pullback/. Full deterministic rerun is short-lived;
+checkpoint infrastructure would add disproportionate complexity. No live account
+or prior checkpoint updates; maximum10000 bars/16MiB per input.
+
+## v8 overlay adoption and replay
+
+No new source fetch or data transformation is required. Production and frozen
+research reuse completed local bars and shared Wilder RSI. New calculations
+select v8 and isolate screening results by existing model-aware identities.
+Existing dynamic accounts continue incrementally with their stored model;
+confirmed history, pending-day replacement and missing-bar repair rules remain
+unchanged. Frozen integration uses the existing2000-bar fixture and selected
+RSI research output; research manifests and raw inputs are preserved. Runtime
+feature memory remains bounded by input arrays and weak caches; no new long job
+or checkpoint format is introduced.
+
+## RSI parameter chunk checkpoints
+
+Run rsi-parameter.ts then rsi-parameter-audit.ts under research/nikkei-overlay-
+stability. For each source/code/menu identity, single and combined phases retain
+128-row chunks under data/rsi-parameter/<identity>/ with an atomic manifest.
+Commit a chunk before advancing manifest completed count. Resume validates chunk
+hashes, identity, safe filenames, ordered policy prefix and manifest totals;
+missing committed chunks are errors, not silently skipped work. At most one
+unmanifested chunk is recomputed. Use one writer per identity. Source backup and
+prior experiment identities remain immutable; no external price refresh.
+Bounds:16MiB per input/chunk,10000 bars,30000 policies per phase,4096 cached metric
+paths and2GiB RSS. No target arrays are retained per result. Interruption flushes
+the current safe chunk before stopping. Summary/audit files are derived outputs,
+not the durable progress authority. No automatic deletion is introduced.
+
+## Descending sequence extension resume
+
+Run npx tsx research/nikkei-overlay-stability/descending-sequence.ts.193 bounded
+policy rows commit atomically to data/descending-sequence/<identity>/rows.json;
+same-command resume checks ordered policies and skips all committed work.
+Source/bar/code hashes, v7 target parity and24 legacy paths prevent silent drift.
+Existing16MiB input,10000-bar and2GiB RSS limits apply. Output summaries are
+derived; retain checkpoints and frozen source backups, with no automatic deletion
+or market-data refresh. Event omissions may cause later rolling triggers and
+must not be interpreted as reverting the full account to baseline.
+
+## Shape priority research resume
+
+Run npx tsx research/nikkei-overlay-stability/shape-priority.ts. Sequential bounded
+rows commit atomically under data/shape-priority/<source-code-menu-identity>/.
+Same-command resume validates ordered base/combination policies and reuses all
+committed rows. Different code identities use separate directories, preserving
+previous research rather than rewriting incompatible checkpoints. Input files
+are capped16MiB, bars10000, rows1000 and RSS2GiB; interruption stops between rows.
+Only derived summaries/reports are replaced; source backups and engine state
+are untouched. No automatic retention deletion is introduced for this finite study.
+
+## Incremental validated-cycle continuation
+
+The local dynamic registry persists original market input, selected snapshots,
+model/policy, execution settings, confirmed end date, provisional tail, revision
+and update time. Research runs reuse their existing normalized MarketSeries and
+winner; no new market source or optimizer is introduced. Each confirmed write
+advances exactly one available session. Gaps list missing dates and require
+cycle-validation repair, which reuses frozen snapshots and computes missing
+scheduled units only. Repair retains the original evaluation start and account.
+Whole-record IndexedDB transactions commit the replay result before revision
+advances; concurrent tabs retry from the latest durable revision. Reload reads
+that checkpoint; failed writes retain the previous record. Provisional entries
+replace only the same unconfirmed day, and confirmed-date repeats are no-ops.
+
+## Bounded cycle queue acknowledgements
+
+Cycle submission sends sequential chunks of at most64 units and persists each
+acknowledged ID/window/date mapping in the existing IndexedDB task before the
+next chunk. Later failures preserve completed/queued progress; resubmission
+reuses deterministic IDs and committed results. Each HTTP batch retains its
+existing atomic queue manifest and shared bars, and the coordinator performs
+existing maintenance once per batch rather than once per unit. Completed-job
+reconciliation precedes restarting a previously cancelled job on resubmission.
+No external source, protocol migration or historical-signal rewrite is added.
+An interrupted unacknowledged request may still have a durable manifest;
+deterministic retry resolves that ambiguity without inventing completion.
+
+## Seven-date six-leg versus five-leg rerun
+
+Run `node --import tsx research/nikkei-overlay-stability/six-vs-five.ts`.
+Read frozen full-screen-6-15 input/signals and the seven exact local request
+files; verify source/bar/request hashes and original two-bar signal parity.
+Use the shared screening API with maxCombinationStrategies5, otherwise the
+original settings/config/exclusions. Process one prefix at a time, max10000
+bars, abort on RSS>2GiB or interruption. Commit only completed jobs atomically
+to data/six-vs-five/rows.json with source/request/code identity and ordered date
+checks; interrupted active work is recomputed, at most one unfinished job.
+Final summary under output/six-vs-five/ retains both max5 and exactly5 winners
+and same-pre-decision v7 targets. No external source, shared queue mutation,
+rescheduling, raw cleanup or whole2000 max5 comparison is introduced.
+
+## Earlier-risk exit robustness replay
+
+Run `node --import tsx research/nikkei-overlay-stability/risk-exit-validation.ts`.
+Reuse frozen full-screen-6-15 input/signals and exit-priority summary; no network
+refresh. Validate ordered decisions, source/design/code identities and20 prior
+anchor matches. Atomically save every20 of292 cases to
+`research/nikkei-overlay-stability/data/risk-exit-validation/grid.json`;
+the same command resumes compatible rows (292-row resume verified).
+Process scalar rows and selected detailed ledgers under a1.5GiB heap guard;
+interrupt handlers preserve completed progress. Outputs in
+`research/nikkei-overlay-stability/output/risk-exit-validation/` include grid
+summary, selected event/target ledgers, next-open/cost sensitivities, evaluator-
+only episode omissions and first1500-selected final500 deployment. No raw
+source or production target is changed. Reject incompatible checkpoints;
+retain old raw inputs and use a distinct reviewed run for changed experiments.
+
+## Original-sell priority and independent risk-exit scan
+
+Run `node --import tsx research/nikkei-overlay-stability/exit-priority-study.ts`,
+then `node --import tsx research/nikkei-overlay-stability/exit-priority-audit.ts`.
+Reuse frozen full-screen input/signals and oscillator-filter target references;
+validate source/bars/ordered decisions and all four baseline target hashes.
+Scan212 whole-account cases. Atomic20-case state under data/exit-priority/
+grid.json validates source/code/design/ordered-menu identity; SIGINT/SIGTERM/
+RSS1.5GiB persist complete work. Bounds16MiB/input,10000 bars,2048 decisions,
+212 policies; same-command resume verifies212-row reuse. Output/exit-priority
+retains all scalar cases, selected events/pending-origin blocks, dated DD and
+matched costs/next-open/development checks. Separate short audit checks common
+entry/extra-stop date and exact final500 target tails without a new checkpoint.
+All outputs publish atomically. No external fetch, raw deletion, scheduler,
+rescreening or production changes. Evaluator date comparisons are never live gates.
+
+## Rolling-window peak extension
+
+Run `node --import tsx research/nikkei-overlay-stability/peak-window-study.ts`.
+Reuse frozen full-screen source/signals and old peak-liquidation summaries.
+Verify source/bars/decision identity plus44 old baseline/rolling20 target hashes.
+Scan644 actual-account cases, committing complete scalar rows every20 to
+research data/peak-window/grid.json. Exact source/code/design/ordered-policy
+identity is required; SIGINT/SIGTERM and RSS1.5GiB save valid progress. Bound
+16MiB/input,10000 bars,2048 decisions,644 cases. Same-command resume verified644
+reuse. Separate atomic output/peak-window stores all cases/GRID, selected full
+ledgers, costs/next-open and development selections. COMPARISON is a finite
+human-readable interpretation, not a new optimization. Old164-row checkpoint
+is preserved; shared type-only edit changes its code fingerprint, so do not
+bypass its rejection. No fetch, scheduler, raw deletion or product migration.
+
+## Four-model peak-liquidation scan and audit
+
+Run `node --import tsx research/nikkei-overlay-stability/peak-liquidation-study.ts`,
+then `node --import tsx research/nikkei-overlay-stability/peak-liquidation-audit.ts`.
+Reuse full-screen-6-15 input/signals and oscillator-filter baseline target hashes.
+Validate source/bars/ordered decisions and exact four unchanged control paths.
+Replay164 whole-account configurations with held episode/rolling20 peaks,
+fixed thresholds and wait0/5. Scalar checkpoints commit every20 under research
+data/peak-liquidation/grid.json; strict source/code/design/policy-prefix checks
+reject incompatible resume. SIGINT/SIGTERM and RSS1.5GiB commit completed rows.
+Bounds16MiB/input,10000 bars,2048 decisions,164 cases. Resume verified164 reuse.
+Matching output directory holds all scalar rows and selected ledgers/sensitivities.
+The separate finite audit verifies selected target hashes and shows actual4/6/8%
+cut dates, not only unchanged best cases; it reruns without another checkpoint.
+Outputs are atomic. No new data fetch, raw deletion, scheduler or product change.
+
+## Actual signal-source event shares
+
+Run `node --import tsx research/nikkei-overlay-stability/signal-share-study.ts`.
+Read frozen full-screen-6-15 input/signals and contribution/dynamic-v6 ledger;
+verify source/bars/decision identities and every2000 target against production.
+Replay causal pending-zero-request origins and persist dated actual changes
+under output/signal-share/events.json, proportions in summary.json and REPORT.md.
+Windows inherit one account, count by actual execution date and never fabricate
+boundary fills. Bound16MiB/input,10000 bars,2048 decisions. This short finite
+read-only replay safely reruns rather than adding a checkpoint; outputs publish
+atomically. No new market fetch, scheduler, raw/source changes or product edits.
+
+## Frozen-winner contribution accounting
+
+Run `node --import tsx research/nikkei-overlay-stability/contribution-study.ts`.
+Read existing full-screen-6-15 input/signals; verify source/bars hashes, decision
+alignment and sampled production signal extraction. Generate causal two-bar
+signals for the first-known fixed winner and preset SMA10/30 on the same1293
+decision dates. Commit complete rows atomically every64 to research
+data/contribution/signals.json; exact source/code/control/index identities
+are required. Both same-command resumes reuse1293 rows. Initial draft state
+is retained as signals-initial-398d05c795ba.json, not silently migrated.
+
+Bound16MiB/input,10000 bars,2048 decisions/control,2 fixed controls,9 account
+cases and RSS1.5GiB. Long signal generation checks SIGINT/SIGTERM/memory and
+commits valid progress; short finite ledgers rerun after interruption. Separate
+atomic output/contribution ledgers/summary/report retain fees, next-open,
+double-cost, native target-hash parity and conditional2x2 effects. No new
+external source, rescreening, production rule changes, scheduler or raw deletion.
+
+## Production no-RSI rebound integration
+
+Run `node --import tsx --test research/nikkei-overlay-stability/rebound-integration.test.ts`
+to compare new v6 and archived v5 targets against frozen full-screen-6-15 input/
+signals and dual-return goal/baseline ledgers. Validate source/bars hashes and
+decision indexes before exact2000-bar parity and close/next-open metrics.
+This short bounded read-only verification needs no checkpoint or external fetch.
+Earlier research production-baseline callers pin v5 explicitly. Preserved
+research progress contains old implementation hashes and intentionally rejects
+the changed source on rerun; do not overwrite identities to bypass validation.
+The adopted controller scans at most ten actual-flat closes plus ten pre-low
+closes per candidate day, using existing10000-bar input bounds and per-model
+feature caches. No scheduler, raw-source changes or recovery-state migration.
+
+## RSI/Bollinger entrances and auxiliary filters
+
+Run `node --import tsx research/nikkei-overlay-stability/oscillator-entry-study.ts`,
+then `node --import tsx research/nikkei-overlay-stability/oscillator-filter-study.ts`,
+then `node --import tsx research/nikkei-overlay-stability/oscillator-filter-audit.ts`.
+Reuse full-screen-6-15/input.json and signals.json; validate source/bars/decision
+alignment, original control hashes and production baseline. Existing RSI14 and
+Bollinger20/2 use completed-bar data; historical evidence excludes today and
+held observations. Keep full/final500/recent boundaries and inherited state.
+
+Separate61/23-case scalar checkpoints commit atomically every10 under research
+data/oscillator-entry/grid.json and data/oscillator-filter/grid.json. Exact
+source/code/design/ordered-policy identity is required; reject incompatible
+state without deleting it. Same-command resumes verified61/23 reuse. Bound
+sources16MiB, bars10000, decisions2048 and RSS1.5GiB; SIGINT/SIGTERM safely stop
+after completed work. Retain only selected full ledgers; all scalar failures
+remain visible. Separate atomic output directories hold reports and identities.
+Finite attribution needs no checkpoint: interrupted runs rerun from frozen
+source. Omission bounds and common-state forks are evaluator-only; no live
+date switches, scheduler, external fetch, raw-data deletion or growing cache.
+
+## Hard dual-return confirmation and scoped exits
+
+Run `node --import tsx research/nikkei-overlay-stability/dual-return-study.ts`,
+then `node --import tsx research/nikkei-overlay-stability/dual-return-extension.ts`.
+Reuse frozen full-screen input/signals. Validate source/bars/decision alignment,
+all2000 production baseline targets and earlier reference target hashes. Never
+shift evaluation boundaries: full2018-08-09..2026-10-26, final500 from2024-10-04.
+Hard acceptance requires strictly higher full and final500 returns; drawdowns,
+postJuly21, failed cases and chronological selection remain visible.
+
+Initial91 and separate baseline+54 extension rows persist atomically every10
+cases under research data/dual-return/grid.json and data/dual-return-extension/
+grid.json. Source/implementation/design/menu/order drift rejects resume. Both
+same-command resumes verified91/55 completed-row reuse; SIGINT/SIGTERM/RSS
+checks commit completed rows and replay unfinished work. Bound16MiB sources,
+10000 bars,2048 decisions,145 combined cases,RSS1.5GiB. No fetch/scheduler.
+
+Selected full ledgers, reports, source/code identities, doubled costs and
+next-open baselines are separate atomic outputs. Common-state forks retain1936
+unchanged targets throughJuly21; dated added-episode exclusions are evaluator-
+only actual-account counterfactuals, not live date switches or additive alpha.
+Keep original91 and their state unchanged when evaluating the second stage.
+Preserve raw backups and previous studies; no cleanup is introduced.
+
+## SMA20 fallback and event attribution
+
+Run `node --import tsx research/nikkei-overlay-stability/sma20-fallback.ts`,
+then `node --import tsx research/nikkei-overlay-stability/sma20-fallback-audit.ts`.
+Validate frozen source/bars/signal alignment,2000 production baseline targets,
+summary/full-ledger agreement and1936 common-state prefix targets. Keep one
+inherited account and unchanged native exit/stop/recovery semantics. Compute
+rolling lows from preceding completed flat closes and peaks strictly before
+the low. Future5/10 returns, MFE/MAE, known episode exclusions and dated
+drawdowns are evaluator-only. No new market fetch or source modification.
+
+Twenty cases publish atomic per-case ledgers and final summary/report under
+research output/sma20-fallback. The audit verifies all20 target hashes and
+publishes six explicitly post-result background variants, bounded single-turn
+unlock replays and candidate episode omissions separately under output/
+sma20-fallback-audit. Preserve source/code/design/menu identities and settings.
+The short finite run has no growing cache or new durable checkpoint; rerun
+both commands after interruption. Outputs commit atomically, summary last.
+Bound16MiB source inputs,10000 bars,2048 decisions,20+6 policy comparisons,
+at most2000 diagnostic turns and RSS1.5GiB; stop checks apply between cases.
+No scheduler or raw cleanup is introduced.
+
+## Explicit-mode supplemental repair and attribution
+
+Run `node --import tsx research/nikkei-overlay-stability/supplemental-repair.ts`,
+then `node --import tsx research/nikkei-overlay-stability/supplemental-repair-audit.ts`.
+Reuse frozen full-screen input/signals; validate source/bars identities and
+production parity for2000 main targets. Main and supplemental controllers
+produce one actual target ledger. Record causal close decisions and next-bar
+mode eligibility without backfill; preserve positive main targets in all577
+policies. Full, chronological, cost, next-open and common-state diagnostics
+are evaluator outputs, never live date switches.
+
+Persist ordered scalar cases atomically every20 under research data/
+supplemental-repair/grid.json; source/code/design/menu drift rejects resume.
+Same-command restart has verified577-row reuse. SIGINT/SIGTERM/RSS checks
+save completed cases; unfinished cases rerun. Bounds16MiB per input,10000 bars,
+2048 decisions,577 policies,RSS1.5GiB. Selected full ledgers, mode-intervals.csv,
+reports and audit attribution are separate atomic derived outputs. The short
+finite audit reruns selected candidates and episode omissions, so needs no
+additional durable cursor. No network fetch, scheduler or raw-source mutation.
+
+## Historical segmentation and derivative diagnostics
+
+Run `node --import tsx research/nikkei-overlay-stability/ma-atr-segmentation.ts`
+and `python research/nikkei-overlay-stability/ma-atr-segmentation-plot.py` for
+the initial12 fixed MA/confirmation comparisons. Then run
+`node --import tsx research/nikkei-overlay-stability/ma-derivative-study.ts`
+and `python research/nikkei-overlay-stability/ma-derivative-plot.py` for8
+EMA20 backward-difference variants and plots. Reuse the immutable full-screen
+input, validate source/bars hashes and cover all6566 bars once including warmup.
+Record source access and design/code hashes. No fetch/rescreen or queue changes.
+
+Derived JSON, segment CSV and reports are atomic; PNGs regenerate from local
+JSON under the matching output directories. Keep initial segmentation separate
+from derivative refinement. Background CSV is distinct from detailed bursts;
+store known-at-close and next-bar effective labels. Future prices only score
+warnings, with final10 sessions censored. Small8/12-case bounded runs need no
+durable checkpoint or scheduler:16MiB input,10000 bars,RSS1.5GiB, deterministic
+reruns. Preserve source, existing checkpoints and earlier research artifacts.
+
+## Supplemental regime sizing and attribution
+
+Run `node --import tsx research/nikkei-overlay-stability/regime-sizing.ts`.
+Reuse frozen full-screen input/signals and prior descriptive analogue indexes;
+validate source/bars hashes and decision alignment. Commit321 ordered scalar
+cases in atomic20-row updates to data/regime-sizing/grid.json under the research
+folder. Exact source/implementation/policy identities are required on resume.
+SIGINT/SIGTERM/RSS checks save completed rows between cases; incomplete work
+replays safely. Same-command rerun verifies321 completed rows are reused.
+Selected complete ledgers and costs/next-open summaries are separate output.
+
+Run `node --import tsx research/nikkei-overlay-stability/regime-sizing-review.ts`
+for the321 finite common-state forks. It preserves baseline controller history
+throughJuly21, changes policy afterward without resetting state, and asserts
+all1936 prefix targets per policy. This date fork is diagnostic only. Atomic
+derived outputs under output/regime-sizing-review regenerate on rerun; no new
+checkpoint is needed. Preserve original sizing results and frozen source.
+Both studies bound inputs16MiB,bars10000,decisions2048,cases321,RSS1.5GiB.
+Neither fetches prices, reruns screening or creates a scheduled job.
+
+## V-bottom missed-entry research
+
+Run `node --import tsx research/nikkei-overlay-stability/v-recovery-study.ts`.
+Validate the existing full-screen input/signals hashes and schedule alignment;
+do not fetch prices or repeat screening. Confirm386 rules with exact production
+baseline parity and atomic25-row source/design-checked progress in
+data/v-recovery-confirmed/grid.json under the research folder. Incomplete
+chunks repeat; SIGINT/SIGTERM/RSS checks stop safely between candidates, with
+event-loop yielding after commits. Resume rejects incompatible identities.
+Bound files16MiB, bars10000, decisions2048, candidates1000 and RSS1.5GiB.
+Selected detailed ledgers/reports are separate under output/v-recovery-confirmed.
+Preserve initial v-recovery and v-recovery-sequenced exploratory artifacts,
+raw inputs and previous studies. No scheduled job or growing cache is added.
+
+## Cumulative stop-loss research
+
+Run `node --import tsx research/nikkei-overlay-stability/cumulative-stop-study.ts`.
+The finite1368-case study reuses frozen full-screen input/signals, commits
+successful scalar metrics every50 cases atomically to
+`research/nikkei-overlay-stability/data/cumulative-stops/grid.json`, and writes
+reports/selected ledgers separately to `output/cumulative-stops/`. Source/design
+hashes and ordered rule IDs must match on resume. Incomplete chunks repeat;
+SIGINT/SIGTERM/RSS checks stop between candidates. Limits are16MiB per file,
+10000 bars,2048 decisions and1.5GiB RSS. No price refresh, scheduler or queue
+mutation occurs. Preserve shared raw/frozen sources and all earlier output.
+
+## Expanded overlay drawdown research
+
+`node --import tsx research/nikkei-overlay-stability/drawdown-expansion.ts`
+reuses the immutable full-screen bars/plans/signals and computes975 bounded
+rule replays. It atomically commits scalar rows every50 completed cases under
+`research/nikkei-overlay-stability/data/drawdown-expansion/grid.json` after
+each completed replay; incomplete chunks repeat. Source/design/implementation
+hashes and ordered rule IDs must match on resume. Output is separately stored
+under `output/drawdown-expansion/`. Only the current ledger and bounded scalar
+rows are retained in memory;16MiB files,10000 bars,2048 decisions and1.5GiB RSS
+limits apply. Safe stop checks occur between candidates. No network refresh,
+scheduler, screening queue mutation or raw-data deletion is involved.
+
+## Completed full-screen overlay comparison
+
+Run `node --import tsx research/nikkei-overlay-stability/full-screen-grid.ts`.
+The explicit completed batch is frozen once, then signal extraction commits
+each 32 decisions and the 8000-row grid commits each 128 candidates atomically
+under `research/nikkei-overlay-stability/data/full-screen-6-15/`. Repeating
+the command resumes committed work; source/design/implementation changes
+reject stale checkpoints. Output is separately stored under
+`output/full-screen-6-15/`. A single bounded source result is read at a time;
+inputs cap at 10000 bars, 2048 jobs and 16 MiB per file, with a 1.5 GiB RSS
+guard. Interruption stops between units; incomplete chunks replay safely.
+Only one finite batch is retained; no scheduled refresh or production write.
+
 ## Exact screening recovery without replaying completed work
 
 The optimizer restores cumulative evaluated/failed/total progress from the

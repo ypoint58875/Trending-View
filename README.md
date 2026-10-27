@@ -1,5 +1,25 @@
 # QuantScope
 
+The default position overlay is now v8: the existing entries plus Entry E
+(9% decline, higher low, previous-high breakout, recent RSI7 extreme and recovery),
+and a guarded four-decreasing-high exit when RSI10 <35. Existing buy priority,
+minimum holding period, moving-average protection and hard risk exits remain.
+Static saved plans retain their original model. Dynamic validated accounts now
+synchronize current rules across the cycle page and research shortcuts, retaining
+one previous-rule backup. First-time replay uses a cancellable worker and the
+same saved winners; successful account upgrades commit atomically. Later opens
+reuse the synchronized report. Shortcut charts open at the latest128 sessions,
+including repeated clicks, without discarding history or adding a chart banner.
+
+Completed Nikkei strategy-cycle validation now appears in the research shortcut
+bar as an X-day validated strategy, displaying its complete dynamic rebalance
+history and inherited position inside the matching instrument group. The chart
+defaults to the latest128 sessions without discarding history. A matching single-window research screening
+continues the same account. Intraday candidates replace only the provisional
+tail; completed-close updates commit once. Missing sessions stop continuation
+and require repair on the strategy-cycle validation page. Profiles stay in this
+browser's local IndexedDB independently of static saved strategies and task reset.
+
 QuantScope is a daily workspace for researching one global index, ETF, or
 commodity futures quote proxy at a time. It
 combines filtered asset search,
@@ -57,13 +77,13 @@ enabled.
   full-evaluation candlestick chart plots only actual executed rebalances and
   switches among the completed screening-period results. The maximum
   combination size is configurable from two through six strategies.
-  Each cycle job persists only its selected winner. One compact batch request pre-submits
-  every bounded optimization unit to the loopback coordinator, which continues
+  Each cycle job persists only its selected winner. Requests of at most 64 units pre-submit
+  every incomplete optimization unit to the loopback coordinator, which continues
   a CPU- and memory-bounded durable parallel queue after the tab disconnects.
   Refreshing, navigating away, or a browser tab discard does not cancel work;
   reopening the page automatically reattaches result collection. Only explicit
   Pause, reset, or replacement by a different task cancels unfinished units.
-  One immutable columnar bar file is shared by the queued units; each child
+  Each submitted chunk shares one immutable columnar bar file among its units; each child
   materializes only its causal prefix,
   and windows at the same decision share range-independent entry-filter
   derivations. Unit mappings and completed selections remain in device-local

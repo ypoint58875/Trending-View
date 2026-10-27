@@ -246,11 +246,21 @@ export function buildStrategyCycleRollingReport(
     BacktestSettings,
     "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy" | "positionOverlay"
   > & { interval: MarketInterval },
+  decisionCalendar?: readonly number[],
 ): StrategyCycleRollingReport {
   const schedule = buildStrategyCycleRollingSchedule(
     bars, evaluationSessions, screeningWindow,
   );
   if (!schedule) throw new Error("Invalid rolling cycle schedule");
+  if (decisionCalendar) {
+    if (decisionCalendar[0] !== schedule.evaluationStartIndex ||
+      decisionCalendar.some((index, offset) => !Number.isInteger(index) ||
+        index < schedule.evaluationStartIndex || index > schedule.evaluationEndIndex ||
+        (offset > 0 && index <= decisionCalendar[offset - 1]!))) {
+      throw new Error("Invalid explicit cycle decision calendar");
+    }
+    schedule.decisionIndexes = [...decisionCalendar];
+  }
   const ordered = [...snapshots]
     .filter((snapshot) => snapshot.screeningWindow === screeningWindow)
     .sort((left, right) => left.decisionIndex - right.decisionIndex);

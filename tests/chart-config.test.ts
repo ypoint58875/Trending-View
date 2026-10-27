@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { zhCN } from "../app/i18n/zh-CN";
 import {
   ECHART_REPLACE_MERGE_COMPONENTS,
   applyDataZoomWindow,
@@ -21,6 +22,8 @@ import {
   priceDataZoomWindowForTimeRange,
 } from "../app/components/PriceChart";
 import type { MarketBar } from "../lib/market/types";
+import { SAVED_BACKTEST_ROLLING_SESSIONS } from "../lib/analysis/saved-backtests";
+import { resolveTrailingTradingSessionRange } from "../lib/analysis/screening-validation";
 import type {
   StrategyPriceLine,
   StrategyPriceLineRole,
@@ -37,7 +40,7 @@ type ZoomEntry = {
   brushSelect?: boolean;
   realtime?: boolean;
   zoomLock?: boolean;
-  zoomOnMouseWheel?: boolean;
+  zoomOnMouseWheel?: boolean | "ctrl";
   moveOnMouseMove?: boolean;
   moveOnMouseWheel?: boolean;
   preventDefaultMouseMove?: boolean;
@@ -180,22 +183,29 @@ test("builds SMA lines from display parameters", () => {
   assert.equal(fast.yAxisIndex, 0);
 });
 
-test("distinguishes Bollinger tracks and makes SMA dashed only during coexistence", () => {
-  const lines = (id: "sma" | "bollinger", coexist: boolean, equal = false) =>
+test("distinguishes Bollinger tracks and makes SMA EMA WMA dashed only during coexistence", () => {
+  const lines = (id: "sma" | "ema" | "wma" | "dema" | "bollinger", coexist: boolean, equal = false) =>
     buildIndicatorSeries(chartBars, id, { fast: 2, slow: equal ? 2 : 3, period: 2, width: 2 },
       indicatorLabels, 0, 0, coexist) as Array<{
         lineStyle: { color: string; type?: string };
         itemStyle: { color: string };
+        data: unknown;
       }>;
   const bands = lines("bollinger", true);
   assert.equal(bands.length, 3);
   assert.deepEqual(bands.map((line) => line.lineStyle.color), ["#FF9800", "#2196F3", "#2196F3"]);
   assert.ok(bands.every((line) => line.lineStyle.type === undefined));
   for (const equal of [false, true]) {
-    const averages = lines("sma", true, equal);
-    assert.ok(averages.every((line) => line.lineStyle.type === "dashed"));
-    assert.ok(averages.every((line) => !bands.some((band) => band.lineStyle.color === line.lineStyle.color)));
-    assert.ok(lines("sma", false, equal).every((line) => line.lineStyle.type === undefined));
+    for (const indicator of ["sma", "ema", "wma"] as const) {
+      const averages = lines(indicator, true, equal), standalone = lines(indicator, false, equal);
+      assert.equal(averages.length, equal ? 1 : 2);
+      assert.ok(averages.every((line) => line.lineStyle.type === "dashed"));
+      assert.ok(averages.every((line) => !bands.some((band) => band.lineStyle.color === line.lineStyle.color)));
+      assert.ok(standalone.every((line) => line.lineStyle.type === undefined));
+      assert.deepEqual(averages.map(line => line.data), standalone.map(line => line.data));
+      assert.ok(averages.every((line) => line.itemStyle.color === line.lineStyle.color));
+    }
+    assert.ok(lines("dema", true, equal).every((line) => line.lineStyle.type === undefined));
   }
   assert.ok([...bands, ...lines("sma", true)].every((line) => line.itemStyle.color === line.lineStyle.color));
 });
@@ -519,7 +529,7 @@ test("renders intraday chart times in Asia/Shanghai without moving daily labels"
   assert.deepEqual(buy.data?.[0].value, ["2026-08-14 09:26", 0.5]);
 });
 
-test("makes the selected price-chart zoom window directly draggable", () => {
+test("keeps slider dragging and enables wheel zoom without a modifier key", () => {
   const dataZoom = entries(1_000, [0, 1, 2, 3]);
   const inside = dataZoom.find((entry) => entry.type === "inside");
   const slider = dataZoom.find((entry) => entry.type === "slider");
@@ -527,6 +537,7 @@ test("makes the selected price-chart zoom window directly draggable", () => {
   assert.ok(inside);
   assert.equal(inside.zoomLock, false);
   assert.equal(inside.zoomOnMouseWheel, true);
+  assert.doesNotMatch(zhCN.chart.zoomHint, /ctrl/i);
   assert.equal(inside.moveOnMouseMove, false);
   assert.equal(inside.moveOnMouseWheel, false);
   assert.equal(inside.preventDefaultMouseMove, true);
@@ -585,11 +596,13 @@ test("pans the visible time window horizontally without changing its span", () =
   });
 });
 
-test("cycle window panning follows the mouse direction and clamps both boundaries", () => {
+test("explicit window panning advances dates while content panning moves candles with the mouse", () => {
   assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, 100, 1000, "window"), { start: 32, end: 52 });
   assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, -100, 1000, "window"), { start: 28, end: 48 });
   assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, 10000, 1000, "window"), { start: 80, end: 100 });
   assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, -10000, 1000, "window"), { start: 0, end: 20 });
+  assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, 100, 1000, "content"), { start: 28, end: 48 });
+  assert.deepEqual(panDataZoomWindow({ start: 30, end: 50 }, -100, 1000, "content"), { start: 32, end: 52 });
 });
 
 test("builds readable zero, one, and multiple-pane chart layouts", () => {
@@ -850,6 +863,23 @@ test("focuses the price chart on the applied screening window", () => {
       (component) => component.start === 20 && component.end === 60,
     ),
   );
+});
+
+test("saved shortcut focus uses the latest128 observations without trimming history", () => {
+  const bars = Array.from({ length: 300 }, (_, index) => {
+    const date = new Date(Date.UTC(2024, 0, index + 1));
+    return { time: date.toISOString().slice(0, 10), weekday: date.getUTCDay() };
+  }).filter((bar) => bar.weekday !== 0 && bar.weekday !== 6) as unknown as MarketBar[];
+  const length = bars.length;
+  const range = resolveTrailingTradingSessionRange(bars, SAVED_BACKTEST_ROLLING_SESSIONS)!;
+  const window = priceDataZoomWindowForTimeRange(bars, range.startTime, range.endTime);
+  assert.equal(SAVED_BACKTEST_ROLLING_SESSIONS, 128);
+  assert.equal(range.startTime, bars.at(-128)!.time);
+  assert.equal(range.endTime, bars.at(-1)!.time);
+  assert.ok(Math.abs(length * (window.end - window.start) / 100 - 128) < 1e-9);
+  assert.equal(bars.length, length);
+  const short = bars.slice(-60), shortRange = resolveTrailingTradingSessionRange(short, 128)!;
+  assert.deepEqual(priceDataZoomWindowForTimeRange(short, shortRange.startTime, shortRange.endTime), { start: 0, end: 100 });
 });
 
 test("derives the price axis only from the visible OHLC window", () => {

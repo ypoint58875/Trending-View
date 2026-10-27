@@ -4304,11 +4304,11 @@ test("maps allocation increases, reductions, and valuation exits to markers", ()
   ]);
   assert.deepEqual(markers.buys.map((marker) => marker.action), [
     "open",
-    "short-buy",
+    "increase",
   ]);
   assert.equal(markers.sells[0].price, 99);
   assert.deepEqual(markers.sells[0].signals, ["short-exit"]);
-  assert.equal(markers.sells[0].action, "short-sell");
+  assert.equal(markers.sells[0].action, "reduce");
   assert.equal(markers.rangeExits[0].price, 98);
 });
 

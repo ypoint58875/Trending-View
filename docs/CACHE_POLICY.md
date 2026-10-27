@@ -1,5 +1,286 @@
 # Cache Policy
 
+## Adopted shared-account rule upgrades
+
+Following explicit user adoption, a validated current-rule preview is promoted
+into shared account settings/report atomically. Clear the obsolete preview field
+and bump revision so old cache identities cannot match. Retain one ruleBackup
+(settings/report/revision/time), replacing it only on another actual rule upgrade;
+no recursive backup chain. Existing32-account and10000-bar/snapshot bounds remain.
+Already-current accounts reuse stored reports; opening a shortcut only resets
+chart viewport and must not recompute or update account revision.
+
+## Validated account current-rule preview
+
+Optional profile.preview is a single derived report, not confirmed history.
+Reuse only matching account revision, key, model/conflict, range and costs/rules.
+Replace the previous preview on the next current-rule replay; no unbounded model
+history or TTL polling. Registry remains capped at32 accounts and10000 bars/
+snapshots per account. No raw input, confirmed report or task checkpoint deletion.
+Atomic preview writes do not bump account revision and cannot overwrite newer
+history. First model switch recomputes off-thread; subsequent opens reuse cache.
+
+## RSI first-pullback bounded research
+
+55 policies and bounded source arrays reuse weak overlay caches. No persistent
+metric cache or new scheduler. Atomic output/rsi-first-pullback/summary.json is
+a reproducible research artifact, not disposable TTL cache. Rerun replaces only
+this experiment's summary, never raw backups, old studies or screening caches.
+
+## v8 overlay adoption
+
+The overlay model is part of screening identity, so v8 does not reuse v7 ranking
+results. Historical research imports explicitly use archived v7. Preserve old
+checkpoints/results and validated account versions; no cache/raw cleanup or
+protocol bump accompanies adoption. RSI7/10 features reuse the weakly held
+bar-array feature cache; no unbounded global historical series cache is added.
+
+## RSI research bounded memory
+
+Shared RSI feature cache holds only requested calculation periods (7..20 in
+this experiment, validated2..100 API bound), with a4096-entry metric-path cache.
+Metric cache evicts oldest entries; recomputation cannot change checkpoint state.
+Durable128-row result chunks/manifests are not TTL cache. Preserve all current
+and earlier experiment identities and frozen raw inputs; delete none automatically.
+At most30000 policy rows are retained per phase and RSS is capped2GiB. Full
+per-policy target arrays are transient, not persisted in every chunk.
+
+## Validated-cycle durable profiles
+
+The quantscope-validated-cycle-strategies IndexedDB registry is durable account
+state, not disposable market cache. Retain at most 32 profiles, each bounded to
+10000 bars and selections. Keep one provisional tail per account; replace it
+without accumulating intraday copies. Exceeding a limit or storage quota fails
+explicitly and preserves the last account. Do not apply TTL eviction, clear it
+with the latest validation task, or delete confirmed history automatically.
+Browser origin/device changes require explicit backup/migration outside the
+current feature. Existing raw data, engine checkpoints and static shortcuts are
+not modified by registry cleanup or task reset.
+
+## Chunked cycle queue retention
+
+Each <=64-unit upload retains its existing shared bar file and queue manifest;
+a2048-unit run creates at most32 chunk manifests. Bars are shared within each
+chunk rather than one file for the entire run. Existing seven-day engine
+retention remains unchanged; maintenance occurs once per batch. No new TTL or
+manual deletion is introduced. Completed results and explicit cancellations
+remain durable, with completed-result reuse after deliberate resubmission.
+Acknowledged chunk mappings are saved immediately in the existing latest-task
+IndexedDB record. Never clear results/raw inputs to hide submission failures.
+
+## Seven-date five-leg alternative state
+
+research/nikkei-overlay-stability/data/six-vs-five/rows.json stores at most7
+completed job summaries. Atomic commits and source/request/code/ordered-date
+identity prevent stale mixed runs. Output/six-vs-five is derived evidence.
+Retain reviewed state/reports until explicitly superseded; existing source
+requests and frozen market inputs are never implicitly deleted. This finite
+diagnostic adds no persistent runtime cache or automatic cleanup policy.
+
+## Overlay v7 model identity
+
+ATR2 behavior uses a new default v7 model identity; archived v6 keeps its exact
+identifier and fixed options. Existing bars/model WeakMaps and serialized model-
+aware screening/checkpoint signatures isolate versions without deleting stored
+plans. Research code fingerprints involving the changed production file may
+reject earlier checkpoints as intended: preserve their state/reports and do not
+rewrite compatibility hashes. No new persistent cache or raw-data refresh.
+
+## Risk-exit robustness state
+
+`research/nikkei-overlay-stability/data/risk-exit-validation/grid.json` is
+bounded292-row derived progress, not market data. Atomic20-case commits and
+source/implementation/design/ordered-menu checks prevent mixed experiments.
+Selected output ledgers and summaries live in output/risk-exit-validation.
+Retain this completed audit until reviewed or explicitly superseded; cleanup
+may remove regenerable temporary/derived outputs only after preserving the
+checkpoint and reviewed report. Never implicitly delete frozen raw inputs.
+
+## Earlier-exit priority state and audit
+
+Research data/exit-priority/grid.json is finite212-row derived state, atomically
+committed every20 cases. Reject source/implementation/design/ordered-policy
+drift rather than modifying hashes or deleting previous progress. Matching
+output/exit-priority retains scalar rows, selected ledgers/blocked-day causes,
+COMPARISON and cost/execution diagnostics. Separate output/exit-priority-audit
+is a short finite concentration/parity replay with no checkpoint. Both reuse
+frozen sources; no growing cache, TTL, scheduler, raw deletion or automatic
+cleanup. Explicit future cleanup may target reproducible derived outputs only.
+
+## Fine rolling-window peak progress
+
+Research data/peak-window/grid.json is a separate bounded644-row checkpoint,
+atomically committed every20 cases with source/implementation/design/ordered
+configuration checks. Preserve old peak-liquidation state; a type-only shared
+source edit changes its fingerprint and must not be silently accepted.44 old
+baseline/rolling20 target hashes verify unchanged runtime behavior independently.
+Output/peak-window holds finite scalar results, GRID/REPORT/COMPARISON and
+selected detailed ledgers; explicit rerun regenerates derived outputs. No TTL,
+growing market cache, scheduler, raw deletion or automatic cleanup is introduced.
+
+## Peak-liquidation scalar progress
+
+Research data/peak-liquidation/grid.json is bounded164-row derived progress,
+atomically committed every20 cases. Resume validates source/implementation/
+design/ordered-policy identity; preserve incompatible state rather than altering
+hashes or deleting backups. Output/peak-liquidation retains all scalar failures
+and selected detailed ledgers; output/peak-liquidation-audit separately retains
+finite fixed-threshold illustrations/cut dates/cost sensitivities. Both regenerate
+from frozen sources; the short audit needs no checkpoint. No growing market
+cache, TTL, automatic cleanup or scheduler is introduced. Retain prior studies
+and raw backups; future explicit cleanup may target derived artifacts only.
+
+## Signal-source share diagnostics
+
+Research output/signal-share holds finite summary/events/report derived from
+frozen source and contribution ledgers, with source/implementation hashes and
+full target parity. Atomic outputs regenerate on explicit rerun; the short
+2000-step replay needs no separate checkpoint, growing cache, TTL or scheduler.
+Keep all prior state and raw backups. Do not delete original signals or change
+event denominators to force equal per-window entry/exit counts. Future explicit
+cleanup may target these reproducible derived reports only.
+
+## Contribution fixed-signal state
+
+Research data/contribution/signals.json contains two bounded1293-row causal
+fixed-plan signal prefixes, atomically committed every64 rows. Validate exact
+source/implementation/control/order before resume and preserve incompatible
+state. Initial draft signals-initial-398d05c795ba.json is a retained derived
+archive; finalized state was regenerated rather than forcing compatibility.
+Output/contribution contains nine finite case ledgers, summary, report and
+percentage-point/log-wealth accounting. They regenerate from frozen inputs;
+no TTL, growing cache, refresh schedule or automatic deletion is justified.
+Keep raw sources, prior studies and identities. Explicit future cleanup may
+target only reproducible derived artifacts, not the sole frozen source.
+
+## Production rebound v6 identity
+
+The current overlay default has a new v6 model ID; v5 saved plans keep their
+explicit archived version. Existing model-aware feature, optimizer-checkpoint,
+screening and cycle-request identities separate the two policies without cache
+deletion or a wire-protocol change. Do not rewrite stored plans or old jobs.
+Previously completed result snapshots remain historical results with their
+own explicit overlay version; rerun calculations to produce v6 results.
+V5 research parity callers now pin archived options. Their preserved derived
+checkpoints include implementation hashes and deliberately reject a changed
+implementation; keep outputs/state instead of forcing a resume or deleting
+raw data. The finite rebound integration test reads frozen sources and ledgers
+without rewriting them. No new growing cache, TTL or scheduled work is needed.
+
+## Oscillator research progress and attribution
+
+Research data/oscillator-entry/grid.json and data/oscillator-filter/grid.json
+are finite derived61/23-row checkpoints. Atomic10-case commits and strict
+source/implementation/design/ordered-policy checks support idempotent resume;
+preserve incompatible state for explicit investigation. Matching output
+directories retain scalar summaries and selected ledgers. Separate finite
+output/oscillator-filter-audit diagnostics regenerate from frozen inputs and
+selected target hashes, not a growing cache. No TTL, automatic cleanup or
+scheduler is justified for these bounded runs. Preserve prior studies and raw
+backups; future explicit cleanup may target these reproducible derived outputs.
+
+## Dual-return scalar progress and reports
+
+Research data/dual-return/grid.json and data/dual-return-extension/grid.json
+are bounded derived91/55-row checkpoints, atomically committed every10 cases.
+Validate exact source/code/design/ordered policy identities before reuse;
+preserve incompatible state instead of silently migrating/deleting it. The
+second stage does not overwrite the first stage's state or outputs. Selected
+ledgers, combined scalar reports and finite omission diagnostics live under
+matching output directories and can regenerate from frozen sources. No growing
+cache, TTL, scheduler or automatic deletion is needed. Retain earlier raw data,
+checkpoints and research; explicit cleanup may target only derived artifacts.
+
+## SMA20 replacement and rebound artifacts
+
+Research output/sma20-fallback holds20 finite derived case ledgers, identity-
+checked summary, design and flat/blocked-turn diagnostics. Output/sma20-
+fallback-audit separately holds six post-result cases and finite omission/
+single-event diagnostics. There is no growing market cache, new checkpoint,
+TTL, scheduled refresh or automatic deletion. Atomic outputs regenerate from
+the frozen source on explicit rerun; interrupted finite work reruns rather
+than accepting partial summaries. Retain every original case, prior study,
+checkpoint and raw/frozen backup; no cleanup outside these derived outputs.
+
+## Explicit-mode supplemental proposal artifacts
+
+The finite577-case data/supplemental-repair/grid.json under the research folder
+is derived scalar resume state, not a growing market cache. Atomic20-case
+commits and strict source/code/design/menu identities protect restart. Retain
+the checkpoint for reproducibility; do not silently overwrite incompatible
+state. Use an explicitly separate derived directory for incompatible reruns.
+Selected full ledgers, causal mode CSV, reports and finite omission audits in
+output/supplemental-repair can be regenerated from frozen inputs. No TTL,
+scheduled refresh or automatic deletion is needed for this bounded study.
+Preserve raw/frozen backups and all earlier research/checkpoints; no cleanup
+may remove them as part of this experiment.
+
+## MA segmentation and derivative artifacts
+
+`research/nikkei-overlay-stability/output/ma-atr-segmentation` and
+`output/ma-derivatives` hold finite derived JSON/CSV/reports and three PNGs
+per study. They are regenerated deterministically from frozen input rather
+than appended to growing history. No new cache, TTL, scheduler or automatic
+deletion is introduced. Atomic text/JSON output avoids partial generations;
+charts may be rerendered after interruption. Preserve the initial prototype,
+raw backups, previous research and sizing checkpoints. Explicit regeneration
+may replace only these derived outputs, never their frozen source.
+
+## Supplemental sizing research progress
+
+The321-row research data/regime-sizing/grid.json checkpoint is derived scalar
+state, atomically committed every20 cases and verified by source/code/policy
+identity. It has no growing history or automatic refresh; retain for reproducible
+resume. Incompatible state must be preserved and regenerated in a separately
+named directory rather than silently accepted or deleted. Selected ledgers and
+reports under output/regime-sizing are separate derived outputs. The short
+common-state attribution review adds no persistent cache; its atomic artifacts
+under output/regime-sizing-review regenerate deterministically. No automatic
+deletion applies to raw sources, original sizing state or previous studies.
+
+## V-bottom research metrics
+
+The bounded386-row data/v-recovery-confirmed/grid.json under the overlay
+research folder is a derived checkpoint with atomic25-row commits and strict
+source/design/rule-order identity. Resume reuses completed rows. No growing
+history, automatic refresh or TTL is necessary for this finite experiment;
+retain earlier exploratory directories and raw/frozen inputs. Regenerate
+only derived state explicitly when identities change; never silently delete
+or migrate checkpoints. Finalists and reports are separate output artifacts.
+
+## Cumulative stop-loss research metrics
+
+`research/nikkei-overlay-stability/data/cumulative-stops/grid.json` contains at
+most1368 derived metric rows with atomic50-row commits and source/design
+identity checks. This one finite study adds no growing cache history or
+automatic refresh. On incompatible code/design, retain frozen sources and
+manually regenerate only derived metric state. Keep raw inputs and earlier
+research outputs; no automatic deletion applies. Output and checkpoints are
+separate and reproducible using the documented command.
+
+## Expanded overlay drawdown metric checkpoint
+
+`research/nikkei-overlay-stability/data/drawdown-expansion/grid.json` is a
+bounded975-row derived cache with atomic50-row commits and explicit source/
+design identity. Keep the immutable full-screen sources and prior research
+outputs. The pre-summary checkpoint is retained as
+`grid.before-simple-summary.json`; no growing generations or auto-refresh
+are added. Derived metric caches may be manually regenerated on incompatible
+identities, preserving raw data. This single-study finite retention replaces
+the need for a time-based TTL; no automatic deletion is performed.
+
+## Completed full-screen overlay grid
+
+`research/nikkei-overlay-stability/data/full-screen-6-15/` retains one frozen
+source, raw bars/queue, registry and two bounded derived checkpoints (1293
+signal rows and 8000 scalar metric rows). Keep raw/frozen source artifacts.
+Signals and grid may be manually regenerated on identity changes; no automatic
+deletion or TTL applies to reproducibility inputs. Initial derived checkpoints
+before a type annotation correction are preserved as `*.before-typecheck.json`.
+Atomic replacement and source/design hashes prevent mixed-version resume.
+The separate `output/full-screen-6-15/` report/ledgers are reproducible output,
+and the older quick-screen caches/results remain unchanged.
+
 ## Expanded overlay window grids
 
 `research/nikkei-overlay-stability/data/block-cache/` contains146 bounded numeric

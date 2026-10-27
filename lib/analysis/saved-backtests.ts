@@ -1,5 +1,5 @@
 import type { BacktestPerformance } from "./backtest";
-import { MIXED_POSITION_OVERLAY_MODEL, normalizeSmaPositionOverlay, type SmaPositionOverlayOptions } from "./sma-position-overlay";
+import { POSITION_OVERLAY_MODELS, normalizeSmaPositionOverlay, type SmaPositionOverlayOptions } from "./sma-position-overlay";
 import {
   parseIndicatorConfigurations,
   type IndicatorConfiguration,
@@ -1015,7 +1015,7 @@ export function parseStrategyAllocationPlan(
 
   const overlay = value.positionOverlay;
   if (overlay !== undefined && (!overlay || typeof overlay !== "object" ||
-    Object.entries(overlay).some(([key, flag]) => key === "model" ? flag !== MIXED_POSITION_OVERLAY_MODEL
+    Object.entries(overlay).some(([key, flag]) => key === "model" ? !POSITION_OVERLAY_MODELS.includes(flag as (typeof POSITION_OVERLAY_MODELS)[number])
       : !["supplementalEntry", "exitGuard", "entrySlopeGate"].includes(key) || typeof flag !== "boolean"))) return null;
   const plan = validatePlan(
     readStrategySelection(value.strategyA),

@@ -529,8 +529,10 @@ export function runAllocationBacktest(
     const intrabarExecutions = settings.executionPolicy === "next-open"
       ? []
       : currentTimelineState.intrabarExecutions;
+    let intrabarIncrease = false;
     for (const execution of intrabarExecutions) {
       const requestedTarget = clampAllocation(execution.targetAllocation);
+      if (requestedTarget >= plannedAllocation) intrabarIncrease = true;
       const targetAllocation = overlay
         ? overlay.request(requestedTarget >= plannedAllocation ? "increase" : "reduce", requestedTarget, originalIndex - 1)
         : requestedTarget;
@@ -565,7 +567,7 @@ export function runAllocationBacktest(
       const rawCurrent = currentTimelineState.targetAllocation;
       const changed = Math.abs(rawCurrent - rawPrevious) > 1e-10;
       if (changed && intrabarExecutions.length === 0) overlay.request(rawCurrent > rawPrevious ? "increase" : "reduce", rawCurrent, originalIndex);
-      overlay.close(originalIndex, changed || currentTimelineState.signals.length > 0 || intrabarExecutions.length > 0);
+      overlay.close(originalIndex, changed || currentTimelineState.signals.length > 0 || intrabarExecutions.length > 0, intrabarIncrease);
     }
 
     const currentEquity = cash + units * bar.close;
@@ -855,6 +857,7 @@ export function runBacktestFromTarget(
       else if (overlay.allocation <= 0 && units > 0) closePosition(bar.open, bar.time);
     }
     let hadOrderSignal = false;
+    let hadOrderIncrease = false;
 
     if (orders) {
       const allowEntry =
@@ -869,6 +872,7 @@ export function runBacktestFromTarget(
       );
       for (const fill of fills) {
         hadOrderSignal = true;
+        if (fill.action === "buy") hadOrderIncrease = true;
         if (overlay) {
           const desired = overlay.request(fill.action === "buy" ? "increase" : "reduce", fill.action === "buy" ? 1 : 0, originalIndex - 1);
           if ((fill.action === "sell" && desired > 0) || (fill.action === "buy" && (units > 0 || desired <= 0))) continue;
@@ -892,7 +896,7 @@ export function runBacktestFromTarget(
       const current = effectiveTarget[originalIndex] ?? 0, previous = effectiveTarget[originalIndex - 1] ?? 0;
       const changed = Math.abs(current - previous) > 1e-10;
       if (changed && (!fullOrders || (!hadOrderSignal && current > previous))) overlay.request(current > previous ? "increase" : "reduce", current > 0 ? 1 : 0, originalIndex);
-      overlay.close(originalIndex, changed || hadOrderSignal);
+      overlay.close(originalIndex, changed || hadOrderSignal, hadOrderIncrease);
     }
 
     if (intraday && session.isLast && units > 0) {

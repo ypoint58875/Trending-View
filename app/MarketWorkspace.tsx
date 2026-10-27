@@ -1,5 +1,9 @@
 "use client";
 import { SmaPositionOverlayControls, useSmaPositionOverlayPreferences } from "./components/SmaPositionOverlayControls";
+import { ValidatedCycleShortcuts, useValidatedCycles } from "./components/ValidatedCycleShortcuts";
+import { appendValidatedCycle, seedCompletedValidatedCycles } from "@/lib/analysis/validated-cycle-strategy-store";
+import { validatedCycleFocusRange, ValidatedCycleError, type ValidatedCycleStrategy } from "@/lib/analysis/validated-cycle-strategy";
+import { isNikkeiCycleInstrument } from "@/lib/analysis/strategy-cycle-validation";
 
 import {
   Activity,
@@ -249,9 +253,6 @@ import {
   DEFAULT_MOVING_AVERAGE_SLOPE_FILTER,
   MAX_MOVING_AVERAGE_SLOPE_PERIOD,
   MOVING_AVERAGE_SLOPE_TYPES,
-  SCREENING_MOVING_AVERAGE_SLOPE_MINIMUM_PERCENT,
-  SCREENING_MOVING_AVERAGE_SLOPE_PERIODS,
-  buildScreeningMovingAverageSlopeFilters,
   cloneMovingAverageSlopeFilter,
   type MovingAverageSlopeFilter,
   type MovingAverageSlopeType,
@@ -284,6 +285,8 @@ const priceChartLabels = {
   closePosition: copy.chart.closePosition,
   shortBuy: copy.chart.shortBuy,
   shortSell: copy.chart.shortSell,
+  increasePosition: copy.chart.increasePosition,
+  reducePosition: copy.chart.reducePosition,
   rangeExit: copy.chart.rangeExit,
   series: { ...copy.chart.series },
 };
@@ -897,7 +900,6 @@ interface IntervalResearchSnapshot {
   screeningObjective: ScreeningObjective;
   screenResultsObjective: ScreeningObjective;
   screeningValidationMode: ScreeningValidationMode;
-  screeningEntryFilterDraft: MovingAverageSlopeFilterDraft;
   sampleValidationPeriods: ScreeningSamplePeriodConfig[];
   screeningCustomRange: ScreeningRangeValidationConfig["range"];
   screeningMultiRanges: ScreeningDateWindow[];
@@ -945,9 +947,6 @@ function createIntervalResearchSnapshot(
     screenResultsObjective: "totalReturn",
     screeningValidationMode:
       interval === INTRADAY_INTERVAL ? "range" : "sample",
-    screeningEntryFilterDraft: createMovingAverageSlopeFilterDraft(
-      DEFAULT_MOVING_AVERAGE_SLOPE_FILTER,
-    ),
     sampleValidationPeriods: DEFAULT_SAMPLE_VALIDATION_PERIODS.map(
       (period) => ({ ...period }),
     ),
@@ -987,19 +986,17 @@ function MovingAverageSlopeFilterFields({
   namePrefix,
   onChange,
   disabled = false,
-  context,
   intraday = false,
 }: {
   draft: MovingAverageSlopeFilterDraft;
   namePrefix: string;
   onChange: (draft: MovingAverageSlopeFilterDraft) => void;
   disabled?: boolean;
-  context: "lab" | "screening";
   intraday?: boolean;
 }) {
   const controlsDisabled = disabled || !draft.enabled;
   return (
-    <fieldset className={`entry-filter-fields ${context}`}>
+    <fieldset className="entry-filter-fields lab">
       <legend>{copy.entryFilter.title}</legend>
       <label className="entry-filter-toggle">
         <input
@@ -1009,47 +1006,13 @@ function MovingAverageSlopeFilterFields({
           disabled={disabled}
           onChange={(event) =>
             onChange({
-              ...(context === "screening"
-                ? DEFAULT_MOVING_AVERAGE_SLOPE_FILTER
-                : draft),
+              ...draft,
               enabled: event.target.checked,
             })
           }
         />
         <span>{copy.entryFilter.enabled}</span>
       </label>
-      {context === "screening" ? (
-        <div
-          className={`entry-filter-inputs screening-fixed ${controlsDisabled ? "disabled" : ""}`}
-        >
-          <label>
-            <span>{copy.entryFilter.movingAverageType}</span>
-            <output>EMA</output>
-          </label>
-          <label>
-            <span>
-              {intraday
-                ? copy.entryFilter.periodBars
-                : copy.entryFilter.period}
-            </span>
-            <output>
-              {SCREENING_MOVING_AVERAGE_SLOPE_PERIODS[0]}
-              {"–"}
-              {SCREENING_MOVING_AVERAGE_SLOPE_PERIODS.at(-1)}
-            </output>
-          </label>
-          <label>
-            <span>
-              {intraday
-                ? copy.entryFilter.minimumSlopeBars
-                : copy.entryFilter.minimumSlope}
-            </span>
-            <output>
-              {SCREENING_MOVING_AVERAGE_SLOPE_MINIMUM_PERCENT}%
-            </output>
-          </label>
-        </div>
-      ) : (
         <div className="entry-filter-inputs">
           <label>
             <span>{copy.entryFilter.movingAverageType}</span>
@@ -1114,17 +1077,25 @@ function MovingAverageSlopeFilterFields({
             />
           </label>
         </div>
-      )}
     </fieldset>
   );
 }
 
 export function MarketWorkspace() {
+  const validatedCycles = useValidatedCycles();
+  const [activeValidatedKey, setActiveValidatedKey] = useState<string | null>(null);
+  const [validatedChartOpenRevision, setValidatedChartOpenRevision] = useState(0);
+  const [savedChartOpenRevision, setSavedChartOpenRevision] = useState(0);
+  const [cycleSyncNotice, setCycleSyncNotice] = useState("");
+  const [cycleSyncNeedsRepair, setCycleSyncNeedsRepair] = useState(false);
   const [instrument, setInstrument] =
     useState<MarketInstrument>(defaultInstrument);
   const [seriesState, setSeries] = useState<MarketSeries | null>(null);
   const series = isMarketSeries(seriesState) ? seriesState : null;
   const [researchInterval] = useState<WorkspaceInterval>(DAILY_INTERVAL);
+  const activeValidated = validatedCycles.records.find((record) => record.key === activeValidatedKey &&
+    canonicalMarketInstrumentKey(record.series.instrument) === canonicalMarketInstrumentKey(series?.instrument ?? instrument) &&
+    researchInterval === DAILY_INTERVAL);
   const [chartType, setChartType] = useState<"candlestick" | "line">(
     "candlestick",
   );
@@ -1199,7 +1170,16 @@ export function MarketWorkspace() {
   const [shortcutRefreshRequestVersion, setShortcutRefreshRequestVersion] =
     useState(0);
   const [screening, setScreening] = useState(false);
-  const smaOverlay = useSmaPositionOverlayPreferences("research");
+  const smaOverlay = useSmaPositionOverlayPreferences();
+  useEffect(() => {
+    if (!series || !smaOverlay.ready) return;
+    let disposed = false;
+    void seedCompletedValidatedCycles(series, smaOverlay.settings).catch((error) => {
+      if (!disposed) setCycleSyncNotice(copy.validatedCycle.errors[
+        error instanceof ValidatedCycleError ? error.code : "storage"]);
+    });
+    return () => { disposed = true; };
+  }, [series, smaOverlay.ready, smaOverlay.settings]);
   const [screeningError, setScreeningError] = useState<
     ScreeningValidationErrorCode | "volume-unavailable" | "run" | ""
   >("");
@@ -1212,12 +1192,6 @@ export function MarketWorkspace() {
     useState<ScreeningObjective>("totalReturn");
   const [screeningValidationMode, setScreeningValidationMode] =
     useState<ScreeningValidationMode>("sample");
-  const [screeningEntryFilterDraft, setScreeningEntryFilterDraft] = useState(
-    () =>
-      createMovingAverageSlopeFilterDraft(
-        DEFAULT_MOVING_AVERAGE_SLOPE_FILTER,
-      ),
-  );
   const [sampleValidationPeriods, setSampleValidationPeriods] =
     useState<ScreeningSamplePeriodConfig[]>(() =>
       DEFAULT_SAMPLE_VALIDATION_PERIODS.map((period) => ({
@@ -1373,6 +1347,20 @@ export function MarketWorkspace() {
     () => groupSavedBacktests(savedBacktests),
     [savedBacktests],
   );
+  const cyclesForInstrument = (target: MarketInstrument) => validatedCycles.records.filter((record) =>
+    canonicalMarketInstrumentKey(record.series.instrument) === canonicalMarketInstrumentKey(target));
+  const orphanCycles = validatedCycles.records.filter((record) => !savedBacktestGroups.some((group) =>
+    canonicalMarketInstrumentKey(record.series.instrument) === canonicalMarketInstrumentKey(group.instrument)));
+  const expandedCycleGroupsRef = useRef(new Set<string>());
+  useEffect(() => {
+    const keys = savedBacktestGroups.filter((group) => validatedCycles.records.some((record) =>
+      canonicalMarketInstrumentKey(record.series.instrument) === canonicalMarketInstrumentKey(group.instrument)) &&
+      !expandedCycleGroupsRef.current.has(group.key)).map((group) => group.key);
+    if (keys.length) {
+      keys.forEach((key) => expandedCycleGroupsRef.current.add(key));
+      setExpandedSavedBacktestGroups((current) => [...new Set([...current, ...keys])]);
+    }
+  }, [savedBacktestGroups, validatedCycles.records]);
   const availableStrategies = useMemo(
     () => getStrategiesForInterval(researchInterval),
     [researchInterval],
@@ -2828,7 +2816,7 @@ export function MarketWorkspace() {
     });
   }, [appliedChartRange, endDate, series, startDate]);
   const appliedChartFocusRange =
-    appliedChartRange.kind === "screening"
+    activeValidated ? validatedCycleFocusRange(activeValidated) : appliedChartRange.kind === "screening" || appliedChartRange.kind === "saved-recent"
       ? encompassingScreeningWindow(appliedChartWindows)
       : null;
   const primaryAppliedChartWindow = appliedChartWindows.at(-1) ?? null;
@@ -3324,6 +3312,7 @@ export function MarketWorkspace() {
   };
 
   const applyCurrentStrategyToChart = () => {
+    setActiveValidatedKey(null);
     setAppliedChartRange({ kind: "workspace" });
     setAppliedStrategyPlan(cloneStrategyPlan(strategyPlan));
     scrollToStrategyChart();
@@ -3337,8 +3326,8 @@ export function MarketWorkspace() {
     shouldScrollToChart = true,
     positionOverlay: BacktestSettings["positionOverlay"] = smaOverlay.settings,
   ) => {
-    smaOverlay.setOptions(positionOverlay ?? {});
     const next = getStrategy(nextStrategyId);
+    setActiveValidatedKey(null);
     const mergedParameters = {
       ...next.defaultParameters,
       ...nextParameters,
@@ -3615,7 +3604,7 @@ export function MarketWorkspace() {
     screeningWindows?: ScreeningDateWindow[],
     shouldScrollToChart = true,
   ) => {
-    smaOverlay.setOptions(result.positionOverlay ?? {});
+    setActiveValidatedKey(null);
     setStrategyAId(result.strategyAId);
     setStrategyAParameters({ ...result.strategyAParameters });
     setStrategyBId(result.strategyBId);
@@ -3851,7 +3840,6 @@ export function MarketWorkspace() {
     screeningObjective,
     screenResultsObjective,
     screeningValidationMode,
-    screeningEntryFilterDraft: { ...screeningEntryFilterDraft },
     sampleValidationPeriods: sampleValidationPeriods.map((period) => ({
       ...period,
     })),
@@ -3894,7 +3882,6 @@ export function MarketWorkspace() {
     setScreeningObjective(snapshot.screeningObjective);
     setScreenResultsObjective(snapshot.screenResultsObjective);
     setScreeningValidationMode(snapshot.screeningValidationMode);
-    setScreeningEntryFilterDraft({ ...snapshot.screeningEntryFilterDraft });
     setSampleValidationPeriods(
       snapshot.sampleValidationPeriods.map((period) => ({ ...period })),
     );
@@ -4019,6 +4006,8 @@ export function MarketWorkspace() {
   };
 
   const openSavedBacktest = (saved: SavedBacktestRecord) => {
+    setActiveValidatedKey(null);
+    setSavedChartOpenRevision((current) => current + 1);
     const savedWorkspaceInterval = DAILY_INTERVAL;
     const restoredStrategyB =
       saved.plan.strategyA &&
@@ -4067,7 +4056,6 @@ export function MarketWorkspace() {
       clearMarketSeries();
       setRefreshVersion((value) => value + 1);
     }
-    smaOverlay.setOptions(saved.plan.positionOverlay ?? {});
     setStrategyAId(saved.plan.strategyA?.strategyId ?? "");
     setStrategyAParameters(
       saved.plan.strategyA ? { ...saved.plan.strategyA.parameters } : {},
@@ -4740,7 +4728,7 @@ export function MarketWorkspace() {
       initialCash,
       commissionPercent,
       slippagePercent,
-      entryFilterEnabled: screeningEntryFilterDraft.enabled,
+      entryFilterEnabled: false,
     });
     const configSignature = smaOverlay.settings
       ? JSON.stringify([baseConfigSignature, smaOverlay.settings]) : baseConfigSignature;
@@ -4840,9 +4828,7 @@ export function MarketWorkspace() {
               interval: DAILY_INTERVAL,
               executionPolicy: HISTORICAL_EXECUTION_POLICY,
               positionOverlay: smaOverlay.settings,
-              entryFilter: activeMovingAverageSlopeFilter(
-                screeningEntryFilterDraft,
-              ),
+              entryFilter: null,
             },
             {
               mode: "sample",
@@ -4851,9 +4837,6 @@ export function MarketWorkspace() {
             {
               objective: screeningObjective,
               checkpointNamespace: `${instrumentKey}:1d:shortcut-batch:${sessions}:${batchRunId}`,
-              entryFilters: screeningEntryFilterDraft.enabled
-                ? buildScreeningMovingAverageSlopeFilters()
-                : undefined,
               excludedStrategyIds: hasReliableVolume
                 ? undefined
                 : VOLUME_REQUIRED_STRATEGY_IDS,
@@ -4872,6 +4855,7 @@ export function MarketWorkspace() {
             screeningObjective,
           );
           if (!best) throw new Error("NO_SCREENING_RESULT");
+          await syncValidatedWinner(marketSeries, sessions, best, screeningObjective);
           const plan =
             best.kind === "single"
               ? singleResultPlan(best.result)
@@ -5057,6 +5041,29 @@ export function MarketWorkspace() {
     }
   };
 
+  const syncValidatedWinner = async (marketSeries: MarketSeries, sessions: number,
+    best: ReturnType<typeof selectBestShortcutScreeningResult>, objective: ScreeningObjective) => {
+    if (!best || marketSeries.interval !== DAILY_INTERVAL || !isNikkeiCycleInstrument(marketSeries.instrument)) return;
+    try {
+      await seedCompletedValidatedCycles(marketSeries, smaOverlay.settings);
+      const status = await appendValidatedCycle(marketSeries, {
+        decisionIndex: marketSeries.bars.length - 1,
+        decisionTime: marketSeries.bars.at(-1)!.time,
+        screeningWindow: sessions,
+        plan: best.kind === "single" ? singleResultPlan(best.result) : combinationResultPlan(best.result),
+        fixedRelativeLongStrategy: best.kind === "combination" ? best.result.relativeLongStrategy ?? null : null,
+        label: "Research screening winner",
+      }, `research:${objective}`);
+      setCycleSyncNeedsRepair(false);
+      setCycleSyncNotice(status === "absent" ? "" : copy.validatedCycle[status]);
+    } catch (error) {
+      const code = error instanceof ValidatedCycleError ? error.code : "storage";
+      setCycleSyncNeedsRepair(code === "gap" || code === "history");
+      setCycleSyncNotice(copy.validatedCycle.errors[code] +
+        (error instanceof ValidatedCycleError && code === "gap" ? error.dates.join(", ") : ""));
+    }
+  };
+
   const startScreening = async () => {
     if (!series?.bars.length) return;
     if (screeningBlockedByVolume) {
@@ -5134,9 +5141,7 @@ export function MarketWorkspace() {
           endTime: endDate,
           interval: researchInterval,
           executionPolicy: HISTORICAL_EXECUTION_POLICY,
-          entryFilter: activeMovingAverageSlopeFilter(
-            screeningEntryFilterDraft,
-          ),
+          entryFilter: null,
         };
       const outcome = await runScreeningInWorker(
         runSeries.bars,
@@ -5145,9 +5150,6 @@ export function MarketWorkspace() {
         {
           objective: runObjective,
           checkpointNamespace: `${runInstrumentKey}:${researchInterval}`,
-          entryFilters: screeningEntryFilterDraft.enabled
-            ? buildScreeningMovingAverageSlopeFilters()
-            : undefined,
           excludedStrategyIds: reliableVolume
             ? undefined
             : VOLUME_REQUIRED_STRATEGY_IDS,
@@ -5162,6 +5164,11 @@ export function MarketWorkspace() {
       );
 
       if (screeningAbortRef.current !== controller) return;
+      if (validationConfig.mode === "sample" && validationConfig.periods.length === 1 &&
+        (!endDate || endDate >= latestDate)) {
+        await syncValidatedWinner(runSeries, validationConfig.periods[0]!.sessions,
+          selectBestShortcutScreeningResult(outcome.singleResults, outcome.results, runObjective), runObjective);
+      }
       const completedProgress = {
         ...screenProgressRef.current,
         completed: outcome.evaluatedCount,
@@ -5244,6 +5251,7 @@ export function MarketWorkspace() {
   };
 
   const chooseInstrument = (nextInstrument: MarketInstrument) => {
+    setActiveValidatedKey(null);
     clearScreeningPresentationForInstrumentChange();
     for (const interval of [DAILY_INTERVAL, INTRADAY_INTERVAL] as const) {
       const snapshot = intervalResearchSnapshotsRef.current[interval];
@@ -5285,6 +5293,14 @@ export function MarketWorkspace() {
     : 0;
   const activeInstrument = series?.instrument ?? instrument;
   const activeInstrumentKey = savedBacktestInstrumentKey(activeInstrument);
+  const openValidatedCycle = (record: ValidatedCycleStrategy) => {
+    if (canonicalMarketInstrumentKey(activeInstrument) !== canonicalMarketInstrumentKey(record.series.instrument)) {
+      chooseInstrument(record.series.instrument);
+    }
+    setActiveValidatedKey(record.key);
+    setValidatedChartOpenRevision((current) => current + 1);
+    scrollToStrategyChart();
+  };
   const sharedRangeSessions =
     sampleValidationPeriods[0]?.sessions ??
     DEFAULT_SAMPLE_VALIDATION_SESSIONS;
@@ -6335,7 +6351,7 @@ export function MarketWorkspace() {
             </div>
           </div>
 
-          <div className="chart-stage">
+          <div className="chart-stage" title={copy.chart.zoomHint}>
             {loading && !series && (
               <div className="chart-state">
                 <LoaderCircle className="spin" size={22} />
@@ -6358,25 +6374,27 @@ export function MarketWorkspace() {
               </div>
             )}
              {series && (
+              <>
               <Suspense fallback={<div className="chart-state" />}>
                <PriceChart
-                bars={series.bars}
+                bars={activeValidated?.series.bars ?? series.bars}
                 interval={researchInterval}
                 trades={
-                  appliedBacktest && "trades" in appliedBacktest
+                  !activeValidated && appliedBacktest && "trades" in appliedBacktest
                     ? appliedBacktest.trades
                     : EMPTY_PRICE_CHART_TRADES
                 }
-                tradeMarkers={appliedTradeMarkers}
-                dataKey={`${activeInstrument.provider}:${activeInstrument.secid}:${researchInterval}`}
+                tradeMarkers={activeValidated ? buildAllocationTradeMarkers(activeValidated.report.rebalances) : appliedTradeMarkers}
+                dataKey={activeValidated ? `validated:${activeValidated.key}:${validatedChartOpenRevision}` : `${activeInstrument.provider}:${activeInstrument.secid}:${researchInterval}${appliedChartRange.kind === "saved-recent" ? `:shortcut:${savedChartOpenRevision}` : ""}`}
                 focusRange={appliedChartFocusRange}
                 chartType={chartType}
                 visibleIndicators={chartIndicators}
-                strategyConfigurations={strategyConfigurations}
+                strategyConfigurations={activeValidated ? [] : strategyConfigurations}
                 ariaLabel={copy.chart.aria}
                 labels={priceChartLabels}
                />
               </Suspense>
+              </>
              )}
              {errorCode && series && (
                <div className="chart-refresh-warning" role="status">
@@ -6392,7 +6410,7 @@ export function MarketWorkspace() {
                </div>
              )}
            </div>
-          {selectedChartResultGroup && selectedChartResult && (
+          {!activeValidated && selectedChartResultGroup && selectedChartResult && (
             <nav
               className="chart-result-navigator"
               aria-label={copy.screening.resultNavigator}
@@ -6509,6 +6527,16 @@ export function MarketWorkspace() {
             className="saved-backtest-shortcuts"
             aria-label={copy.savedBacktests.title}
           >
+            {validatedCycles.error && <div role="alert">{copy.validatedCycle.errors.storage}</div>}
+            {orphanCycles.length > 0 && <div className="saved-shortcut-group">
+              <strong>{orphanCycles[0]!.series.instrument.name}</strong>
+              <ValidatedCycleShortcuts records={orphanCycles} error={false} embedded
+                activeKey={activeValidatedKey} onOpen={openValidatedCycle} />
+            </div>}
+            {cycleSyncNotice && <div className="saved-shortcuts-state" role="status">
+              {cycleSyncNotice}
+              {cycleSyncNeedsRepair && <Link href="/strategy-validation">{copy.validatedCycle.repair}</Link>}
+            </div>}
             {savedBacktestsLoading ? (
               <div className="saved-shortcuts-state">
                 <LoaderCircle className="spin" size={14} />
@@ -6823,6 +6851,8 @@ export function MarketWorkspace() {
                           className="saved-shortcut-group-records"
                           id={groupPanelId}
                         >
+                          <ValidatedCycleShortcuts records={cyclesForInstrument(group.instrument)} error={false} embedded
+                            activeKey={activeValidatedKey} onOpen={openValidatedCycle} />
                           {strategyShortcutSectionsForGroup(group).map(
                             (strategySection) => {
                               const strategyFolderExpanded =
@@ -7384,7 +7414,6 @@ export function MarketWorkspace() {
                     onChange={setStrategyAParameters}
                   />
                   <MovingAverageSlopeFilterFields
-                    context="lab"
                     namePrefix="strategy-a-entry-filter"
                     draft={strategyAEntryFilterDraft}
                     onChange={setStrategyAEntryFilterDraft}
@@ -7439,7 +7468,6 @@ export function MarketWorkspace() {
                     onChange={setStrategyBParameters}
                   />
                   <MovingAverageSlopeFilterFields
-                    context="lab"
                     namePrefix="strategy-b-entry-filter"
                     draft={strategyBEntryFilterDraft}
                     onChange={setStrategyBEntryFilterDraft}
@@ -7491,7 +7519,6 @@ export function MarketWorkspace() {
                     onChange={setStrategyCParameters}
                   />
                   <MovingAverageSlopeFilterFields
-                    context="lab"
                     namePrefix="strategy-c-entry-filter"
                     draft={strategyCEntryFilterDraft}
                     onChange={setStrategyCEntryFilterDraft}
@@ -7942,18 +7969,8 @@ export function MarketWorkspace() {
                       ))}
                     </select>
                   </label>
-                  <SmaPositionOverlayControls options={smaOverlay.options} onChange={smaOverlay.setOptions}
-                    disabled={screeningBusy || !smaOverlay.ready} error={smaOverlay.error} />
                 </div>
               </fieldset>
-              <MovingAverageSlopeFilterFields
-                context="screening"
-                namePrefix="screening-entry-filter"
-                draft={screeningEntryFilterDraft}
-                onChange={setScreeningEntryFilterDraft}
-                disabled={screeningBusy}
-                intraday={researchInterval === INTRADAY_INTERVAL}
-              />
               <fieldset className="screening-config-group screening-validation-group">
                 <legend>{copy.screening.validationGroup}</legend>
                 <label className="screening-control-field screening-validation-mode">
@@ -7998,10 +8015,9 @@ export function MarketWorkspace() {
                   </select>
                 </label>
               {screeningValidationMode === "sample" && (
-                <fieldset className="screening-sample-windows">
-                  <legend>{copy.screening.samplePeriodsTitle}</legend>
-                  <label className="screening-sample-period-field">
+                  <label className="screening-control-field screening-sample-period-field">
                     <span>
+                      {copy.screening.samplePeriodsTitle} · {" "}
                       {researchInterval === INTRADAY_INTERVAL
                         ? copy.screening.samplePeriodBars
                         : copy.screening.samplePeriodSessions}
@@ -8017,7 +8033,6 @@ export function MarketWorkspace() {
                       onCommit={updateSharedRangeFromSessions}
                     />
                   </label>
-                </fieldset>
               )}
               {screeningValidationMode === "multi-range" && (
                 <fieldset className="screening-date-windows multi-range">
@@ -8225,6 +8240,10 @@ export function MarketWorkspace() {
                   )}
                 </fieldset>
               )}
+              </fieldset>
+              <fieldset className="screening-config-group screening-entry-group">
+                <legend>{copy.screening.entryGroup}</legend>
+                <SmaPositionOverlayControls />
               </fieldset>
             </div>
             <div className="screening-action-field">

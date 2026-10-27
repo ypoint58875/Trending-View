@@ -34,6 +34,13 @@ export class LocalScreeningEngineProtocolError extends Error {
   }
 }
 
+export class LocalScreeningEngineSubmissionError extends Error {
+  constructor(readonly status: number, readonly detail: string) {
+    super(`Local screening queue submission failed (HTTP ${status}): ${detail}`);
+    this.name = "LocalScreeningEngineSubmissionError";
+  }
+}
+
 function abortError() {
   return new DOMException("Screening cancelled", "AbortError");
 }
@@ -100,16 +107,16 @@ export async function enqueueScreeningBatchInLocalEngine(
   bars: MarketBar[],
   jobs: LocalScreeningJobBatchUnit[],
   signal?: AbortSignal,
+  onEnqueued?: (jobIds: string[], offset: number) => Promise<void> | void,
 ): Promise<string[] | null> {
   if (signal?.aborted) throw abortError();
-  // Candidate tuples are repeated per unit in the compatible wire format.
-  // Bound uploads without changing ordinary batches or the coordinator protocol.
-  if (jobs.length > 64 && jobs.some((job) => job.options.candidates)) {
+  if (jobs.length > 64) {
     const jobIds: string[] = [];
     for (let offset = 0; offset < jobs.length; offset += 64) {
       const chunk = await enqueueScreeningBatchInLocalEngine(bars, jobs.slice(offset, offset + 64), signal);
       if (!chunk) return null;
       jobIds.push(...chunk);
+      await onEnqueued?.(chunk, offset);
     }
     return jobIds;
   }
@@ -118,6 +125,7 @@ export async function enqueueScreeningBatchInLocalEngine(
     bars,
     jobs,
   });
+  let jobIds: string[] | null;
   try {
     const response = await fetch(
       `${LOCAL_SCREENING_ENGINE_URL}/screening/job-batches`,
@@ -128,13 +136,19 @@ export async function enqueueScreeningBatchInLocalEngine(
         signal,
       },
     );
-    if (!response.ok) return null;
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: unknown } | null;
+      const detail = typeof payload?.error === "string" ? payload.error.slice(0, 200) : "HTTP_ERROR";
+      throw new LocalScreeningEngineSubmissionError(response.status, detail);
+    }
     const created = (await response.json()) as { jobIds?: string[] };
-    return created.jobIds?.length === jobs.length ? created.jobIds : null;
+    jobIds = created.jobIds?.length === jobs.length ? created.jobIds : null;
   } catch (error) {
-    if ((error as Error).name === "AbortError") throw error;
+    if ((error as Error).name === "AbortError" || error instanceof LocalScreeningEngineSubmissionError) throw error;
     return null;
   }
+  if (jobIds) await onEnqueued?.(jobIds, 0);
+  return jobIds;
 }
 
 export async function enqueueScreeningInLocalEngine(

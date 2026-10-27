@@ -1,5 +1,9 @@
 "use client";
 import { SmaPositionOverlayControls, useSmaPositionOverlayPreferences } from "../components/SmaPositionOverlayControls";
+import { ValidatedCycleShortcuts, useValidatedCycles } from "../components/ValidatedCycleShortcuts";
+import { assertValidatedCycleHistory, createValidatedCycleStrategy, ValidatedCycleError, type ValidatedCycleStrategy } from "@/lib/analysis/validated-cycle-strategy";
+import { publishValidatedCycle, readValidatedCycles } from "@/lib/analysis/validated-cycle-strategy-store";
+import { validatedCycleRulesMatch } from "@/lib/analysis/validated-cycle-preview";
 
 import {
   Activity,
@@ -45,6 +49,7 @@ import {
   enqueueScreeningBatchInLocalEngine,
   holdScreeningBatchLeaseInLocalEngine,
   LocalScreeningEngineProtocolError,
+  LocalScreeningEngineSubmissionError,
   localScreeningEngineAvailable,
   screeningJobRequest,
   waitForScreeningBatchInLocalEngine,
@@ -190,6 +195,7 @@ function taskSignature(input: {
 
 export function StrategyValidationWorkspace() {
   const c = copy.cycleValidation;
+  const validatedCycles = useValidatedCycles();
   const [records, setRecords] = useState<SavedBacktestRecord[]>([]);
   const [selectedKey, setSelectedKey] = useState("");
   const [evaluationSessions, setEvaluationSessions] = useState(
@@ -200,7 +206,7 @@ export function StrategyValidationWorkspace() {
   const [screeningWindowMaximum, setScreeningWindowMaximum] = useState(CYCLE_DAILY_SCREENING_WINDOW);
   const [screeningWindowStep, setScreeningWindowStep] = useState(2);
   const maxCombinationStrategies = CYCLE_MAX_COMBINATION_STRATEGIES;
-  const smaOverlay = useSmaPositionOverlayPreferences("cycle");
+  const smaOverlay = useSmaPositionOverlayPreferences();
   const reportInputsRef = useRef<{
     series: MarketSeries; snapshots: StrategyCycleSelectionSnapshot[]; sessions: number; windows: readonly number[];
     costs?: { initialCash: number; commissionPercent: number; slippagePercent: number };
@@ -210,11 +216,14 @@ export function StrategyValidationWorkspace() {
   const [commissionPercent, setCommissionPercent] = useState(0.03);
   const [slippagePercent, setSlippagePercent] = useState(0.02);
   const [loading, setLoading] = useState(true);
+  const [shortcutsReady, setShortcutsReady] = useState(false);
+  const [shortcutLoadError, setShortcutLoadError] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState<ProgressState | null>(null);
   const [storedTask, setStoredTask] = useState<StoredStrategyCycleValidationTask | null>(null);
   const [rollingReports, setRollingReports] = useState<StrategyCycleRollingReport[]>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [selectedReportWindow, setSelectedReportWindow] = useState(CYCLE_DAILY_SCREENING_WINDOW);
   const [reportBars, setReportBars] = useState<MarketSeries["bars"]>([]);
   const [monitoringRanges, setMonitoringRanges] = useState<CycleMonitoringRange[]>(
@@ -228,9 +237,17 @@ export function StrategyValidationWorkspace() {
   const restoredReportSignatureRef = useRef("");
   const autoResumeSignatureRef = useRef("");
 
-  const groups = useMemo(() => groupSavedBacktests(records).filter(
-    (group) => isNikkeiCycleInstrument(group.instrument),
-  ), [records]);
+
+  const groups = useMemo(() => {
+    const result = groupSavedBacktests(records).filter((group) => isNikkeiCycleInstrument(group.instrument));
+    const localInstruments = [storedTask?.instrument, ...validatedCycles.records.map((record) => record.series.instrument)];
+    for (const instrument of localInstruments) {
+      if (!instrument || !isNikkeiCycleInstrument(instrument)) continue;
+      const key = savedBacktestInstrumentKey(instrument);
+      if (!result.some((group) => group.key === key)) result.push({ key, instrument, instrumentFolderId: null, records: [] });
+    }
+    return result;
+  }, [records, storedTask?.instrument, validatedCycles.records]);
   const selectedGroup = groups.find((group) => group.key === selectedKey) ?? groups[0] ?? null;
   const screeningWindows = useMemo(
     () => buildCycleScreeningWindows(screeningWindow, screeningWindowMaximum, screeningWindowStep),
@@ -262,25 +279,16 @@ export function StrategyValidationWorkspace() {
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      fetch("/api/saved-backtests", { cache: "no-store" }).then((response) => response.json()),
-      readLatestStrategyCycleValidationTask(),
-    ]).then(([payload, restoredTask]) => {
+    void readLatestStrategyCycleValidationTask().then((restoredTask) => {
       if (!active) return;
       const task = restoredTask?.signature.includes(`"rollingSchedule":"${NIKKEI_CYCLE_MODEL}"`)
         && restoredTask.signature.includes(`"conflictPolicy":"${NIKKEI_CYCLE_CONFLICT_POLICY}"`)
         && isNikkeiCycleInstrument(restoredTask.instrument)
         ? restoredTask
         : null;
-      const nextRecords = (payload as { savedBacktests?: SavedBacktestRecord[] }).savedBacktests ?? [];
-      setRecords(nextRecords);
       setStoredTask(task);
       queuedJobIdsRef.current = task?.queuedUnits.map((unit) => unit.jobId) ?? [];
-      const nextGroups = groupSavedBacktests(nextRecords).filter(
-        (group) => isNikkeiCycleInstrument(group.instrument),
-      );
-      const restoredKey = task ? savedBacktestInstrumentKey(task.instrument) : "";
-      setSelectedKey(nextGroups.some((group) => group.key === restoredKey) ? restoredKey : nextGroups[0]?.key ?? "");
+      if (task) setSelectedKey(savedBacktestInstrumentKey(task.instrument));
       if (task) {
         const restoredWindow = task.screeningWindows[0] ?? CYCLE_DAILY_SCREENING_WINDOW;
         setScreeningWindow(restoredWindow);
@@ -304,7 +312,7 @@ export function StrategyValidationWorkspace() {
       setLoading(false);
     }).catch(() => {
       if (active) {
-        setError(c.loadError);
+        setError(c.restoreError);
         setLoading(false);
       }
     });
@@ -312,7 +320,24 @@ export function StrategyValidationWorkspace() {
       active = false;
       abortRef.current?.abort();
     };
-  }, [c.loadError]);
+  }, [c.restoreError]);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 10_000);
+    void fetch("/api/saved-backtests", { cache: "no-store", signal: controller.signal }).then(async (response) => {
+      if (!response.ok) throw new Error("PERSISTENCE_UNAVAILABLE");
+      const payload = await response.json() as { savedBacktests?: SavedBacktestRecord[] };
+      if (!controller.signal.aborted) setRecords(payload.savedBacktests ?? []);
+    }).catch(() => {
+      if (active) setShortcutLoadError(true);
+    }).finally(() => {
+      window.clearTimeout(timer);
+      if (active) setShortcutsReady(true);
+    });
+    return () => { active = false; window.clearTimeout(timer); controller.abort(); };
+  }, []);
 
   useEffect(() => {
     if (!selectedGroup) {
@@ -380,6 +405,11 @@ export function StrategyValidationWorkspace() {
     ));
     setReportBars(series.bars.slice(schedule.evaluationStartIndex, schedule.evaluationEndIndex + 1));
     setRollingReports(reports);
+    void Promise.all(windows.map((window) => publishValidatedCycle(
+      createValidatedCycleStrategy(series, snapshots, sessions, window, settings),
+    ))).catch((caught) => {
+      setError(copy.validatedCycle.errors[caught instanceof ValidatedCycleError ? caught.code : "storage"]);
+    });
     setSelectedReportWindow((current) =>
       windows.includes(current) ? current : windows[0] ?? CYCLE_DAILY_SCREENING_WINDOW,
     );
@@ -396,6 +426,10 @@ export function StrategyValidationWorkspace() {
       storedTask.status !== "completed" ||
       rollingReports.length > 0 ||
       running ||
+      !smaOverlay.ready ||
+      !validatedCycles.ready ||
+      validatedCycles.records.some((record) => record.screeningWindow === selectedReportWindow &&
+        resolveCanonicalMarketProfile(record.series.instrument).key === resolveCanonicalMarketProfile(storedTask.instrument).key) ||
       restoredReportSignatureRef.current === storedTask.signature
     ) {
       return;
@@ -406,6 +440,9 @@ export function StrategyValidationWorkspace() {
       storedTask.instrument,
       controller.signal,
     ).then((series) => {
+      const signature = JSON.parse(storedTask.signature) as { lastBar: string; barCount: number };
+      series = { ...series, bars: series.bars.filter((bar) => bar.time <= signature.lastBar) };
+      if (series.bars.length !== signature.barCount) throw new Error(c.staleTask);
       if (taskSignature({
         instrument: storedTask.instrument,
         series,
@@ -433,12 +470,32 @@ export function StrategyValidationWorkspace() {
       setError(caught instanceof Error ? caught.message : c.marketError);
     });
     return () => controller.abort();
-  }, [c.marketError, c.staleTask, calculateReports, rollingReports.length, running, storedTask]);
+  }, [c.marketError, c.staleTask, calculateReports, rollingReports.length, running, storedTask,
+    validatedCycles.ready, validatedCycles.records, selectedReportWindow, smaOverlay.ready]);
+
+  const showValidatedCycle = useCallback((record: ValidatedCycleStrategy) => {
+    reportInputsRef.current = null;
+    setReportBars(record.series.bars.filter((bar) => bar.time >= record.startTime));
+    setSelectedReportWindow(record.screeningWindow);
+    const synchronized = validatedCycleRulesMatch(record, smaOverlay.settings);
+    setPreviewLoading(!synchronized);
+    setRollingReports(synchronized ? [record.report] : []);
+  }, [smaOverlay.settings]);
+
+  useEffect(() => {
+    if (running || loading || !smaOverlay.ready) return;
+    const instrument = selectedGroup?.instrument ?? storedTask?.instrument;
+    const profiles = validatedCycles.records.filter((record) => instrument &&
+      resolveCanonicalMarketProfile(record.series.instrument).key === resolveCanonicalMarketProfile(instrument).key);
+    const profile = profiles.find((record) => record.screeningWindow === selectedReportWindow) ?? (!storedTask ? profiles[0] : undefined);
+    if (profile) showValidatedCycle(profile);
+  }, [validatedCycles.records, loading, running, selectedReportWindow, selectedGroup, storedTask, showValidatedCycle, smaOverlay.ready]);
 
   const start = useCallback(async () => {
     if (!selectedGroup || running) return;
     setError("");
     setRollingReports([]);
+    setPreviewLoading(false);
     setReportBars([]);
     reportInputsRef.current = null;
     const controller = new AbortController();
@@ -454,22 +511,26 @@ export function StrategyValidationWorkspace() {
         true,
       );
       if (screeningWindows.length === 0) throw new Error(c.invalidPeriods);
+      const profiles = (await readValidatedCycles()).filter((record) =>
+        resolveCanonicalMarketProfile(record.series.instrument).key === resolveCanonicalMarketProfile(selectedGroup.instrument).key &&
+        screeningWindows.includes(record.screeningWindow));
+      profiles.forEach((profile) => assertValidatedCycleHistory(profile, series));
+      const profileStart = profiles.map((profile) => series.bars.findIndex((bar) => bar.time === profile.startTime));
+      const runEvaluationSessions = profileStart.length && profileStart.every((index) => index >= 0)
+        ? Math.max(evaluationSessions, series.bars.length - Math.min(...profileStart)) : evaluationSessions;
       const schedule = buildStrategyCycleRollingSchedule(
         series.bars,
-        evaluationSessions,
+        runEvaluationSessions,
         screeningWindows.at(-1)!,
       );
       if (!schedule) throw new Error(c.insufficientHistory);
       const optimizationUnits = schedule.optimizationUnits * screeningWindows.length;
-      if (optimizationUnits > MAX_CYCLE_OPTIMIZATION_UNITS) {
-        throw new Error(c.tooManyUnits.replace("{count}", String(optimizationUnits)));
-      }
       const signature = taskSignature({
         instrument: selectedGroup.instrument,
         series,
         screeningWindows,
         maxCombinationStrategies,
-        evaluationSessions,
+        evaluationSessions: runEvaluationSessions,
         objective,
         initialCash,
         commissionPercent,
@@ -480,18 +541,25 @@ export function StrategyValidationWorkspace() {
           storedTask.queuedUnits.map((unit) => unit.jobId),
         );
       }
-      const reusable = storedTask?.signature === signature ? storedTask.snapshots : [];
+      const reusable = storedTask?.signature === signature ? storedTask.snapshots : profiles.flatMap((profile) =>
+        profile.snapshots.map((snapshot) => ({ ...snapshot,
+          decisionIndex: series.bars.findIndex((bar) => bar.time === snapshot.decisionTime),
+        })).filter((snapshot) => schedule.decisionIndexes.includes(snapshot.decisionIndex)));
       const snapshots = [...reusable];
       const completed = new Set(
         snapshots.map((snapshot) => `${snapshot.screeningWindow}:${snapshot.decisionIndex}`),
       );
+      const pendingUnits = optimizationUnits - completed.size;
+      if (pendingUnits > MAX_CYCLE_OPTIMIZATION_UNITS) {
+        throw new Error(c.tooManyUnits.replace("{count}", String(pendingUnits)));
+      }
       currentTask = {
         signature,
         instrument: selectedGroup.instrument,
         screeningWindows,
         updateIntervals: [],
         maxCombinationStrategies,
-        evaluationSessions,
+        evaluationSessions: runEvaluationSessions,
         objective,
         initialCash,
         commissionPercent,
@@ -583,34 +651,35 @@ export function StrategyValidationWorkspace() {
             });
           }
         }
+        const recordQueued = async (jobIds: string[], offset: number) => {
+          jobIds.forEach((jobId, index) => {
+            const unit = batchUnits[offset + index]!;
+            queuedByKey.set(unit.unitKey, {
+              decisionIndex: unit.decisionIndex,
+              decisionTime: unit.decisionTime,
+              screeningWindow: unit.screeningWindow,
+              jobId,
+            });
+          });
+          if (!currentTask) throw new Error(c.localEngineError);
+          currentTask = { ...currentTask, queuedUnits: [...queuedByKey.values()] };
+          queuedJobIdsRef.current = currentTask.queuedUnits.map(unit => unit.jobId);
+          await writeStrategyCycleValidationTask(currentTask);
+          setStoredTask({ ...currentTask, key: "latest", version: 2, updatedAt: new Date().toISOString() });
+        };
         const jobIds = batchJobs.length
           ? await enqueueScreeningBatchInLocalEngine(
               series.bars,
               batchJobs,
               controller.signal,
+              recordQueued,
             )
           : [];
         if (!jobIds) throw new Error(c.localEngineError);
-        batchUnits.forEach((unit, index) => {
-          const jobId = jobIds[index]!;
-          queuedByKey.set(unit.unitKey, {
-            decisionIndex: unit.decisionIndex,
-            decisionTime: unit.decisionTime,
-            screeningWindow: unit.screeningWindow,
-            jobId,
-          });
-        });
-        currentTask = {
-          ...currentTask,
-          queuedUnits: [...queuedByKey.values()],
-        };
-        queuedJobIdsRef.current = currentTask.queuedUnits.map((unit) => unit.jobId);
         void holdScreeningBatchLeaseInLocalEngine(
           queuedJobIdsRef.current,
           controller.signal,
         );
-        await writeStrategyCycleValidationTask(currentTask);
-        setStoredTask({ ...currentTask, key: "latest", version: 2, updatedAt: new Date().toISOString() });
       }
 
       const recordOutcome = async (
@@ -723,7 +792,7 @@ export function StrategyValidationWorkspace() {
         decisionTime: snapshots.at(-1)?.decisionTime ?? "",
         screeningWindow: snapshots.at(-1)?.screeningWindow ?? 0,
       });
-      calculateReports(series, snapshots, evaluationSessions, screeningWindows);
+      calculateReports(series, snapshots, runEvaluationSessions, screeningWindows);
     } catch (caught) {
       if ((caught as Error).name === "AbortError") {
         if (pauseRequestedRef.current && currentTask) {
@@ -737,8 +806,12 @@ export function StrategyValidationWorkspace() {
       } else {
         const message = caught instanceof ScreeningValidationError
           ? copy.screening.validationErrors[caught.code]
+          : caught instanceof ValidatedCycleError
+          ? copy.validatedCycle.errors[caught.code] + (caught.code === "gap" ? caught.dates.join(", ") : "")
           : caught instanceof LocalScreeningEngineProtocolError
           ? c.localEngineRestartRequired
+          : caught instanceof LocalScreeningEngineSubmissionError
+          ? c.localEngineSubmissionFailed.replace("{status}", String(caught.status)).replace("{detail}", caught.detail)
           : caught instanceof Error
             ? caught.message
             : c.unknownError;
@@ -772,6 +845,7 @@ export function StrategyValidationWorkspace() {
   useEffect(() => {
     if (
       loading ||
+      validatedCycles.upgrading ||
       running ||
       !selectedGroup ||
       storedTask?.status !== "running" ||
@@ -782,9 +856,10 @@ export function StrategyValidationWorkspace() {
     }
     autoResumeSignatureRef.current = storedTask.signature;
     void start();
-  }, [loading, running, selectedGroup, start, storedTask, maxCombinationStrategies]);
+  }, [loading, validatedCycles.upgrading, running, selectedGroup, start, storedTask, maxCombinationStrategies]);
 
   const reset = async () => {
+    setPreviewLoading(false);
     pauseRequestedRef.current = true;
     abortRef.current?.abort();
     await cancelScreeningInLocalEngine(
@@ -818,13 +893,16 @@ export function StrategyValidationWorkspace() {
 
       <section className="cycle-validation-layout">
         <aside className="cycle-settings panel">
+          <ValidatedCycleShortcuts records={validatedCycles.records} error={validatedCycles.error}
+            onOpen={running ? undefined : showValidatedCycle} />
           <div className="panel-heading"><div><span className="eyebrow">{c.settingsEyebrow}</span><strong>{c.settingsTitle}</strong></div></div>
-          {loading ? <p className="cycle-muted"><LoaderCircle className="spin" size={15} />{c.loading}</p> : (
+          {loading && <p className="cycle-muted"><LoaderCircle className="spin" size={15} />{c.loading}</p>}
             <div className="cycle-form">
               <label><span>{c.instrument}</span><select value={selectedGroup?.key ?? ""} disabled={running} onChange={(event) => setSelectedKey(event.target.value)}>
                 {groups.map((group) => <option key={group.key} value={group.key}>{group.instrument.name} · {group.instrument.code}</option>)}
               </select></label>
-              {groups.length === 0 && <p className="cycle-warning">{c.noShortcuts}</p>}
+              {shortcutLoadError && <p className="cycle-warning" role="alert">{c.loadError}</p>}
+              {!loading && shortcutsReady && validatedCycles.ready && groups.length === 0 && <p className="cycle-warning">{c.noShortcuts}</p>}
               <div className="cycle-form-row">
                 <label><span>{c.cycleScreeningPeriodStart}</span><CommittedNumberInput value={screeningWindow} min={MIN_CYCLE_SCREENING_WINDOW} max={MAX_CYCLE_SCREENING_WINDOW} step={1} integer disabled={running} onCommit={(value) => { setScreeningWindow(value); setScreeningWindowMaximum((current) => Math.max(current, value)); }} /></label>
                 <label><span>{c.cycleScreeningPeriodEnd}</span><CommittedNumberInput value={screeningWindowMaximum} min={MIN_CYCLE_SCREENING_WINDOW} max={MAX_CYCLE_SCREENING_WINDOW} step={1} integer disabled={running} onCommit={(value) => { setScreeningWindowMaximum(value); setScreeningWindow((current) => Math.min(current, value)); }} /></label>
@@ -839,15 +917,13 @@ export function StrategyValidationWorkspace() {
                 <label><span>{c.commission}</span><input type="number" min={0} step="0.01" value={commissionPercent} disabled={running} onChange={(event) => setCommissionPercent(Math.max(0, Number(event.target.value) || 0))} /></label>
                 <label><span>{c.slippage}</span><input type="number" min={0} step="0.01" value={slippagePercent} disabled={running} onChange={(event) => setSlippagePercent(Math.max(0, Number(event.target.value) || 0))} /></label>
               </div>
-              <SmaPositionOverlayControls options={smaOverlay.options} onChange={smaOverlay.setOptions}
-                disabled={running || loading || !smaOverlay.ready} cycle error={smaOverlay.error} />
               <div className="cycle-actions">
-                <button type="button" className="primary" disabled={running || !selectedGroup} onClick={() => void start()}><Play size={15} />{storedTask ? c.resume : c.start}</button>
+                <button type="button" className="primary" disabled={loading || !validatedCycles.ready || validatedCycles.upgrading || running || !selectedGroup} onClick={() => void start()}><Play size={15} />{storedTask ? c.resume : c.start}</button>
                 <button type="button" disabled={!running} onClick={pause}><Pause size={15} />{c.pause}</button>
                 <button type="button" disabled={running} onClick={() => void reset()}><RotateCcw size={15} />{c.reset}</button>
               </div>
+              <SmaPositionOverlayControls />
             </div>
-          )}
         </aside>
 
         <div className="cycle-results">
@@ -861,6 +937,7 @@ export function StrategyValidationWorkspace() {
           <section className="panel cycle-matrix-card">
             <div className="panel-heading"><div><span className="eyebrow">{c.matrixEyebrow}</span><strong>{c.matrixTitle}</strong></div></div>
             {rollingReport ? <div className="cycle-report-section">
+              <p className="cycle-hint">{c.previewRules.replace("{version}", smaOverlay.settings?.model?.split("-").at(-1) ?? "legacy")}</p>
               <p className="cycle-hint">{c.rollingPeriod.replace("{start}", rollingReport.evaluationStartTime).replace("{end}", rollingReport.evaluationEndTime).replace("{count}", String(rollingReport.decisionCount)).replace("{skipped}", String(rollingReport.skippedDecisionCount)).replace("{window}", String(rollingReport.screeningWindow))}</p>
               <div className="cycle-horizon-grid">{([
                 [c.rollingBenchmark, rollingReport.benchmarkReturn],
@@ -903,7 +980,7 @@ export function StrategyValidationWorkspace() {
                 />
                 <p className="cycle-hint">{c.rollingChartHint}</p>
               </div>
-            </div> : <p className="cycle-empty">{c.noMatrix}</p>}
+            </div> : <p className="cycle-empty">{previewLoading ? c.previewLoading : c.noMatrix}</p>}
           </section>
         </div>
       </section>

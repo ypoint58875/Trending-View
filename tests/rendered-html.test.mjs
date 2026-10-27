@@ -29,15 +29,38 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  for (const name of ["research-ema7-supplemental-entry", "research-sma11-exit-guard", "research-wma14-entry-slope-gate"]) {
-    const input = html.match(new RegExp(`<input[^>]*name="${name}"[^>]*>`))?.[0];
-    assert.ok(input, `${name} must render`);
-    assert.match(input, /checked/);
-  }
+  assert.doesNotMatch(html, /name="research-(?:ema7-supplemental-entry|sma11-exit-guard|wma7-entry-slope-gate)"/);
   assert.match(html, /EMA7/);
   assert.match(html, /SMA11/);
-  assert.match(html, /0\.125%/);
-  assert.match(html, /WMA14/);
+  assert.match(html, /0\.075%/);
+  assert.match(html, /WMA7/);
+  assert.match(html, /补仓至少持有 7 个交易日/);
+  const entryGroup = html.match(/<fieldset[^>]*class="screening-config-group screening-entry-group"[^>]*>([\s\S]*?)<\/fieldset>/)?.[1];
+  assert.ok(entryGroup, "screening entry group must render");
+  assert.match(entryGroup, /<legend>入场过滤<\/legend>/);
+  assert.match(entryGroup, /position-policy-rules/);
+  assert.match(entryGroup, /默认规则 · 全部开启/);
+  assert.match(entryGroup, /SMA20/);
+  assert.match(entryGroup, /累计亏损 ≥ 4%/);
+  assert.match(entryGroup, /第 6 日起/);
+  assert.match(entryGroup, /阳线反包/);
+  assert.match(entryGroup, /<details class="position-policy-detail">/);
+  assert.match(entryGroup, /建仓／加仓/);
+  assert.match(entryGroup, /减仓／清仓/);
+  assert.match(entryGroup, /优先级：风险清仓/);
+  assert.match(entryGroup, /昨日 ATR14 × 2/);
+  assert.match(entryGroup, /EMA7 连续 3 日上升/);
+  assert.match(entryGroup, /空仓反弹的低点怎么算/);
+  assert.equal(entryGroup.match(/<li\b/g)?.length, 8);
+  assert.match(entryGroup, /建仓 E/);
+  assert.match(entryGroup, /RSI7 曾 ≤ 25/);
+  assert.match(entryGroup, /RSI10 &lt; 35/);
+  assert.match(entryGroup, /不绕过持有期或均线保护/);
+  assert.doesNotMatch(entryGroup, /<input/);
+  const optimizationGroup = html.match(/<fieldset[^>]*class="screening-config-group screening-optimization-group"[^>]*>([\s\S]*?)<\/fieldset>/)?.[1];
+  assert.ok(optimizationGroup);
+  assert.doesNotMatch(optimizationGroup, /type="checkbox"/);
+  assert.doesNotMatch(html, /name="screening-entry-filter-enabled"/);
   assert.doesNotMatch(html, /class="[^"]*screening-full-traversal/);
   assert.doesNotMatch(html, /每策略前 3 组参数|screening-quick-toggle/);
   assert.match(html, /<html lang="zh-CN">/i);
@@ -295,8 +318,27 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  // The cycle form appears after browser storage/shortcut hydration, not in its loading HTML.
-  assert.match(workspace, /c\.initialCash[\s\S]*SmaPositionOverlayControls/);
+  assert.match(html, /class="cycle-form"/);
+  assert.doesNotMatch(html, /正在读取回测快捷栏/);
+  const localRestore = workspace.match(/useEffect\(\(\) => \{\s*let active = true;\s*void readLatestStrategyCycleValidationTask\(\)[\s\S]*?\}, \[c\.restoreError\]\);/)?.[0];
+  assert.ok(localRestore);
+  assert.doesNotMatch(localRestore, /fetch\(|Promise\.all|setRecords/);
+  assert.match(localRestore, /setLoading\(false\)/);
+  assert.match(workspace, /localInstruments = \[storedTask\?\.instrument, \.\.\.validatedCycles\.records/);
+  assert.match(workspace, /!validatedCycles\.ready/);
+  assert.match(workspace, /validatedCycles\.records\.some\(\(record\) => record\.screeningWindow === selectedReportWindow/);
+  assert.match(workspace, /\?\? \(!storedTask \? profiles\[0\] : undefined\)/);
+  assert.match(workspace, /validatedCycleRulesMatch\(record, smaOverlay\.settings\)/);
+  assert.match(workspace, /setRollingReports\(synchronized \? \[record\.report\] : \[\]\)/);
+  const validatedShortcuts = await readFile(new URL("../app/components/ValidatedCycleShortcuts.tsx", import.meta.url), "utf8");
+  assert.match(validatedShortcuts, /requestValidatedCyclePreview\(record, DEFAULT_POSITION_OVERLAY_OPTIONS, controller\.signal\)/);
+  assert.match(validatedShortcuts, /promoteValidatedCycleRules\(record, DEFAULT_POSITION_OVERLAY_OPTIONS, preview\)/);
+  assert.match(validatedShortcuts, /text\.rulesUpdating/);
+  const cycleChart = await readFile(new URL("../app/components/StrategyCycleRollingChart.tsx", import.meta.url), "utf8");
+  assert.match(cycleChart, /horizontalPanDirection="content"/);
+  assert.match(locale, /图内 K 线随鼠标同向移动/);
+  assert.match(workspace, /c\.initialCash[\s\S]*c\.reset[\s\S]*<SmaPositionOverlayControls/);
+  assert.match(workspace, /<SmaPositionOverlayControls \/>/);
   assert.doesNotMatch(workspace, /quickScreening|screening-parameter/);
   assert.match(html, /\u7b56\u7565\u5468\u671f\u9a8c\u8bc1/);
   assert.match(html, /\u65e5\u7ecf\u5b8c\u6574\u65e5\u7ebf\u7b5b\u9009\u4e0e\u5f53\u65e5\u6536\u76d8\u4ef7\u6a21\u62df\u6210\u4ea4/);
@@ -383,6 +425,12 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     new URL("../app/MarketWorkspace.tsx", import.meta.url),
     "utf8",
   );
+  assert.doesNotMatch(workspace, /copy\.validatedCycle\.(?:proxy|close)/);
+  assert.match(workspace, /activeValidated \? validatedCycleFocusRange\(activeValidated\)/);
+  assert.match(workspace, /setValidatedChartOpenRevision\(\(current\) => current \+ 1\)/);
+  assert.match(workspace, /validated:\$\{activeValidated\.key\}:\$\{validatedChartOpenRevision\}/);
+  assert.match(workspace, /appliedChartRange\.kind === "screening" \|\| appliedChartRange\.kind === "saved-recent"/);
+  assert.match(workspace, /:shortcut:\$\{savedChartOpenRevision\}/);
   const locale = await readFile(
     new URL("../app/i18n/zh-CN.ts", import.meta.url),
     "utf8",
@@ -762,7 +810,9 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(entryFilter, /"tv-channel-breakout"/);
   assert.match(entryFilter, /"tv-price-channel"/);
   assert.match(entryFilter, /supportsScreeningMovingAverageSlopeFilter/);
-  assert.match(workspace, /buildScreeningMovingAverageSlopeFilters\(\)/);
+  assert.doesNotMatch(workspace, /buildScreeningMovingAverageSlopeFilters|screeningEntryFilterDraft/);
+  assert.match(workspace, /entryFilterEnabled: false/);
+  assert.match(workspace, /className="screening-config-group screening-entry-group"/);
   assert.match(workspace, /className="screening-config-group screening-optimization-group"/);
   assert.match(workspace, /className="screening-config-group screening-validation-group"/);
   assert.equal(
@@ -839,23 +889,22 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
   assert.match(entryFilter, /applyMovingAverageSlopeEntryFilter/);
   assert.equal(
     workspace.match(/<MovingAverageSlopeFilterFields/g)?.length,
-    4,
+    3,
   );
   assert.match(workspace, /namePrefix="strategy-a-entry-filter"/);
   assert.match(workspace, /namePrefix="strategy-b-entry-filter"/);
   assert.match(workspace, /namePrefix="strategy-c-entry-filter"/);
-  assert.match(workspace, /namePrefix="screening-entry-filter"/);
-  assert.match(
-    workspace,
-    /screeningEntryFilterDraft[\s\S]*createMovingAverageSlopeFilterDraft\(\s*DEFAULT_MOVING_AVERAGE_SLOPE_FILTER/,
-  );
+  assert.doesNotMatch(workspace, /namePrefix="screening-entry-filter"/);
   assert.match(workspace, /strategyPlanEntryFilter\(\s*strategyPlan,\s*"strategyA"/);
   assert.match(workspace, /strategyPlanEntryFilter\(\s*strategyPlan,\s*"strategyB"/);
   assert.match(workspace, /cloneStrategyPlan\(saved\.plan\)/);
-  assert.match(
-    workspace,
-    /entryFilter: activeMovingAverageSlopeFilter\(\s*screeningEntryFilterDraft/,
-  );
+  const batchRequest = workspace.slice(workspace.indexOf("const marketSeries = refreshed.canonicalSeries;"), workspace.indexOf("const best = selectBestShortcutScreeningResult(", workspace.indexOf("const marketSeries = refreshed.canonicalSeries;")));
+  const regularRequest = workspace.slice(workspace.indexOf("const runSettings = {"), workspace.indexOf("if (screeningAbortRef.current !== controller) return;", workspace.indexOf("const runSettings = {")));
+  for (const request of [batchRequest, regularRequest]) {
+    assert.match(request, /positionOverlay: smaOverlay.settings/);
+    assert.match(request, /entryFilter: null/);
+    assert.doesNotMatch(request, /entryFilters:/);
+  }
   assert.match(
     combinations,
     /strategyAEntryFilter: cloneMovingAverageSlopeFilter/,
@@ -911,6 +960,7 @@ test("keeps daily refresh, evidence, and legacy shortcut provenance explicit in 
     /setStartDate\(saved\.startDate\)|setEndDate\(saved\.endDate\)/,
   );
   assert.match(openSavedBacktestSource, /kind: "saved-recent"/);
+  assert.match(openSavedBacktestSource, /setSavedChartOpenRevision\(\(current\) => current \+ 1\)/);
   const chooseInstrumentSource = workspace.match(
     /const chooseInstrument = \(nextInstrument: MarketInstrument\) => \{[\s\S]*?\n  \};/,
   )?.[0];

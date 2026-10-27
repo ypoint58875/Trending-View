@@ -1,5 +1,37 @@
 # Data Sources
 
+## 2026-10-27 RSI first-pullback source reuse
+
+Uses unchanged full-screen-6-15/input.json and signals.json with verified source
+b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e and bars hash.
+No quotes were fetched. Current v8 research anchor replaces archived v7 for this
+new hypothesis only. Official TradingView/Fidelity methodology URLs and access
+date are recorded in TECH_RESEARCH and RSI_FIRST_PULLBACK_DESIGN; output records
+source/code identity. Existing raw/source registry entries remain applicable.
+
+## 2026-10-27 shape priority source reuse
+
+The shape-priority experiment reuses the frozen full-screen-6-15/input.json and
+signals.json described below, with existing raw backups and source registry.
+It verifies source SHA-256, bars hash, ordered decision indexes, v7 anchor targets
+and seven regenerated max5 alternatives from output/six-vs-five/summary.json.
+No market-data endpoint was refreshed. Official RSI/backtesting references and
+access date are recorded in SHAPE_PRIORITY_DESIGN.md; these supply methodology,
+not historical quotes. Model/source/code identity accompanies each checkpoint.
+
+## 2026-10-26 completed full-screen overlay source
+
+The local `data/state/screening-engine/batch-f2b3d676fd69574d9437ee1d/`
+queue and bars plus its 1293 job `request.json`/`result.json` files supply
+the exact full-screen path for 2000 sessions ending 2026-10-26. Access time,
+request/result SHA-256, raw/normalized bar and queue hashes, selected plans,
+costs and current result model are frozen in
+`research/nikkei-overlay-stability/data/full-screen-6-15/input.json` and
+`source_registry.jsonl`. Raw bars and queue have separate local backups under
+`raw/`. Validate every market prefix and schedule index. No network fetch,
+quick-screen substitution or source modification occurs. Inputs are ignored
+local reproducibility artifacts.
+
 ## 2026-10-25 overlay stability source snapshot
 
 `research/nikkei-overlay-stability/data/input.json` freezes normalized N225 bars

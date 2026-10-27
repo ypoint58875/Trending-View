@@ -1,5 +1,125 @@
 # Architecture
 
+## Strategy shortcut viewport consistency
+
+Ordinary saved-strategy rows already replay the latest128-session saved-recent
+range. Their PriceChart focus now uses that same range instead of the generic
+60-bar default. A saved-row open revision resets previous manual zoom on each
+click; dynamic validated shortcuts retain their own128-session reset. This is
+view state only: keep complete bars/markers, plans, costs and stored returns.
+Clean instrument-group charts and non-shortcut workspace defaults are unchanged.
+
+## Cycle restoration and current-rule derived reports
+
+Local task hydration is independent of the static shortcut API. Existing shared
+validated accounts supply instrument/report data without a network round trip;
+background shortcut refresh is bounded and nonblocking. Static shortcuts are not
+the source of a dynamic account's ledger. Shared hydration readiness prevents
+replaying task history before an already-persisted account has been read.
+
+Current overlay rules replay the same original winners, calendar, range and
+costs. Following explicit user adoption, the shared hydration hook promotes the
+complete dynamic account after replay, not just the cycle-page view. One worker
+per hook is cancellable on refresh/unmount and times out after120s. Pure builder
+and worker client remain separate. A matching account/report or cached preview
+avoids recomputation. Promotion commits settings and report together with an
+expected-revision check and requires an existing account. It advances revision
+once, retains a single prior-rule settings/report backup and preserves all bars,
+winners, costs and pending native snapshots. Failed/stale work cannot partially
+upgrade or overwrite later history. Both pages consume the same account.report;
+future continuation/repair uses its upgraded settings. Static plans stay archived.
+
+The research chart has no validated-account banner. Every validated shortcut
+click changes a view-only open revision in the chart reset key, restoring the
+latest128-session focus without changing the stored history or trading state.
+
+## RSI shape overlay version boundary
+
+v8 extends the shared overlay state machine rather than adding another replay
+engine. Cached features use completed bars and shared Wilder RSI. Native buy
+intent vetoes the guarded shape reduction, which otherwise uses existing pending
+hold/moving-average guards. backtest.ts supplies intrabar buy intent explicitly
+because those orders reference the preceding completed bar. Hard risk exits are
+not vetoed. E eligibility is captured before native close logic and applied only
+after native recovery if still flat, preventing replacement of partial recovery.
+Ordinary close signals still execute next open; only the existing Nikkei cycle
+close proxy exception applies. Explicit saved/account models are immutable on
+default upgrades; new defaults and cache keys use v8, research baselines use v7.
+
+## Continuing validated cycle accounts
+
+Completed Nikkei daily cycle reports publish one dynamic profile per canonical
+instrument and screening window, independently of static saved-backtest API
+records. Its shortcut sits inside the matching instrument group. Initial chart
+focus covers the latest128 sessions while retaining full-history bars/markers.
+The profile retains its original evaluation start, bars, selected
+plans, execution costs, overlay, report, model and conflict policy. Research
+single-window screening contributes its actual winner without changing ranking.
+Remove the winner plan's embedded overlay before generating native two-bar
+signals; replay applies only the original account overlay. An explicit calendar
+permits an actual research decision on a normally skipped trend day; ordinary
+cycle validation still requires its complete strict schedule by default.
+
+Only the next observed market session may append. Extra intervening bars block
+the write and list missing sessions, directing users back to cycle validation.
+Repair reuses frozen selections and fills missing scheduled decisions, then
+merges only the new history onto the original account. No gap is bridged with
+invented selections. Frozen OHLC, volume, amount, adjustment and history prefix
+must match. Ordinary next-open backtests and optimization remain unchanged.
+
+Before JPX session completion, or with a non-complete source candle, research
+screening replaces a separate provisional candidate only; confirmed cash,
+positions and trades remain unchanged. At 14:30 UTC+8 with complete source
+status, replay the final candidate from the anchored history and commit once.
+Further screenings on confirmed dates are no-ops, not duplicate fills.
+
+IndexedDB database quantscope-validated-cycle-strategies stores atomic whole
+profiles with revision checks and at most three conflict retries. Same-window
+events, BroadcastChannel and focus refresh synchronize pages. Limits are 32
+profiles and 10000 retained bars/selections per profile; fail explicitly rather
+than deleting history. Computation is outside the write transaction; incomplete
+or failed writes cannot replace the last durable account. Full deterministic
+account replay is used instead of serializing private overlay state. This is a
+bounded local workload, not a new background optimizer or external integration.
+First import of an older completed task uses its saved end date and bar count;
+that legacy task has no historical price hash, so the imported source becomes
+the locked baseline. Keep browser storage backups; origin/device migration is
+not automatic.
+
+## ATR shock exit overlay v7
+
+New default overlay v7 adds one completed-close risk exit to archived v6:
+close < EMA7 and previous close - close >= 2 * previous WilderATR14, with
+positive initialized ATR. A below-EMA state is sufficient; no fresh crossing
+is required. Cache the causal boolean feature per bars/model using the shared
+ATR implementation. Evaluate only when held at the preceding close and still
+held after native rules. The risk exit overrides ordinary signals and hold7/
+SMA11/WMA7 protection, clears pending/supplement/entry/recovery state and resets
+the flat episode. It adds neither cooldown nor automatic recovery; ordinary
+entries resume from the following bar. If native first-five4% stop also fires,
+its existing five-bar wait and recovery take precedence.
+
+Keep v6 as REBOUND_POSITION_OVERLAY_MODEL/OPTIONS, distinct from v7 in saved
+plans and existing model-aware screening/checkpoint identities. Old saved
+models retain original behavior. No research import or date-specific gate
+enters production. Ordinary fills remain next-open; the Nikkei close proxy
+exception is unchanged. Shared controls show separate entry/exit rules and
+explicit risk precedence. This finite per-series feature adds no long-running
+job or durable state requirement; existing bounded screening recovery applies.
+
+## Research screening entry panel
+
+The one-click screening form shows fixed account rules in a full-width
+`Entry filter` fieldset below compact optimization/validation controls. Its former
+fixed EMA5..8/0% slope control and draft/snapshot state are removed. Ordinary
+screening and shortcut batch screening explicitly pass `entryFilter: null`
+and omit `entryFilters`, so neither runs optional four-EMA family refinement.
+The shortcut batch signature fixes the former filter flag to false; an old
+enabled-filter checkpoint cannot match the new request. Model-aware overlay
+cache identity and execution semantics remain shared across both pages.
+Strategy-lab per-leg filters and historical filtered-plan replay remain valid;
+the shared optimizer retains its explicit optional filter API for those clients.
+
 ## Cycle settings presentation
 
 The cycle page uses a fixed six-strategy maximum for new computations; the
@@ -43,29 +163,68 @@ Supertrend stop-order execution is distinct and remains active.
 
 ## Independent account overlays
 
-Current page controls use explicit model `ema7-sma11-wma14-v1`: supplemental
-entry on EMA7 slope crossing from nonpositive to positive, pending reductions
-protected while SMA11(t)/SMA11(t-1)-1 >0.00125, and flat entries rejected while
-WMA14(t)<WMA14(t-1). All flags are independent and default checked. Page setters
-always apply this model, including when restoring older flags. Historical plans
-without a model retain the legacy formulas described below; new settings, saved
-plans and ordinary parameter-library/checkpoint identities retain the model.
-No reoptimization of existing cycle winners is necessary for these report rules.
+New page calculations use fixed model `ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-v6`.
+EMA7 positive-turn supplements require an empty account, no original signals
+and close>SMA20. WMA7 nonnegative slope gates ordinary flat entries; original adds
+remain allowed. A second flat/no-original-signal entry recognizes bullish body
+engulfing after a chronological >=5% decline. Find the latest lowest open in
+the last five sessions including today, then the highest close in the ten
+sessions strictly before that low. Require1-low/peak>=0.05, yesterday close<open,
+today open<=yesterday close and today close>yesterday open. Only this reversal
+entry bypasses SMA20/WMA7 gates; risk cooldown still applies. Both EMA and
+reversal supplements start seven-session protection. Pending reductions require
+supplemental age>=7, SMA11 slope
+<=0.075% and WMA7 negative slope. Fresh original buys cancel pending sells.
+
+The v6-only daily empty-account fallback preserves all native entries. With no
+original signals, pending reduction, active cooldown or ready native recovery,
+require close<=SMA20, three strictly positive consecutive EMA7 slopes and
+nonnegative WMA7 slope. Find the latest minimum close among the preceding ten
+completed bars inside the actual flat episode, excluding today. Its preceding
+ten closes provide the chronological peak; require1-low/peak>=5% and
+close/low-1>=4%. No fresh turn, RSI, Bollinger, date switch or new exit applies.
+The extra entry receives the same hold7/early-stop/recovery rules. Flat history
+starts at the first observed flat bar or actual exit/stop, never borrowed from
+held bars. Rolling features are cached; bounded ten-bar scans use actual state.
+
+Every known flat-to-held target transition records its signal index and close.
+At ages1..5 inclusive, cumulative close loss>=4% clears the position/pending
+sell and overrides holding/MA protection. Stops are checked after ordinary
+actions only for a position held from the preceding close. All buys are blocked
+for the next five completed bars; normal signals resume at stop+6. On a later
+no-original-signal bar with positive EMA7/WMA7 slopes and close>EMA7, recovery
+can restore the stopped target. Fresh original/EMA/reversal entries reset episode marks.
+Repeated close calls for one bar are idempotent. An unknown inherited entry
+age does not fabricate a stop basis; the next known entry starts monitoring.
+
+The former boolean preferences are no longer read or written. Both pages show
+one localized ordered rule list, and normalization forces current-model flags
+on even if a stale caller supplies false. Nine concise rules and expandable
+reversal/rebound definitions replace the long prose. Cycle settings place rules below
+task actions. Old localStorage records remain untouched. Explicit v1/v2/v3
+saved plans retain their formulas/optional flags; v4 retains fixed hold5 without
+reversal entries under `FIXED_HOLD5_POSITION_OVERLAY_MODEL`;
+v5 retains hold7/engulfing without rebound under `ENGULF_POSITION_OVERLAY_MODEL`
+and `ENGULF_POSITION_OVERLAY_OPTIONS`. Applied archived charts retain those
+plans; saved versions are not migrated. New plans/checkpoint identities
+include v6, and daily features are cached by immutable bars/model. Ordinary
+execution fills at the next open; cycle fills retain the close proxy. Stop
+thresholds are not guaranteed fill prices. Cycle winners need replay, not
+reoptimization, for the new report rules.
 
 For unversioned historical settings, the third independent option,
 `entrySlopeGate`, rejects new flat-account
 positions while SMA11 slope is negative; close(t)>=close(t-11) allows entry.
 Both original and supplemental entries are checked, while existing-position
-increases remain permitted. All three UI defaults are checked; absence of
-library/API flags remains legacy-off. A missing third flag in older page
-preferences migrates to checked, preserving the older two explicit choices.
+increases remain permitted. Absent historical library/API flags remain
+legacy-off. Current pages no longer restore old checkbox choices.
 
 One `SmaPositionOverlay` owns the actual inherited target and a pending minimum
 sell target. Supplemental entry uses an SMA12 slope crossing from nonpositive
 to positive while flat with no original signal. Exit protection requires
 SMA12(t)/SMA12(t-1)-1 >0.002. Pending sells release daily when protection fails;
-new original increases cancel them. Enabling either flag never enables the
-other; all UI defaults are on, but absent library/API settings stay legacy-off.
+new original increases cancel them. Enabling either historical flag never
+enables the other; absent historical library/API settings stay legacy-off.
 
 Ordinary ledgers process the original close signal once, then execute overlay
 intent at the following open. Native orders retain their execution price and
@@ -220,7 +379,7 @@ Browser UI
   -> newest-bar live strategy guidance
   -> hybrid backtest execution engine
   -> exhaustive, chunked parameter-grid optimizer
-  -> staged EMA5-8 family refinement
+  -> no EMA5-8 family refinement in new research-screening requests
   -> unique-winner relative-horizon combination optimizer
   -> partial-allocation hybrid backtest
   -> ECharts canvas views
@@ -276,8 +435,9 @@ Cycle job result files retain only the selected winner and summary metadata.
 The browser persists one latest task after
 each complete unit with a signature over instrument, latest bar, configuration,
 and costs. A matching signature resumes idempotently. Before result collection,
-the local page submits every incomplete bounded unit in one full-series batch
-to the loopback screening coordinator and persists its deterministic job ID.
+the local page submits every incomplete bounded unit in sequential chunks of
+at most64 units to the loopback screening coordinator. Each acknowledgement
+immediately persists its deterministic job IDs before sending the next chunk.
 The coordinator slices each causal prefix before child execution and owns
 bounded parallel execution after submission independently of the page
 connection. IndexedDB remains the browser-side report and unit-map boundary.
@@ -349,9 +509,13 @@ derives an explicit visible price-axis range from OHLC highs, lows, and enabled
 price-indicator line values whenever data zoom changes. Warm-up nulls and
 offscreen values are excluded. Strategy overlays cannot expand that range, so one
 instrument and zoom window retain the same K-line scale across saved plans.
+Inside price zoom uses the wheel directly without a modifier key; the bottom
+slider remains available for range selection.
+This view interaction is independent from quote refresh and market sessions.
 The Bollinger boundaries are solid blue and its basis is solid orange, using
-the TradingView Pine palette. SMA uses aqua/yellow and becomes dashed while Bollinger is enabled; removing
-Bollinger restores solid SMA lines without changing saved indicator settings.
+the TradingView Pine palette. SMA uses aqua/yellow. SMA, EMA and WMA become
+dashed while Bollinger is enabled; removing Bollinger restores solid moving-
+average lines without changing saved indicator settings. DEMA is unchanged.
 Useful references render as solid lines matching their legend symbols; empty
 reference series are omitted. Price detail tooltips and crosshair labels share
 a one-decimal formatter. Visible price-axis ticks remain integers when the
@@ -538,10 +702,11 @@ series. Target-state plans apply eligibility on the completed signal bar;
 price/open-order plans apply the preceding completed bar's eligibility to the
 active execution bar. The stateful filter delays only a flat-to-long
 transition and never creates an exit. Strategy-lab drafts and one-click
-screening drafts remain independent, while a screening result or saved
-shortcut carries the exact filter into the applied plan, backtest, stability
-diagnostic, chart, and live guidance. When the screening draft is enabled, the
-optimizer creates separate EMA(5), EMA(6), EMA(7), and EMA(8) contexts at a
+historical screening plans remain independent, while a saved filtered result
+or shortcut carries its exact filter into the applied plan, backtest, stability
+diagnostic, chart, and live guidance. New research screening requests do not
+enable this optional refinement. For explicit API filter lists, the optimizer
+can create separate EMA(5), EMA(6), EMA(7), and EMA(8) contexts at a
 fixed 0% threshold only for the explicit trend/breakout/momentum family and
 only after selecting each eligible strategy's top 60 unfiltered parameter
 sets. Combination plans store `strategyAEntryFilter` and

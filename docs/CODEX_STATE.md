@@ -1,5 +1,1332 @@
 # Codex State
 
+## 2026-10-27 Git handoff
+
+- User requests committing and pushing the completed changes on existing branch
+  codex/screening-cache-performance to its origin tracking branch, without a new
+  branch or force push. Include application/library changes, tests, project docs
+  and top-level overlay research source/design files.
+- Exclude raw market inputs, generated research data/results, output runtime logs,
+  browser artifacts and local state. Preserve these locally. Selected files pass
+  whitespace validation and high-confidence secret-pattern review; latest full
+  npm test passed453 tests, build and4 rendered checks before this handoff.
+
+## 2026-10-27 all saved-strategy shortcut128-session viewport
+
+- User extends128-session default to ordinary shortcut strategies, not only
+  dynamic validated accounts. Existing saved-recent replay already uses the
+  shared SAVED_BACKTEST_ROLLING_SESSIONS=128; its chart focus was null and fell
+  back to the generic60-bar chart default. Bind saved-recent focus to the same
+  appliedChartWindows range used for replay, without changing strategy/cost data.
+- Each openSavedBacktest increments a view-only savedChartOpenRevision in its
+  chart reset key so reopening the same row restores128 sessions after manual
+  zoom. Dynamic shortcuts retain their existing128-session reset. Unrelated
+  workspace charts and clean instrument-group opening remain unchanged.
+- Full bars and markers stay available; fewer than128 observations show all
+  available data. Added weekday-gap/short-history focus regression and rendered
+  source checks for saved range/reset wiring. No API/storage/schema migration.
+- Optional isolated browser smoke script is under output/all-shortcut-128-browser.js;
+  helper/browser launch was policy-blocked, so that smoke was not executed.
+- Verification:27 focused chart tests, final typecheck and whitespace checks pass.
+  Full npm test passes453 tests, production build and4 rendered checks, including
+  ordinary saved-shortcut focus/reset wiring. Unrelated worktree changes preserved.
+
+## 2026-10-27 allocation marker action correction
+
+- User flags2020-06-25 and2020-07-01 as consecutive clearing labels. Frozen v8
+  report confirms first fill100%->30%, second29.879988%->0%; no duplicate execution.
+  trade-markers.ts incorrectly let component long-exit override actual allocation.
+- Allocation markers now classify open/increase/reduce/close by portfolio state,
+  retain component signals as provenance, and skip unchanged strategy allocations.
+  Range-end/carry and native short-buy/short-sell marker support remain. PriceChart
+  accepts optional increase/reduce locale labels and workspace supplies them;
+  existing callers without them keep backward-compatible short-label fallbacks.
+- No account, model, signal priority, execution timing, fees, history or returns
+  changed. Existing saved reports immediately use corrected render-time markers;
+  no migration/re-screen/cache invalidation. v8 frozen total remains440.980703%.
+- Added allocation-marker-actions.test.ts for the exact date pair, misleading
+  component names, partial increases/reductions, no-ops and range-end preservation.
+  Updated two old allocation-action assertions in analysis.test.ts to the new
+  portfolio labels; original signal provenance assertions are retained.
+- Verification: full npm test passes452 tests, typecheck, production build and4
+  rendered checks. Final focused date-pair test also checks cycle-chart group
+  consistency; targeted ESLint and diff whitespace checks pass. Replayed frozen
+  v8 audit confirms440.980703% and the corrected reduce/close/close actions for
+  June25/July1/July10. Audit artifacts are under output/audit-2020-markers.*.
+
+## 2026-10-27 shared rule synchronization and shortcut presentation
+
+- User explicitly requests synchronization, superseding the earlier preview-only
+  boundary. Shared useValidatedCycles now upgrades dynamic accounts to current
+  overlay rules from either page. It reuses cached preview or one cancellable
+  worker, then atomically promotes model/settings/report together. No re-screen,
+  date/cost/native-winner change or static saved-plan migration.
+- promoteValidatedCycleProfile keeps one ruleBackup with prior settings/report/
+  revision/time. Store CAS requires an existing account and advances revision
+  once. Failed writes leave old record intact; stale/duplicate work cannot overwrite
+  newer history or recreate removed accounts. Pending native snapshots survive;
+  subsequent research append uses v8 and retains the backup. Backup is bounded,
+  not recursively nested. A completed upgrade clears obsolete preview metadata.
+- Both pages read the identical account.report. Removed separate cycle-page worker
+  and preview-only cache write to avoid split views or duplicate calculation.
+  Shortcut shows synchronization status and is disabled until promotion succeeds;
+  failures retain the old version and expose retry guidance. Start/resume waits
+  for synchronization; local data hydration still does not await shortcut API.
+- Removed the entire research chart validation banner and its unused locale copy
+  per user request, including the exit button. Shortcut version remains visible.
+  Each validated-shortcut click advances only a chart-open revision so an earlier
+  manual zoom resets to the latest128 sessions. Full bars/signals remain stored.
+- Isolated browser: upgrade from research page9220ms, subsequent cycle open2126ms;
+  both show v8/440.980703% on frozen2000 ending2026-10-26, with v7/393.143023%
+  backed up. Full6566 bars retained; first and repeated open show128 bars after
+  manually expanding to3283. No banner. User storage untouched by smoke test.
+  Screenshots: output/cycle-rule-sync-research.png and -validation.png.
+- Verification: full npm test passes450 tests, typecheck, production build and4
+  rendered checks. Five focused preview/store tests cover backup, atomic failure,
+  concurrent/stale/idempotent promotion, missing-account protection and v8 append.
+  Final targeted lint and diff whitespace checks pass. Browser confirms actual
+  viewport/complete report equality, not only source labels. Temporary fixture
+  helper and isolated browser were closed; unrelated worktree changes preserved.
+
+## 2026-10-27 fast cycle restore and current-rule preview
+
+- Removed initial Promise.all coupling between local validation task restoration
+  and the static saved-backtest API. Form renders immediately; local task/profile
+  supplies instrument even if the shortcut request hangs or fails. Background
+  shortcut refresh has a10-second bound and cannot block existing reports.
+- Both pages retain the same validated account store/hook. Added hook readiness
+  prevents redundant reconstruction while the saved report is hydrating. With no
+  remaining task, an existing profile opens even if its period differs from128.
+- User requests current v8 execution display rather than archived v7 return.
+  Added pure validated-cycle-preview, separate worker client/worker and optional
+  per-account derived preview cache. Current overlay replays original snapshots,
+  original start/costs and explicit decision calendar; no re-screen or ledger edit.
+  Stats and arrows use the same current report and display its rule version.
+- Cache key includes account revision, model/conflict policy, period/account key,
+  range and costs/overlay. Atomic metadata-only writes check the latest identity;
+  stale worker results cannot overwrite a newer account. Confirmed report,
+  settings, selections and account revision remain unchanged. One preview/profile,
+  at most32 profiles; one cancellable worker,10000-bar/snapshot bound,120s timeout.
+- Cycle chart uses content panning: rightward mouse movement moves candles right
+  and reveals earlier dates. Slider still advances dates when dragged right.
+- Isolated browser with a hanging shortcut API: form336ms, first v7-to-v8 replay
+  9042ms, cached report with HTTP503941ms. Frozen2000 ending2026-10-26 changes
+  393.1430225% to440.9807031%; archived profile remains393.14%. User storage untouched.
+  Screenshot and smoke scripts are local output/cycle-fast-open* artifacts.
+- Verification: full npm test rerun passes448 tests, typecheck, production build
+  and4 rendered checks. Final focused30 tests additionally cover worker completion,
+  abort/invalid replies, cache race/immutability and pan directions;4 frozen research
+  integration tests pass. Current typecheck/build/rendered checks and targeted
+  lint on new preview modules, store, components and tests pass. One pre-existing
+  coordinator stall/restart timing assertion failed in the first full run, then
+  passed isolated and in the full rerun. Existing workspace lint retains4
+  set-state-in-effect errors and2 dependency warnings; unrelated cleanup excluded.
+  Isolated browser/helper stopped; original user storage and unrelated changes retained.
+
+## 2026-10-27 RSI10 first overbought pullback research
+
+- Research only on current v8 frozen2000 ending2026-10-26. Strict crossing above
+  70 arms one first decline; rearm only on another threshold crossing. Compared
+  RSI decline, closing-price decline and cross-back, thresholds65/70/75, market
+  versus held scope and three priorities:54 variants plus baseline.
+- First decline guarded is target-identical440.98/99.85/DD10.88; no-signal force
+  320.88/88.63/DD14.82; risk-first force276.89/72.56/DD14.82. Cross-back guarded
+  402.97/99.85/DD10.88. No variant improves both return windows or reduces maximum
+  drawdown.
+- Next-open sensitivity and event omissions also fail promotion. Guarded first
+  decline has50 requests without marginal liquidation; force adds24/39 exits.
+  RSI_FIRST_PULLBACK_DESIGN/RESULTS and rsi-first-pullback.ts/test link all results.
+- Five focused tests, typecheck and targeted ESLint pass. Output is atomic,
+  bounded55-row deterministic rerun, source/code-hashed; no new long-running job.
+  Production v8, saved accounts, caches and existing research artifacts unchanged.
+
+## 2026-10-27 adopted RSI shape overlay v8
+
+- User adopted E plus the guarded four-decreasing-high exit with Wilder RSI10
+  strictly below35. Default overlay is v8; archived ATR v7 remains available.
+- E runs only after existing entries/recovery fail: flat/no native signal/no
+  pending request, WMA7 nondecreasing, higher low and close above previous high,
+  preceding5 RSI7 observations include <=25 and RSI7 rises today. Latest tied
+  minimum close in preceding10 market bars must be >=9% below the maximum close
+  in10 bars preceding that low. This low is not restricted to the flat episode.
+- Shape clearing submits an ordinary reduction, retaining hold7/SMA11/WMA7
+  protection. Native buy requests, including intrabar orders, veto/cancel it.
+  Hard early-stop and ATR exits retain priority; E cannot override partial recovery.
+- Frozen2000 ending2026-10-26 production targets exactly match adopted research:
+  440.980703% total,99.849016% final500,10.875317% drawdown. Ordinary next-open
+  replay gives465.362959%,106.913333%,9.442832%. These are different execution
+  conventions, not interchangeable reports. Final500 event concentration persists.
+- Existing saved models/dynamic validated accounts are not rewritten. Shortcut
+  labels show stored rule version. Research baseline imports explicitly pin v7;
+  new v8 integration tests compare full targets, economics and actual cycle report.
+- Cache identity naturally includes v8 model; no engine protocol/schema bump,
+  checkpoint deletion, external data refresh or validation-history migration.
+- Verification: full npm test passed typecheck,447 unit/integration tests,
+  production build and4 rendered-page checks.21 research tests passed including
+  full target parity and actual cycle-report economics; targeted ESLint and
+  git diff --check passed. Existing unrelated worktree changes were preserved.
+
+## 2026-10-27 RSI7..20 thresholds and lookbacks
+
+- Research-only optional per-side RSI settings and shared period cache in
+  shape-priority.ts; legacy defaults preserved. RSI_PARAMETER_DESIGN/RESULTS,
+  rsi-parameter.ts/test and rsi-parameter-audit.ts document/reproduce the study.
+-28621 single configurations plus64 distinct-path-shortlisted combinations,
+  5104 paths;85 double-improving rows represent17 paths, with3 tested combinations
+  also reducing close-proxy drawdown. Frozen2000 ending2026-10-26 unchanged.
+- Entry E: decline9%, higher low/previous-high break, native-flat/no-signal/WMA
+  gates, recent5-sessionRSI7<=25 and rising today.427.68%/99.85%/DD10.88%.
+  RSI14<=35/look5 can reproduce the same path; short RSI is not uniquely optimal.
+- E plus four-high guarded exitRSI10<35:440.98%/99.85%/DD10.88%. E plus
+  no-signal four-high forceRSI14<40:409.32%/99.85%/DD9.23%. Other triple
+  candidates415.02%/99.85%/DD10.10% and410.63%/99.85%/DD10.01%.
+- Positive final500 results depend on2026-07-31 shape entry; omitting it reduces
+  final500 to94.01%, below baseline98.14%. First1500-only winner also fails
+  final500. Matched neighboring settings and next-open sensitivity audited;
+  no automatic production promotion or validated-account update.
+- Fifteen focused tests, typecheck, targeted ESLint,193 RSI14 legacy paths and
+  v7 anchor parity pass. Chunk/manifest resume reuses28621+64 rows; floating-point
+  shortlist ties use1e-9 tolerance. Old identities/checkpoints preserved. Results
+  and audit under output/rsi-parameter; atomic state under data/rsi-parameter/.
+
+## 2026-10-27 descending OHLC3..6 extension
+
+- User extends the added exit to3..6 sessions of open/close/high/low.193 policies
+  (16 shapes x3 priorities x4 RSI filters plus baseline),138 target paths; no
+  strict improvement in both close-proxy full2000 and final500 returns.
+- Research-only optional descending metadata in shape-priority.ts preserves
+  existing menu/behavior. New descending-sequence.ts/test and DESIGN/RESULTS use
+  frozen2000 ending2026-10-26. No production rule/account/engine change.
+- Four descending highs plus fallingRSI:303.01%/85.82%/DD8.56%, versus baseline
+  393.14%/98.14%/DD10.88%. Next-open matching comparison loses that DD advantage.
+- Five descending opens plus prior14-sessionRSI>=70 and falling today gives
+  394.43%/98.14%/DD10.88%. Only new exit2023-07-07; omitting it delays the rolling
+  trigger to2023-07-10 and lowers full return391.39%. Next-open result397.70%
+  versus401.61% baseline. No production promotion on this single-episode result.
+- Nine focused tests, typecheck, targeted ESLint and24 legacy-path parity checks
+  pass. Resume verified all193 committed rows with identical results. State in
+  data/descending-sequence/<identity>/; outputs in output/descending-sequence/.
+
+## 2026-10-27 shape priority and RSI experiment
+
+- Research-only SHAPE_PRIORITY_DESIGN/RESULTS and shape-priority.ts/test reuse
+  frozen2000 sessions ending2026-10-26, v7 baseline393.14%/final50098.14%/DD10.88%.
+  Tested829 configurations, including threshold5..10 four-close breakouts,
+  priorities, WMA/scope controls, descending opens/highs, low breaks and RSI.
+  No candidate improves both close-proxy returns. Production remains unchanged.
+- Seven-date max5 replacement misses2023-12-15 entry until2024-01-31 (29 sessions).
+  Its full return351.27%, final500 unchanged. Four-close breakout is already true
+  on the missed date, but the qualifying prior decline never exceeds3.9187%
+  across the gap;5..10% entries do not repair it. Not a full max5 rescreen.
+- Primary5% entry306.24%/72.48%/DD13.11%; four-open risk-force exit
+  216.91%/65.99%/DD10.96%. FallingRSI improves the latter drawdown to10.64%
+  but returns only272.70%/74.80%. Higher-low9% candidate391.62%/86.19% is
+  execution-sensitive: next-open430.76%/99.44% but DD11.93% versus baseline9.44%.
+- Off-policy exact production/anchor parity and seven max5 signal regenerations
+  pass. Six focused boundary/priority/causality tests pass; typecheck and targeted
+  ESLint pass. Identity-versioned atomic checkpoints preserve earlier runs; same
+  command resume verified. Outputs under research/nikkei-overlay-stability/output/
+  shape-priority; no browser account, engine queue, raw input or rule modified.
+
+## 2026-10-27 dynamic validated-cycle shortcuts
+
+- Added an independent canonical instrument/window registry for completed Nikkei
+  daily validation. The actual 2000-session, 1294-selection account ending
+  2026-10-27 now renders as the 10-day validated shortcut, with original start
+  2018-08-10, return393.14% and current target0%. Verified both pages and clicking
+  the shortcut displays full-history rebalance markers on the research chart.
+- Follow-up: place each dynamic shortcut inside its corresponding instrument
+  group, opening that group on first hydration. The chart initially focuses on
+  the latest128 sessions; full bars and all historical markers remain available.
+- Research ordinary/saved-shortcut batch single-window screening can extend the
+  actual winner onto this same account, without changing screening ranking or
+  original execution costs/overlay. Pending daily candles replace one provisional
+  candidate; completed history is immutable and repeats do not duplicate fills.
+- Gaps block append with missing dates and a validation-page link. Validation
+  repair reuses frozen selections, anchors the original account start and queues
+  only missing scheduled decisions. No invented intermediate winners or static
+  last-plan substitution. Clearing the latest task does not delete these profiles.
+- Bounded IndexedDB whole-profile writes use CAS/retry, reload restoration,
+  local/cross-tab notifications and explicit errors. No protocol, server schema,
+  source fetcher, overlay rule or optimizer change. Existing worktree changes and
+  completed engine results remain intact. Screenshot: output/validated-cycle-shortcut.jpg.
+- Focused13 tests pass, including atomic concurrent writes, storage-failure retry,
+  gap rejection, repair, same-day replacement and close boundary. Typecheck passes;
+  targeted ESLint passes. Full npm test passes typecheck,437 unit tests, production
+  build and4 rendered tests. git diff --check passes. The first full run exposed
+  a source-contract focusRange assertion; retained that assertion and routed the
+  new128-session focus through the existing appliedChartFocusRange binding.
+  Browser reload restores the shortcut; final screenshot verifies its placement
+  below Nikkei and the default128-session chart. No test assertion was removed.
+
+## 2026-10-27 cycle queue submission recovery
+
+- Reproduced generic submission failure on the actual2000-session1294-unit
+  task. Application and relay health/protocol were compatible; durable queue
+  already contained1291 completed results and3 unfinished units.
+- All client batch uploads now use sequential64-unit chunks. Per-chunk
+  acknowledgements persist queued IDs immediately for retries/pause recovery.
+  Coordinator cleanup runs once per batch rather than per unit. Resubmitted
+  cancelled jobs reconcile an existing completed result before starting a child;
+  explicit cancellation semantics and protocol/endpoints remain unchanged.
+- LocalScreeningEngineSubmissionError preserves HTTP status and bounded server
+  detail; cycle workspace renders a localized actionable error. No new numeric
+  protocol literal or version bump. Completed result/queue/checkpoint data is
+  preserved; no manual data cleanup or strategy-rule change.
+- Focused34 linked client/coordinator/launcher/child tests pass. Full npm test
+  passes typecheck,424 unit tests, build and4 rendered tests. Latest per-chunk
+  persistence/abort changes additionally pass typecheck and all4 client tests.
+- Actual1294-job resubmission accepted21 chunks in2.557s with exact job IDs.
+  Restarted only the verified project relay and its3 scoped checkpointed
+  children; durable recovery resumes the remaining units. Application health
+  restored at port3000; relay health remains compatible at3001. Original Edge
+  tab disconnected/closed, so final user-side report collection needs reopening
+  strategy-validation and Continue. Existing unrelated changes are untouched.
+
+## 2026-10-27 six-leg versus same-date five-leg audit
+
+- Research-only SIX_VS_FIVE_DESIGN and six-vs-five.ts/test isolate the seven
+  six-leg winners. Original jobs retain winner-only results, so rerun exactly
+  those seven prefixes with maxCombinationStrategies5 and unchanged requests.
+- Retain the overall max5 winner separately from the best exactly5 plan;
+  compare ordered two-bar intents and final v7 targets from the same actual
+  baseline pre-decision account. Do not conflate equal targets with identical
+  pending state or future paths. Two intent/count unit tests pass; initial
+  typecheck passes. Completion results will be recorded after all seven jobs.
+- Completed-job progress commits atomically to research/nikkei-overlay-stability/
+  data/six-vs-five/rows.json. Run the same six-vs-five.ts command to resume an
+  identity-compatible ordered prefix; output/six-vs-five/summary.json is final.
+  Preserve inputs, active application queues and all prior research outputs.
+
+## 2026-10-27 selected combination-count audit
+
+- Verified the frozen full-screen source and bars hashes,1293 selections and
+  2000 plan dates. Active-leg counts1..6 by selection:410,727,52,62,35,7;
+  by date:659,1102,92,84,55,8. Mean1.899;4..6 occupy7.35% of dates.
+- Final500 date counts165,274,36,14,10,1; higher-order share5%. These are
+  selected-plan durations, not invested dates or return attribution.
+- User defines old3x3 as max3 legs /3 parameter finalists per family. Do not
+  substitute the different quick-screen archive. Current default/full source
+  has max6 and result model7 with up to6 family finalists; existing ten-session
+  max3 archive covers only48 selections under model5, not matched2000 history.
+- No claim of improved returns is supported by counts alone. Preserve missing
+  lower-order alternatives rather than filtering winner-only records. Report
+  and a matched2x2 search design: research/nikkei-overlay-stability/output/
+  COMBINATION_COUNTS.md. Read-only analysis plus documentation only; no new
+  screening job, production change, source refresh or cache deletion.
+
+## 2026-10-27 user-adopted priorATR2 risk exit v7
+
+- User explicitly adopts close<EMA7 and yesterday-close minus today-close >=
+  2*previous WilderATR14. Default v7 adds the six-exit research candidate;
+  archived v6 retains its exact constant/options and target behavior.
+- Risk exits bypass native holding/trend protections and ordinary signals.
+  Native4% early stop retains priority on simultaneous triggers, with existing
+  wait5/recovery. ATR-only exit clears pending/entry/supplement/recovery state,
+  resets flat history, adds no wait or automatic recovery, and permits normal
+  entrances from the next bar. Fresh same-day entries are not shock-exited.
+- Shared controls now separate entry/increase and reduction/exit, with concise
+  priority and previousATR14/close-difference/execution definitions in zh-CN.
+- Frozen2000-bar v7 target and next-open return parity passes; archived v5/v6
+  parity also passes. Research concentration/unchanged final500 caveats remain.
+  Full npm test passes: typecheck,421 unit tests, production build and4 rendered
+  tests. All175 research tests pass separately. Diff whitespace validation is
+  clean. The new fresh-entry fixture was corrected to actually be belowEMA7
+  before the successful full rerun; no production assertion was bypassed.
+- Contribution-study v6 cases now explicitly import archived v6 options,
+  preventing their labels from silently drifting with the default. Existing
+  checkpoints/reports are preserved; incompatible code hashes remain rejected.
+  Existing unrelated worktree changes remain intact.
+
+## 2026-10-27 earlier-risk exit robustness validation
+
+- Completed research-only RISK_EXIT_VALIDATION_DESIGN and risk-exit-validation.ts/test:
+  292 cases across the four frozen models, 52 distinct paths, 20 exact prior
+  anchor matches. No case increases both full and final500 returns with
+  no-worse full drawdown. Production remains unchanged.
+- Current EMA3 loss4% through ages7..15 has one identical extra exit and
+  396.0757/98.1439/DD10.9044 versus baseline388.5473/98.1439/DD12.0187.
+  Threshold4.5% at age10 duplicates it; this is one-event concentration,
+  not independent robustness. Omitting additional exits during2022-12-20
+  through2023-02-13 exactly restores the baseline target path.
+- ATR2 produces393.1430/98.1439/DD10.8753, but omitting that episode
+  gives385.6591/98.1439/DD12.0187. ATR1.75/2.25/2.5 lose full return;
+  OR/AND combinations duplicate ATR2/loss4% anchors respectively.
+- First1500-only return selection with a no-worse development-DD constraint
+  chooses ATR1.75 for EMA3. Deployment only at the final500 boundary, inheriting
+  baseline account state, returns88.4510 versus98.1439, with equal DD8.2462.
+  This repeatedly inspected history is not unseen out-of-sample evidence.
+- Five new tests and the combined184 research/rebound tests pass; typecheck
+  passes. Exact292-row checkpoint resume verified. Reports and selected ledgers
+  are under research/nikkei-overlay-stability/output/risk-exit-validation/.
+
+## 2026-10-27 original-sell priority and independent earlier-risk exits
+
+- Research-only EXIT_PRIORITY_DESIGN and exit-priority-study.ts/test freeze212
+  cases:four specified models,26 methods, wait0/5 plus unchanged controls.
+  Separate actual pending original-zero priority gates from independent trend/
+  priorATR shock/extended entry-loss exits. Preserve first pending request,
+  original-buy cancellation, native stops and one real inherited account.
+  New exits clear pending/holding/entry/recovery state and reset flat history;
+  no new automatic recovery. Main program, entries and data remain unchanged.
+- Baseline EMA3 pending-zero held days600:hold7 guard103,SMA guard511,WMA491,
+  overlapping, not request counts or independently harmful delays. No tested
+  original-zero-sell priority method improves total return on any model.
+  Immediate release EMA3 gives96.9876%/final50030.5259%/DD14.6458%; WMA-negative
+  priority163.9656%/31.2566%/18.0616%. Do not remove ordinary protection by count.
+- Extending existing4% entry-loss protection through age10,wait0, adds only one
+  exit per model and yields native390.1380%/95.5087%/DD10.9044%, turn4 443.9578%
+  /86.1901%/13.1082%, RSI446.6330%/99.8490%/10.9044%, EMA3 396.0757%/98.1439%
+  /10.9044%. Unlike price-peak exits, full return improves without final500 loss,
+  but final500 is unchanged, so strict dual-return goal remains unmet.
+- Close<EMA7 plus daily decline>=2*prior completed WilderATR14,wait0, yields
+  EMA3 393.1430%/98.1439%/DD10.8753%,6 exits; native387.2404%/95.5087%/10.8753%,
+  RSI443.4014%/99.8490%/10.8753%. LowerDD/no-worse-both cases7 across models,
+  but strict full/final500 improvement/no-worseDD cases0. All212 yield182 paths.
+- Narrow-risk audit exit-priority-audit.ts confirms common EMA3 entry2022-12-09;
+  extra age10 exit2022-12-20 at age7, close loss4.7775%, no pending original zero
+  request. Risk window had expired. Changed account reenters2023-01-17; baseline
+  ultimately exits2023-02-13. These diverged paths are not additive trade alpha.
+  ATR2 includes that same event plus five others. Final500 targets for both
+  candidates exactly match baseline. No postJuly21 gain. One-event concentration
+  and repeatedly searched history preclude robust deployment claims.
+- Next-open EMA3 baseline395.1418%/97.4190%/DD9.5006%, age10 400.2211%/97.4190%
+  /DD9.5006% (DD advantage gone), ATR2 401.6104%/97.4190%/DD9.4428% (tiny gain).
+  Age10/ATR2 doubled-cost total366.8121%/363.5885% versus360.1876% baseline.
+  First1500-only native/EMA3 selector chooses ATR1.5 and fails final500; do not
+  present selected historical candidates as unseen chronological validation.
+- Main atomic20-case data/exit-priority/grid.json verifies212-row resume; separate
+  output/exit-priority holds full scalar menu, selected ledgers/blocked days,
+  sensitivities and COMPARISON. output/exit-priority-audit preserves finite
+  event concentration/tail parity. All10 new tests/all179 related tests plus
+  typecheck pass. Full npm test not rerun for this research-only task. No raw
+  deletion, external fetch, protocol or production/default edits.
+
+## 2026-10-27 direct wheel zoom and Bollinger/MA coexistence
+
+- User requests direct research-chart wheel zoom without Ctrl. Shared inside
+  dataZoom now sets zoomOnMouseWheel=true; slider, pan, linked axes and limits
+  remain unchanged. Localized hover guidance no longer mentions Ctrl. This
+  supersedes the earlier modifier-gated interaction note, not market/history data.
+- User also requests EMA/WMA to follow SMA dashed styling during Bollinger
+  coexistence. Shared indicatorLine applies the same dashed style to SMA/EMA/WMA
+  only while Bollinger is visible; removing it restores solid lines. Preserve
+  all colors, values, parameters, equal-period collapse and indicator preferences.
+  Bollinger and DEMA remain unchanged. No strategy/data/overlay-rule changes.
+- Chart tests cover all three MA families, equal/different periods, unchanged
+  values and DEMA, modifier-free wheel configuration and synchronized locale.
+  All26 focused chart tests pass. Full npm test passes typecheck,415 unit tests,
+  production build and4 rendered-route tests. Nonfatal plugin-timing/chunk-size
+  build notices remain. Linked feature/architecture/function/pattern/debugging
+  documentation updated; unrelated worktree changes preserved.
+
+## 2026-10-27 rolling5..20/X2..6 peak comparison
+
+- User narrows thresholds to2/3/4/5/6% and requests every integer held-close
+  peak window5..20 on the same native v5/turn4/RSI/EMA3 models. Retain wait0/5
+  separately. PEAK_WINDOW_DESIGN and peak-window-study.ts/test declare644 cases,
+  188 target paths. All640 additions trigger. No total/final500 improvements;
+  12 cases lower fullDD at lower returns. No triple-goal case. All first1500-
+  only choices are unchanged baselines. Main program/defaults unchanged.
+- Highest full-return active policies choose rolling6/X6%/wait0: native349.3250%
+  /final50089.4100%/DD10.9044%, turn4 384.4642%/80.3821%/13.1082%, RSI401.1157%
+  /93.6149%/10.9044%, EMA3 354.7683%/91.9630%/10.9044%. EMA3 window7 ties6.
+  Shorter windows can lower DD, unlike the previous episode/20-day scan, but
+  still lose return. Do not carry forward the older no-DD-improvement claim
+  to this expanded window domain.
+- EMA3 highest-full wait0 selections by X:2%/N5 full152.7664%,3%/N6 259.3579%,
+  4%/N5-or6 302.1911%,5%/N5 346.9426%,6%/N6-or7 354.7683%. Baseline388.5473%.
+  Lowest close-proxy DD atN5/X2%/wait5 costs full144.3321%,final50023.3491%
+  forDD10.1242%. These are retrospective selections, not validated optima.
+- EMA3 N6/X6% loses33.7790 full-return pp and6.1809 final500 pp for1.1142pp
+  lower close-proxy DD. Next-open sensitivity gives370.0600%/90.8489%/DD9.5006%
+  versus395.1418%/97.4190%/DD9.5006%: DD advantage disappears. Doubled-cost
+  selected returns also remain lower. Do not recommend production adoption.
+- Shared PeakPolicy.window type alone widened from0|20 to number; no runtime
+  account logic changed. Preserve old164-row state/output; its source hash
+  checks correctly reject changed-code resume. New44 baseline/rolling20 target
+  hashes exactly match old frozen results. Separate atomic20-case
+  data/peak-window/grid.json resumes all644 rows; output/peak-window retains
+  all scalar cases, full GRID, selected ledgers/sensitivities and COMPARISON.
+- Four new tests and all169 related tests plus typecheck pass. No product code,
+  new data fetch, raw cleanup or protocol changes. Full npm test not rerun for
+  this research-only extension.
+
+## 2026-10-27 additive peak liquidation on four specified models
+
+- User corrected scope to four unique historical models: native v5, unfiltered
+  turn4, RSI35-to40 turn4 and adopted daily4-ema3. Do not use the contribution
+  study's raw/fixed/overlay-only controls. PEAK_LIQUIDATION_DESIGN and
+  peak-liquidation-study.ts/test freeze164 cases:4 unchanged controls plus
+  40/model from episode/rolling20 held-close peaks, thresholds2/3/4/5/6/7/8/10/
+  12/15%, and wait0/5. No pre-entry highs, profit prerequisite or new recovery.
+- Actual forced exits bypass hold protection and clear pending sells/entry/
+  recovery state in the same inherited account; causal flat boundary resets.
+  Wait0 permits native entries next bar, wait5 on sixth subsequent bar. Keep
+  native early4% stops/recovery unchanged. Main Nikkei-close proxy/costs/data
+  remain frozen; no intraday threshold fill or shadow-target masking.
+- All164 cases complete,57 distinct target paths. Each model has28 actually
+  affected policies, all lower full return, and12 inactive10/12/15% policies.
+  No tested addition improves full return, final500 return or full/final500 DD.
+  First1500-only selection also chooses unchanged baseline for every model.
+- Episode6%/wait0 results full/final500/DD: native338.1578/89.4100/12.3376;
+  turn4 372.4227/80.3821/13.1082; RSI388.6604/93.6149/12.3376;
+  ema3 343.4649/91.9630/12.3376. Original values respectively382.6997/95.5087/
+  12.0187,435.7026/86.1901/13.1082,438.3372/99.8490/10.9044,388.5473/98.1439/
+  12.0187. Best actually affected cases use8%/wait0 and still lower total:
+  359.5582,388.7315,412.5285,365.1255. Wider10/12/15% produce no new exits.
+- Some recent-period returns improve, not the overall objective. Ema3
+  episode6%/wait5 improves recent-1.8093% to1.0461% but full298.2945%,
+  final50069.5019%, DD17.3409%. Do not report only the recent gain. Ema3
+  episode6%/wait0 cuts2026-06-08 and reentersJune12 at a3.1167% higher close;
+  illustrates changed reentry paths, not additive attribution of all lost profit.
+- Supplementary peak-liquidation-audit.ts/outputs show fixed4/6/8% cases,
+  exact selected target hashes/cut dates and matched next-open/double costs;
+  the6% examples remain lower return than corresponding controls. It does not
+  change the frozen grid or add new policies. All7 new tests/all165 related
+  tests and typecheck pass; same-command resume reuses all164 scalar rows.
+- Atomic20-case state under data/peak-liquidation/grid.json rejects source/code/
+  design/order drift, with bounded memory/interruption recovery. Separate
+  output/peak-liquidation and output/peak-liquidation-audit retain all cases and
+  selected ledgers. No market fetch, raw deletion, main-program/default change
+  or automatic adoption. Full npm test not rerun for this research-only task.
+
+## 2026-10-27 actual entry/liquidation source shares
+
+- Research-only signal-share-study.ts/test and SIGNAL_SHARE_DESIGN replay the
+  exact frozen v6 account. Assert every2000 before/after target against both
+  production SmaPositionOverlay and prior contribution ledger. Count actual
+  flat->held and held->flat transitions, not raw signals or partial trades.
+- Full57 entries: original20(35.0877%), EMA7/SMA20 turn30(52.6316%), bullish
+  engulf4(7.0175%), new rebound3(5.2632%). Combined rule entrances37(64.9123%).
+  No separately classified stop-recovery entry occurs on this path. Full57
+  liquidations: original same-day7(12.2807%), original pending zero request
+  deferred49(85.9649%), independent rule stop1(1.7544%,2022-02-24). Original
+  intentions therefore originate56/57(98.2456%) full exits. Deferred exits are
+  joint strategy intention/rule timing, not independent moving-average sells.
+- First still-pending zero request persists across repetitions; fresh buys and
+  stops cancel it. Deferred delays median5, mean6.7143, range1..20 sessions.
+  Five delayed exits also have original signals on execution day; counting only
+  signal presence would misattribute44 delayed releases as independent rules.
+  Forty-five full exits occur without original signals that day:44 delayed
+  original releases plus one actual stop. Do not conflate presence with origin.
+- Final500:10 entries, original2(20%), EMA6(60%), engulf1(10%), rebound1(10%);
+  11 exits, original-immediate1(9.0909%), deferred10(90.9091%), no rule stops.
+  One inherited position explains10 versus11; no boundary trades fabricated.
+  PostJuly21:one EMA-rule entry and one immediate original exit. Full126
+  changes reconcile57 entries+57 liquidations+4 partial adds+8 partial reductions.
+- Pairing closed episodes: all20 original entries exit on original intentions;
+  among37 rule entries,36 also exit on original intentions and only one stops.
+  Entry counts are not profit shares, and the frozen path is not prospective
+  validation. No rescreening, parameter changes, new data or product edits.
+- Separate atomic output/signal-share summary/events/report retain dated
+  request origins and percentages; short bounded replay requires no checkpoint.
+  Five new tests and all158 related tests plus typecheck pass. Full npm test
+  not rerun for this research-only task; prior application checks remain intact.
+
+## 2026-10-27 screening versus overlay contribution
+
+- Research only: contribution-study.ts/test and CONTRIBUTION_DESIGN compare nine
+  frozen-source inherited-account cases. Keep the same1293 decision dates,
+  two-bar sequencing, fees,2000 sessions2018-08-09..2026-10-26 and final500 from
+  2024-10-04. Fixed controls are the first observed winner (ROC29/pivot5/4,
+  allocations30/70) and preset SMA10/30, not hindsight-best strategies.
+- Dynamic frozen signals alone return33.3828%/final50033.0594%/DD33.6405%.
+  Current v6 gives388.5473%/98.1439%/DD12.0187%. First fixed raw85.9455%/35.8150%,
+  covered207.3937%/65.9328%; preset raw113.1680%/45.3968%, covered212.0616%/69.3768%.
+  Under the same overlay, dynamic screening beats these fixed controls by
+  176.4857..181.1536 full-return percentage points and28.7672..32.2111 final500
+  points. Without overlay the frozen dynamic winners underperform both.
+- Do not allocate388.55% into independent profits. Overlay's dynamic marginal
+  effect355.1645pp versus98.8936..121.4482pp on fixed controls implies large
+  interaction233.7163..256.2709pp. Report2x2 raw/covered effects and conditional
+  symmetric percentage-point/log-wealth accounting, never universal contribution
+  percentages. Winners are frozen, not reoptimized without overlays.
+- Actual v6 has57 flat-to-held entries:20 with originals and37 without, including
+  stop recovery. There are241 original-reduction request-days still above their
+  requested target at that close,86 blocked/unreached increase-days,1074/2000
+  days different from raw targets; actual fills270->126. Entry counts are not
+  profit shares or independent trades. Overlay-only enters once and holds1977
+  days:174.2529%/61.3134%, almost buy-hold175.0575%/61.3134%, because removing
+  originals also removes ordinary sell requests. This is not an independent
+  standalone exit strategy. Recent v6-1.8093% is worse than raw-0.0222%.
+- Matching next-open/double-cost controls preserve the covered dynamic advantage.
+  New rebound alone adds5.8476pp full/2.6352pp final500 over v5; do not confuse
+  that small increment with the total overlay effect. Product remains unchanged.
+- Atomic64-row fixed-signal caches under data/contribution/signals.json validate
+  source/code/control/index identities; both1293-row same-command resumes pass.
+  Initial draft checkpoint is preserved as signals-initial-398d05c795ba.json;
+  finalized type-safe diagnostics regenerated cache without rewriting identities.
+  Outputs under output/contribution retain nine ledgers, source identities,
+  sensitivities, summary and report. All153 related tests and typecheck pass;
+  full npm test is not rerun for this research-only task.
+
+## 2026-10-27 adopted daily4-ema3 candidate without RSI
+
+- User explicitly selected388.55%/98.14%/DD12.02% daily4-ema3-baseline for
+  production. New fixed v6 defaults add only its daily flat-account rebound
+  exception; RSI/Bollinger are absent. Low uses preceding10 actual-flat closes,
+  latest equal minimum; peak uses10 closes strictly before that low. Require
+  decline5%, rebound4%, three strictly positiveEMA7 slopes, WMA7>=0 and
+  close<=SMA20. No fresh turn needed. Native entry/recovery priority, original
+  signal/pending reduction/cooldown vetoes, hold7 and all exits remain unchanged.
+- Versioned shared controller/default hook automatically connects both pages,
+  ordinary next-open execution and Nikkei completed-close proxy. V5 remains
+  under ENGULF_POSITION_OVERLAY_MODEL/options; old plans are not migrated.
+  Shared model membership separates saved parsing and cache/checkpoint identity.
+  Completed old results remain historical; new calculations use v6. Do not
+  silently relabel old ranked returns as new-model results.
+  Nine localized rules and a second precise details section describe the extra
+  entrance. No private data, source fetch, protocol change or unrelated cleanup.
+- New tests/rebound-position-policy.test.ts covers ten production edge cases.
+  research/nikkei-overlay-stability/rebound-integration.test.ts verifies source
+  identities, every2000 target for both v5/v6,388.5472742% total,98.1439291%
+  final500,12.0186696% fullDD and next-open parity. All148 combined production-
+  rebound/research tests pass. Full npm test passes typecheck,414 unit tests,
+  production build and all4 rendered-route tests; the previously flaky unchanged
+  coordinator recovery test passes in this run. One additional native partial-
+  recovery assertion was added during the full run and passes in the final148-
+  test focused run. Nonfatal build chunk-size/plugin-timing notices remain.
+- Pin prior v5 research parity callers/tests to archived options to prevent
+  baseline drift. Existing data/checkpoints/output are preserved; their old
+  implementation hashes intentionally reject changed-source resume. Do not
+  erase state or rewrite stored hashes. These explicit pins and integration
+  tests are linked changes, not new research or reoptimization.
+- Historical weakness persists: only three added entries and final500 gain
+  concentrated in April2025; postJuly21 remains-1.8093%. Adoption is user-selected,
+  not a new claim of out-of-sample or future profitability. This section
+  supersedes earlier no-adoption/current-v5 status notes, not historical data.
+
+## 2026-10-27 RSI/Bollinger empty-account research
+
+- Research only; native v5 defaults, indicators, exits and position sizes are
+  unchanged. Reuse the frozen2000-session2018-08-09..2026-10-26 evaluation;
+  final500 begins2024-10-04 and recent means after2026-07-21 close. No fetch.
+- OSCILLATOR_ENTRY_DESIGN declares61 independent RSI14/Bollinger20/2 recovery
+  entrances with fixed flat-history evidence, price scopes and confirmations.
+  None strictly improves both native full382.6997% and final50095.5087%.
+  Best RSI full392.3474% and band full389.6667% leave final500 unchanged.
+- Separate OSCILLATOR_FILTER_DESIGN declares23 cases applying the same ten
+  profiles only to two existing rebound branches. Best turn4-baseline-rsi35-40
+  yields full438.3372%, final50099.8490%, fullDD10.9044%, final500DD7.4717%,
+  recent+1.0461%. Unfiltered turn4 gives435.7026%/86.1901%/fullDD13.1082%.
+  Preserve the native SMA20 entrance; its extra OR branch requires causal
+  prior decline5%, rebound4%, preceding10 actual-flat-bar minimumRSI14<=35,
+  currentRSI14>=40 and risingRSI, alongside a fresh positiveEMA7 turn and
+  nonnegativeWMA7. Native signals, pending reductions and cooldown retain
+  authority. No additions to existing holdings. RSI is not an oversold buy.
+- Adding the Bollinger quarter-band AND condition yields identical targets;
+  no incremental band benefit. There are3 native dual-goal cases but only2
+  target paths, including the old EMA3 control; only RSI and its identical AND
+  improve both corresponding unfiltered-control metrics. Do not inflate counts.
+- Five added dates:2019-01-07,2022-10-04,2024-08-13,2025-04-10,2026-07-31.
+  RemovingJuly31 lowers final500 to94.2015%, below native; removingApril2025
+  actually improves performance. RecentDD7.4717% is worse than native3.3479%.
+  First1500-only selection chooses unfiltered turn4, which fails final500.
+  Threshold35 excludes a prior minimum35.453 on2024-09-19. Repeatedly searched
+  history, sparse events and cutoff sensitivity preclude robust/deployable claims.
+- Doubled-cost RSI full407.3916%/final50097.4848% versus native355.1344%/93.4666%;
+  next-open428.5562%/106.9133% versus380.5897%/95.3107%. Common-final500-state
+  fork reproduces99.8490%. Episode exclusions and one-date filter interventions
+  are evaluator-only, nonadditive actual-account diagnostics, not trade alpha.
+- Added oscillator entry/filter study files, filter audit and17 focused tests.
+  Atomic identity-checked61/23-row checkpoints and all selected ledgers/reports
+  are separate from prior studies. Same-command resumes verified61/23 reuse.
+  All136 overlay research tests and typecheck pass. No product feature change;
+  full npm test not rerun here. Its previously reproduced unrelated coordinator
+  failure remains recorded below. No automatic adoption or cleanup.
+
+## 2026-10-27 hard full/final500 return continuation
+
+- User explicitly requires both total and final500 returns to improve. Freeze
+  DUAL_RETURN_DESIGN's91 inherited-account cases: ten rebound entrances with
+  confirmation variants, each with nine exits scoped only to actual new added
+  episodes, plus unchanged native baseline. No segmentation, sizing, second
+  adds, production changes or new market fetch. Original increases clear local
+  tags; native stops/recovery retain original authority. Separate local exits
+  clear recovery and wait five subsequent bars; all fills use observed closes.
+- Initial91 finds16 dual-goal cases, only3 distinct qualifying paths. The
+  smallest unchanged-exit case daily4-ema3-baseline and full2 equivalent yield
+  full388.5473% versus382.6997%, final50098.1439% versus95.5087%, fullDD12.0187%
+  and final500DD8.2462% unchanged. Candidate adds a daily empty-account fallback:
+  decline5%, rebound4%, current close<=SMA20, three positiveEMA7 slopes and
+  current nonnegativeWMA7, with all native vetoes. Low and pre-low peak remain
+  causal. No new holding/exit parameters are needed for this candidate.
+- Clarify weak evidence: only3 extra entries,2019-01-09,2022-06-29,2025-04-16.
+  First1500 return146.5618% is slightly below146.8942%; first1500-only selector
+  instead chooses turn4-baseline, whose final50086.1901% fails the hard goal.
+  Candidate postJuly21 remains-1.8093%, identical to baseline; it does not solve
+  the original recent recognition issue. RemovingApril16 removes all final500
+  gain (one-session head start before nativeApril17 entry) and full return falls
+  to382.0499%. RemovingJanuary2019 also breaks the full goal. Do not deploy.
+- A separately frozen second stage removes the below-SMA20 restriction after
+  confirmation:54 additions, with native control55-row state. Combined145 cases
+  produce102 target paths, still16 goals/3 paths, all no-worse fullDD. No case
+  improves full/final500/postJuly21 together. Keep the failing broader fallback
+  and local exit comparisons; do not inflate16 correlated cases as validation.
+- Doubled-cost candidate full360.1876%/final50096.0743% versus355.1344%/93.4666%;
+  next-open395.1418%/97.4190% versus380.5897%/95.3107%. These sensitivities retain
+  the historical dual improvement, not a guarantee for new data or real fills.
+  Whole-account episode omissions preserve native entries and causal prefixes;
+  their retrospective bounds are evaluator-only and impacts are nonadditive.
+- New dual-return-study.ts/test, dual-return-extension.ts and two design files
+  link atomic scalar91/55-row checkpoints under research data/dual-return{,-extension}
+  to selected ledgers/reports under matching output directories. Both same-
+  command resumes reuse all91/55 rows and reject identity/order drift. Bounds,
+  SIGINT/SIGTERM/RSS checks and atomic10-case commits apply. Earlier sources,
+  code, checkpoints and outputs remain unchanged. All69 related tests pass,
+  including13 new tests, plus typecheck. Full npm test has404/405 unit passes:
+  the unmodified coordinator recovery fixture fails at
+  tests/screening-engine-coordinator.test.ts:264, expecting both intentional
+  stall and unexpected-exit paths. Standalone coordinator rerun reproduces
+  the same failure (5/6 pass). Do not claim full-suite success or modify that
+  unrelated feature. Separate production build and all4 rendered-route tests
+  pass; nonfatal chunk-size/plugin-timing notices remain.
+
+## 2026-10-27 SMA20 substitutes and flat rebound exceptions
+
+- User requests an SMA20 substitute/complement for actual empty accounts.
+  Freeze20 cases in SMA20_FALLBACK_DESIGN, then separately disclose6 weaker
+  decline-background audits. No segmentation, partial sizing, second adds,
+  new exits or product changes. New sma20-fallback.ts reuses ResearchAccount
+  through an isolated feature/context facade; all2000 baseline targets match
+  production and positive holdings cannot be increased by the fallback.
+- July31 andSeptember18 are solely-SMA20-blocked EMA turns, with price gaps
+  -2.7702%/-0.1569%. EMA7 positive slope already implies close>EMA7, so using
+  that gate simply removes the independent price filter. Turn-only EMA20,
+  EMA14 and no-filter replacements give full256.695%/282.728%/269.650% versus
+  baseline382.700%, with worse DD. A0.5% SMA20 tolerance also fails overall.
+- Compare retaining SMA20 OR causal rebound2/3/4% at a fresh EMA7 turn with
+  a separate daily fallback below SMA20/any missed entry, optionally requiring
+  prior-high confirmation. Common background: preceding10 completed flat
+  closes supply the latest minimum; preceding10 pre-low closes supply peak;
+  require5% prior decline. Today/future excluded from the low, all original
+  signals/pending reductions/cooldown veto entries, native entries take priority.
+- Declared primary fallback-below-trend-x3 loses full return367.558%/DD13.108%.
+  First1500-only selection and full-sample best both choose hybrid-x4:
+  full435.703% versus382.700%; fullDD13.108% versus12.019%; recent1.046% versus
+  -1.809%, but recentDD7.472% versus3.348%. First1500 improves187.718% versus
+  146.894%, but final500 worsens86.190% versus95.509%. This is a candidate
+  tradeoff, not a validated replacement. All20 fail the combined full return/
+  no-worse-DD/recent objective. Double-cost and next-open results are recorded.
+- Hybrid-x4 adds8 episodes; whole-account omission of any one leaves full
+  return above baseline, unlike the earlier sparse sleeve candidate. Episode
+  PnL is not causal alpha: omitting a losing stop can reduce later return by
+  eliminating native recovery. Audit all baseline blocked turns individually.
+  July31-only unlock gives recent1.046%; September18-only gives-2.802% with
+  DD8.899%, despite8.713% favorable price excursion before exitingOctober15
+  at about-1.011% net. Do not optimize entry recognition without exit outcomes.
+- September's4.391% decline fails the fixed5% background. Six explicitly
+  post-result3%-decline cases show X2 then captures it but worsens full return
+  and recentDD; X3/4 targets/results remain unchanged. No claim that all
+  SMA20-blocked turns should pass or that4% is universally optimal.
+- New scripts/design/tests and output/sma20-fallback plus separate audit
+  contain full daily ledgers, baseline flat intervals, causal low diagnostics,
+  event counterfactuals, episode omissions and dated drawdowns. Finite20+6
+  cases need no checkpoint; atomic per-case outputs and deterministic rerun,
+  strict hashes, bounds and interruption checks apply. No fetch/raw deletion.
+  All56 related tests pass, including12 new tests. Full npm test passes
+  typecheck,405 unit tests, production build and4 rendered-route tests.
+  Existing nonfatal chunk-size/plugin-timing notices remain. Earlier changes
+  and all prior research are preserved.
+
+## 2026-10-27 explicit-mode supplemental repair proposal
+
+- User requests a concrete attempted solution with explicit regime boundaries.
+  SUPPLEMENTAL_REPAIR_DESIGN freezes577 cases before evaluation. Preserve the
+  v5 main controller as a shadow target path; allow an independent sleeve only
+  while main is flat, with main positive targets always authoritative. Execute
+  one actual portfolio, not scaled shadow returns. No product default changes.
+- Compare no segmentation, range and wide-range, three triggers, four sizes,
+  two hard stops, two age limits and four exits. Wide-range enters after3
+  ER20<=0.25/abs(D1)<=0.10/ATR-percent-rank>=0.60 closes. D1 is EMA20's
+  three-session backward slope divided by priorATR14. Entry permission starts
+  next bar. Minimum residence5; confirmed trend/burst/low-volatility exits and
+  immediate shock exit are specified in the design and exported mode CSV.
+  Modes gate new entries only; existing sleeves retain explicit holding exits.
+- Retrospective observation candidate wide-queued-a50-percent-age10-wma:
+  full2000 return389.7348% versus382.6997%, identical maximumDD-12.0187%;
+  postJuly21 return0.7842% versus-1.8093%. Queued EMA7 turn lasts3 sessions,
+  waits for close>SMA20 and nonnegative WMA7, and cancels on ordinary reduction.
+  Main priority, pending-WMA/price-weakness exits,4% close stop/five-bar cooldown
+  and age10 exit are exact. Curvature produces the identical target path and
+  is omitted from the concrete candidate. Best declared unsegmented variant
+  falls short on full return/DD. Do not generalize beyond the declared menu.
+- Serious limitation: only3 extra episodes in2000 sessions. Removing2026-09-24
+  through2026-10-08 makes full return377.132%, below baseline. First1500 return
+  is144.047% versus146.894%; chronological selection retains baseline. Sizes
+  75/100% improve retrospectively but are not independent validation. Double
+  costs, next-open and1936-bar common-state parity diagnostics pass, not proof
+  of a durable edge. Keep as observation/research, never automatic adoption.
+- Atomic577-row checkpoint at research data/supplemental-repair/grid.json
+  reuses all577 rows on same-command resume. Strict source/code/design/menu
+  identity,20-row commits, interruption checks and finite memory bounds apply.
+  supplemental-repair-audit.ts writes counterfactual episode attribution and
+  RECOMMENDATION.md alongside full ledgers and mode-intervals.csv. No new fetch,
+  raw deletion, growing cache or scheduler. All44 combined related research
+  tests pass, including10 new repair tests. Full npm test passes typecheck,
+  405 unit tests, production build and4 rendered-route tests. Build retains
+  nonfatal plugin-timing/chunk-size notices; no unrelated changes are made.
+
+## 2026-10-27 historical burst/range segmentation and EMA20 curvature
+
+- User asks for MA-direction plus ATR segmentation, clarifies directional
+  crashes/rallies versus current range conditions, then requests EMA20 slope
+  and second derivatives. Classify all6566 frozen daily bars from2000-01-04
+  through2026-10-26; last2000 begin2018-08-09. No new market fetch or live changes.
+- Initial SEGMENTATION_DESIGN compares EMA14/20/30/SMA20 at1/3/5 confirmations.
+  EMA20/confirm3 gives205 last2000 segments but a stale rapid-up phase during
+  the October turn. Preserve all initial outputs under output/ma-atr-segmentation,
+  including charts, daily labels, segments and sensitivity. Do not backfill.
+- MA_DERIVATIVE_DESIGN adds8 fixed h1/h3 slope/ER/curvature models. Primary
+  combined-h3 uses EMA20 backward D1/D2 with one priorATR14 denominator,
+  ER20 background and observed5-session burst/shock attributes. Pending
+  background changes publish uncertainty; actual shock/burst evidence can
+  identify a rapid sub-move before the slow MA turns. Curvature alone never
+  sets a directional burst. Store observed-close and next-bar effective labels.
+- Two-layer output: background-segments.csv preserves broad regimes, while
+  segments.csv records internal rapid moves. Current64 days have51 range
+  background days (79.6875%;37 wide,14 normal),7 transition,4 ordinary-down,
+  2 ordinary-up. Detailed layer has13 rapid-up and13 rapid-down days. On the
+  last frozen close, broader ER20 background is range but D1/D2 are negative
+  and the five-session displacement is a rapid-down sub-move. Do not treat
+  the whole recent interval as permanently one state or label high ATR bearish.
+- Curvature h3:217 complete warnings,137 matched events/103 unique D1 crossings,
+  80 unconfirmed within10 sessions (36.8664%), median matched lead3 sessions,
+  forward5 direction agreement55.2995%. h1:508 warnings,52.0% agreement.
+  Repeated/overlapping events are not independent; future values are evaluator
+  inputs only and last10 sessions are censored. D2 improves early observation
+  but not proven trading performance. Combined-h3 detailed segmentation592
+  /284 one-day versus efficiency-h3's560/279 warns against direct noisy switches.
+- Atomic JSON/CSV/report and all-history/last2000/recent PNGs under
+  output/ma-derivatives remain separate from initial outputs. Plots shade broad
+  background and use a thin upper strip for rapid sub-moves; lower panes show
+  ATR-percent,D1,D2. Definitions, sources, source/code hashes and diagnostic
+  limits are recorded. Bounds16MiB/file,10000 bars,8/12 finite configurations,
+  RSS1.5GiB; deterministic rerun, no new cache/checkpoint/scheduler.
+- Nine new focused tests verify same-ATR/different-regime cases, backward-only
+  signs, zero curvature under linear means, decelerating decline versus rise,
+  confirmation/no backfill, complete segment coverage, h1/h3 prefix causality,
+  label lag and forward-evaluation censoring. Typecheck and plot generation
+  pass. Product code/model/strategy parameters and earlier state are untouched.
+
+## 2026-10-27 partial supplemental sizing and exit continuation
+
+- User authorizes continued research from high-volatility/weak-persistence
+  diagnosis. Freeze321 policies in REGIME_SIZING_DESIGN.md: two entry regimes,
+  EMA/all-supplement scope, turn/pending3, fixed25/50/75 or ATR1/1.5 budgets,
+  optional confirmed restoration and baseline/WMA/EMA/ATR-giveback exits.
+  Reuse frozen2000-session source ending2026-10-26; no production changes.
+- Use actual partial accounts, not scaled shadow returns. Ordinary buys keep
+  absolute-target authority; reductions cannot raise smaller allocations.
+  Restore only after entry with two closes aboveSMA20/60 and positive EMA/WMA,
+  no original signals/pending sell; retain original entry-age marks. Early4%
+  stop keeps actual stopped target and priority. Tagged ATR giveback waits5
+  and requires a fresh entry, without inventing stop-price fills.
+- Baseline matches all2000 production targets at382.699651%/-12.018670%.
+  None of320 changes meets full return/no-worse-DD; first1500 choice is baseline.
+  Best nonbaseline full return is weak-wide/EMA/current-turn/fixed75/no-restore/
+  baseline exits:361.796983%/-12.018670%; recent-1.287334%/-2.512164%.
+  Initial recent-best wide/EMA/pending3/fixed75/restore/WMA gives+4.857% recent,
+  but181.550% full/-21.795% DD. Its July31 entry is recovery from an earlier
+  variant-specific stop, so do not attribute it to a newly captured local turn.
+- Add separately declared321 common-state forks in REGIME_SIZING_REVIEW_DESIGN.
+  Preserve exact baseline state throughJuly21 and change policy next bar;
+  assert1936 prefix targets per policy. This date switch is attribution only,
+  not a proposed live rule. Fork winner wide/EMA/pending3/ATR1.5/no-restore/WMA
+  has recent+2.839%/-2.222%; double-cost+2.659%, next-open+2.318%.
+  August28 andSeptember24 partial entries precede anOctober9 WMA-confirmed
+  exit, instead of waiting untilOctober15 on the unchanged delayed-entry path.
+  The corresponding genuine full-path policy is158.296483%/-24.889481%, so
+  the local improvement is insufficient for default adoption.
+- Source/design/implementation/ordered IDs protect atomic20-row progress at
+  research data/regime-sizing/grid.json. Same-command resume reuses321 rows.
+  Scalar grid, selected full ledgers, costs/next-open and analogues live under
+  output/regime-sizing. Common-state outputs are separate output/regime-sizing-review.
+  Bounds16MiB/file,10000 bars,2048 decisions,321 cases,RSS1.5GiB; preserve
+  frozen source and prior studies. No scheduler, cache purge, rescreen or reset.
+- Verification:25 focused tests pass, including all321 partial paths and321
+  forks prefix causality, scope, original signal priority, hold7, restoration,
+  early stop/recovery, ATR exit/cooldown and resume identity rejection.
+  Typecheck passes; five selected ledger/summary pairs per study reconcile.
+  Research-only changes do not require rebuilding unchanged product code.
+
+## 2026-10-27 interval characteristics before conditional tuning
+
+- User asks to diagnose the interval's overall features and tune for the
+  detected characteristics. Reuse frozen full-screen data ending2026-10-26;
+  declare13 policies before evaluation in REGIME_TUNING_DESIGN.md. No live
+  model, UI, saved plans, strategy queue or market source changes.
+- Recent64 sessions: market-6.1036%, DD-12.0173%, Wilder14 ATR/close2.3607%
+  versus historical64-block median1.3772% (93.3rd percentile across30 blocks).
+  MeanER20 is0.1528 versus0.2190; aboveSMA60 share29.6875% versus60.1563%;
+  median EMA7 positive run2 versus3.5 sessions. Daily-sign reversals47.62%
+  versus50.79%, so elevated reversal frequency is not the distinguishing fact.
+  Describe high volatility/weak directional persistence with overall weakness.
+- Nearest descriptive blocks:2022-01-14..04-18,2024-05-23..08-22,
+  2025-03-06..06-09,2018-11-12..2019-02-19,2024-08-23..11-26.
+  These whole-block labels are retrospective only. Runtime instead uses prior
+  close ER20/ATR-percent ranks, historical252-only ranks, two-day confirmation
+  and0.25/0.35 ER hysteresis, never the known July21 boundary.
+- Compare delayed3, hold3, pending-exit WMA-only/direct-original release and
+  two combined actions under noise/wide-noise. All12 changes reduce full-path
+  return; first1500 constrained selection retains baseline. Wide-noise/hold3
+  yields357.493% versus382.700%, same full DD-12.0187%, recent unchanged
+  -1.8093%. Delayed3 recent-3.537% versus-1.8093%; direct-exit/noise/delay3
+  gives-1.956% recent and full DD-32.014%. No adoption is supported.
+- Implementation preserves continuous allocation, pending reductions, episode
+  age and cooldown while switching rules. Use a finite maximum SMA threshold
+  to bypass finite SMA slopes while retaining the shared Infinity sentinel
+  for holding/WMA protection. Tests distinguish the exit policies and verify
+  hold3 and state retention across regime switches.
+- Artifacts under research/nikkei-overlay-stability/output/regime-tuning:
+  REPORT.md, summary.json and13 full ledgers. Record source/design/code hashes,
+  daily detector states, chronological252-block and matched-block returns,
+  double-cost and next-open diagnostics. Bounds:16MiB/file,10000 bars,2048
+  decisions,13 cases,RSS1.5GiB. Short finite atomic reruns need no new cache,
+  scheduler or checkpoint; preserve sources and previous studies.
+- Verification: eight new focused tests and five prior entry tests pass;
+  all13 policy prefixes are causal,2000 production targets match and13
+  summary/full-ledger pairs reconcile. Typecheck passes. Research-only scope
+  does not require rebuilding unchanged product code. Rerun from project root:
+  `node --import tsx research/nikkei-overlay-stability/regime-tuning.ts`.
+
+## 2026-10-26 SMA14..20 and post-July21 diagnosis
+
+- Research-only request: examine poor recognition after2026-07-21 and compare
+  close>SMA14..20 with EMA7 positive turns. Declare28 cases, reusing frozen
+  full-screen input ending2026-10-26 and current-v5 hold7/engulfing/risk rules.
+  Baseline research matches every2000 current production targets exactly:
+  return382.6996508%, drawdown-12.0186696%. No product or model changes.
+- SMA19/20 current-turn recent64-session paths coincide: -1.8092928% return,
+  -3.3478778% drawdown, versus holding-6.1035845%/-12.0173298%.
+  SMA14..18 recent return-7.3561%, drawdown-8.8991%; full-period SMA20
+  beats every shorter average. Pre-cutoff-only constrained choiceSMA16 has
+  worse subsequent results, demonstrating recent-fit selection risk.
+- July31 turn is blocked by SMA20; price passes onAugust5 without a new turn.
+  September18 turn likewise fails SMA20, which passesSeptember24. Pending3
+  captures both but current holding/exit protections retain the September24
+  entry untilOctober15. Pending3/SMA20 recent-3.6336%/-8.8991%, full175.8881%
+  /-25.0575%. More recognized rallies do not imply improved realized return.
+- Artifacts: output/sma-entry-14-20/{REPORT.md,summary.json,*-sma*.json} under
+  research/nikkei-overlay-stability. Each ledger includes causal daily gates,
+  original signals, pending sells, risk flags and allocations. Source/bars/code
+  hashes, close boundaries, double-cost and next-open sensitivity are recorded.
+  Files16MiB/bars10000/decisions2048/RSS1.5GiB bounded; short28-case study uses
+  atomic outputs and deterministic reruns instead of new durable checkpoints.
+  Existing source backups/checkpoints and unrelated working-tree edits remain.
+- Verification: five focused research tests pass, including28 prefix-causal
+  paths and cooldown/priority boundaries; all2000 baseline targets and28
+  summary/ledger pairs reconcile. Full `npm test` passes typecheck,405 unit
+  tests, production build and four rendered/source checks. Diff whitespace
+  checks pass. Rerun with `node --import tsx
+  research/nikkei-overlay-stability/sma-entry-study.ts` from the project root.
+
+## 2026-10-26 alignment follow-up and unintended chart zoom
+
+- Matched research optimization/validation cards at98px and all three controls
+  at32px with identical top coordinates. Removed the extra sample-window
+  fieldset; its label now includes period/unit. Mobile widths390px have no
+  horizontal overflow. Rules remain below Clear Task in cycle settings.
+- User reports only a few candles despite a closed market. Browser reproduction
+  confirms unmodified wheel zoom narrows the visible range from roughly0.83%
+  to0.033% without changing history. Price-chart inside zoom now requires Ctrl;
+  bottom slider remains interactive. Localized hover guidance explains it.
+  No market-data purge, forced refresh, session-policy or task changes occur.
+- Browser checks after the fix confirm ordinary wheel leaves zoom unchanged,
+  while Ctrl+wheel still produces a zoom event. Reload restores recent candles.
+  Desktop research cards/controls align exactly; cycle rules follow buttons;
+  narrow390px layouts stack without horizontal overflow. Chart/v5 scoped tests
+  pass33 and typecheck passes. Final combined `npm test` passes405 unit tests,
+  production build and all four rendered/source tests. Whitespace checks pass.
+  Browser before/after artifacts under output/playwright show the accidental
+  three-candle view and restored recent60 view; source retains6566 daily bars.
+
+## 2026-10-26 default hold7/reversal implementation and compact settings
+
+- User authorizes hold7 plus the >=5% decline/body-engulfing entry, moving cycle
+  rules below Clear Task, simplifying all rule copy and adjusting the whole
+  research configuration width/height. Current model is v5
+  `ema7-sma11-wma7-sma20-hold7-stop4-engulf5-v5`; archived fixed v4 is retained
+  as `FIXED_HOLD5_POSITION_OVERLAY_MODEL`, with all five models accepted and
+  distinct checkpoint identities. Earlier saved plans preserve their behavior.
+- Cached reversal feature uses the latest lowest open within five bars and
+  highest close strictly preceding that low over ten bars. Decline>=5%, prior
+  bearish body and current bullish engulfing allow flat/no-original-signal full
+  entry despite SMA20/WMA gates. Cooldown still blocks it. EMA/reversal hold
+  age is seven; early cumulative4% stop remains ages1..5, overriding protection.
+- Exact2000 production targets match recommended-engulf.json: return382.6996508%,
+  drawdown-12.0186696%,124 fills. Existing v4 tests and old research parity
+  controllers now explicitly pin v4. Source/data outputs are preserved; modified
+  research implementation hashes correctly reject old checkpoints on rerun.
+- UI uses eight concise localized rules, collapsed precise reversal definition
+  and short execution note. Cycle rules follow the action buttons. Research
+  target/validation controls share a compact upper row; rules span the lower
+  row in two columns, with a single-column narrow-screen fallback.
+
+## 2026-10-26 missed V-bottom and holding/recovery study
+
+- User expands improvement research beyond entry/exit/risk families to missed
+  V-bottom entries. Freeze292 initial variants, then explicitly confirm strict
+  decline-before-reversal sequencing and predeclared interactions; final386
+  menu additionally checks percentage-denominator correctness. Preserve all
+  initial/sequenced output, with final state under data/v-recovery-confirmed
+  and selected ledgers under output/v-recovery-confirmed. No production edits.
+- Baseline exactly matches every current-v4 target and328.0321476% return /
+  -12.0186696% drawdown.31 of386 confirmed variants increase full-period return
+  without worse drawdown. Hold7 alone gives348.4375375%/-12.0186696%.
+- Hold7 plus bullish body engulfing after a >=5% chronological local decline,
+  with V-only exemption from SMA20/WMA gates, yields382.6996508%/-12.0186696%,
+  final50095.5087242%/-8.2462494%. Last3/5/7-open low windows coincide for this
+  case. Four V entries:2018-10-30,2022-03-15,2024-08-15,2024-10-28. Prior day
+  must close below its open; current open<=prior close and close>prior open.
+  Decline uses latest lowest open and preceding10 highest close; ordinary
+  signals retain priority, hold7 applies to supplemental/V entries, early4%
+  stop and wait5/recovery remain. No additional6% trailing exit is included.
+- Highest confirmed full return385.7780480%/-12.0186696% uses hold7 plus fresh
+ 5% rebound from last10 lowest opens after >=5% decline. Seven extra V buys;
+  last50095.0216693%/-9.2202232%, worse segment drawdown than the engulf case.
+  First1500-only diagnostic chooses hold7/rebound5%/decline3%, full378.9093933%,
+  final50089.1365736%/-9.2202232%, versus baseline89.7732569%/-8.2462494%.
+  Thus full-sample best is not established as a forward winner.
+- Seventeen combined V/trailing/cumulative tests pass, including declared menu,
+  body reversal, gate isolation, percentage basis, peak/low chronology,
+  signal/cooldown priority, partial-stop restraint and386 prefix-causal paths.
+  Full-sample selection uses already explored history, not untouched validation.
+
+## 2026-10-26 six-percent held-peak exit comparison
+
+- User asks what happens with a full-holding six-percent drawdown exit.
+  Interpret this as price versus the highest close of the current held episode,
+  inclusive threshold; keep current first-five4% stop, wait5 and recovery.
+  Freeze five cases in TRAILING_STOP_DESIGN.md and reuse immutable full-screen
+  source. No production/UI model change is authorized by this research query.
+- No-addition research targets exactly match all current-v4 production targets:
+  return328.0321476%, drawdown-12.0186696%,122 fills. Additive6% yields
+  return273.0488814%, drawdown-11.1728355%,129 fills, five stops/five recoveries
+  (four new trailing exits, one existing early stop). Final500 return falls
+  from89.7732569% to74.8879838%, drawdown worsens8.2462494% to10.5427026%.
+- Replacing early4% with6% trailing yields262.2842380%/-13.4753671%.
+  Additive5% yields233.2740332%/-15.3119795%; additive7% yields
+  294.1897211%/-12.9219420%. Six-percent addition costs54.9832661 return
+  percentage points for0.8458341 points less full-period drawdown. This is
+  previously explored historical data, not a prospective result. Raw inputs,
+  existing checkpoints and all previous outputs remain intact.
+- Atomic per-case ledgers/summary live in output/trailing-stop-six. This finite
+  five-case, bounded-memory run simply regenerates its derived artifacts on
+  rerun; no new long-running job, scheduler or checkpoint lifecycle is needed.
+- All eleven combined cumulative/trailing research tests pass, including
+  inclusive profitable exits, early-stop priority, cooldown, peak reset,
+  partial-add peak retention and prefix causality. Typecheck and whitespace
+  checks pass. Three of four additional trailing exits reenter at higher
+  closes: 2020-06-15 to06-24 +4.6601%,2023-10-03 to10-12 +4.0231%, and
+  2026-06-08 to06-16 +8.4029%; 2022-12-21 to2023-01-10 is -0.8040%.
+
+## 2026-10-26 fixed always-enabled SMA20/WMA/early-stop policy
+
+- User authorized the SMA20 supplement gate, WMA7 original-reduction
+  confirmation and first-five cumulative4% stop, with the tested wait5/trend
+  recovery behavior. New current model is
+  `ema7-sma11-wma7-sma20-hold5-stop4-v4`. The former v3 is retained as
+  `HOLD5_POSITION_OVERLAY_MODEL`; v1/v2/v3 and unversioned plans keep their
+  old formulas/optional flags and distinct saved/checkpoint identities.
+- Replaced three checkboxes with a seven-rule localized list on research and
+  cycle pages. All new page calculations use immutable fixed defaults. Removed
+  checkbox state, preference storage effects and obsolete setter calls because
+  the user explicitly requested always-on rules; old storage records remain.
+  Historical applied charts still clone their saved plan's exact overlay model.
+- Shared controller caches all daily policy features per bars/model and keeps
+  bounded target, pending sell, supplemental age, entry-close/age, recovery
+  target and cooldown state. SMA20 gates only EMA supplements, WMA gates flat
+  buys, and pending sells require hold/SMA/WMA confirmation. Ages1..5 cumulative
+  close loss>=4% overrides protection; wait5 blocks every entry; normal signals
+  or causal trend recovery resume at stop+6. Ordinary fills remain next-open,
+  cycle fills retain the close proxy. Unknown inherited entry marks are not
+  invented. Repeat close calls are idempotent.
+- All2000 production targets match the exact selected research path: return
+  328.0321476%, drawdown -12.0186696%,122 fills. This is a historical replay,
+  not a prospective guarantee. Dedicated tests cover fixed normalization,
+  saved identities, supplemental-only SMA20 gating, pending partial targets,
+  hold5, early-stop ages, cooldown/recovery, next-open execution and causality.
+  Existing hold5 tests/research now explicitly pin v3. No queue, raw data,
+  previous research output, protocol or search-domain reset occurs.
+- Final verification: full `npm test` passes typecheck, all 398 unit tests,
+  production build and all four rendered/source tests. Diff whitespace checks
+  pass. Local HTML contains seven policy rules and zero policy checkboxes;
+  application and relay health both report ready with protocol unchanged.
+
+## 2026-10-26 cumulative stop-loss threshold research
+
+- User clarifies decline can accumulate across days. Declared1368 rules in
+  `research/nikkei-overlay-stability/CUMULATIVE_STOP_DESIGN.md`, implemented
+  in `cumulative-stop-study.ts`: entry-close loss, held-peak-close drawdown and
+  daily-loss control,1..10% by0.5%, whole episode/first five intervals,
+  0/2/5-bar cooldown and optional trend recovery on hold5 and SMA20/WMA bases.
+- 138 combinations improve the291.0221%/-17.7598% research base. Best entry
+  and peak variants coincide:4% threshold in the first five intervals,
+  five subsequent days without buys, then optional trend recovery. Return
+  328.0321%, drawdown -12.0187%, final50089.7733%, one stop/one recovery.
+  First1500-only constrained selection chooses the same historical rule.
+- Whole-episode4% stop with the same wait/recovery reduces drawdown further:
+  return318.1321%, drawdown -10.9044%, final50089.7733%, four stops/three
+  recoveries. Neighbor3.5/4/4.5% first-five returns318.5387/328.0321/328.0321%;
+  corresponding drawdowns12.8805/12.0187/12.0187%. Daily-only stops produce
+  no eligible simultaneous improvement versus the291.0221% base.
+- First-five best has one stop on2022-02-24 after2022-02-16 entry. The decline
+  accumulates across sessions; the threshold is a trigger, not a guaranteed
+  maximum loss or fill price. Final500 has no incremental improvement versus
+  the no-stop SMA20/WMA base. This concentrated, already-researched historical
+  evidence cannot establish general safety or prospective optimality.
+- Twelve combined cumulative/expanded risk tests and typecheck pass. Tests
+  cover multiple-day loss versus daily loss, peak loss on profitable positions,
+  age-five boundary, fresh-entry exclusion, cooldown, no-stop parity and all
+  1368 prefix-causal paths. Two no-stop returns and the prior7% result reconcile.
+  Full metric grid, selected ledgers, neighbors, cost/next-open diagnostics
+  and source/design identities live under `output/cumulative-stops/`.
+- Atomic50-row progress under `data/cumulative-stops/grid.json` resumes matching
+  identities; file16MiB/bar10000/decision2048/RSS1.5GiB bounds remain. Sources,
+  prior outputs and production rules are unchanged. Update only research and
+  linked methods/state/pipeline/cache documents; no new live stop is enabled.
+- Final same-command resume reuses all1368 metric rows without recomputation.
+  Final typecheck and diff checks pass. At the2022-02-24 trigger, cumulative
+  close loss since2022-02-16 is5.4245%, versus that day's1.8102% decline,
+  illustrating threshold overshoot and the distinction from a daily stop.
+
+## 2026-10-26 expanded simultaneous return/drawdown search
+
+- User rejected reducing return merely to reduce drawdown. Declared975 rules
+  in `DRAWDOWN_EXPANSION_DESIGN.md`: three pending-sell confirmation policies,
+  thirteen supplemental quality gates, and25 risk/recovery combinations.
+  `drawdown-expansion.ts` reuses RuleAccount, indicators and production ledgers.
+  Eligibility requires full return >=228.4374% and drawdown better than23.6207%.
+- 110 rows satisfy both historical constraints. Simple SMA20 supplemental gate
+  plus WMA-negative pending-sell confirmation returns291.0221%, drawdown
+  -17.7598%, final50089.7733%. Adding7% episode-entry-close stop with trend
+  recovery gives307.9883%, -13.8395%, final50089.7733%; it triggers just two
+  cuts/two recoveries. Lowest eligible drawdown is SMA20/WMA-negative plus3%
+  close stop/no extra recovery:276.6987%, -12.4762%, final50087.0294%.
+- First1500-only eligibility/return ranking picks a different WMA-slope0.2%
+  supplemental gate with half reduction at5% loss: full189.3646%, -19.9756%,
+  final50025.2380%. Full-sample winners must not be called validated upgrades.
+  Already explored dates and baseline tuning prevent untouched-holdout claims.
+- Complete975-row CSV, selected ledgers, double-cost/next-open diagnostics and
+  source/design identities live in `output/drawdown-expansion/`. Atomic scalar
+  checkpoints commit every50 rows under `data/drawdown-expansion/grid.json`;
+  prior checkpoint before adding the simple summary is retained separately.
+  Frozen input and previous output are preserved. Stale identities reject resume.
+- Ten combined risk tests and typecheck pass. Tests cover all975 prefix-causal
+  paths, baseline hold5 equality, supplemental-only quality gates, partial risk
+  cuts, delayed recovery and full-stop cleanup. Production enables only hold5;
+  experimental quality/risk conditions remain disabled. Technical research,
+  feature linkage, data pipeline and cache policy document this bounded study.
+- Repeating the final script reuses all975 committed rows with no grid replay.
+  Final typecheck/diff checks pass; local HTML shows the five-day holding copy.
+
+## 2026-10-26 hold5 production verification completed
+
+- Full `npm test` passes typecheck,390 unit tests, production build and four
+  rendered/source tests. New holding-age, original-entry, cancellation and
+  old-model tests pass. The production target path matches the previous hold5
+  research result on all2000 sessions. Only hold5 is applied to page defaults;
+  old v1/v2 saved plans remain replayable. No queue/protocol/data reset occurs.
+
+## 2026-10-26 authorized supplemental hold5 and drawdown comparison
+
+- Current shared model is `ema7-sma11-wma7-hold5-v3`. EMA7 flat-account
+  supplements preserve pending reductions until signal index+5, independent
+  of the exitGuard flag; SMA protection may defer further. Original entries
+  receive no holding lock, and fresh buys cancel pending reductions. Current
+  page copy discloses five trading days. V1/v2 saved plans retain original
+  formulas; old research baselines use `PREVIOUS_POSITION_OVERLAY_MODEL`.
+  No winner, queue or data migration is performed.
+- All2000 production targets match researched hold5: return228.4374%, drawdown
+  -23.6207%,188 fills, final50084.7781%. Tests cover exact release age, minimum
+  partial targets, original buys, cancellation and distinct saved identities.
+  Bounded holding age is reconstructed in replay; no checkpoint schema changes.
+- Isolated39-rule risk study compares close-based initial/trailing stops,
+  five-day post-stop cooldown,50/75/100% supplemental entry and early lock
+  release on EMA/WMA weakness. Lowest full-sample drawdown retaining90% of
+  baseline return is full-size/unlock-WMA:207.9571% return, -18.7512% drawdown,
+  final50065.5186%. No tested rule both raises return and lowers drawdown
+  versus hold5. Development-only risk choice is75% entry/unlock-WMA:
+  180.4492%, -18.0069%, final50062.7955%. These are explored-data diagnostics.
+- `DRAWDOWN_DESIGN.md`, `drawdown-study.ts`, focused tests, all39 rows, selected
+  ledgers, double-cost results and source/code identities are linked under
+  `research/nikkei-overlay-stability/` and `output/drawdown-hold5/`.
+  Five risk tests and typecheck pass. Production enables only hold5, without
+  experimental stops/unlock. This finite study needs no new checkpoint;
+  16MiB input,10000-bar,2048-decision and1.5GiB RSS bounds apply.
+
+## 2026-10-26 bounded entry/exit condition exploration
+
+- Declared 96 rules in `research/nikkei-overlay-stability/RULE_VARIANTS_DESIGN.md`:
+  four event/state entry modes, six pending-reduction confirmation modes and
+  supplemental minimum holding ages 0/2/3/5. `rule-variants.ts` reuses `Account`
+  via a causal feature view; original signal sequencing, minimum pending sells,
+  fresh-buy cancellation, current costs and immutable full-screen plans persist.
+- Current baseline returns 186.2819%, drawdown -21.7197%, 222 fills, final500
+  68.5100%. Only adding a five-bar supplemental holding lock returns 228.4374%,
+  drawdown -23.6207%, 188 fills, final500 84.7781%. Full-sample best keeps EMA
+  turn entries, adds five-bar protection and WMA7-negative sell confirmation:
+  258.1626%, drawdown -24.2608%, 161 fills, final500 78.6503%. Higher returns
+  trade off worse peak-to-trough losses; two/three-bar neighbors do not show
+  the same improvement. No general stable optimum is established.
+- First1500-only selection instead chooses two-consecutive-negative WMA sell
+  confirmation/no holding lock: full211.8493%, drawdown -20.5125%, final500
+  54.1177%, below baseline68.5100%. Expanding 500-bar deployment gives common
+  1500 return73.3648%, below matched baseline109.5046%. Dates and base settings
+  were already explored; final500 is not an untouched holdout.
+- Double commission/slippage yields baseline158.9909%, simple hold5 201.3441%,
+  full-best231.9844%. All four selected summary/full ledgers agree; production
+  baseline paths match on all2000 days. Ten focused research/account tests and
+  typecheck pass, including prefix causality, partial pending sells, exact age
+  release, trend release and fresh-buy cancellation. Diff checks pass.
+- All96 rows, four-block metrics, selected ledgers, cost diagnostics and source/
+  code identities are in `output/rule-variants/`. Reproduce with
+  `node --import tsx research/nikkei-overlay-stability/rule-variants.ts`.
+  This finite small run needs no new checkpoint; file/bar/decision/RSS limits,
+  safe interruption and retention are documented. Production, page settings,
+  source data, queues and prior research outputs are unchanged. Methodology
+  comparison/references are in `TECH_RESEARCH.md`; feature linkage is updated.
+
+## 2026-10-26 WMA7-turn supplemental-entry comparison
+
+- Added isolated `research/nikkei-overlay-stability/{WMA_TURN_DESIGN.md,wma-turn-study.ts,wma-turn-study.test.ts}`.
+  Reuse the frozen 2000-session full-screen input and causal signals with
+  EMA7/SMA11 0.075%/WMA7, unchanged fees and Nikkei-close execution proxy.
+- Compare delayed blocked-EMA intent (cancel on EMA nonpositive, original
+  resolved reduction or acquisition of a position) with independent WMA7
+  nonpositive-to-positive entry. Both retain flat-only supplementation and
+  original-signal priority. An original buy blocked on the same EMA-turn
+  day may arm delayed intent; conflicting two-bar sequences do not arm it.
+- Baseline return 186.2819%, drawdown -21.7197%, 222 fills, final500 68.5100%.
+  Delayed EMA return 174.9546%, drawdown -22.3724%, 236 fills, final500 64.7241%,
+  nine additional entry triggers. Independent WMA return 170.5162%, drawdown
+  -21.3484%, 242 fills, final500 61.7288%, 22 additional entry triggers.
+  Both enter on 2021-08-24 and exit on the following original reduction.
+- Eight focused tests and typecheck pass. Baseline target paths match the
+  current production controller on all 2000 days and reproduce prior return;
+  all three summary and complete ledgers agree. Complete ledgers, trigger
+  dates, four continuous 500-day blocks, August diagnostics and source/code
+  hashes are under `output/wma-turn/`. No production or prior output changes.
+- Reproduce with `node --import tsx research/nikkei-overlay-stability/wma-turn-study.ts`.
+  Three bounded short replays need no new durable checkpoint. Existing source
+  state is retained; file/bar/decision/RSS limits and safe stop are documented
+  in the design. Results are historical comparisons, not independent forward
+  validation. Project feature linkage is updated.
+
+## 2026-10-26 research screening entry-filter panel simplification
+
+- User requested removing research screening's fixed EMA5..8/0% entry-slope
+  filter and moving the three left-hand account-overlay checkboxes into the
+  renamed `Entry filter` fieldset. Optimization now holds only its objective;
+  the adjacent fieldset owns EMA7/SMA11 0.075%/WMA7 controls and existing
+  preference/error/disabled behavior. Chinese copy stays in the locale.
+- Removed the obsolete screening draft, its interval snapshot field and the
+  screening-only fixed-output branch of the filter editor because no new
+  screening request uses them. Manual strategy A/B/C filter editors retain
+  their inputs. Ordinary and shortcut-batch screening send a null base filter
+  and omit the four optional EMA candidate filters, reducing actual work.
+  Batch signatures keep the old field fixed false for compatible unfiltered
+  resume and separation from formerly filtered checkpoints.
+- No shared optimizer API, strategy catalog, combination domain, cycle
+  validation policy, existing results or runtime queues are modified. Saved
+  historical filtered plans remain replayable. This removes bounded UI state
+  and candidate contexts and needs no new progress/cache mechanism.
+- Updated rendered/source contracts for fieldset ownership, absence of the
+  old control/state and explicit unfiltered requests in both execution paths.
+  Architecture and feature linkage are synchronized; typecheck passes.
+- A bounded three-candidate/120-bar comparison evaluates 17 candidates with
+  explicit four-EMA refinement versus five with the new unfiltered request;
+  only the former enters `entryFilters`. This is evaluation-count evidence,
+  not a whole-run timing guarantee. Local HTML confirms exactly three
+  checkboxes inside the new fieldset and no old screening toggle. The focused
+  source contract passes for both ordinary and shortcut-batch request paths.
+- Full `npm test` passes typecheck, all 387 unit tests, production build and
+  four rendered/source tests, including the new grouping/request contracts.
+  Final diff checks pass. No out-of-plan source changes or data deletions.
+
+## 2026-10-26 apply EMA7 / SMA11 0.075% / WMA7 controls
+
+- User authorized the full-screen grid winner as the shared page rule. Added
+  `CURRENT_POSITION_OVERLAY_MODEL` (`ema7-sma11-wma7-v2`) for EMA7 positive-turn
+  supplementation, SMA11 daily slope >0.075% deferred reductions and WMA7
+  negative-slope flat-entry rejection. Chinese labels and control name agree.
+- Both research and cycle preferences select the current model on initial
+  load, boolean restoration and updates. Existing checkbox choices persist.
+  Historical explicit v1 plans keep SMA11 >0.125%/WMA14; unversioned formulas
+  are unchanged. Saved-plan parsing accepts both mixed models, and model-aware
+  feature/checkpoint keys separate their meanings. No rebound rule is added.
+- Tests retain historical coverage and add current-model guard thresholds,
+  WMA warm-up/flat-only behavior, EMA next-open execution, saved-plan parsing
+  and checkpoint separation. Rendered UI contracts require 0.075% and WMA7.
+  Architecture, function map, feature linkage and module patterns are updated.
+- No market data, cycle winners, completed result files, queue, protocol or
+  search domain is changed; existing winners can be replayed with the new
+  report overlay without reoptimization. The change adds at most one bounded
+  cached feature set per live input array and no durable state machinery.
+- Verification: full `npm test` passes typecheck, 387 unit tests, production
+  build and four rendered/source tests. All eight flag paths match the prior
+  research account across 2000 actual sessions; all-on production replay gives
+  186.281948% return, -21.719709% drawdown and 222 fills. Local research HTML
+  shows 0.075%, WMA7 and the new control name. App/relay health and diff checks
+  pass. Existing research artifacts and earlier documentation changes persist.
+
+## 2026-10-26 EMA7 turn or five-opening-price rebound study
+
+- User defines rebound as current close / minimum opening price of the latest
+  five trading sessions (including today) minus one. Independently replay
+  thresholds 2..5% by 0.5%, OR the existing EMA7 positive-turn event; retain
+  flat-only/no-original-signal supplementation, WMA7 entry gate and
+  SMA11/0.075% exit protection from the preceding full-screen grid optimum.
+- Added `research/nikkei-overlay-stability/{REBOUND_DESIGN.md,rebound-study.ts,rebound-study.test.ts}`.
+  Reuse the immutable 2000-session full-screen input/signals. No new source,
+  strategy optimization, production setting, queue or prior output changes.
+- Returns for 2/2.5/3/3.5/4/4.5/5% are respectively
+  89.2640/113.2885/130.2521/141.5931/168.5332/175.3115/166.3624%.
+  Best rebound threshold 4.5% returns 175.3115%, drawdown -20.4253%,
+  236 fills and eight rebound-only entries; preceding EMA-only baseline
+  returns 186.2819%, drawdown -21.7197%, 222 fills. All rebound variants
+  reduce full-period return; best trails by 10.9705 percentage points.
+  Final500 return for 4.5% is 51.1645%, versus baseline 68.5100%.
+- Four new trigger/state/causality tests and five existing account tests pass;
+  typecheck passes. Disabled-trigger targets match the preceding account
+  exactly; all eight baseline/threshold complete and summary ledgers agree.
+  Results retain source and implementation hashes, complete per-threshold
+  ledgers/triggers and continuous 500-day blocks under `output/rebound-2-5/`.
+- Reproduce with `node --import tsx research/nikkei-overlay-stability/rebound-study.ts`.
+  Seven short finite replays need no new resume state; output is atomically
+  replaceable and source state is untouched. Memory is bounded to this input,
+  16 MiB per file and a 1.5 GiB guard. Historical comparison only.
+
+## 2026-10-26 completed full-screen 2000-session overlay grid
+
+- Added isolated `research/nikkei-overlay-stability/full-screen-grid.ts` and
+  `FULL_SCREEN_DESIGN.md`. Freeze only completed full-screen batch
+  `f2b3d676fd69574d9437ee1d`: 1293 decisions over 2000 sessions,
+  2018-08-09 through 2026-10-26. All source results succeed; causal prefixes,
+  current result model, six-strategy ceiling, costs and schedule agree.
+- Scan 8000 all-enabled combinations: independent EMA/SMA/WMA 6..15 and
+  0.025%..0.2% SMA daily slope thresholds in 0.025% steps. Original
+  EMA7/SMA11/WMA14/0.125% returns 108.6257%, drawdown -33.5533%; unique
+  retrospective best EMA7/SMA11/WMA7/0.075% returns 186.2819%, drawdown
+  -21.7197%, 222 fills. Holding returns 175.0575%, drawdown -31.7989%.
+- Best improves full-sample return by 77.6562 percentage points, but the last
+  continuous-account 500-session return is 68.5100% versus original 84.9820%.
+  These are historical maxima, not independently selected forward results.
+  Earlier quick-screen optimal settings are a different source path.
+- All eight original flag paths match production on all 2000 days; original
+  and top-five settings match summary, full-ledger and full-history replays.
+  Nine existing focused research tests and typecheck pass. No production
+  source/settings, preferences, queues or historical results are edited.
+- Raw bars, queue, source hashes and frozen plans are in ignored
+  `data/full-screen-6-15/`; atomic signals/grid checkpoints permit same-command
+  resume with source/design compatibility checks and a 1.5 GiB RSS guard.
+  Initial derived checkpoints preceding a type annotation fix are retained as
+  `*.before-typecheck.json`; final checkpoints are regenerated from frozen input.
+  Report and complete ranking: `output/full-screen-6-15/{REPORT.md,summary.json,ranked-grid.csv}`.
+  Reproduce: `node --import tsx research/nikkei-overlay-stability/full-screen-grid.ts`.
+
 ## 2026-10-25 compact cycle validation settings
 
 - Removed the monitoring-range fieldset, long calculation explanation and

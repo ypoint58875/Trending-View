@@ -478,9 +478,10 @@ export function createScreeningEngineCoordinator({
     packedBars,
     sharedBarsPath,
     sharedDerivedPath,
+    cleanup = true,
   ) {
     await mkdir(stateDirectory, { recursive: true });
-    await pruneOldJobs();
+    if (cleanup) await pruneOldJobs();
     const jobId = jobIdFor(requestPayload);
     const directory = join(stateDirectory, jobId);
     await mkdir(directory, { recursive: true });
@@ -512,6 +513,10 @@ export function createScreeningEngineCoordinator({
       job = restoredJob(jobId, directory, persistedRequest, completed, false);
       jobs.set(jobId, job);
     } else {
+      if (job.cancelled) {
+        await rm(join(directory, CANCELLED_MARKER_FILE), { force: true });
+        job.cancelled = false;
+      }
       await reconcileCompletedResult(job);
     }
     if (sharedBarsPath) {
@@ -605,6 +610,8 @@ export function createScreeningEngineCoordinator({
               return true;
             }
           }
+          await mkdir(stateDirectory, { recursive: true });
+          await pruneOldJobs();
           const batchId = createHash("sha256")
             .update(
               payload.jobs
@@ -642,6 +649,7 @@ export function createScreeningEngineCoordinator({
               undefined,
               sharedBarsPath,
               join(batchDirectory, `derived-${unit.barCount}.bin`),
+              false,
             );
             jobIds.push(job.jobId);
           }

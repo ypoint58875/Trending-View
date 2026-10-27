@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { access, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -383,12 +383,13 @@ test("coordinator finishes a pre-submitted queue without browser polling", async
   const childScript = join(directory, "fake-child.mjs");
   await writeFile(
     childScript,
-    `import { readFile, rename, rm, writeFile } from "node:fs/promises";
+    `import { appendFile, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { deserialize } from "node:v8";
 const directory = process.argv[2];
 const request = JSON.parse(await readFile(join(directory, "request.json"), "utf8"));
 const bars = deserialize(await readFile(request.sharedBarsPath ?? join(directory, "bars.bin")));
+await appendFile(join(dirname(directory), "executions.log"), request.checkpoint.key + "\\n");
 const runningPath = join(dirname(directory), "running-" + process.pid);
 await writeFile(runningPath, "1");
 await new Promise((resolve) => setTimeout(resolve, 500));
@@ -559,6 +560,23 @@ process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
       "completed",
       "a submitted batch unit should resume after coordinator restart",
     );
+    const executionsBefore = await readFile(join(stateDirectory, "executions.log"), "utf8");
+    const completedCancellation = await fetch(`${recoveredBaseUrl}/screening/job-cancellations`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: LOCAL_SCREENING_ENGINE_VERSION, jobIds: [jobIds[0]] }),
+    });
+    assert.equal(completedCancellation.status, 200);
+    const resubmitted = await fetch(`${recoveredBaseUrl}/screening/job-batches`, {
+      method: "POST", headers: { "Content-Type": LOCAL_SCREENING_BINARY_CONTENT_TYPE },
+      body: encodeLocalScreeningJobBatchRequest({ ...batchRequest, jobs: [batchRequest.jobs[0]!] }),
+    });
+    assert.equal(resubmitted.status, 202);
+    assert.deepEqual((await resubmitted.json()).jobIds, [jobIds[0]]);
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 1000));
+    assert.equal(await readFile(join(stateDirectory, "executions.log"), "utf8"), executionsBefore,
+      "resubmitting a cancelled completed job must not start duplicate computation");
+    const reused = await fetch(`${recoveredBaseUrl}/screening/jobs/${jobIds[0]}`).then(response => response.json());
+    assert.equal(reused.status, "completed");
     const cancelledResponse = await fetch(
       `${recoveredBaseUrl}/screening/job-cancellations`,
       {

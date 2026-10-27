@@ -1,5 +1,781 @@
 # Technical Research
 
+## 2026-10-27 user-adopted shared account synchronization
+
+Root cause of v7 shortcut/v8 report mismatch: preview-only display preserved old
+shared account settings/report. User explicitly requires synchronization, so
+compare cosmetic label override with full atomic account promotion. Reject label
+override: positions, markers and future appends would still use v7. Reuse existing
+worker replay and revision-CAS commit, retain one old-rule backup, and move
+orchestration to the hook used by both pages. No new framework or data source.
+Two-page browser proof compares the same persisted report and future continuation
+tests verify v8 inheritance. A per-click chart reset key solves stale zoom without
+changing data. Remove the specifically rejected banner and its unused locale copy.
+
+## 2026-10-27 cycle startup and versioned execution display
+
+Local diagnosis: startup Promise.all tied IndexedDB restoration to the static
+shortcut API. Shared account hydration was already independent, but initial
+instrument selection waited for that network response. Decouple optional refresh,
+derive instrument locally and reuse shared persisted report before any replay.
+For a rule upgrade, compare synchronous re-screen/replay versus a derived worker
+view over saved winners. Use the latter: preserves confirmed account/ranking,
+keeps UI responsive and caches one result by revision/current-rule identity.
+No new external integration or unfamiliar framework is introduced. Reuse existing
+Worker/new-URL and IndexedDB transaction patterns. Pure worker dependencies must
+not import the client constructor, avoiding recursive worker bundling. Frozen
+v7-to-v8 integration and blocked/failed API browser smoke verify the boundary.
+
+## 2026-10-27 first overbought RSI10 pullback
+
+Compare early first momentum decline after strict overbought crossing against
+confirmed cross-back to threshold. TradingView uses above70/falling RSI as a
+sell component; Fidelity notes strong trends can remain overbought. Neither
+establishes usefulness of this one-shot rule. Reuse shared Wilder RSI/current v8
+state machine and test guarded versus forced priority rather than assuming risk
+reduction.54 variants and per-event omissions fail promotion; exact definitions
+and results in RSI_FIRST_PULLBACK_DESIGN/RESULTS. Preserve production v8.
+Sources accessed2026-10-27:
+- https://www.tradingview.com/support/solutions/43000614331-technical-ratings/
+- https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/RSI
+
+## 2026-10-27 user-adopted RSI shape overlay v8
+
+User explicitly adopts Entry E plus four-decreasing-high/RSI10<35 guarded exit.
+Reuse the current versioned overlay/account rather than a parallel execution
+engine; add cached causal RSI7/10 shape features, preserve v7 as an explicit
+archived model, and compare every frozen target/return with the selected research
+row. Existing signals/cooldown/recovery and ordinary next-open timing remain.
+The guarded exit uses the existing pending-reduction machinery and native buys
+cancel/veto it; Entry E is after native recovery, not before it. Research code
+pins archived v7 to prevent baseline drift after the default changes. Existing
+versioned saved plans and dynamic accounts are not silently rewritten. New UI
+copy explains exact entry/exit priorities and labels retained account versions.
+Previously documented event concentration and holdout failures remain unresolved
+limitations, not claims of robustness established by production adoption.
+
+## 2026-10-27 RSI parameters and thresholds
+
+Reuse cached shared Wilder RSI instead of a parallel implementation. Optional
+per-side research settings preserve legacy14/40/50/70 defaults and allow separate
+entry/exit periods. A28621-row bounded grid distinguishes7..20 calculation
+periods from5/10/14/20 historical lookbacks.128-row hashed chunks and an atomic
+manifest avoid quadratic whole-grid rewrites. Definitions, bias controls and
+limits are in research/nikkei-overlay-stability/RSI_PARAMETER_DESIGN.md.
+
+## 2026-10-27 descending OHLC sequence extension
+
+Extend strict rolling comparisons to3..6 observations of each OHLC field instead
+of adding a pattern-library dependency. Reuse shapeReplay's optional research
+policy metadata; retain existing menu/parity and native account state.193 rows
+cover16 shapes,3 priorities and4 RSI filters plus baseline. Definitions, execution
+timing, source bounds and durable resume are in DESCENDING_SEQUENCE_DESIGN.md.
+This remains an additive research experiment, not a production rule change.
+
+## 2026-10-27 shape priority and RSI research
+
+Compare independent shape replacement against augmenting the frozen v7 account;
+choose augmentation to attribute incremental rule effects without losing native
+hold, cooldown and recovery state. Compare causal four-close breakout entries
+after5..10% drawdown, four descending-open exits, nearby high/low shapes, explicit
+priority modes and RSI14 filters. Preserve same-close proxy versus next-open
+sensitivity and disclose multiple-testing bias. Definitions, bounds, checkpoint
+policy and official references are in research/nikkei-overlay-stability/
+SHAPE_PRIORITY_DESIGN.md. Production behavior is excluded from this experiment.
+
+## 2026-10-27 continuing validated cycle shortcuts
+
+Compared a static saved-backtest record containing the last winner with a
+separate IndexedDB registry containing frozen selections, bars and account
+settings. The static record loses historical switches and inherited overlay
+state and would require an unrelated server schema migration. Choose the
+registry, replaying the existing cycle account without rerunning optimization.
+IndexedDB transactions provide atomic revision checks; BroadcastChannel and
+same-window events notify mounted views. This is origin/device-local durable
+state, not a server backup. No new package or screening protocol is required.
+
+Official references consulted: https://www.w3.org/TR/IndexedDB/,
+https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API/Using_IndexedDB,
+https://developer.mozilla.org/en-US/docs/Web/API/IDBTransaction,
+https://developer.mozilla.org/en-US/docs/Web/API/Broadcast_Channel_API and
+https://react.dev/reference/react/useSyncExternalStore.
+
+Only matching canonical Nikkei daily, single sample-window winners continue
+the same validated account. Keep original execution costs/overlay, record the
+research winner as a new selection, and never change optimizer ranking.
+Missing market sessions block continuation and require cycle-validation repair.
+Intraday candidates replace a separate provisional tail; completed-close
+history is immutable. Replay remains anchored at the original evaluation start.
+Bound profiles and bars, commit only complete records, and reject stale writes.
+
+## 2026-10-27 explicit adoption of priorATR2 exit
+
+User explicitly selects the previously tested ATR2 candidate despite the
+documented one-event concentration and unchanged final500 performance. Default
+v7 reproduces the frozen2000-bar candidate target path exactly: close-proxy
+393.1430%/98.1439%/DD10.8753%, with six extra exits. Archived v6 remains
+388.5473%/98.1439%/DD12.0187%. Next-open return parity is checked separately;
+the much smaller next-open DD advantage and failed episode-omission robustness
+remain limitations, not claims resolved by integration. No new parameter search,
+RSI, future-data source or external integration is introduced.
+
+## 2026-10-27 neighboring parameters and episode concentration
+
+Frozen historical comparison, with no new external data: contrast bounded
+entry-loss protection (ages6..15, loss3.5/4/4.5%) against completed-close shocks
+(belowEMA7, decline>=1.75/2/2.25/2.5 times previous WilderATR14), waits0/5,
+and loss4%-age10 OR/AND ATR2. Preserve native exits and actual account state.
+292 cases collapse to52 paths;20 overlapping controls match the prior study.
+
+Current EMA3 loss4%-age7..15 and loss4.5%-age10 share a single extra exit.
+Their396.0757% full return and10.9044% drawdown look locally stable but all
+advantage disappears when the2022-12-20..2023-02-13 extra-exit episode is
+suppressed. ATR2 gains4.5957 percentage points versus baseline; without that
+episode it loses2.8882 points and the full drawdown improvement disappears.
+ATR1.75/2.25/2.5 all lose full return. OR/AND supply no independent path.
+
+First1500-only selection maximizes return subject to no-worse development
+drawdown. EMA3 selects ATR1.75; enabling it only at the final500 boundary with
+baseline inherited state yields88.4510% versus98.1439%, DD equal8.2462%.
+All292 cases fail strict improvement in both full and final500 returns with
+no-worse full DD. Prior next-open sensitivity also removes the loss-age DD
+advantage. Recommendation: retain production, keep these as unvalidated risk
+hypotheses, and require independent periods/events rather than further tuning
+the same episode. Chronological checks on repeatedly inspected history are
+diagnostics, not untouched holdouts. Full evidence: output/risk-exit-validation
+under research/nikkei-overlay-stability.
+
+## 2026-10-27 prioritize ordinary sells or narrow risk overrides
+
+Compare causal pending-original-zero releases against independent trend weakness,
+priorATR shocks and extended entry-loss protection. Native sell delays occur
+frequently but are not automatically harmful: EMA3 has600 pending-zero held
+days,103 protected by hold7,511 by SMA11 and491 by WMA7, with overlap. Freeze
+26 exit methods*2 waits across four models plus controls=212 cases. Do not
+change entries, source, original buy-cancellation or partial-sell meaning.
+All exits operate in one actual account and clear pending/entry/recovery state.
+
+No pending-original-sell priority method improves full return on any model;
+EMA3 immediate release96.9876%/30.5259%/DD14.6458%, WMA-negative release
+163.9656%/31.2566%/18.0616%, versus388.5473%/98.1439%/12.0187%. Ordinary
+guards remain important. An exception is independent entry-loss risk: extend
+the4% first-five stop through age10,wait0. Native/turn4/RSI/EMA3 full returns
+become390.1380/443.9578/446.6330/396.0757%, final500 unchanged; native/EMA3 DD
+falls12.0187->10.9044%, other two DD unchanged. Current all-age4% stop instead
+gives364.8515%/98.1439%/DD13.0091%, so permanent extension is not equivalent.
+
+Age10 adds one actual exit on2022-12-20, age7, close loss4.7775%, without a
+pending sell. The problem on that date is expired risk protection rather than
+blocked strategy intent. Its pre-exit targets match baseline; reentryJan17,
+2023 differs from baseline's eventualFeb13 full exit. This is retrospective
+account-path evidence, not independently additive profit or a4% fill guarantee.
+ATR2 (daily decline>=2*previous completed WilderATR14, close<EMA7) includes the
+same date and five others; current full393.1430%, final50098.1439%,DD10.8753%.
+
+Age10 next-open current400.2211%/97.4190%/DD9.5006% versus baseline395.1418%/
+97.4190%/DD9.5006%; DD benefit disappears. ATR2 next-open401.6104%/97.4190%/
+DD9.4428%, only a small DD difference. Both final500 target tails exactly equal
+baseline and neither fixes recent performance. First1500-only native/EMA3
+selection chooses ATR1.5 with poor final500 outcomes. Some lower-DD/no-worse-
+return cases exist, but strict full/final500 gains with no-worseDD cases remain0.
+Do not adopt automatically on one shared event/four correlated models.
+
+Preserve212-case state and all182 paths, selected costs/drawdown dates and the
+separate finite audit. Ten new/all179 related tests, typecheck and212-row resume
+pass. No external data, rescreening or production change.
+
+## 2026-10-27 finer rolling peak windows5..20
+
+User requests every integer5..20 held-close window at2/3/4/5/6% drawdown.
+Retain the four specified models and wait0/5, yielding644 cases. Reuse the
+actual-account reset and native-only reentry architecture; change only the
+shared window TypeScript type, not runtime semantics or older numeric outputs.
+Separate new progress instead of forcing old implementation-hash compatibility.
+All44 overlapping baseline/rolling20 paths exactly match frozen references.
+
+All640 additions trigger,188 paths total. None improves full/final500 return.
+Twelve cases improve fullDD, so shorter-window behavior differs from the prior
+episode/20 scan. Highest-full active choices for every model are N6/X6%/wait0:
+native349.3250%/89.4100%/DD10.9044%, turn4 384.4642%/80.3821%/13.1082%, RSI
+401.1157%/93.6149%/10.9044%, EMA3 354.7683%/91.9630%/10.9044%. EMA3 N7 tiesN6.
+By threshold, EMA3 best-full wait0 windows are N5 at2%,N6 at3%,N5/6 at4%,N5 at
+5%,N6/7 at6%; all are below unchanged388.5473%/98.1439%. First1500-only choice
+remains baseline for all models. Multiple outcomes are correlated, not644
+independent validations.
+
+EMA3 N6/X6% exchanges33.7790 total-return pp and6.1809 final500 pp for1.1142pp
+less close-proxy DD. Matching next-open comparison370.0600%/90.8489%/DD9.5006%
+versus395.1418%/97.4190%/DD9.5006% removes the DD advantage. Lowest close-proxy
+DD setting,N5/X2%/wait5, sacrifices returns to144.3321%/23.3491% withDD10.1242%.
+These are tradeoffs on repeatedly explored history, not deployment evidence.
+No production rule adopted. All169 related tests, typecheck and644-row resume
+pass; old state is preserved and correctly rejects changed-source resume.
+
+## 2026-10-27 additional peak exits for native/turn4/RSI/EMA3
+
+User clarified the four historical models, not the previous nine contribution
+controls. Compare actual held-episode highest close with held rolling20 highest
+close, ten thresholds2..15%, and native-only reentry with wait0 or5. Both peak
+definitions exclude pre-entry prices and remain completed-close causal. Choose
+an actual account reset rather than masking an independently running shadow
+controller: clear pending sells, holding/entry/recovery state and reset the flat
+boundary. Native early stops retain their previous policy; new peak exits do
+not fabricate automatic recovery. Do not assume market-price drawdownX% caps
+account drawdown or gives an intraday threshold fill.
+
+All164 declared cases produce57 target paths. Every model has28 affected
+policies, all with lower full return;12 wide-threshold cases are inactive.
+No tested parameter improves full/final500 return or full/final500 DD versus
+its own unchanged model. First1500-only choice is baseline for all four.
+Episode6%/wait0 gives native338.1578%/final50089.4100%/DD12.3376%, turn4
+372.4227%/80.3821%/13.1082%, RSI388.6604%/93.6149%/12.3376%, adoptedEMA3
+343.4649%/91.9630%/12.3376%. Best affected total returns,8%/wait0, remain below
+their controls.10/12/15% add no exits. Preserve adverse4% and2% outcomes too.
+
+Recent gains do not justify overall losses: EMA3 episode6%/wait5 has recent
++1.0461% but full298.2945%, final50069.5019%, DD17.3409%. On the6%/wait0
+EMA3 path,June8,2026 liquidation is followed byJune12 entry3.1167% higher.
+This demonstrates changed exposure and reentry, not independently additive
+trade-profit blame. Fixed4/6/8% selected next-open/double-cost comparisons
+also lose full return against their matching controls. No untouched validation
+or claim about all possible recovery mechanisms/peak definitions is made.
+
+Use separate main scan/audit reports; never hide degradation behind a best-full
+selector that returns the unchanged control. Seven new/all165 related tests,
+typecheck and164-row same-command resume pass. Production rules stay unchanged.
+
+## 2026-10-27 entry/exit signal-source proportions
+
+Compare execution-day original-signal presence with causal intention tracking.
+Presence-only classification mislabels deferred original sells as autonomous
+rule exits. Prefer actual before/after target transitions and the first still-
+pending original zero request. Keep partial reductions distinct from liquidation,
+preserve cancellation/repetition rules and let actual hard stops take precedence.
+Trace existing research policy only with every2000 targets verified against
+unchanged production and the frozen contribution ledger. No external fetch.
+
+Full57 entries:20 original(35.09%),30 native EMA7/SMA20(52.63%),4 engulf(7.02%),
+3 rebound(5.26%);37 rule-originated entries(64.91%). Full57 exits:7 immediate
+original(12.28%),49 deferred original(85.96%),1 rule hard stop(1.75%). Thus
+98.25% of exit intentions still come from dynamic strategies, although rules
+delay most execution dates. Forty-five exits have no original signal on the
+day:44 are prior original requests releasing and one is an autonomous stop.
+Five deferred exits also have same-day original signals; preserve earlier
+request origin rather than resetting it. Delays median5/mean6.7143/max20 bars.
+
+Final500 entries original2/10, rules8/10; exits all11 original intentions,
+10 delayed and1 immediate. Entry/exit counts differ because a position is
+inherited across the boundary, not a missing transaction. PostJuly21 has one
+rule entry and one original immediate exit. All126 target changes reconcile
+57/57 full transitions and4/8 partial adds/reductions. Among37 rule-entered
+closed episodes,36 exits still use original strategy intentions; only one stops.
+This supports complementary entry/intention/timing roles, not a causal profit
+allocation or independent forward validation. Five new tests/all158 related
+tests and typecheck pass. Production rules and prior research artifacts unchanged.
+
+## 2026-10-27 frozen-winner screening/overlay attribution
+
+Compare removal-only attribution with a2x2 dynamic/fixed and raw/covered design.
+Removal alone credits all interactions to whichever component is removed;
+prefer2x2 plus both order-averaged percentage-point and log-wealth diagnostics.
+Use two prospectively knowable controls: first decision winner held fixed and
+preset SMA10/30. Do not select a full-history best fixed strategy. Retain the
+same1293 decision opportunities, two-bar sequences, source and costs. These
+counterfactuals evaluate existing frozen winners, not a reoptimized no-overlay
+selector or proof over all fixed alternatives. No external market fetch.
+
+Nine cases: dynamic raw/v6/v5; first-known raw/v6; SMA10/30 raw/v6; no-original
+v6; buy-hold. Dynamic raw full33.3828%, final50033.0594%, DD33.6405%; v6 full
+388.5473%, final50098.1439%, DD12.0187%. First fixed raw85.9455%/35.8150%,
+covered207.3937%/65.9328%; preset raw113.1680%/45.3968%, covered212.0616%/69.3768%.
+Dynamic screening alone underperforms both controls, but with the same coverage
+beats them by176.4857..181.1536pp full and28.7672..32.2111pp final500. Overlay
+marginal on dynamic355.1645pp is much larger than its fixed-control marginal;
+interaction233.7163..256.2709pp rules out naive independent-profit allocations.
+
+Behavior changed materially:37 of57 v6 entries occur without original signals
+(including recovery),20 with originals;241 deferred original-reduction request-
+days;1074/2000 target days differ from raw; fills fall270->126. These are
+behavioral counts, not causal profit shares. Overlay-only has one entry and
+1977 held days,174.2529% versus buy-hold175.0575%, since all ordinary original
+sell requests disappear too. It is not a complete independent exit strategy.
+Recent v6-1.8093% versus raw-0.0222% prevents universal-period superiority claims.
+
+Next-open dynamic covered395.1418%/97.4190% versus preset covered194.4770%/61.5592%;
+double-cost360.1876%/96.0743% versus204.3567%/68.4477% preserve the conditional
+screening advantage. The adopted rebound's isolated increment remains only
+5.8476pp full/2.6352pp final500 versus v5. Evaluate future screening candidates
+inside the actual shared controller; do not infer that standalone screening
+is validated by combined-model returns. No strategy or rule is changed here.
+
+Five new tests and all153 combined related tests pass, typecheck passes; both
+fixed-control1293-row resumes verified. Keep the initial derived-cache archive,
+final strict identities and all failed/neutral control outcomes.
+
+## 2026-10-27 production adoption of no-RSI dual-return candidate
+
+User explicitly selected daily4-ema3-baseline: full388.5473%, final50098.1439%,
+DD12.0187%, not turn4 or RSI35-to40. No new indicator research or external data
+is needed; reuse the frozen measured rule and existing execution architecture.
+Compare modifying v5 in place against adding a new version: both can expose the
+same new default, but in-place changes reinterpret saved plans and alias caches.
+Choose versioned v6, preserve v5 model/options, and use the existing shared model
+registry/normalizer and both pages' constant default hook. No protocol change.
+
+Only add a daily flat-only rebound exception belowSMA20, with causal decline5%/
+rebound4%, three risingEMA7 slopes and nonnegativeWMA7. Keep all original
+entries and exits. RSI/Bollinger, segmentation, partial sizing and exit tuning
+are excluded. Native recovery must precede the extra full-allocation entry.
+Cache only state-independent features; retain actual flat boundaries per
+account and scan at most10+10 closes. No new unbounded workload/checkpoint is
+introduced. Archived research must use explicit v5 options; preserved old
+checkpoint code hashes must reject changes rather than silently resume.
+
+Frozen-source integration verifies all2000 target values for v5 and v6, selected
+close-proxy returns/DD, final500 and next-open sensitivity. Synthetic tests
+cover inclusive rebound threshold, flat-history boundary, native priority,
+hold7, stop/cooldown, next-open timing and completed-prefix causality. The
+small number of added trades and lack of recent-period improvement remain
+limitations despite explicit user approval to adopt the historical candidate.
+Verification:148 combined rebound/research tests pass; full npm test passes
+typecheck,414 unit tests, production build and4 rendered-route tests. The final
+focused run also includes the additional native partial-recovery priority case.
+
+## 2026-10-27 RSI and Bollinger flat-entry alternatives
+
+User asks whether RSI or Bollinger can improve the SMA20-blocked flat entries.
+Compare RSI14 recovery after an observed oversold reading, Bollinger20/2
+re-entry after a completed lower-band breach/touch, and fixed AND/OR combinations.
+Retain native v5 entries and all exits/stops; only add a zero-position fallback.
+Compare below-SMA20 and any-missed scopes and three momentum confirmations.
+Freeze61 cases before evaluation; keep full/final500 dual-return acceptance.
+
+Fidelity guides accessed2026-10-27:
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/RSI
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/bollinger-bands
+RSI measures momentum; traditional30 oversold can persist in strong trends.
+Bollinger bands describe relative price/volatility, conventionally20 periods
+and2 standard deviations; price can hug or exceed bands for prolonged trends.
+Therefore compare recovery conditions, not unconditional oversold/touch buys.
+RSI can repair momentum earlier than SMA20, while band re-entry can still lag
+or result from widening volatility. Add observed price/rising-RSI evidence and
+existing WMA gate, not an assumed reversal from either indicator alone.
+
+Reuse existing Wilder RSI and population-standard-deviation Bollinger functions
+without changing product indicators. Historical oversold/breach evidence must
+be inside the actual flat episode and preceding10 completed bars, excluding
+today. No future divergence/pivot labels or new minimum-profit assumptions.
+Known failure of the unmodified coordinator recovery test remains separate;
+this research will use focused causal/priority/parity tests and typecheck.
+
+Measured result: none of61 independent oscillator entrances improves both
+native full382.6997% and final50095.5087%. Best RSI full392.3474%, best band
+full389.6667%, both with unchanged final500. Do not call them replacements.
+Compare a separately declared23-case second-stage alternative: use the same
+ten profiles as filters on existing turn4 and daily4-ema3 rebound branches,
+preserving native SMA20/original/engulf/recovery entries and all exits.
+
+RSI35-to40 on turn4 gives full438.3372%, final50099.8490%, fullDD10.9044%,
+recent+1.0461%, versus unfiltered435.7026%/86.1901%/DD13.1082% and native
+382.6997%/95.5087%/DD12.0187%. Conditions apply only to the extra decline5%/
+rebound4% branch: preceding10 completed actual-flat bars minimumRSI14<=35,
+currentRSI14>=40 and above priorRSI14, with fresh positiveEMA7 turn and WMA7>=0.
+Low is the latest minimum preceding10 actual-flat closes, excluding today;
+peak is the maximum10 closes strictly before that low. No future pivot labels.
+Adding lower-band recovery to25% of band width yields exactly the same target
+path, so Bollinger adds complexity without demonstrated incremental benefit.
+Pure band filters do not improve both unfiltered turn4 metrics. Prefer further
+RSI-filter validation over standalone RSI/band replacement, not live adoption.
+
+Limitations: just five extra entries; removingJuly31 makes final50094.2015%
+and loses the dual goal. RemovingApril2025 improves performance. RecentDD7.4717%
+is worse than native3.3479%. First1500-only selection chooses unfiltered turn4
+and fails final500, so the better filter is not an untouched chronological
+validation result. Minimum35.453 onSeptember2024 narrowly misses threshold35.
+Single-date rejection effects can be negative despite the joint filter's gain;
+subsequent native/recovery/extra-entry paths change. Never sum these actual-
+account interventions or claim RSI simply deletes losing trades. Double-cost
+and next-open dual improvements survive versus their matching native controls;
+a common-final500-start fork reproduces99.8490%. These are robustness checks
+on repeatedly explored history, not proof of prospective profitability.
+
+Keep61/23 designs/checkpoints, full failed-case tables, selected ledgers and
+finite attribution outputs separate. Verified both resume paths, all136 overlay
+research tests and typecheck. No production/default/indicator modification.
+
+## 2026-10-27 dual-return constrained rebound continuation
+
+User requires full2000 and final500 returns both strictly above the unchanged
+v5 baseline. Treat this as historical acceptance, never a future guarantee.
+Previous hybrid-x4's additional April2025/March2026 entries are early; July2026
+adds useful exposure. Compare causal extra-entry confirmation against exits
+scoped to new rebound episodes, instead of global MA/regime replacement.
+Retain fixed baseline costs, source and evaluation boundaries.
+
+Approach A adds two/three consecutive positive EMA7 slopes, two complete
+rebound/trend observations or a prior-two-high breakout to the independent
+low-rebound entrance. Native buys remain unchanged. It can avoid premature
+entries but misses fast recoveries. Approach B shortens only tagged hold or
+pending-reduction protection, or applies EMA weakness, profit-activated fixed
+giveback, ATR giveback or maximum age. It addresses profit surrender but can
+truncate durable trends. Compare91 fixed cases including baseline; no date-
+specific live conditions or blanket modification of native entries/exits.
+
+Official sources checked2026-10-27: Fidelity describes ATR as nondirectional
+volatility and discusses volatility-based exit distances:
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr
+Investor.gov explains trailing stops and that triggers do not guarantee fill:
+https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-15
+These support method comparison, not profitable thresholds. All new guards
+use completed closes and observed-close proxy fills, with next-open and
+double-cost sensitivity against corresponding baselines. Prior full-history
+research prevents calling the final500 untouched validation. Preserve failures.
+
+Results:91 initial+54 scope extensions=145 comparisons/102 distinct targets.
+Sixteen dual-goal cases are only3 qualifying paths; all keep fullDD no worse.
+Best simplest path daily4-ema3-baseline: full388.5473% versus382.6997%,
+final50098.1439% versus95.5087%, identical fullDD12.0187%/final500DD8.2462%.
+Independent EMA3 confirmation avoids the early entries; extra profit/ATR/time
+exits do not improve this path. Full2 happens to produce identical entrances.
+The extra54 any-missed scope variants do not add qualifying paths, and no
+case improves full/final500/postJuly21 together. Broadening the entrance does
+not reliably improve results. The predeclared EMA2 primary fails total return.
+
+Three added entrances are2019-01-09,2022-06-29 and2025-04-16. Candidate first1500
+146.5618% trails baseline146.8942%, while chronological selection instead picks
+turn4-baseline, which fails final500. Candidate recent remains-1.8093%, so do
+not claim a fix for postJuly21 recognition. OmittingApril16's one-session head
+start removes all final500 gain and leaves full382.0499% below baseline;
+omittingJanuary2019 also breaks the full goal. This concentration defeats a
+robustness claim despite double-cost/next-open dual improvements. Keep as a
+frozen observation candidate, not a default replacement. Historical acceptance
+is verified, but this repeated search cannot guarantee prospective performance.
+
+## 2026-10-27 SMA20 replacement versus low-rebound fallback
+
+User redirects research to actual flat-account opportunities blocked by SMA20,
+not global regime classification or second adds. Compare faster EMA20/EMA14,
+a fixed0.5% SMA20 tolerance and removal of the price filter against retaining
+SMA20 plus a separate causal low-rebound fallback. A turn-only OR-rebound
+ablation separates a softer gate from an independent later entry opportunity.
+Keep original exit/hold7/first-five stop/wait5/recovery behavior unchanged.
+
+Fidelity's EMA guide (accessed2026-10-27) explains stronger recent-price
+weighting, faster response and more short-term changes:
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/ema
+For EMA7, positive one-bar slope is algebraically equivalent to close>EMA7;
+using that price test alongside the existing positive turn adds no independent
+confirmation. EMA20/14 are meaningful faster alternatives, but not assumed
+superior. A rebound fallback addresses a different failure: price remains
+below a lagging SMA20 or passes it after the one-day EMA turn has disappeared.
+
+The CFTC's trading-system advisory (accessed2026-10-27) cautions about selected
+hypothetical trades, execution assumptions and costs:
+https://www.cftc.gov/LearnAndProtect/AdvisoriesAndArticles/fraudadv_tradingsystem.html
+Freeze20 cases, including all failures, before evaluation. Use one inherited
+account, not a new independent sleeve; restrict fallback to flat/no-native-entry
+states and preserve hard vetoes. Compare inherited and common-state recent
+results, first1500 selection, doubled costs, next-open timing and added-episode
+losses. Previously explored frozen winners are not untouched validation.
+
+Measured20 cases: direct EMA20/EMA14/remove-price-gate gives full returns
+256.695%/282.728%/269.650%, all below baseline382.700% with worse DD. A0.5%
+SMA20 band gives354.659%. Do not treat SMA20 as a useless filter merely
+because it blocks the two visible recent turns. The declared primary daily
+fallback-x3 gives367.558% and worse DD. Turn-only hybrid-x4 is stronger than
+daily fallback-x4 (435.703% versus406.829%), suggesting a fresh turn remains
+useful in this finite menu. It is first1500's choice, not merely a recent winner.
+
+Hybrid-x4: fullDD13.108% versus12.019%; recent1.046% versus-1.809%, but recent
+DD7.472% versus3.348%; first1500 return187.718% versus146.894%, final50086.190%
+versus95.509%. Double-cost full404.404%/recent0.804%; next-open427.247%/3.668%.
+No original case meets full return/no-worse-DD and recent improvement jointly.
+Eight added episodes diversify the earlier sleeve's single-event dependence;
+individual whole-account omissions retain full return above baseline, not
+proof of future robustness. Per-episode net return includes native trades and
+must not be equated with its marginal contribution.
+
+Two recent blocked turns differ: July31 is4.766% above a low after10.643%
+decline; September18 is2.418% above a low after4.391% decline. Single-day price
+gate removal in an otherwise baseline account gives recent1.046% forJuly31
+but-2.802% forSeptember18 (baseline-1.809%). The latter reaches8.713% favorable
+price excursion and still exitsOctober15 around-1.011% net under unchanged
+protection. Removing a blocker is not equivalent to capturing profitable gains.
+Six post-result background3% cases explicitly test the new5% bottleneck:
+X2 admitsSeptember but worsens results/risk; X3/4 outcomes stay unchanged.
+Keep the5% background/4% rebound hybrid as a research tradeoff, not an automatic
+replacement or universal optimal threshold. Future study must separately
+evaluate whether exits preserve recovered gains, without hiding these failures.
+
+## 2026-10-27 explicit-mode independent supplemental proposal
+
+Compare the earlier single inherited-account overlay with an unchanged main
+controller plus a separately managed sleeve permitted only when the main
+target is zero. The latter isolates main signal timing while still executing
+one real target ledger, preserving main-priority allocation and not scaling
+shadow returns. It can still lose money and change total account equity.
+Compare no segmentation against explicit range/wide-range hysteresis; use
+curvature only with pending reduction intent and price weakness. Freeze577
+cases and all mode entry/exit/rearming definitions in SUPPLEMENTAL_REPAIR_DESIGN.
+Queued-turn cancellation differs from earlier lastTurn windows by cancelling
+on ordinary reductions. Formalize these differences before replaying results.
+Methods reuse references already checked2026-10-27: Fidelity ATR/DMI,
+StockCharts efficiency/ADX and OpenStax derivative signs. No plugin or new
+market source is required; local frozen prices and exact signal archives are
+the source of truth. No default/model changes are implied by this proposal.
+
+Measured577 cases produce28 full/recent/final500 improvement cases but only14
+distinct qualifying target paths. Observation candidate wide-queued-a50-percent-
+age10-wma has full return389.735%/DD-12.019% versus baseline382.700%/-12.019%,
+and recent0.784% versus-1.809%. Double-cost recent0.633% and next-open1.235%
+remain positive. The best declared unsegmented policy has full364.473%,
+DD-12.554% and recent-0.513%; segmentation is useful within this menu, not
+proven universally necessary. WMA and curvature target paths coincide for
+the50% candidate, so remove the unproductive D2 execution condition here.
+
+Attribution defeats a robustness claim: only3 added episodes; omit the2026
+September24 episode and full return falls to377.132%, below baseline. The
+first1500-only selector keeps baseline (146.894% versus144.047%). Allocation
+75/100% and age20 neighbors are disclosed sensitivity, not new validation.
+Recommendation is a frozen50% research/observation candidate, with exact mode
+and position exits, not a replacement default. Preserve the failing historical
+episodes and old comparisons rather than optimizing them away. The audit
+reruns actual targets with one episode removed and holds all other signal
+schedules fixed; counterfactual impacts are nonadditive. See the generated
+RECOMMENDATION.md and audit-summary.json for complete evidence and limitations.
+
+## 2026-10-27 EMA20 curvature as an auxiliary warning layer
+
+User refines the segmentation purpose and explicitly requests second derivatives.
+Retain the initial3-close EMA20 prototype:205 segments in last2000 but late
+direction changes. Add a separately declared backward-difference study rather
+than overwriting its outputs or treating future extrema as available labels.
+D1=(M[t]-M[t-h])/(h*priorATR14) and D2=(M[t]-2M[t-h]+M[t-2h])/(h^2*priorATR14).
+Using one ATR denominator avoids conflating changes in volatility with MA
+curvature. Compare h1/h3, with/without ER and curvature at fixed thresholds.
+The mathematical sign distinction is supported by OpenStax (accessed2026-10-27):
+https://openstax.org/books/calculus-volume-1/pages/4-5-derivatives-and-the-shape-of-a-graph
+Positive D2 while D1 is negative means declining deceleration, not an uptrend.
+
+Three-session differences produce217 complete opposite-slope curvature alerts
+in last2000:137 match a same-direction D1 zero-cross within10 sessions, but only
+103 unique later crossings;80 alerts remain unconfirmed. Median matched lead3
+sessions, forward5 price-direction agreement55.3%, versus50.9% on a different
+D1-cross sample. This is not an independent-event accuracy comparison or proof
+of profitable predictive improvement. One-session curvature produces508 alerts
+and52.0% directional agreement. Curvature adds fragmentation: combined-h3 makes
+592 detailed segments/284 single-day segments versus efficiency-h3's560/279.
+Prefer a broad background plus observed burst/acceleration attributes; do not
+use every curvature sign change as a trading-regime switch. Recent background
+has51/64 range days (37 wide,14 normal), with13 rapid-up and13 rapid-down
+sub-move days in the detailed layer. Prototype, no optimality/adoption claim.
+
+## 2026-10-27 MA/ATR segmentation for bursts versus ranges
+
+Purpose is directional rapid moves versus back-and-forth ranges, not merely
+high/low volatility. Compare MA slope+ATR alone with MA/ATR plus ER and shock
+events. ATR supplies amplitude, while path efficiency guards against labeling
+wide oscillations as one-way moves. ADX/DMI is a mature alternative, but ADX
+is trend strength rather than direction and introduces extra smoothing.
+Prefer EMA20/ATR14/ER10 with explicit5-session displacement and3-session
+confirmation as an interpretable first prototype. Sensitivity across12 fixed
+MA/confirmation configurations diagnoses fragmentation, not profitability.
+Freeze definitions and no-backfill timing in SEGMENTATION_DESIGN.md.
+References accessed2026-10-27:
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr
+https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/average-directional-index-adx
+https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/kaufmans-adaptive-moving-average-kama
+Fast2-ATR/2% close shocks are separate observed event markers; never infer an
+earlier regime boundary from a later price extreme. No production rule changes.
+
+## 2026-10-27 supplemental sizing and volatility-aware exits
+
+Compare fixed partial entry with inverse ATR-percent entry sizing. The former
+is transparent and limits initial exposure; the latter varies the budget with
+observable volatility but depends on the estimator and can miss rebounds.
+Compare pending-reduction confirmation with a profit-activated ATR giveback
+exit. Freeze321 cases in REGIME_SIZING_DESIGN.md before evaluating results.
+Use actual account allocations, preserve ordinary absolute targets and record
+restoration/stop interactions. Do not multiply shadow returns by an allocation.
+References accessed2026-10-27:
+https://www.nber.org/papers/w22208
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr
+Moreira/Muir motivates evaluating lower risk during high volatility; this study
+does not reproduce their factor portfolio, inverse-variance scaling or claimed
+performance. Fidelity describes ATR-adaptive stops; observed daily closes and
+next-open diagnostics remain necessary. Production remains unchanged.
+
+All321 genuine full-history policies fail simultaneous return/DD improvement;
+first1500-only selection retains baseline. Fixed75/weak-wide/current-turn
+returns361.797% versus382.700%, full DD unchanged12.019%, recent-1.287%
+versus-1.809%. Initial recent-best is+4.857% but full181.550%/DD21.795%.
+Its July31 buy is an earlier stop recovery, so append a separately declared
+common-state attribution review, preserving original source and checkpoint.
+After identical baseline state throughJuly21, fork-best delayed3/ATR1.5/WMA
+returns+2.839% recent with2.222% DD; double cost+2.659%, next-open+2.318%.
+The corresponding genuine full-path policy returns158.296%/DD24.889%.
+Local entry/exit mechanics improve, but broad feature detection does not
+establish safe deployment across history. Fork rankings are retrospective;
+no date switch or conditional policy is adopted.
+
+## 2026-10-27 market-characteristic diagnosis before tuning
+
+Compare volatility-only ATR with direction-efficiency ER plus volatility.
+ATR captures amplitude/gaps but cannot identify noisy versus efficient trends;
+ER captures path efficiency but not direction or absolute volatility. Prefer
+separate descriptive diagnostics and causal ER20/ATR-percent regime detectors.
+References accessed2026-10-27:
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/atr
+https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-overlays/kaufmans-adaptive-moving-average-kama
+Freeze13 baseline/regime-action combinations in REGIME_TUNING_DESIGN.md.
+Use previous-close detector state, historical-only volatility ranks, hysteresis
+and two-day confirmation. Retain one continuous account and select by first1500
+only. Whole64-session similarities are retrospective diagnostic labels, never
+runtime classifiers or untouched validation. Production behavior is unchanged.
+
+Observed recent64-session ATR-percent is2.3607 versus historical-block median
+1.3772 (30 blocks); meanER20 is0.1528 versus0.2190 and aboveSMA60 share29.69%
+versus60.16%. Sign reversals47.62% versus50.79% do not support an unusually
+frequent-flip explanation. Feature-conditioned delayed entries/faster exits
+still reduce full-period return; first1500 selection retains baseline.
+One wide-noise/direct-exit case improves mean return in the five retrospective
+analogues (3.12% versus2.79%) but worsens full return/DD, illustrating why an
+analogue-only score cannot establish a broadly better rule. No candidate is
+adopted; retain all13 cases and cost/next-open sensitivities for review.
+
+## 2026-10-26 SMA14..20 and missed turn diagnosis
+
+Compare changing only the supplemental price average with extending EMA7 turn
+eligibility3/5 sessions or accepting any positive EMA7 slope. The first changes
+trend filtering but cannot recover a turn missed solely because WMA or original
+signals blocked its only eligible day. Extended eligibility can recover delayed
+confirmation, but can also buy a later weak rebound. Keep original, reversal,
+exit and risk rules fixed. Declare28 cases in SMA_ENTRY_DESIGN.md before replay.
+Use full history plus pre/post2026-07-21 inherited-account boundaries; retain
+pre-cutoff selection and cost/next-open sensitivity. No production replacement
+is inferred from an isolated recent fit. References accessed2026-10-26:
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/sma
+https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html
+Fidelity explains shorter/longer trend horizons and smoothing lag; scikit-learn
+documents chronological evaluation to avoid training on future observations.
+
+Observed: current-turn SMA19/20 recent paths coincide and beat SMA14..18;
+delayed SMA20 identifies August5/September24 entries missed by a turn-only
+rule but worsens recent realized return. September28 reduction is held under
+the seven-session lock; October7 WMA is positive; October13/14 SMA11 slopes
+are0.1883%/0.2483%, above0.075%, delaying exit untilOctober15. Improving entry
+recognition alone therefore does not resolve exit latency. Keep SMA20/current
+defaults; joint entry/exit experiments need a separate declared comparison.
+
+## 2026-10-26 unintended chart wheel zoom
+
+Browser reproduction without any market refresh narrows the price window from
+roughly0.83% to0.033% after unmodified wheel events over the canvas; only a few
+candles remain visible. Current inside zoom enables wheel input unconditionally,
+with no daily minimum span. Compare a minimum daily span (bounds extreme zoom
+but still changes the user's window during page scrolling) with modifier-gated
+wheel zoom (prevents accidental changes while retaining deliberate close-up).
+Choose native `zoomOnMouseWheel: "ctrl"`, supported by the installed ECharts
+InsideZoomModel declaration; keep slider and explicit zoom operation. Ordinary
+scrolling should bubble to the page, independent of market session status.
+
+## 2026-10-26 missed V-bottom entries around fixed v4
+
+Freeze entry-delay, rebound/breakout/body-reversal, holding, exit-confirmation
+and risk-recovery menus in V_RECOVERY_DESIGN.md. Compare fixed-gate V entry
+with a V-only exemption, since slow averages can filter initial reversal days.
+Enforce a peak before the lowest open and measure decline as1-low/priorPeak;
+never use future extrema or trade an intraday threshold inferred from OHLC.
+Keep original signals and cooldown priority. Confirm386 predefined rules;
+also retain the292-rule exploratory and386-rule sequencing artifacts rather
+than overwriting prior outputs. Stage-two interactions are exploratory.
+Only first1500 selects the chronological diagnostic candidate; final500 was
+already studied and is not an untouched holdout. Sources accessed2026-10-26:
+https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf
+https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html
+These references motivate bounded declared menus and chronological analysis;
+no prospective optimality or measured overfitting probability is claimed.
+
+## 2026-10-26 additive held-peak six-percent exit
+
+Compare adding a full-episode peak-close exit with replacing the existing
+first-five entry-loss exit. Primary comparison preserves early4%, wait5,
+trend recovery and all v4 gates. Highest held close resets only on a fresh
+episode, not on an add or partial reduction; this protects unrealized profit
+but can exit temporary pullbacks. Frozen five-case design and implementation
+live in `research/nikkei-overlay-stability/TRAILING_STOP_DESIGN.md` and
+`trailing-stop-six.ts`. SEC Investor.gov's stop-order bulletin confirms that
+trigger prices do not guarantee execution prices (accessed 2026-10-26):
+https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-15
+Use observed closes and next-open diagnostics, never hypothetical threshold
+fills. No production changes are implied by this descriptive comparison.
+
+## 2026-10-26 cumulative loss versus peak drawdown stop grid
+
+User clarifies that the loss need not occur within one day. Compare initial
+position-episode close loss with highest-held-close drawdown; retain one-day
+close loss only as a control. Episode loss measures loss relative to entry,
+whereas peak drawdown also protects unrealized profit. Both causal close-based
+rules can gap beyond their threshold and are not fills at the threshold price.
+Compare whole-episode protection versus only its first five intervals, explicit
+post-stop cooldown and optional trend recovery. Freeze1..10% by0.5% before
+running, reuse hold5 and the SMA20/WMA research base, report neighboring
+thresholds and first1500-selected versus final500 outcomes. Extend no production
+risk behavior. Methodology and already-explored-data limitations remain as
+documented in the previous risk studies.
+
+## 2026-10-26 expansion under simultaneous return/drawdown constraints
+
+User rejects buying lower drawdown with lower return. Retain hold5 as the
+production baseline and require full-period return >=228.4374% with drawdown
+better than -23.6207% for descriptive eligible alternatives. Compare quality
+gates that avoid poor supplemental entries, partial rather than full risk
+exits, profit-activated trailing protection, and causal trend recovery after
+risk reductions. Cross these with current / WMA-negative / EMA-nonpositive
+pending-sell confirmation. This can improve trade distribution rather than
+only reducing exposure, but expands multiple-testing risk. Freeze the975-row
+menu in `DRAWDOWN_EXPANSION_DESIGN.md`; inspect first1500-only selections and
+next-open/double-cost sensitivity, disclose all rows and avoid treating final
+500 as untouched data. Keep all expanded risk rules research-only.
+
+## 2026-10-26 drawdown control after supplemental hold5
+
+Compare explicit emergency close stops, early release of the supplemental
+holding lock on trend weakness, and smaller supplemental initial allocation.
+Stops can exit without an original sell and bypass protection, but may incur
+whipsaw and gap losses. Early unlock only permits an already pending reduction
+and retains the SMA guard; partial initial entry scales risk but can reduce
+upside. Declare the39-rule menu in `DRAWDOWN_DESIGN.md`, use first1500-only
+risk selection with90% development-return retention, and report final500 as
+an already-explored diagnostic. Keep the authorized hold5 change separate
+from these research-only conditions. Close stops are not intraday stop fills.
+Use the same methodology sources and limitations as the bounded rule study.
+
+## 2026-10-26 bounded entry/exit rule exploration
+
+Compare two approaches before the follow-up experiment: maximize a fixed-rule
+grid over all 2000 sessions, or select only on earlier chronological observations
+and examine the later segment. Both reuse exact selected plans and a continuous
+account. Full-period maximization is descriptive and vulnerable to repeated
+selection; chronological selection reduces direct use of later returns but
+still shares the already explored data and full-period-chosen base parameters.
+Recommend a declared small rule menu, first1500-only selection, separately
+reported final500 and expanding 500-session deployment diagnostics. Do not
+call the final500 an untouched holdout or claim a fresh end-to-end strategy.
+
+Official methodology references checked on 2026-10-26:
+- https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.TimeSeriesSplit.html
+- https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf
+
+The former supports time-ordered splits; the latter explains why selection
+among many backtests can overfit. Neither endorses a particular trading rule.
+Test state versus turn entry, causal trend-confirmed release of pending sells,
+and short supplemental-entry protection. Preserve original two-bar sequence
+resolution, one account, pending target minima and unchanged source costs.
+Keep source and rule identities, report all configurations, verify baseline
+production parity and test rule cancellation/release/causality. This is isolated
+research, not a production change, external integration or new market download.
+
 ## 2026-10-25 production integration of exact replay and resume acceleration
 
 User authorized the first two measured improvements, conditional on unchanged

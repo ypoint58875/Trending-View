@@ -1,5 +1,63 @@
 # Debugging
 
+## Consecutive clearing arrows without an intervening entry
+
+Check report.rebalances fromAllocation/targetAllocation before assuming duplicate
+execution.2020-06-25 is100%->30% and2020-07-01 is29.879988%->0 on frozen v8.
+The original marker builder mislabelled a component long-exit as full liquidation.
+Portfolio action must follow actual allocation; component signals are provenance.
+No re-screen, account migration or financial-return correction is needed.
+
+## Cycle page waits for shortcuts or shows an old rule return
+
+Do not combine local task restoration and /api/saved-backtests with Promise.all.
+The static endpoint supplies optional instruments, not the dynamic ledger. Local
+profiles/task can open without it; a10-second network bound must not block form
+or results. Wait for shared profile hydration before attempting task replay.
+
+An old v7 account contains393.14% while current v8 on the same frozen2000 bars
+yields440.98%. User adoption now requires shared-account promotion, not a cycle-
+page-only preview. Check shared-hook migration, source/preview revision, worker
+error and CAS commit. Shortcut/report/settings must agree, with v7 retained in
+ruleBackup. Other dates/windows may yield different returns. A first replay takes
+seconds; later opens reuse the promoted report without shortcut dependency.
+Repeated shortcut clicks must reset the view to128 sessions, not retain a previous
+manual zoom. The validated chart banner/exit action was explicitly removed.
+
+## Cycle queue submission fails while engine health is ready
+
+Check both application /api/health and relay /health, then compare protocol
+against config/screening-engine-protocol.json. A healthy relay does not prove
+that a large POST completed. Previously ordinary2000-day queues used one large
+request and coordinator maintenance scanned the state directory once per unit.
+The client also discarded HTTP error details behind one generic message.
+
+Uploads now use <=64-unit chunks for all queues, not just candidate-library
+uploads. Acknowledge and persist each chunk immediately, so a failed later chunk
+or explicit pause retains known job IDs. Retry uses identical IDs. Coordinator
+cleanup runs once per incoming batch; explicitly resubmitting a cancelled job
+clears its cancellation flag before checking its durable completed result, so
+an existing result is reused rather than spawning duplicate computation.
+Explicit cancellation itself remains durable until resubmission.
+
+HTTP submission failures now include status and a bounded server error detail
+in the localized page error. Network/unavailable failures retain the generic
+message. Do not clear tasks, results or checkpoints as a recovery step.
+The2026-10-27 live1294-unit queue was accepted as21 chunks in2.557 seconds with
+exact deterministic ID parity;1291 completed results and3 remaining jobs were
+preserved. The project relay was restarted in place; protocol/endpoints did
+not change. The original browser tab disconnected during verification, so
+reopen the validation page and Continue to restore its report collection.
+
+## Price chart suddenly shows only a few candles
+
+Inspect the lower zoom slider and `.price-chart` data-zoom-start/end attributes
+before suspecting lost history. Wheel input over the chart directly zooms the
+visible range, as requested; Ctrl is not required. A closed market does not
+prevent view changes. Use the bottom slider to restore a wider range.
+Reload restores the default latest60-bar view when no explicit
+screening focus range is applied. Do not erase source data or cycle tasks.
+
 ## Current cycle result cleanup
 
 Run `npx tsx scripts/compact-current-cycle-results.ts` for a read-only audit of

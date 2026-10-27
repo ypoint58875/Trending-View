@@ -1,5 +1,55 @@
 # Module Patterns
 
+## Execution markers versus component signals
+
+Use actual portfolio transitions for portfolio trade labels. Core/satellite or
+long/short component event names are provenance and must never override partial
+portfolio exposure. Keep new allocation actions separate from legacy native
+strategy marker actions; preserve original signals and range/carry annotations.
+
+## Derived account views versus confirmed history
+
+Treat current-rule comparisons as derived reports rather than ledger migrations.
+When the user explicitly adopts synchronized account rules, promote the entire
+account only after successful replay, with a bounded old-rule backup and revision
+CAS. Every linked UI must consume the same stored report/settings; do not update
+one page's version label or preview while leaving the shared shortcut stale.
+Reuse original winners/calendar/costs; key cache by confirmed revision and rule
+identity. Validate identity in an atomic metadata-only write. Keep pure builder,
+worker entry and UI client separate. Cancel superseded work and never display a
+saved old-rule return as a current-rule result. Local restoration must not await
+optional network shortcut metadata; a failed background refresh is a warning.
+
+## Versioned overlay research adoption
+
+Promote a selected research path through the existing versioned overlay and
+shared indicators, not a parallel simulator. Freeze historical dependencies to
+their explicit archived model before changing defaults. Compare complete target
+paths and execution-specific returns, then test causal prefixes and conflicting
+signals. Optional order-intent context belongs at the existing replay boundary.
+Retain explicit saved-account models and show their version instead of silently
+rewriting confirmed history. Model identity separates screening caches naturally.
+
+## Dynamic account registry versus static saved plans
+
+Store inherited multi-selection accounts separately from static plan shortcuts.
+Keep transformation/replay pure, IndexedDB transactions in a store module and
+shared React hydration/subscription in a reusable component hook. Compute
+outside transactions and commit with expected revision; retry bounded conflicts.
+Notify local and cross-tab subscribers only after commit. Never substitute a
+last winning plan for a full dynamic account or silently advance a missing day.
+
+## Versioned overlay risk extensions
+
+Preserve historical model constants/options when a default risk rule changes.
+Share native feature/account logic across versions and gate only the added
+behavior. Reuse indicators.ts ATR and bars/model WeakMap features; never import
+research evaluators into runtime. Evaluate an added close-risk rule on the
+actual inherited account after native actions, clear obsolete pending/recovery
+state and document simultaneous native-stop precedence. Keep execution timing
+with callers. Verify archived paths and the adopted research path separately;
+do not rewrite old fixtures or force incompatible research checkpoint hashes.
+
 ## Exact screening acceleration
 
 - Keep performance changes inside the shared optimizer so ordinary, cycle,
@@ -57,11 +107,30 @@ Account-level SMA12 rules live in a pure state machine shared by ordinary
 single/allocation ledgers and cycle replay. Callers own signal sequencing and
 execution timing; the controller owns inherited target, pending sells and
 optional entry/exit rules. Daily features are reused per immutable input array.
-UI controls and persistence are shared by both pages, with Chinese copy only
-in the locale. Keep research prototypes separate from production imports.
+UI rule presentation is shared by both pages, with Chinese copy only in the
+locale. Keep research prototypes separate from production imports.
 
-Version formula changes explicitly inside overlay options. Current page controls
-always set `ema7-sma11-wma14-v1`; absent model preserves old saved formulas.
+Version formula changes explicitly inside overlay options. Current pages use
+`CURRENT_POSITION_OVERLAY_MODEL` (`ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-v6`) and
+immutable `DEFAULT_POSITION_OVERLAY_OPTIONS`, without checkbox preferences.
+Current normalization enforces the whole fixed policy. Keep seven-session
+supplemental protection independent from the five-session early-stop scope.
+Compute chronological reversal features once per immutable bars/model;
+gate exemptions apply only to that extra flat-entry path, never cooldown.
+Keep state-dependent rebound lows in the shared account, not cached per price
+array or reconstructed from research ledgers. Only EMA3/below-SMA20 features
+are cacheable; actual flat boundaries and native priority remain per account.
+`ENGULF_POSITION_OVERLAY_MODEL` / `ENGULF_POSITION_OVERLAY_OPTIONS` preserve v5
+without rebound. Pin v5 research baselines explicitly instead of following the
+changing default. Never import research policy implementations into production.
+`FIXED_HOLD5_POSITION_OVERLAY_MODEL` retains v4 with fixed flags/hold5 and no
+reversal entry. `HOLD5_POSITION_OVERLAY_MODEL`
+retains v3 without the new gates, stop and recovery;
+`PREVIOUS_POSITION_OVERLAY_MODEL` retains v2 without the five-bar supplement
+lock. Keep supplemental entry age independent of the pending minimum sell
+target; release requires both elapsed age and the existing exit guard.
+`MIXED_POSITION_OVERLAY_MODEL` retains historical `ema7-sma11-wma14-v1`,
+and absent model preserves the original saved formulas.
 Keep model identity through normalization, plan validation and cache keys, and
 include it in page memo dependencies. Cache features separately by model.
 
@@ -508,6 +577,8 @@ cover the price plot.
 
 The price chart's left-button pan belongs at the shared EChart boundary and
 dispatches the same data-zoom window to the inside controller and slider.
+Require Ctrl for price-chart wheel zoom so unmodified page scrolling cannot
+silently change the visible candle count; retain direct slider interaction.
 Map pointer travel to the current visible data span rather than the complete
 history span so the plotted content follows the mouse at a direct visual rate.
 Preserve that live controller during React option updates so visible-window
@@ -515,7 +586,7 @@ y-axis recalculation cannot interrupt an active drag. Derive the price y-axis
 from visible OHLC bars and enabled price-indicator lines, excluding strategy
 references, pane values, and warm-up nulls. Bollinger uses solid blue boundaries
 and a solid orange basis from the TradingView palette; coexisting aqua/yellow
-SMA lines use dashed strokes and restore solid strokes when
+SMA, EMA and WMA lines use dashed strokes and restore solid strokes when
 Bollinger is removed. Resize-observer callbacks must coalesce into one
 animation frame and skip unchanged dimensions.
 
