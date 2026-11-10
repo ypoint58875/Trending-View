@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { atomic, root } from "./analyze";
 import { fallbackMetrics } from "./sma20-fallback";
 import { rsi } from "../../lib/analysis/indicators";
-import { SmaPositionOverlay, DEFAULT_POSITION_OVERLAY_OPTIONS } from "../../lib/analysis/sma-position-overlay";
+import { SmaPositionOverlay, RSI_SHAPE_POSITION_OVERLAY_OPTIONS as DEFAULT_POSITION_OVERLAY_OPTIONS } from "../../lib/analysis/sma-position-overlay";
 import { strategyCycleSignalDirection, runStrategyCycleCloseBacktest,
   type StrategyCycleRecentSignal } from "../../lib/analysis/strategy-cycle-validation";
 import { runAllocationBacktest, type BacktestSettings } from "../../lib/analysis/backtest";

@@ -1,5 +1,16 @@
 # Decisions
 
+## 2026-11-06 User-adopted range3 full-exit exception
+
+Adopt the explicit all-ordinary range<3% policy, including original strategy
+clears, as version10; archive v9 unchanged. This is the user's chosen priority
+exception after reviewing both contracts. Keep native early4%/ATR exits and
+accepted partial reductions. Use actual fills for cost/range, not estimated
+prices, and preserve original execution timing. Full saved-selection replay,
+atomic settings/report promotion and one backup provide reversibility. Preserve
+real holding age, pending0/buy cancellation and bounded serialized state.
+Research458.46% is frozen historical reproduction, not a forward-return claim.
+
 ## D-001: Independent product implementation
 
 Use TradingView only as a product reference. Do not redistribute its library

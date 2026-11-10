@@ -4,6 +4,8 @@ import {
 } from "./community/registry";
 
 export type IndicatorId =
+  | "biasContext"
+  | "smaSlopeContext"
   | "sma"
   | "ema"
   | "wma"
@@ -83,6 +85,7 @@ export interface IndicatorDefinition {
   id: IndicatorId;
   placement: "overlay" | "pane";
   category: IndicatorCategoryId;
+  paneCount?: number;
   parameters: readonly IndicatorParameterDefinition[];
 }
 
@@ -138,6 +141,8 @@ function definition(
 }
 
 export const INDICATORS: readonly IndicatorDefinition[] = [
+  { ...definition("biasContext", "pane", "momentum"), paneCount: 3 },
+  { ...definition("smaSlopeContext", "pane", "trend"), paneCount: 3 },
   definition("sma", "overlay", "movingAverage", period("fast", 10), period("slow", 30)),
   definition("ema", "overlay", "movingAverage", period("fast", 12), period("slow", 26)),
   definition("wma", "overlay", "movingAverage", period("fast", 20), period("slow", 50)),

@@ -1,5 +1,157 @@
 # Architecture
 
+## Shared chart regions and remembered switches
+
+context-chart.ts is the common visual projection for all three Nikkei price
+surfaces. Weekly-context calculation remains pure and unchanged. Cycle UI
+holds full completed history separately from its evaluation bars;fresh reports
+and cached validated profiles both initialize it. PriceChart accepts the exact
+full MarketSeries used for its candles and uses the same completed-close gate.
+The background is optional visual state,not a strategy gate or new account rule.
+
+workspace-switch-preferences owns a version1 localStorage document with four
+switch scopes and validated entry parameters,max4096 characters. Its React
+external-store hook is hydration-safe and subscribes to same-window/cross-tab
+changes. No server state,credentials,new dependency or workflow checkpoint is
+introduced. All worksheet/tab selection remains outside this new preference
+boundary. Desktop-only layout retains two columns and a centered footer strip.
+
+
+## 2026-11-10 integrated navigation and weekly context
+
+The shared root layout owns WorkspaceMarketProvider and AppNavigation. Existing
+routes remain native pages; TrendAnalysisWorkspace is a third route, not an
+iframe. One active series and one Nikkei reference are retained, each bounded
+by DAILY_HISTORY_LIMIT. MarketWorkspace publishes/consumes matching canonical
+series, cycle loading delegates to loadWorkspaceMarketSeries and keeps its
+completed-close/anchor checks; trend loading uses the same helper. All use the
+existing canonical profile, IndexedDB cache, primary/recovery adapters and
+history merge policy. Research's existing reference/source-health UI remains.
+
+context-replay.ts is the shared pure retention/confirmation primitive. The
+weekly-market-context module maintains at most40 previous weekly closes,
+excludes an unverifiable leading partial week, builds developing4/12/40-week
+means and compares them with the prior completed-week means. Smooth summation
+order matches the approved reference exactly. Completed daily bars alone feed
+monitors/trend states. The retained DAILY helpers in market-context are legacy
+research/oracle APIs, not the active display rule; v11 holding-add BIAS and
+other trading engines retain their original business meaning.
+
+trend-panels is the18-entry pure registry, with null warmup and explicit prior
+source-day/7-calendar-day joins. Auxiliary snapshot is public historical data,
+separate from live canonical prices. The server route returns one bounded
+versioned snapshot. No extra provider/network fallback or price overwrite is
+introduced. EChart registers MarkArea for original-state background regions.
+
+
+## v11 same-completed-close BIAS holding-add gate
+
+v11 supersedes v10 defaults following explicit adoption of BIAS-only same-day
+holding-add restriction. Four adjacent trailing3 BIAS20 observations must be
+strictly descending. Current completed index controls onset and release.
+No slope/AND/OR condition is added. Only invested holding adds are restricted;
+flat entry,reduction,range3 and risk priorities remain.
+
+SmaPositionOverlay resolves v11's effective gate lag to0 even when cycle
+callers pass historical lag1. Archived RANGE_POSITION_OVERLAY_MODEL/OPTIONS
+retain exact v10 identity and lag context;BIAS_ADD retains v9. Ordinary orders
+still execute next open from signal-close data;the existing Nikkei close-proxy
+exception alone supports current-day operations. Both cycle accounts agree.
+
+No schema change:model options distinguish cache/task identities. Dynamic
+account replay retains cancellable120s worker,10000-bar bound,revision CAS,
+atomic whole-report commit and one prior-rule backup. Static saved models stay
+archived. Never reuse v10 checkpoints as v11 without current-rule replay.
+
+## v10 actual-execution range3 ordinary full-exit protection
+
+User adopted the all-ordinary contract: below3% post-entry high-low/first actual
+entry unit cost, defer ordinary full exits including original strategy clears.
+Partial reductions retain their accepted allocation, including when native close
+adds a later full-exit request. Native early4%/ATR risks bypass the range gate.
+Pending0 persists and native buys can cancel it. This exception is explicitly
+shown in localized priority text; it is not base-clear-priority research.
+
+SmaPositionOverlay v10 captures at most one pre-request daily state and an
+accepted partial allocation. Native request/close still compute existing v9
+rules, then an ordinary full-exit veto restores actual holding/risk state and
+retains pending0. Previous-completed-bar price orders use only that completed
+range; close evaluation never uses a future bar. All production execution paths
+call recordExecution with real unit transitions, fill price and commission,
+including summary-only ledgers and the research-only previous account. First
+entry sets fee-inclusive cost and range; adds/partial sales retain it, full flat
+resets. A close entry excludes earlier entry-day extrema; an actual open entry
+can observe that bar when it completes. Unknown inherited entry provenance does
+not fabricate a range; protection begins with a new actual entry.
+
+Checkpoint v10 adds range episode and bounded in-flight request/partial context.
+Daily completion discards the request snapshot; no recursive history accumulates.
+Malformed/missing v10 state fails with replay guidance. Old v9 is explicit
+BIAS_ADD_POSITION_OVERLAY_MODEL/OPTIONS; its state and results remain unchanged.
+Current-rule account promotion uses existing worker/revision/atomic whole-report
+commit and single previous-rule backup. No storage schema, provider, protocol,
+port, scheduler or ranking change. Existing10000-bar/120s replay bounds apply.
+
+## BIAS20 holding-add gate version and execution boundary
+
+v9 extends v8 with a causal holding-add restriction in SmaPositionOverlay.
+Raw BIAS20=(close/SMA20-1)*100; its trailing3 mean requires four consecutive
+valid smoothed observations in strict descending order. On at least the third
+declining close, the next session is restricted. A flat/rising observation
+releases the next-session restriction. It neither exits nor blocks flat entries.
+Native increase intent still cancels pending reductions and retains its priority;
+a blocked add keeps allocation/entry age unchanged. No deferred buy is queued.
+
+Ordinary backtests already send the completed signal index for next-open orders,
+so the controller's default holdingAddDecisionLag is0. Only the cycle report
+constructs controllers with lag1: all other cycle fills remain at its existing
+close proxy, while this restriction uses the preceding completed session. The
+lag is execution context, not a newly persisted trading preference. Existing
+checkpoints contain all necessary account state; the gate is derived from the
+bounded bar prefix. No storage schema or queue/protocol change.
+
+RSI_SHAPE_POSITION_OVERLAY_MODEL/OPTIONS retain v8. New defaults/cache signatures
+use v9. Static saved v8 plans retain their model. Dynamic current-rule promotion
+uses the existing cancellable replay, expected-revision atomic commit and one
+prior-rule settings/report backup. Historical v8 research imports are explicit.
+
+## Independent market-context periods and causal BIAS bands
+
+The chart keeps six view-only tabs (BIAS20/60/200 and SMA20/60/200 first
+differences), plus the existing-indicators tab. A selected contextPeriod lives
+on ChartIndicatorConfiguration only and does not mutate persisted preferences.
+Native registry groups retain three panes via optional paneCount metadata;
+ordinary indicators keep their existing one-pane/overlay contract. Immutable
+prefix pane counts allocate axes correctly when groups and ordinary studies
+coexist. Every context pane contains its original and SMA3 series; BIAS also
+includes P5/P10/P90/P95 from preceding three-calendar-year raw observations,
+excluding today and requiring 252 valid values. Leap-day cutoff is clamped.
+No full-sample fitting, future bars or smoothed-input quantiles are used.
+
+Monitoring still consumes only the original six smoothed curves and unchanged
+three-day confirmation. Research in research/nikkei-context-disagreement is
+separate from all application decisions and validated account persistence.
+
+## Six-curve descriptive context boundary
+
+market-context.ts computes causal three-session-smoothed BIAS and daily SMA
+first differences for 20/60/200 sessions. The registry exposes two fixed pane
+indicators. PriceChart switches existing panes, BIAS and slope using local view
+state; overlays and the active zoom survive tab changes. Per-pane legends sit
+inside the subplot header area; a reserved bottom band separates dates, tabs
+and the shared slider. Strategy execution, ranking and account storage do not
+consume this monitor.
+
+One independent per-instrument monitoring card precedes every validation-window
+button; changing or adding windows never duplicates the card.
+ValidatedCycleShortcuts computes Nikkei monitoring from the freshest matching
+full canonical series (or the stored account history), using the existing
+completed-close gate. It shows the exact input date rather than implying the
+strategy evaluation date is the monitoring date. An opposite candidate retains
+the last confirmed direction until three unanimous daily observations. Missing
+warmup requires 204 completed bars for the first daily direction. Confirmations
+are derived, never written into an account or used as trade instructions.
+
 ## Strategy shortcut viewport consistency
 
 Ordinary saved-strategy rows already replay the latest128-session saved-recent
@@ -44,7 +196,8 @@ not vetoed. E eligibility is captured before native close logic and applied only
 after native recovery if still flat, preventing replacement of partial recovery.
 Ordinary close signals still execute next open; only the existing Nikkei cycle
 close proxy exception applies. Explicit saved/account models are immutable on
-default upgrades; new defaults and cache keys use v8, research baselines use v7.
+default upgrades; archived v8 cache identities remain fixed, while v9 is the
+current default. The original RSI-shape comparison used archived v7 baselines.
 
 ## Continuing validated cycle accounts
 
@@ -861,3 +1014,7 @@ live target through the shared allocation state machine, and applies
 deterministic rank weights. It rounds the aggregate target to a 10% position
 and maps agreement plus directional pressure to
 buy/add/hold/reduce/sell/wait. It cannot alter screening rank or result tables.
+
+### Strategy-cycle close checkpoints
+
+Validated reports persist up to three versioned close checkpoints in their existing IndexedDB record. The checkpoint carries account and position-rule state while the report retains the historical trade ledger. Validate the history prefix, strategy selections, evaluation start and report settings before restoring. The historical bars and selections remain sufficient to rebuild the report.

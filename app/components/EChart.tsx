@@ -11,6 +11,7 @@ import {
   DataZoomComponent,
   GridComponent,
   LegendComponent,
+  MarkAreaComponent,
   TooltipComponent,
 } from "echarts/components";
 import {
@@ -31,6 +32,7 @@ registerEChartsModules([
   DataZoomComponent,
   GridComponent,
   LegendComponent,
+  MarkAreaComponent,
   TooltipComponent,
   CanvasRenderer,
 ]);
@@ -53,6 +55,7 @@ export interface DataZoomWindow {
 }
 
 export const ECHART_REPLACE_MERGE_COMPONENTS = [
+  "legend",
   "grid",
   "xAxis",
   "yAxis",

@@ -2,7 +2,7 @@ import {
   NIKKEI_CYCLE_MODEL,
   NIKKEI_CYCLE_CONFLICT_POLICY,
 } from "./strategy-cycle-validation";
-import type { MarketInstrument } from "@/lib/market/types";
+import type { MarketBar, MarketInstrument } from "@/lib/market/types";
 import type {
   StrategyCycleSelectionSnapshot,
 } from "./strategy-cycle-validation";
@@ -66,6 +66,49 @@ export function isCurrentCycleScreeningSignature(signature: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Hash the exact screening inputs, including the warm-up history. */
+export async function cycleTaskHistoryDigest(bars: readonly MarketBar[]): Promise<string> {
+  const input = new TextEncoder().encode(JSON.stringify(bars));
+  const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", input));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function cycleTaskRecentPrefixDigests(bars: readonly MarketBar[]): Promise<string[]> {
+  return Promise.all([1, 2].map((count) => cycleTaskHistoryDigest(bars.slice(0, Math.max(0, bars.length - count)))));
+}
+
+export async function reusableCycleTaskSnapshots(
+  task: StoredStrategyCycleValidationTask | null,
+  signature: string,
+  bars: readonly MarketBar[],
+): Promise<StrategyCycleSelectionSnapshot[]> {
+  if (!task || !isCurrentCycleScreeningSignature(task.signature)) return [];
+  if (task.signature === signature) return task.snapshots;
+  const previousSettings = JSON.parse(task.signature);
+  const nextSettings = JSON.parse(signature);
+  const { lastBar, barCount, historyDigest, recentPrefixDigests } = previousSettings;
+  const nextDigest = nextSettings.historyDigest;
+  for (const key of ["lastBar", "barCount", "historyDigest", "recentPrefixDigests", "screeningWindows", "evaluationSessions"]) {
+    delete previousSettings[key];
+    delete nextSettings[key];
+  }
+  if (typeof historyDigest !== "string" || !Number.isInteger(barCount) || barCount < 1 ||
+    barCount > bars.length || bars[barCount - 1]?.time !== lastBar ||
+    JSON.stringify(previousSettings) !== JSON.stringify(nextSettings)) return [];
+  const prefixDigest = barCount === bars.length ? nextDigest : await cycleTaskHistoryDigest(bars.slice(0, barCount));
+  if (prefixDigest === historyDigest) return task.snapshots;
+  if (!Array.isArray(recentPrefixDigests)) return [];
+  // A correction may invalidate the tail without invalidating earlier completed units.
+  for (const [offset, digest] of recentPrefixDigests.slice(0, 2).entries()) {
+    const prefixCount = barCount - offset - 1;
+    if (prefixCount < 1) break;
+    if (await cycleTaskHistoryDigest(bars.slice(0, prefixCount)) === digest) {
+      return task.snapshots.filter((snapshot) => snapshot.decisionTime <= bars[prefixCount - 1]!.time);
+    }
+  }
+  return [];
 }
 
 function openDatabase(): Promise<IDBDatabase | null> {

@@ -1,5 +1,1035 @@
 # Codex State
 
+## 2026-11-10 confirmed holding-bearish current-strategy rerun
+
+User explicitly chose current-carried-strategy signal checking rather than new
+winner screening. Recomputed existing nikkei-downtrend-signal-review: original
+decision calendar OR actual pre-decision holding with close below open. All
+2,000 daily masks match; all other dates and native v11/two-bar rules stay.
+Net350.5911425933033%,DD12.617443423061559%,141fills,149 extra checks;
+baseline463.0922799282711%,DD10.875316695865923%,128fills. Same source ends
+2026-10-26; no current browser export or new optimizer job. 56 extra signal
+days include38 reduce,17 increase,one sequence hold. Eight direct reductions,
+including two clears,do not improve full-period performance in this sample.
+
+Fresh25 focused tests,typecheck,scoped ESLint,production parity,12 resume and
+12 prefix checks pass. Independent Python re-verifies8000 daily ledger/mask
+observations;additional exact requested-mask audit verifies2000 dates. Existing
+source/model identity1601f4b0768a9c27cdfbad3cd527a56a4f98ca444a116c3dc6aedd9b59255467
+is unchanged;completed signal extraction reused,all policy replays recomputed.
+Atomic progress is complete322/322,pending0. Existing README recovery/bounds
+apply. Research outputs/FINDINGS,CODEX_STATE and FEATURE_MAP updated only;
+no production/shared pattern/source change,no full npm test rerun needed.
+No out-of-plan edits;pre-existing user changes preserved. No policy adopted.
+
+## Latest2026-11-10: desktop worksheet tabs, shared context backgrounds and remembered switches
+
+Completed the user's successive UI instructions. Footer Research/Cycle/Trend
+worksheet tabs are centered. Research's duplicate top Cycle button and Cycle's
+upper-left Research-back button are removed. Trend uses the research-style
+left chart/right372px monitor layout,with weekly/close worksheet tabs above
+the chart. Only desktop computers are supported;AGENTS.md/README explicitly
+prohibit adding or retaining phone/tablet layouts. Seven narrow-screen CSS
+branches and the two removed links' unused styles were deleted. No separate
+Android/iOS/native mobile application existed to delete. Desktop minimum1180px,
+1800px desktop adjustment and reduced-motion accessibility remain.
+
+Latest indicator strip is ONE row of11 tabs: six overview,BIAS4/12/40,
+slope4/12/40,ATR,Nikkei breadth,VIX and JGB10Y-2Y. The seven arrow-marked UI
+choices are removed;underlying general indicator/research APIs remain intact.
+Tabs use the exact same common style as the research strip:12px font,34px
+height,padding7px14px,flat edges and active green underline. There is no special
+miniature trend-tab font. The strip stays in the reserved chart band below the
+indicator and above date labels;overflow arrows appear only when necessary.
+
+Context areas now use ONE pure context-chart projection/color definition in
+TrendAnalysisChart,PriceChart and StrategyCycleRollingChart. The cycle chart
+receives completed FULL history in both calculateReports and saved-profile
+show paths,then aligns observations to evaluation dates. A pre-evaluation
+confirmation is inherited,not warmed up again at the visible start. Only the
+background changes;orders,returns,candle data,marker placement and tooltip
+outputs are preserved. Cached saved-result display is explicitly covered.
+The cycle-window selector also reuses worksheet tabs.
+
+Research's Nikkei chart has an initially-on context-region switch in the
+requested top-right strip,above the price plotting grid. It hides only areas,
+without changing indicators,fills or zoom. Region inputs match the exact series
+being charted,including saved validated-series history,and exclude unfinished
+closes. Other-market context display is not silently enabled using Tokyo gating.
+
+Switch state is device-local at quantscope.workspace-switches.v1. The new
+workspace-switch-preferences module stores only known boolean/entry-filter
+keys,version1,max4096 characters. The reactive useSyncExternalStore hook supports
+reload,route changes and storage events. Context visibility and A/B/C entry-
+filter enabled flags are remembered;associated filter parameters are retained
+so an enabled switch cannot reopen with different thresholds. Entry choices
+are restored into draft controls only. Explicit saved-plan application keeps
+its own rules;stored accounts are not rewritten. Existing indicator visibility/
+favorites already persist. No new tab/view-mode/location key is stored.
+If storage is blocked,the current session still works and a bounded fallback
+warns once;cross-restart persistence requires functioning browser storage.
+
+Changed files by purpose:
+- AGENTS.md/README.md: explicit desktop-only product scope and current usage.
+- AppNavigation/IndicatorTabs/globals.css: common worksheet style,centered footer,
+  one-row full-size trend strip,desktop columns,deleted phone/navigation CSS.
+- TrendAnalysisWorkspace/i18n: left/right layout,mode tabs,reduced choices,copy.
+- MarketWorkspace/StrategyValidationWorkspace: obsolete links removed;new main
+  background input and saved/fresh cycle full-history state;entry-switch restore.
+- context-chart.ts;TrendAnalysisChart;StrategyCycleRollingChart;PriceChart:
+  shared full-history background projection and research visibility switch.
+- trend-panels.ts: explicit11-entry visible-tab registry;legacy calculators kept.
+- workspace-switch-preferences.ts;useWorkspaceSwitchPreferences.ts:
+  bounded versioned local persistence and reactive switch consumption.
+- strategy-cycle-rolling-chart/market-context/workspace-switch-preferences tests;
+  rendered-html tests: inheritance,causality,unchanged markers/tooltip outputs,
+  switch persistence,11 tabs and desktop route contracts.
+- FEATURE_MAP/MODULE_PATTERNS/ARCHITECTURE/FUNCTIONS/DEBUGGING: new boundaries,
+  UI policy,source ownership and recovery. No market-source/secret changes.
+
+Run existing local app at http://127.0.0.1:3000;footer selects the three pages.
+Verification: complete npm test PASS:513 unit tests,production build and5
+rendered-HTML tests.19 focused checks are a subset,not an extra total. Typecheck,
+scoped-new-module lint and git diff --check pass. Browser verifies11+2 trend
+choices,research7 tabs,identical tab dimensions,centered footer,left/right layout,
+no plot obstruction,removed links,and reload restoration for off region switch
+and on entry-filter switch. A controlled17-day cached cycle profile in the
+isolated QA browser produced the actual red/green result chart;the temporary
+record was removed and original QA-browser preferences restored in finally.
+No JS page errors. Pre-existing local HTTPS favicon console errors remain.
+
+Screenshots: output/single-row-trend-desktop.png,research-context-overlay.png,
+cycle-context-overlay.png. Latest report:output/cycle-context-verification.json.
+Backups:worksheet-layout-backup-20261110 and cycle-context-overlay-backup-20261110.
+All backup sources use .backup suffixes. No Git reset/commit,account schema or
+trading-engine edit;existing user modifications remain. No feature work pending.
+Existing live app/relay remain running;no new persistent service was added.
+Historical mobile QA entries below are archival,not the current product scope.
+
+
+## Latest2026-11-10: integrated three-page weekly-context workspace
+
+Completed approved native integration in app/trend-analysis, with bottom
+navigation Research/Cycle Validation/Trend Analysis. All18 reference tabs are
+available as indicator panes. The compact two-row control card is at the
+indicator lower edge,above its displaced date axis. The plotted indicator
+ends7px before the card; the card ends3px before the axis. Desktop rows that
+fit have no arrows;390px mobile has two overflow rows and no horizontal page
+overflow. No iframe or frozen reference-price page is used.
+
+Price source is the existing canonical index:N225 policy/cache. The research
+page publishes/consumes matching shared series; cycle loading delegates to
+loadWorkspaceMarketSeries; trend loads the same canonical history. Root memory
+keeps at most the active series and one Nikkei reference, not a second durable
+cache. Shortened/older snapshots cannot replace the latest matching series.
+Current browser verification:Yahoo canonical price through2026-11-10;context
+retains down confirmation2026-10-13 while the current day is mixed. Switching
+all three pages and reopening trend preserves the same monitor result.
+
+Active context indicators and all context cards use developing4/12/40 weeks,
+3-session smoothing and3-session unanimous confirmation. Pure replay extracted
+into context-replay; original daily helper APIs remain for research/tests.
+No v11 position logic,backtest policy,optimizer,queue protocol or saved-account
+schema is changed. Context monitor/trend signal input excludes unfinished bars.
+
+Changed files and purpose:
+- app/layout.tsx; components/AppNavigation.tsx; globals.css: shared root/bottom
+  navigation,room for fixed footer,reserved compact-card layout.
+- components/WorkspaceMarketProvider.tsx; lib/market/workspace-series.ts:
+  bounded shared identity and existing canonical cache/source loader.
+- app/MarketWorkspace.tsx; strategy-validation/StrategyValidationWorkspace.tsx:
+  consume/publish shared series and replace duplicate cycle fetch code with the
+  canonical loader while retaining close/anchor checks. Saved workflows remain.
+- analysis/context-replay.ts; weekly-market-context.ts; market-context.ts:
+  shared exact weekly calculation and retained-state monitoring.
+- components/PriceChart.tsx; ValidatedCycleShortcuts.tsx; EChart.tsx:
+  weekly context panes/cards,shared indicator tabs,MarkArea registration.
+- analysis/trend-panels.ts; trend-analysis/page.tsx; workspace/chart components;
+  components/IndicatorTabs.tsx:18 native panes and overflow-only controls.
+- app/i18n/zh-CN.ts: all Chinese copy,weekly periods,tabs and source/date text.
+- scripts/import-trend-auxiliary.mjs; api/trend-auxiliary/route.ts; normalized
+  JSON/raw backups/source registry: one source-hashed historical auxiliary feed.
+- tests/weekly-market-context.test.ts; market-context.test.ts;
+  rendered-html.test.mjs: weekly/source/state/route contracts and legacy-source
+  assertions updated for shared loading. No assertions were deleted to bypass
+  behavior. README and architecture/function/linkage/pattern/research/source/
+  recovery docs updated. No unplanned trading-engine edits or Git commits.
+
+Run: existing local launcher or npm run local:dev,then open
+http://127.0.0.1:3000/trend-analysis. All three pages are in the footer.
+Verification: npm test was run twice;505 unit tests passed in each final
+business-logic run and the production build passed. Final HTML stage initially
+caught the obsolete independent-loader source assertion and a sub10px label;
+both were corrected. Final npm run build plus all5 rendered-HTML tests passed.
+Final typecheck/scoped-new-module lint and git diff --check pass. Total unique
+suite checks505+5;focused15 are included,not additional. Reference replay
+matches6570 bars/38864 finite curve values EXACTLY,max error0,state mismatch0.
+Browser18 tabs/page navigation/desktop/mobile checks report no JS page errors;
+final geometry proves card clear of plots and date labels. Existing loopback
+HTTPS favicon console errors remain unrelated to this feature.
+
+A local development worker returned a page500 during verification. Verified
+application PID20640/project path and children were replaced with hidden
+project-owned app PID10680. Market relay PID9824 was left untouched. Direct
+loopback /api/health now returns200 with ready=true; localhost checks must
+bypass ambient proxies. The existing app remains running for the user.
+Backups: output/trend-integration-backup-20261110,original19-file hash manifest
+plus EChart backup;TypeScript backup suffix is .backup. Selective recovery only.
+
+Auxiliary snapshot identity740d7ba6e0b730b2f36616c7fc9dfe48a2309a12533cb206505d92923b8edcc2.
+Breadth/JGB end2026-10-30,VI2026-11-09,VIX2026-11-05. Per-source end dates are
+shown; this import does not implement unattended live auxiliary collection.
+Raw inputs are retained locally and no large/private source data was committed.
+Memory/recovery bounds and import commands are in DEBUGGING/DATA_SOURCES.
+No queued feature work remains. Remaining limitations:auxiliary freshness,
+previously studied history,existing favicon metadata origin and pre-existing
+cycle-page lint rules;new modules have clean scoped lint. Existing uncommitted
+user work was preserved. No unrelated process or cache was deleted.
+
+
+## 2026-11-10 strict screening-skip safety audit (no adoption)
+
+The isolated `research/nikkei-screening-skip-audit` compares all 1,293 frozen
+10-session screening decisions from identical pre-day states. Omitting a screen
+means the existing nondecision branch: keep the previous plan and submit no new
+base signals. Current v11 baseline, final controller/account and all 128 fills
+match production at 463.0922799282711% net over 2,000 sessions ending 2026-10-26.
+This is not a current browser-account export.
+
+Same fills: 1,247 dates; same full account/risk state: 949; also same carried
+strategy: 157. Combined retrospective removal of those 157 preserves every
+daily state and fill, leaving 1,136 dates. They depend on already computed
+winners and are not a causal skip gate. Existing rule-only, before-screen
+certified skips: zero. Winners replace the carried strategy on 1,113 dates;
+valid signal witnesses also refute full state independence on every date.
+Do not interpret no fill, cooldown or holding protection as irrelevant screening.
+
+24 focused tests, typecheck and scoped ESLint pass. Production-state/fill parity,
+1,293 serialized probes, 1,000 prefix states, 2,000 combined hindsight states,
+actual 128-day stop/resume and fresh/resumed equality pass. Independent Python
+verifies every branch comparison and exports the date CSV. Peak RSS 128.9MiB.
+Identity: 6654c78a46edb5f8250a274da271cddda8fb3aa4657f81072c21a4187c3c2219.
+Complete 2,000 days / 1,293 decisions, pending zero, attempts two. Atomic state
+and raw backups live in data/<identity>; output/latest.json locates results.
+Rerun run.ts after interruption; audit.py verifies results. README/FINDINGS
+document bounds, recovery, categories and the hindsight limitation.
+
+Only isolated research and CODEX_STATE, FEATURE_MAP, DEBUGGING, TECH_RESEARCH,
+DATA_SOURCES changed. No app/lib/browser/optimizer change or policy adoption.
+Existing dirty work preserved; no out-of-plan edits. No shared pattern changed;
+MODULE_PATTERNS unchanged. Full npm test not repeated for research-only work.
+
+## 2026-11-10 downtrend continuation signal review (no adoption)
+
+Research-only nikkei-downtrend-signal-review preserves frozen 10-session,
+maximum-six-strategy full-screen winners over 2000 sessions ending2026-10-26.
+Current v11 baseline463.09228%/DD10.87532%/128 fills reproduces production and
+every economic rebalance. This is not a current browser-account export.
+
+1293 original screens,641 two-bar signal-check dates,707 skips,322 skipped
+strong-down bearish dates. Baseline holdings occupy144;54 contain signals:
+38 reduce,15 increase,1 sequence hold. Narrow bearish-body entry/continuation
+has2 checks,both increase,no execution change. Close-down entry/continuous
+declining closes has4 checks:one pending clear,one40% partial reduction,two
+already-full buys. Net462.90483%,130fills,sameDD. Broad holding-down checks
+give350.59114%,DD12.61744%,141fills;not adopted. Baseline94 skipped-down
+dates follow bullish bodies,41 invested:current MA2 trigger is not sign-flip.
+
+25 focused tests,typecheck,scoped lint pass;12 serialized resumes,12 causal
+prefixes,actual16/322 extraction stop then306-date resume pass. Independent
+Python verifies8000 daily ledger/mask/episode observations and all fills.
+Extraction peak251.6MiB;bounds10000bars/2048screens/16MiB file/1.5GiB RSS.
+Identity1601f4b0768a9c27cdfbad3cd527a56a4f98ca444a116c3dc6aedd9b59255467;
+complete322/322,pending0. Rerun research/run.ts after interruption;atomic
+data/<identity>/progress.json validates source/code,backs up input/signals;
+output/latest.json locates traces and summary. README/FINDINGS document exact
+definitions,limits and recovery. No provider request or browser write.
+
+Only research files and CODEX_STATE/FEATURE_MAP/DEBUGGING/TECH_RESEARCH/
+DATA_SOURCES changed by this task. No production feature/shared pattern change;
+no MODULE_PATTERNS update or full npm test rerun needed. Existing dirty work
+preserved,no out-of-plan changes. User has not selected a replacement policy.
+
+## 2026-11-06 user-adopted v11 BIAS-only same-day holding-add gate
+
+User explicitly requested A alone,current-day effect. Default v11 retains v10
+range3 protection and other native rules,but reads the current completed BIAS
+gate even when cycle execution passes archived lag1. Both onset and release
+act at today's Nikkei close proxy. Ordinary next-open fills still use completed
+signal-day state;no future close or extra lag. No slope/AND/OR condition added.
+
+RANGE_POSITION_OVERLAY_MODEL/OPTIONS preserve exact v10 model identity and
+behavior. All range/rebound/ATR/shape checks include v10+v11. Static saved
+models remain archived;dynamic current-rule replay retains saved winners,
+one prior-rule backup,revision CAS,atomic promotion and cancellable bounded
+worker. No schema,provider,credential,protocol or account deletion changes.
+
+Verified28 focused tests including5 new v11 tests and v9/v10->v11 promotions;
+8 archived study tests also pass. Typecheck and scoped source/test ESLint pass.
+Actual production cycle report463.0922799282711%/128 fills exactly matches
+archived-v10 same-close research;v10 remains458.4631387547417%/129. Full report
+serialized recovery,causal prefix and idempotent same-date continuation pass.
+Live existing health and validation page return200 and expose same-day block,
+release and no-slope wording. Full npm test PASSED with exit0:498 unit tests,
+production build and4 rendered tests,zero failures/skips. Log:
+output/same-close-bias-v11-npm-test.log. Final live health/validation return200
+with same-day prohibition/release wording. No out-of-plan changes by this task.
+
+Research nikkei-bias-six-sizing model/run/gate-model/gate-model.test imports
+explicitly pin RANGE options;range-position tests also pin archived v10.
+UI/README,architecture/functions/debugging/feature-map/research docs updated.
+No shared architecture pattern or source change;MODULE_PATTERNS/DATA_SOURCES
+need no update. Existing changes preserved;no out-of-plan edits. Existing
+10000-bar/120s replay and constant-size gate/range state bounds remain.
+Refresh the existing page for dynamic-account v11 replay,retaining v10 backup.
+Frozen2000-session source endsOct26,not the newer browser account;research
+return superiority is not a future guarantee.
+
+## 2026-11-06 individual/joint same-day holding-add gate follow-up
+
+Added research/nikkei-bias-six-sizing/gate-model,gate-run,3 gate-model tests,
+gate-audit.py,GATE_DESIGN/GATE_RESULTS and README follow-up. This replaces
+the current gate for isolated BIAS/slope/AND/OR,not the preceding additive-only
+comparison. Research-only per-instance detached derived features retain the
+actual v10 controller and are tested for no shared-cache/instance leakage.
+No production,account,winner,UI,protocol or shared-pattern changes.
+
+Frozen2000 days:current458.46%,off454.00%,same-close BIAS/OR463.09%,slope/AND
+455.65%;allDD10.88%,allfinal50099.85%. Complete targets/controller/account
+paths match within BIAS/OR and slope/AND. Current+same-day slope/AND both
+459.04% with identical paths; do not call that replacement AND. BIAS alone
+is simplest historical best but next-open496.11% trails current496.58%;
+first1000also lower89.67% vs90.10%. Sparse/reused data do not warrant adoption.
+
+Verified8 combined focused tests,typecheck,scoped lint,8 causal prefixes and
+serialized resumes; actual2-case stop/6-case resume. Python independent8 masks,
+16000 daily equities/all fills/split returns/DD pass. Complete8/8,pending0,
+peak132.83MiB;identity9d56f7f9ecb3b8ff9651b2cff299e18e729c3ed244d209e6c93644510f0bde4b.
+Commands/recovery in research README. Four project docs updated within plan;
+existing changes preserved. No new data sources;DATA_SOURCES/MODULE_PATTERNS
+unchanged. Full npm test not repeated for isolated research; preceding full
+gate remains recorded below. Frozen source endsOct26,not newer browser account.
+
+## 2026-11-06 BIAS double-condition and six-curve sizing research
+
+Added isolated research/nikkei-bias-six-sizing DESIGN/model/run/5 tests/audit/
+README/RESULTS/.gitignore. No production or account changes. Current v10 frozen
+2000-session baseline2018-08-09..2026-10-26 reproduces458.4631387547417%/129fills
+against real cycle report. Not the newer browser account endingNov5.
+
+BIAS20 SMA3 down3 AND SMA20 point-slope SMA3 first downturn:50 events,28 with
+native target exposure. Additional holding-add veto affects1 add:459.04% vs
+458.46%,DD10.88% unchanged,final50099.85% unchanged; next-open sensitivity
+492.93% vs496.58% reverses benefit. This is additive, not replacement gating.
+Half/clear until next native increase317.02%/203.69%; immediate condition-clear
+recovery447.66%/436.75%,allDD10.88%. No adoption recommended.
+
+Retained six-curve weak multipliers75/50/25/0% return357.16/272.60/202.38/
+144.32%,DD10.16/9.45/10.94/13.13%. Native strategy strong/weak daily means
+.0888%/.0926%,stitched returns150.01%/123.37%; weak is profitable29/44 runs.
+Lower raw index returns do not establish worse native strategy returns.
+Long6570-bar price sample2000..2026 and fixed subperiods are separate evidence.
+
+Verification:5 focused tests/scoped lint pass; independent Python verifies15
+cases/30000 daily equities/all fills/all six curves and states in both samples,
+weak targets/events/forward outcomes.3 native serialized resumes/prefixes and
+13 sleeve prefixes pass. Actual2-case stop then13-case resume,complete15/15,
+pending0,peak356.47MiB<1536MiB. Identity50427ff9eca63478f0b7e9553d612a9498a8384c5519e0984ff31a63f6fc2f34.
+Run commands/recovery in research README and DEBUGGING. Source/implementation
+hashes and local backups persisted atomically. Full npm test exited0:492 unit
+tests,production build and4 rendered tests passed,zero failures/skips; local
+log research/nikkei-bias-six-sizing/npm-test.log. Existing dirty work preserved.
+Sizing sleeves keep native shadow risk/range state; integration would need
+separate tests. Reused history/index-close proxy remain limits.
+
+## 2026-11-06 user-adopted v10 range3 protection completed
+
+User explicitly selected range<3% protection that can delay original strategy
+ordinary full clears. Default v10 retains archive BIAS_ADD v9. Core runs native
+holding/entry/BIAS/risk rules, then protects ordinary full exits below3%; accepted
+partial reductions survive any extra native shape clear. Pending0 remains,
+native buys can cancel it; early4%/ATR bypass. Actual execution callbacks supply
+fee-inclusive first-entry cost and post-entry extrema in allocation/single/
+summary backtests and both cycle accounts. Adds/partial sales retain range;
+actual full flat resets it. Original next-open/close/price-order timing remains.
+
+Checkpoint adds bounded episode and one pre-request/partial context, rejects
+missing/malformed v10 state, clears within-day snapshot after close. No schema,
+queue,network,provider or credential changes. Existing bounded worker/revision/
+atomic report promotion retains one old-rule backup and is idempotent. Native
+unknown carry provenance has no fabricated range until a new actual entry.
+
+Verified exact frozen research458.4631387547417% targets/129 fills, actual cycle
+report and serialized/prefix recovery. v9->v10 backup/idempotence tests pass.
+Added risk,partial/order,first-entry/open/close cost and corrupt-state cases;
+ordinary single/allocation next-open320 daily equity points match independently
+in output/range3-v10-execution-parity.json. Scoped lint passes. Live /api/health
+and /strategy-validation return200; new range/explicit original-clear copy visible.
+Historical v9 research imports pin archived options; static saved models remain.
+
+Full npm test exited0: 492 unit tests, production build and4 rendered tests
+passed, with zero failures/skips (output/range3-v10-npm-test.log). Archived v9
+adoption/integration compatibility:13 tests passed. Final live health and
+validation page return200 and expose both new rule strings. Run npm test to
+repeat verification; refresh the existing validation page to let its established
+current-rule replay upgrade saved dynamic accounts, retaining one v9 backup.
+Initial interrupted run retained in range3-v10-before-partial-fix.log after a synthetic partial-
+before-extra-full-exit edge was corrected; frozen historical data had no such
+cases. Existing generated
+output/verify-speed-turn.ts had Map<unknown,unknown> blocking global typecheck;
+plan explicitly expanded for a type-only annotation fix, no calculation changes.
+All other edits remain within declared source/test/archive/document scope.
+Pre-existing work preserved. Bounds remain10000 bars/120s worker; range state is
+constant-size, no new external job. Frozen source ends2026-10-26 and does not
+reproduce the newer browser account's headline. Research evidence remains reused.
+
+## 2026-11-06 range3/range10 holding and rebalance integration rerun
+
+User requested retesting range<3/10% with existing holding rules and actual
+rebalance signals. Added isolated research/nikkei-range-exit-integration
+DESIGN/model/report/run/10 tests/audit/README/RESULTS/.gitignore. Five fixed
+cases separate all-ordinary exit protection from original-base-signal priority.
+No app/library/account/optimizer/archive changes. Existing dirty work preserved.
+
+Current-v9 cycle lag1 real buildStrategyCycleRollingReport baseline445.342093%
+and all133 fills exactly match instrumented replay. Main all-ordinary range3/
+range10 reproduce previous complete targets,state,fills:458.46%/DD10.88%/129
+and482.44%/DD11.87%/89; final50099.85%/101.70%. Range3's4 vetoes are3 explicit
+base clears+1 necessary base-pending clear, not controller-only exits. Keeping
+base instructions' priority makes range3 EXACTLY native445.34%/133 fills.
+
+Range10 all-ordinary vetoes128 attempts in43 spells, including21 explicit base
+clear+95 necessary pending attempts. Hard exits inside band execute14 times.
+Five deferred spells reach>=4% close loss after early-stop age; worst entry-cost
+floating loss5.30%. These are descriptive, not additive portfolio losses.
+Base-priority range10 vetoes just one controller exit2022-12-19(age6,range3.69%),
+then ATR exits2022-12-20 after another2.46% price decline; entry floating loss
+4.83%. Result431.94%/DD10.88%/133 fills,final50099.85%. No adoption recommended.
+
+Priority controls preserve already accepted original partial reductions if
+native close adds a full sale. Legacy blanket veto could undo those; regression
+tests demonstrate distinction, but ZERO such cases occur in this frozen sample.
+Pending provenance/cancellation and same-state no-pending necessity are tracked.
+No extra stop/buy ban, strategy rescreening or fill timing change.
+
+Verification:22 combined tests (10 new+9 prior range+3 v9 integration),typecheck,
+scoped lint/diff check pass.5 fresh cases,10 prefixes+10 serialized controller/
+episode/lineage/cash resumes; actual1-case stop/4-case resume. Independent Python
+80 metric groups/all fills/10000 signal-priority-risk-state traces/6338 episode
+observations/48 deferred spells agree; EMA7/ATR14 independently recomputed.
+Observed RSS399.4MiB<1.5GiB,trace JSON2.87..2.94MiB<16MiB. Complete5/5,pending0;
+identitye79c17a309a5b389dbdc0c9415c593e7c919507f2cdebe5459eedd4f7101bf36.
+Run npx tsx research/nikkei-range-exit-integration/run.ts; README/DEBUGGING give
+audit/tests and atomic restart procedure. Raw backups/checkpoint and derived
+traces remain separate/ignored. No full npm test rerun for research-only scope.
+Seven project-memory files updated; no out-of-plan edits by this task.
+Frozen2000 days end2026-10-26, not newer2006-session browser account endingNov5.
+Reused historical sample/index-close proxy/priority-contract choice remain risks.
+
+## 2026-11-06 cycle monitoring removal and priority wording correction
+
+User reported unwanted holding-coverage cards and ambiguous old/new strategy
+priority. Git commit 27597c1 removed the range editor but deliberately retained
+coverage results; this was incomplete removal, not a new feature in this patch.
+Removed validation-page coverage rendering, preference read effect, state and
+unused locale keys. Preserve localStorage, saved accounts, tasks, backups and
+the pure monitoring helper/tests used by research. No trading changes.
+
+Clarified that base signals belong to the currently selected strategy and take
+precedence over supplemental entries/shape rules. Separately, conflicting
+screening winners execute the incoming winner's current two-bar signals.
+Main return reads report.updateReturn; chart uses that report's rebalances.
+The archived previous-winner alternative remains research-only.
+
+468.46% belongs to the v8 speed-turn holding-add next-open research variant,
+not the adopted v9 BIAS20 decline-three-day cycle-close variant. The frozen
+2000-session sample ends 2026-10-26: adopted cycle-close445.34%, next-open473.38%.
+Screenshot covers2006 sessions ending2026-11-05 and displays419.65%; its exact
+browser account was unavailable in connected sessions, so that number was NOT
+independently reproduced or replaced. Do not change execution to chase a return.
+
+Verification: full npm test PASSED (exit0): typecheck,481 unit tests, production
+build and4 rendered/source checks. Log: output/cycle-ui-scope-npm-test.log. Live
+validation route returns200 and clarified priority; final diff check passes.
+Scoped lint retains three pre-existing effect-state errors and one dependency
+warning, also recorded in the earlier validation lint baseline. No lint fixes
+outside scope. Existing dirty work preserved; no out-of-plan source changes.
+UI-only removal adds no persistence, checkpoint, queue or memory requirement;
+existing replay bounds/atomic backups remain. Refresh the existing app to use.
+
+## 2026-11-06 small-move ordinary full-exit research completed
+
+User requested BOTH cost-distance and post-entry range across multiple amplitudes.
+Added isolated research/nikkei-small-move-exit DESIGN,model/run/9 tests/audit.py,
+README,RESULTS/RESULTS_V9,.gitignore. Fixed21 cases/version:baseline plus each
+0.5/1/1.5/2/3/4/5/6/8/10%. Protect ordinary FULL exits only; partial sells,
+native early4% and ATR hard exits pass. Actual first-buy fee-inclusive cost and
+subsequent high/low persist across adds/partial sales and reset only on full flat.
+Exclude entry-day pre-entry extrema. Blocked exits retain pending0/real state.
+No new buy cooldown combined. No production/account/source archive edits here.
+
+Concurrent v9 adoption triggered baseline assertion before comparisons. Pin v8
+explicitly; repeat identical21 policies under v9 cycle lag1 holding-add gate.
+Baselines440.980703%/445.342093% match complete native targets/state/fills.
+Lag0 diagnostic444.102592% is not the cycle comparator. Concurrent edits preserved.
+
+Current v9 cost-distance ALL worsen DD. Range2 454.81%/DD10.88%/131 fills,
+range3 458.46%/10.88%/129 versus445.34%/10.88%/133; final50099.85% unchanged,
+only2/4 protected exit attempts. Range5 446.80%/10.18%/113,final50099.12% and
+development80.51% versus85.79%. Range10 post-hoc full482.44% has DD11.87%,
+auditDD8.52% versus7.47%,development80.20%; not a validated optimum. No v9
+qualification. Range2/3 miss5% development-turnover reduction, not return
+comparison. V8 selection range5 gives455.16%/DD10.18%,final50099.12%; v9
+interaction removes most full-return benefit. No adoption from sparse reused data.
+
+Verification:25 combined tests (9 small-move+9 cooldown+4 v8+3 v9 integration),
+typecheck/scoped lint pass.42 fresh cases,84 causal prefixes+84 serialized
+controller/episode/cash resumes; actual3-case stop/18-case resume per version.
+Python672 metric groups/all fills/5289 live episode criteria agree. RSS240.8MiB
+v8/252.3MiB v9,ceiling1.5GiB. Each complete21/21,pending0. V8 identity
+29943202bfc7b2831dd6bd4997000a98f81e4dbfc8e5b835431862a8b36ab0a6;
+v9 identity57bdd392fa3566c6f513886624f14a071e18da6c6c2459cd3bdde27f5da7316e.
+Run study run.ts with/without --current; README/DEBUGGING document commands,
+atomic recovery and bounds. No full app gate rerun by isolated research;
+concurrent v9 work owns production verification. Seven linked docs updated;
+no out-of-plan edits by this task. Risks:repeat selection,rare events,index proxy.
+
+## 2026-11-06 v9 BIAS20 next-session add gate completed
+
+User authorized adding smoothed BIAS20 declining3 days as a next-session
+holding-add restriction, and explicitly clarified that all other Nikkei cycle
+fills retain the existing close proxy. User requested verification before adding.
+Independent pre-implementation check passed13,132 formula/lag comparisons and
+five prefix/resume paths: chosen cycle-close account445.34% vs440.98%,DD10.88%
+unchanged; ordinary next-open473.38% vs465.36%. Final500 unchanged per timing.
+
+Implemented default v9; archived v8 remains RSI_SHAPE_POSITION_OVERLAY_OPTIONS.
+Core adds a derived per-bar flag, no persistent schema/state fields. Cycle
+controllers use lag1 for this flag only; ordinary next-open uses signal index
+and lag0. Held adds are vetoed, flat entries/reductions/exits unchanged. Native
+increase intent still cancels pending reductions. A flat/rising observation
+releases the next-session restriction; no automatic deferred buy. UI rules and
+execution explanation updated in zh-CN. Static saved models remain archived;
+existing current-rule dynamic replay/atomic promotion retains one backup.
+
+Focused11 tests,17 archived/frozen integration tests,typecheck and scoped lint
+passed. Production v9 targets AND final states exactly match both pre-adoption
+paths; real rolling cycle report445.34% also matches. v8 frozen440.98% retained.
+Final full npm test PASSED with exit0: typecheck,481 unit tests, production build
+and4 rendered/source tests. Log: output/bias-add-npm-test.log. Two explained
+test-plan expansions updated version/list counts8->9 in rebound-position-policy
+and rendered-html tests; new rendered assertions verify restriction/release
+copy. Earlier failures are retained in initial/before-render-count logs. Another
+28 archived research model tests and their scoped lint passed. Final diff check
+passed. Build retains existing proxy-environment and large-client-chunk
+advisories; no new build errors. Live / and /api/health return200 with -NoProxy
+after the final build; the root contains both next-session restriction and
+release copy. Earlier empty503 responses came through the request proxy;
+verified dev PID5284 remains healthy and was not restarted.
+
+All linked docs updated within the declared scope. Historical v8 imports pinned
+in six recent study directories (bias90,chop,context-entry,rebound,switch,
+reduction-cooldown) and archived overlay-stability RSI files. No provider,
+protocol, credentials or unrelated user-work changes. Existing dirty work kept.
+Existing10,000-bar and120s worker bounds/revision/atomic backup recovery apply;
+no new batch service or unbounded state. See DEBUGGING and ADOPTION_CHECK.md.
+To use, refresh the existing local app. Dynamic accounts synchronize v9 through
+the existing bounded replay/atomic backup path; static archived plans keep v8.
+No Git commit/publish or unrelated source changes performed. Historical sample
+is reused and sparse; reproduced metrics are not a forward-return guarantee.
+
+## 2026-11-06 post-reduction cooldown research completed
+
+User proposed no increases X days after reducing and confirmed full-exit reentry
+is included. Added isolated research/nikkei-reduction-cooldown DESIGN/README/
+RESULTS,model/run/tests,audit.py,.gitignore; no production/account/archive edits.
+FreezeX=0/1/2/3/5/7/10; actual economic partial/full/risk sale resets a clock for
+the NEXT X completed trading sessions. All increase sources capped; further
+sales/early4%/ATR exits pass. Original buy cancellation and native holding/
+recovery state preserved; no synthetic catch-up. Native stop wait remains.
+
+Same frozen2000 sessions ending2026-10-26/current v8/winners/costs. Baseline
+440.98%/DD10.88%/134 fills. X1 404.39%/11.98%/126; X2 384.82%/11.98%/120;
+X3 359.26%/11.98%/115; X5 350.48%/11.98%/115; X7 282.54%/12.03%/111;
+X10 216.77%/14.77%/107. No qualified train/validation case; baseline retained.
+X3 blocks18 flat entries and4 holding adds; <=7-session sell-buy pairs29->9.
+X7 removes those pairs but loses return. Next-open full sensitivity also favors
+baseline; its clock remains the same close-derived clock, not fill-aware redesign.
+
+Verification:13 focused tests (9 new+4 existing integrations),typecheck,scoped
+ESLint pass. Exact native target/state/fill parity; fresh7-case metrics,14 causal
+prefixes,14 serialized controller+clock+cash resumes; actual2-case stop/5-case
+resume pass. Independent Python cash accounting matches112 metric groups and
+all economic fills. Latest recheck RSS145.9MiB,ceiling1.5GiB. Complete7/7,pending0; identity
+c75518b2e7b7375685a6025da4439062c2419cc59c3f587b558b67baf8ba90ca.
+Run npx tsx research/nikkei-reduction-cooldown/run.ts; recovery and commands in
+README/DEBUGGING. No full app suite rerun for isolated research; previous gate
+473 unit+build+4 rendered remains latest. Seven linked memory docs updated;
+no shared runtime,provider,secrets,architecture or out-of-plan changes.
+Risks: reused sample/selection bias, missed rebounds, index close proxy. No adoption.
+Concurrent v9 upgrade preserved; cooldown explicitly pins archived v8 and freshly
+reproduces all seven original target hashes/metrics under that version.
+
+## 2026-11-06 declining context increase-gate research completed
+
+User requested six curves in falling regimes and clarified the new event as
+the MA-speed trailing3 mean beginning to decline, NOT speed crossing below0.
+Added research/nikkei-context-entry-gates DESIGN/model/run/tests/README/RESULTS
+and .gitignore only, plus linked docs. No app/library/trading changes. Existing
+dirty work, including unrelated untracked research/nikkei-switch-turnover, kept.
+
+190 frozen cases: periods20/60/200,raw/SMA3,bias-down/speed-down/negative-speed
+for1/2/3 consecutive sessions, speed-decline onset as a1-day event, scopes
+flat-entry/holding-add/all-increases, plus six-smoothed-down combinations.
+Speed onset is speed[t]<speed[t-1] AND speed[t-1]>=speed[t-2]. Scope uses actual
+modified allocation. Blocked increases restore accepted holding/entry/risk state;
+native reductions/stops pass. No automatic delayed buys or new exits.
+
+Frozen2000 sessions2018-08-09..2026-10-26, same costs/source/v8 original winners.
+Exact baseline440.980703% targets AND final controller state reproduced.
+20-smooth-speed-turn-D1-add:442.59% full vs440.98%,DD10.88% unchanged;
+next-open468.46% vs465.36%;2 blocks2019-02-01/2020-09-23, both30%->100% requests
+kept at30%. Final500 matches baseline. Same event restricting flat entries
+381.85%/DD12.65%, worse.60/200 onset add gates439.87%/441.54%;200 next-open
+461.90% trails baseline. Other narrow candidates: smooth BIAS20 down3 days
+add gate444.10%/next473.38%,4 blocks; raw SMA200 speed down add gate445.90%/
+next474.85%,3 blocks. These all have no final500 improvement. No adoption.
+
+31 IDs meet predeclared tolerance screening, which allows3pp development return
+shortfall; only8 also improve full returns under both timings, with duplicates.
+Post-hoc largest close result458.54% for raw BIAS-down flat-entry gates reverses
+under next-open450.41% vs465.36%. Reused sample/rare affected events prevent
+stable predictive claims. Prospective monitoring is needed before deployment.
+
+Verification:12 focused tests (4 research+8 context),typecheck,scoped ESLint,
+diff check passed. All190 frozen cases pass prefix and serialized controller
+resume. Actual study stopped after5 cases, resumed185 and reused5 with matching
+target hashes. Complete190/190,RSS260MiB below1.5GiB. Identity
+260ca1cfeedcf287e3b0c6c0f8f3ccf5a6d8b31272f826b8af34b4bb454a9594.
+Atomic per-case checkpoints and raw backups are identity-scoped; run.ts resumes
+matching completed units. output/latest.json locates the current state. No full
+app suite rerun for isolated research; prior production gate remains unchanged.
+State/feature/functions/patterns/research/provenance/debugging docs updated within
+plan; no secrets, provider, architecture or out-of-plan edits.
+
+## 2026-11-06 strategy replacement turnover research completed
+
+User requested a trial of switch-related churn reduction. Added isolated
+research/nikkei-switch-turnover/{DESIGN,README,RESULTS}.md, model.ts, run.ts,
+model.test.ts, audit.py and .gitignore. No application/library/saved-account changes;
+pre-existing dirty work preserved. Reused hash-pinned full-screen-6-15 input:
+6566 bars,1293 decisions, last2000 sessions2018-08-09..2026-10-26. All incoming
+signals freshly match; baseline complete targets/final state and440.9807031454993%
+match production.1112 actual plan replacements,45 opposing old/new signal dates.
+
+Baseline134 fills:22 immediate switch-sensitive,31 switch-pending releases,
+11 native requests,65 controller,5 risk. Of42 consecutive opposite pairs<=7
+sessions,27 have a switch-sensitive leg;18 are sell-buy,14 at higher buyback
+closes. Six of10 short closed rounds have a switch-sensitive leg. Local same-state
+labels and overlapping pairs do not imply additive causal loss or useless trades.
+
+Seven fixed cases: baseline440.98%/DD-10.88%/134 fills/final50099.85%;
+old-on-conflict302.95%/-14.72%/141/65.84%; consensus-both221.89%/-12.62%/108/68.01%;
+reduce-only377.52%/-14.67%/105/90.25%; increase-only239.84%/-11.79%/129/73.89%.
+Positive10/25pp switch request bands make no changes. Equal-target buy requests
+remain because they cancel pending sells; initial erroneous zero-delta gating
+is superseded in a separate identity. No case passes declared train/validation
+conditions; baseline retained. Next-open full results also favor baseline.
+
+Verification:7 focused research tests and4 archived integration tests pass;
+seven fresh metric audits,14 causal prefixes,14 serialized resumes, actual2-unit
+stop/resume pass. Scoped ESLint passed. Observed RSS251.2MiB below1.5GiB.
+Independent Python cash/units accounting matches every actual fill and112
+metric groups across all seven policies, time splits and execution/cost modes.
+Identity47797501a0c8f317e4086ddbe222579e63ec94a4e3487fb80b7830d882a92753.
+Atomic status complete1293/1293 signals,7/7 policies; pending0. Run npx tsx
+research/nikkei-switch-turnover/run.ts; focused tests in its README. Recovery
+reuses hash-validated completed units after crash/cancellation; no external jobs.
+Full npm test passed473 unit tests, production build and4 rendered/source tests;
+build retained proxy-environment and large-client-chunk advisory warnings.
+State/feature/function/pattern/research/provenance/debugging records updated.
+Remaining risk: repeatedly inspected historical sample, selection bias and index
+close proxy versus China-product fills. No adoption or out-of-plan changes.
+
+## 2026-11-06 weighted BIAS90 contribution study completed
+
+User asked whether BIAS90/deceleration can contribute one weight to other exit
+conditions. Extended only research/nikkei-bias90-exit model/runner/tests/README,
+added WEIGHTED_DESIGN.md and generated WEIGHTED_RESULTS.md. No production edits;
+all earlier dirty files preserved. Linked project docs updated within plan.
+
+Frozen37 cases: baseline plus raw/smooth speed x3 scopes x thresholds3/4/5 x
+contextWeight0/1. Native reduce intent2, context1, EMA7 break AND WMA7 down1,
+four-of-six down1; related conditions are not independent votes/probabilities.
+Context is additive, not mandatory. Scopes any/native-intent/executed-partial-
+reduce. Original increases retain priority.18 matched ablations isolate context.
+Exact baseline440.980703% targets/final state reproduced on the same frozen
+2018-08-09..2026-10-26 sample. No current-market fetch or parameter adoption.
+
+Executed-reduce threshold4 C0/C1: full416.23%/430.12%, DD11.45%/11.45%,
+final50098.99%/98.99%. Baseline440.98%,DD10.88%,final50099.85%. Raw and smooth
+give identical paths here. One additional sale2020-12-11 changes native60% to0%,
+reentry2020-12-14. The13.89pp whole-account difference includes later state/path,
+not direct isolated-trade gain. Next-open C1470.06% vs baseline465.36%, but
+DD11.24% vs9.44% and final500104.06% vs106.91%. Other paired effects vary,
+including degradation. Zero non-no-op cases pass declared conditions under both
+timings. Do not claim a stable incremental advantage or deploy risk scoring.
+
+Verification:14 focused tests (6 research+8 context), scoped ESLint, typecheck
+and diff check passed. All37 frozen cases pass prefix/serialized-state+arming
+resume checks; synthetic regression checks also cover prior menus. Manifest
+complete37/37, RSS238MiB below1.5GiB. Identity
+3e420140b8ec93068909446e8b7367ab9a6c62b17a2d5dd38c7d6ce47943d486.
+Recover with run.ts --weighted; atomic output/weighted reports and retained
+raw backup identities. No full application suite rerun for research-only work.
+No feature/API/protocol/secret changes or out-of-plan edits.
+
+## 2026-11-06 BIAS20 P90 exit and combination research completed
+
+User requested analysis, separate raw versus three-day-smoothed SMA20 speed,
+then combinations with existing/similar rules. Added isolated
+research/nikkei-bias90-exit/{DESIGN,README,RESULTS,COMBINED_RESULTS}.md,
+model.ts, run.ts, model.test.ts and .gitignore. No application/library/account
+or trading rule changes. All pre-existing dirty work remains preserved.
+
+Reuse hash-pinned frozen2000 sessions2018-08-09..2026-10-26; current-v8 baseline
+targets AND final state exactly reproduced. P90 reuses production prior3-year
+raw BIAS distribution, excluding current day, minimum252 observations. Raw
+speed=SMA20[t]-SMA20[t-1]; smooth speed=trailing3 mean. Decline compares with
+yesterday, including positive speeds falling. Armed memory lasts only while
+invested and resets on native flat/additional exit; no new reentry cooldown.
+
+Initial12 cases plus user-authorized23 combination cases (32 distinct policies)
+completed. With raw BIAS armed above P90: raw speed exit261.87% full,
+DD-11.65%,38 sales,75.13% final500; smooth speed300.70%,DD-12.54%,38 sales,
+73.70% final500. Baseline440.98%,DD-10.88%,134 fills,99.85% final500.
+Same-day hot BIAS plus smooth speed427.61%,DD-11.65%,22 sales. Raw/smooth
+armed sales have positive speed37/38 and38/38; subsequent20-day price means
++2.39%/+1.95%, with overlapping windows and no avoided-loss interpretation.
+
+Combinations test two declines, EMA7/SMA20 breaks, falling SMA60 speed,
+four-of-six down, two declines+EMA7, WMA7, original release guards, and half
+caps. Original guards probe production request/release, preserving holding,
+trend and growth protection plus original increase priority. Smooth speed,
+two declines+EMA7, half cap:356.15% full,DD-9.79%,85.83% final500,19 reductions.
+Its lower DD costs return, not a demonstrated improvement. Zero cases meet
+declared first1500/final500 return+DD criteria under BOTH execution timings.
+The dataset is reused conditional historical research, not untouched holdout.
+Recommend descriptive deceleration context only, without a validated risk grade
+or automatic action. Main close proxy and next-open sensitivity remain separate.
+
+Verification:13 focused tests (5 research+8 existing context), typecheck,
+scoped ESLint and diff check passed. All35 replays pass causal prefixes and
+serialized controller+arming resume. Complete manifests12/12 and23/23; measured
+RSS162/211MiB below1.5GiB limit. Initial identity c294ccfb5a23be41bdfeef0430b736745b05c6d1c43ede4a1aed7e534d97cd51;
+combined402c59e4898afc161472ccd9863d4fc8365840c5e3f4b200ed57a810ff27b20e.
+Restart by rerunning the bounded commands; atomic outputs are replaced, raw
+backup identities retained. No full app suite rerun for isolated research;
+prior production473 unit+build+4 rendered gate remains the latest app check.
+State/feature/function/pattern/research/provenance/debugging docs updated within
+plan. No secrets, provider or architecture changes; no out-of-plan changes.
+
+## 2026-11-06 current-v8 rebound gate review completed
+
+Research only in research/nikkei-rebound-gate-review: DESIGN, model, runner,
+four tests, README and generated RESULTS. No production files changed in this
+task; all pre-existing working-tree changes were preserved. The questioned
+close<=SMA20 intentionally selects below-average rebound entries. Archived v1
+used WMA14 for flat entries; v2 switched to WMA7 on 2026-10-26 and current v8
+retains it. Original existing-position adds bypass the entry gate. Historical
+WMA14 all-increase research was not deployed.
+
+Nine fixed cases replay frozen2000 sessions2018-08-09..2026-10-26 with unchanged
+v8 priorities/risk and 3bps commission plus2bps slippage. Current production
+targets and final controller state match exactly. Current full return440.98%,
+DD-10.88%,134 fills; above-SMA20 alternative415.85%,DD-11.38%,136 fills;
+disable only rebound450.90%,DD-10.88%,132 fills. Additional previous-high or
+nondeclining-SMA20 requirements equal disabled. Four EMA7 rises or extra WMA14
+equal current. All cases have the same final500 return99.85%; no case improves
+both full and final500 returns. Use1e-8 percentage-point comparison tolerance.
+Only one nonoverlapping current fallback entry,2022-06-29..2022-07-12, net-1.84%.
+This single reused-sample episode cannot establish a stable filter advantage.
+Next-open sensitivity is saved separately; current465.36%,disabled467.68%.
+
+Verification:4/4 focused tests, typecheck and scoped ESLint passed. All9 cases
+pass causal-prefix and serialized-controller-resume checks. Run manifest is
+complete9/9, RSS137MiB; identity997978806c83880e94b029d6fabadeea6749845937aa28fcb37d31a1d98a9919.
+Atomic per-case outputs/raw backups are ignored. Restart by rerunning the
+bounded9-case command; recompute is deterministic and has no external effects.
+No full application test rerun for this isolated research-only task; prior
+production gate remains473 unit tests plus build and4 rendered checks passed.
+FEATURE_MAP, FUNCTIONS, MODULE_PATTERNS, TECH_RESEARCH, DATA_SOURCES and DEBUGGING
+updated within plan. No production adoption or out-of-plan change.
+
+## 2026-11-06 frozen-v8 whipsaw parameter research completed
+
+User authorized parameter screening/statistics only. Added isolated
+research/nikkei-chop-filter/{DESIGN.md,model.ts,run.ts,model.test.ts,audit.ts,
+report.ts,README.md,RESULTS.md,.gitignore}; no production application, trading
+rule, account, provider, queue or protocol was modified. Existing uncommitted
+work remains intact. Planned153 candidates were frozen before result inspection.
+
+Input: existing full-screen-6-15 JSON/signals,6566 bars and1293 frozen decisions;
+evaluate last2000 sessions2018-08-09..2026-10-26. Exact v8 production target path
+and440.9807031454993% close-proxy return reproduced. Development1000 sessions,
+validation500 and conditional audit500, with inherited continuous account state.
+The sample and v8 were previously studied; final500 is not untouched holdout.
+
+Results:153 cases,149 distinct target paths. All152 alternatives reduce full
+fills; none exceeds baseline full net return. No regime/ER-only/buffer family
+passes the predeclared training+validation conditions; every family falls back
+to baseline. Validation leaders: regime ER30<=.15, width rank<=.20, confirm3,
+increases only:312.48% full,91.81% audit,130 fills; ER-only ER30<=.15,confirm3,
+both:157.16%,45.74%,87 fills; initial-request-price buffer.25 priorATR14,both:
+29.15%,14.67%,6 fills. Baseline440.98%,99.85%,134 fills. These failed candidates
+are illustrations, not approved new settings. Best full-period candidate is
+post-hoc329.33%,125 fills, still below baseline.
+
+Baseline closed rounds:10 hold<=7 trading sessions,9 lose, mean net account
+return-1.48%. Predeclared low-width/ER entry label identifies only1 of those10;
+short holding is a future outcome and must not become an entry-time classifier.
+Diagnostic screenshots lack dates, so exact screenshot intervals are unverified.
+Cost, missed upward blocks, eight250-day blocks and next-open checks are in
+output/summary.json and RESULTS.md. Actual costs3bps commission+2bps slippage;
+zero and20bps/side stresses disclosed; next-open result is separate from proxy.
+
+Verification:11 tests passed (7 research invariants,4 archived v8 integration),
+final project typecheck and scoped ESLint passed; fresh audit recomputed all153
+target hashes and every train/validation/audit/full metric. Across the grid1149
+risk execution records were preserved. Zero-buffer matches baseline; three
+serialized account resumes and causal-prefix comparisons pass. Actual2-case
+stop then151-case resume completed. Main RSS133MiB; audit172MiB;1.5GiB ceiling.
+git diff --check passed. No new production feature requires browser/full-suite
+revalidation; the most recent application full gate remains473+4 passing.
+
+Run: npx tsx research/nikkei-chop-filter/run.ts; then audit.ts and report.ts.
+Tests: npx tsx --test research/nikkei-chop-filter/model.test.ts
+research/nikkei-overlay-stability/rsi-shape-integration.test.ts; npm run typecheck.
+Rerunning resumes source/design/implementation-keyed atomic progress under
+ignored data/<identity>/progress.json. Raw input/signals are backed up separately
+from ignored derived outputs. Changed identities preserve old directories;
+corrupt/incompatible copied progress fails explicitly. Limits10000 bars,2048
+signals,16MiB/input,153 rows,one live replay,no network or unbounded queue.
+At most one unfinished candidate must replay after interruption.
+
+Docs updated: CODEX_STATE, FEATURE_MAP, TECH_RESEARCH, DATA_SOURCES, DEBUGGING,
+MODULE_PATTERNS and FUNCTIONS for research linkage and recovery. Architecture,
+README and SECRETS need no production-contract changes. No out-of-plan edits.
+Remaining risks: historical optimization/selection bias, transient signals
+removed by confirmation or buffer, missed trends, snapshot cutoff and inability
+to identify date-free screenshot intervals. No parameter deployment recommended.
+
+## 2026-11-05 monitoring date below highlighted state
+
+MarketContextMonitor in app/components/ValidatedCycleShortcuts.tsx now renders
+its completed-bar date immediately after the highlighted state. Order: title,
+state, completed-bar date, consecutive count, previous-confirmation date.
+Only one JSX element moved; copy, styling, calculations and rules are unchanged.
+This presentational change has no checkpoint, resume or additional memory needs.
+
+Verification: SSR order check passed; existing eight-test context suite passed;
+npm test passed typecheck,473 unit tests, production build and4 rendered tests.
+Log: output/context-monitor-date-order-test.log. git diff --check passed.
+Run with npm run local:dev at http://127.0.0.1:3000; verify with npm test.
+Files changed for this follow-up: ValidatedCycleShortcuts.tsx (display order)
+and CODEX_STATE.md (verified handoff). FEATURE_MAP and MODULE_PATTERNS do not
+need updates because feature linkage and shared contracts did not change;
+TECH_RESEARCH, DATA_SOURCES and SECRETS are unchanged. Existing uncommitted work
+was preserved; no out-of-plan changes or new runtime/data risks.
+
+The subsequent request about reducing low-volatility/whipsaw trades remains
+proposal-only. No regime filter, threshold, execution setting, position rule
+or strategy account has been changed in response to that discussion.
+
+## 2026-11-05 six separate period tabs and single/multiple reversal research
+
+Delivered six individual context selectors (BIAS20/60/200, SMA20/60/200 daily
+slope) plus the existing-indicators selector. Each selected period has raw and
+SMA3 lines; BIAS has P5/P10/P90/P95 from preceding three calendar years of raw
+values, excluding today, minimum252 valid observations. Retained native grouped
+registry compatibility with optional paneCount=3; chart-only contextPeriod does
+not migrate saved preferences or trading settings. PriceChart pane offsets are
+immutable. Narrow-view tabs start at the first control and scroll horizontally.
+
+Browser verification: all six context selections rendered one746px chart and
+one active selector. A480px viewport had392px visible controls,585px scroll
+width and a zero-offset reachable first selector. Raw/mean/quantile legend
+placement and bias/slope screenshots were visually verified. Final application
+/ and /api/health both returned200; the existing healthy dev service was reused.
+No server/process/cache/data reset was needed in this task.
+
+Verification:
+- npm test: passed typecheck,472 unit tests, production build and4 rendered tests;
+  log output/context-disagreement-npm-test.log. This full run covers the chart,
+  causal quantiles and original single-line research. The user requested multiple
+  reversals while that gate was running; its final extension then passed the
+  dedicated12-test market-context/research suite and final typecheck/ESLint.
+- Full original/grouped chart/registry regression tests passed. The10000-bar
+  monitor+quantile case passed; quantile null warmup, leap-year cutoff, exclusion
+  of today's value, prefix causality and selected/group axes are covered.
+- Independent Python:6570 bars,144 single opposite-line events,435 initial
+  disagreement episodes,1664 stage-first records; zero event-identity mismatches.
+  Raw/mean/quantile chart parity tolerance1e-7; six threshold-account cash-flow
+  comparisons and all eight manifest output hashes passed.
+- Simulated interrupted running manifest plus a truncated temporary summary:
+  deterministic rerun produced all eight identical output hashes and removed
+  the partial temporary file by atomic replacement. git diff --check passed.
+
+Research output: research/nikkei-context-disagreement/RESULTS.md and ignored
+output/{events,cohorts,policies,multiple-events,multiple-cohorts,
+threshold-policies}.csv plus summary.json/chart-reference.json/manifest.json.
+Model identity: context-disagreement-v2. Raw input, normalized bars and a bounded
+append-style source register are separate ignored data artifacts. Input is the
+frozen BIAS CSV through2026-10-30 (SHA in DATA_SOURCES), not the live chart tail.
+
+Interpretation: one or more nonmatching curves reset the daily unanimity counter;
+they do not automatically change the retained confirmed direction. Initial
+simultaneous reversals and later escalation counts are separate research
+cohorts. Six opposite curves on one day are only opposite day1. Counts2..5 do
+not show a stable monotonic price/confirmation ordering. Six-way initial breaks
+have higher observed10-day opposite-confirmation rates (56.25% after up,60.71%
+after down) but small groups (16/28). All count/horizon/time-split outputs remain
+available; no most-profitable threshold or strength grade is deployed. Synthetic
+flat-case tests pass but there are no exact single-flat empirical events.
+
+Files changed in this task:
+- lib/analysis/market-context.ts: raw-series extraction and bounded causal
+  calendar-window quantiles; original smoothed monitor semantics preserved.
+- lib/analysis/indicator-registry.ts: optional grouped paneCount metadata.
+- app/components/PriceChart.tsx: selected-period UI state, raw/smoothed/quantile
+  series, independent axes and immutable pane allocation.
+- app/i18n/zh-CN.ts, app/globals.css: six labels, precise copy and tab scrolling.
+- tests/market-context.test.ts, tests/market-context-research.test.ts: chart,
+  quantile, single/multiple episode, censoring, causal fills and replay coverage.
+- research/nikkei-context-disagreement/{study.ts,analyze.ts,verify_reference.py,
+  README.md,RESULTS.md,.gitignore}: reproducible bounded offline research.
+- docs/{ARCHITECTURE,FUNCTIONS,FEATURE_MAP,MODULE_PATTERNS,TECH_RESEARCH,
+  DATA_SOURCES,DEBUGGING,CODEX_STATE}.md: linkage, semantics, sources and recovery.
+
+Run npm run local:dev and open http://127.0.0.1:3000; test with npm test.
+Research: npx tsx research/nikkei-context-disagreement/analyze.ts;
+python research/nikkei-context-disagreement/verify_reference.py.
+Limits:10000 bars,4MiB CSV,128KiB source registry, fixed horizons and at most two
+event records per input date. No new service, queue, permanent in-memory cache,
+credentials or strategy/account schema. Interrupted studies rerun from the pinned
+input rather than relying on chat or process memory. Existing monitoring still
+uses the visible-page market refresh and dated cached recovery after reopening.
+
+Scope: existing uncommitted work preserved; no application backtest, validated
+account, screening-engine protocol, source provider or external BIAS-project
+file changed. The CSS extension for narrow-view control access was explained;
+multiple-count research follows the user's explicit added request. No other
+out-of-plan changes. SECRETS needed no update. Remaining research limits:
+retrospective repeated inspection, correlated/overlapping events, sparse curves
+or splits, censored tail horizons and no evidence of universally valid grades.
+
+## 2026-11-05 completed six-curve monitoring and final verification
+
+Implemented fixed SMA3-smoothed BIAS20/60/200 and SMA20/60/200 daily first
+differences (points/session). Adjacent daily direction, not zero-line sign,
+drives the unanimous candidate. Day 1 reminds, day 2 waits, day 3 confirms;
+disagreement/flat resets the counter and retains the prior confirmation until
+three opposite unanimous observations. The first direction needs 204 completed
+daily bars. Chart tabs preserve overlays and zoom; per-pane legends are scoped
+to their own subplot. Dates, tabs and slider have separate vertical space.
+
+The monitor is one independent per-canonical-instrument card above every X-day
+validation strategy button, including multiple validation windows. Confirmed
+states use 17px/800-weight text, colored background and left border. Browser
+verification observed one card, zero nested monitors inside strategy buttons,
+correct ordering, monitoring date 2026-11-05 and three-day down confirmation.
+Browser fixtures were isolated to the verification browser, not the user's
+existing browser account. Screenshots: output/playwright/market-context-{bias,
+slope,independent}.png. Actual strategy settings, positions and trading rules
+are unchanged by monitoring.
+
+Verification completed against final code:
+- npm test: exit 0; typecheck, 468 unit tests, production build and 4 rendered/
+route tests passed. Log: output/market-context-final-test.log.
+- Scoped ESLint: passed for changed chart/core/registry/test files, including
+the coordinator fixture. git diff --check passed.
+- Independent 6570-bar Python all-turn/reference replay versus TypeScript:
+zero daily-direction or retained-confirmation mismatches. Frozen reference
+ends 2026-10-30; source hash is in DATA_SOURCES and TECH_RESEARCH.
+- 10000-bar bound/replay, prefix causality, provisional replacement, close
+gating and reload equivalence passed. Representative bounded test: 171ms.
+- Full test iterations exposed a pre-existing fixed-500ms concurrency-observer
+race. The fake first pair now waits for an explicitly observed concurrency
+acknowledgement, bounded at 10s. All assertions remain; production engine,
+endpoints and protocol configuration are unchanged.
+
+Files changed and purpose:
+- lib/analysis/market-context.ts: shared curves, deterministic monitor replay
+and completed Nikkei input gating with 10000-bar safety limit.
+- lib/analysis/indicator-registry.ts: two fixed registered context indicators.
+- app/components/PriceChart.tsx: tabs, pane-local legends and reserved spacing.
+- app/components/EChart.tsx: replace obsolete legends when pane sets change.
+- app/components/ValidatedCycleShortcuts.tsx: one independent dated monitor
+per canonical instrument above all window buttons.
+- app/MarketWorkspace.tsx: supply freshest matching full market history.
+- app/i18n/zh-CN.ts and app/globals.css: isolated copy and visible state styling.
+- tests/market-context.test.ts: formulas, state invariants, recovery/load and
+multi-window card/axis behavior; indicator-registry/community-analysis tests
+retain exact registered-indicator counts; chart-config covers legend updates.
+- tests/screening-engine-coordinator.test.ts: deterministic observer handshake.
+- docs/{ARCHITECTURE,FUNCTIONS,DEBUGGING,FEATURE_MAP,MODULE_PATTERNS,
+TECH_RESEARCH,DATA_SOURCES,CODEX_STATE}.md: boundaries, linkage, operation,
+source reference and verified handoff.
+
+Run locally with npm run local:dev and open http://127.0.0.1:3000. Verify with
+npm test; focused checks use npx tsx --test tests/market-context.test.ts.
+After production builds, restart the verified current-project dev server if
+vinext's development module graph returns 500; no cache/data deletion is needed.
+
+Recovery: replay from existing canonical cache or stored full account history.
+No new durable queue, timer service, monitor checkpoint, credential or schema.
+Network failure retains explicitly dated cached monitoring; reopen/refresh to
+catch up after closure. Existing visible-page session refresh supplies updates;
+closed-page unattended notifications are not implemented. Bounded O(n) arrays,
+10000-bar input ceiling, no growing monitor cache. Unsupported/malformed input
+produces a localized diagnostic rather than a false live status.
+
+Scope: existing uncommitted project work was preserved. Plan extensions for
+EChart legend lifecycle, linked community count assertion and coordinator
+fixture synchronization were explained before editing. No other out-of-plan
+edits, secret changes, publishing or external-project edits occurred. SECRETS
+needed no update. Strength grading remains unimplemented as requested;
+exploratory local statistics artifacts are separate from application rules.
+
+## 2026-11-02 validated-cycle shortcut page position
+
+- Removed the automatic page scroll from MarketWorkspace.openValidatedCycle.
+  Clicking a dynamic validated-strategy card still selects the account and
+  resets its chart to the latest 128 sessions without scrolling to the chart.
+- Other strategy actions, calculations, persistence and existing changes remain
+  unchanged. This short UI action needs no checkpoint or memory controls.
+- Verification: npm test passed (typecheck, 455 unit tests, production build,
+  and 4 rendered/route tests); git diff --check passed.
+
+
+## 2026-10-31 validated-cycle volume backfill compatibility
+
+- Reproduced the user's completed 1294-selection account failing history checks
+  on 2026-10-27 volume. Canonical history permits a zero-volume observation to
+  acquire published positive volume; validated account alignment rejected it.
+- Accept only zero-to-positive volume enrichment with identical dates, OHLC and
+  amount. Preserve all frozen account bars during replay/repair and return an
+  anchored series for cycle continuation screening, retaining any earlier prefix.
+  Existing positive-volume corrections, price changes, missing dates, adjustment
+  changes and incompatible models still stop continuation.
+- History errors now expose the first affected date and localized field on both
+  pages. No account/task/cache deletion, model/protocol change or new source.
+  Existing bounded atomic persistence remains; this short alignment needs no
+  separate progress checkpoint or additional retained state.
+- Focused validation: 18 account/preview/store tests pass, including volume
+  backfill, frozen-input/report preservation, repair, prefixes and strict errors.
+- Full npm test passes 455 tests, typecheck, production build and 4 rendered
+  checks. Core/test/locale ESLint and diff whitespace checks pass; both workspace
+  files retain the same 5 errors/5 warnings verified against HEAD. Live Continue
+  passes the original volume mismatch and starts the incremental 2026-10-30
+  screening job with its durable checkpoint; no full-history restart.
+
+
 ## 2026-10-27 Git handoff
 
 - User requests committing and pushing the completed changes on existing branch
@@ -4279,3 +5309,12 @@ Implemented:
   objects are not consumed by three-through-nine-strategy summary screening;
   final detailed replays rebuild them from retained parameters, preserving
   exact results while reducing live and serialized state.
+
+## 2026-11-05 Incremental strategy-cycle validation
+
+- Continue validation retains completed selections from compatible interrupted tasks. A SHA-256 input digest and the two preceding prefix digests invalidate revised-date selections without discarding the verified earlier prefix.
+- Published reports keep the final close and up to two preceding account checkpoints. Resume or rewind with the original evaluation anchor, costs, winner history and position-rule state. Legacy records fall back to replay when a matching checkpoint is unavailable.
+- The primary latest refresh accepts changes to the newest two completed sessions. If the latest response cannot bridge the validation or canonical-cache anchor, validate a full-history response before scheduling the complete missing suffix.
+- Recover by reopening Strategy Cycle Validation and selecting Continue. An incompatible history bridge stops the run. The existing report publication revision checks, 10,000-bar history capacity and 2,048 pending-screen limit remain in effect.
+
+- Verification passed with the full npm test gate, production build, route rendering, and 50 focused cycle, validated-history and overlay tests. The local strategy-validation route responded with HTTP 200. Core and test lint passed. The workspace retains its pre-existing React hook lint findings.

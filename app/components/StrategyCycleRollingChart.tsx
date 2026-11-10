@@ -5,6 +5,8 @@ import type { EChartsOption } from "echarts";
 import type { AllocationRebalance } from "@/lib/analysis/backtest";
 import type { MarketBar } from "@/lib/market/types";
 import { EChart } from "./EChart";
+import { buildWeeklyMarketContext } from "@/lib/analysis/weekly-market-context";
+import { buildContextChartAreas, type ContextChartArea } from "@/lib/analysis/context-chart";
 
 export interface StrategyCycleRollingChartLabels {
   price: string;
@@ -27,6 +29,7 @@ export function buildStrategyCycleRollingChartOption(
   bars: readonly MarketBar[],
   rebalances: readonly AllocationRebalance[],
   labels: StrategyCycleRollingChartLabels,
+  contextAreas: ContextChartArea[] = [],
 ): EChartsOption {
   const barByTime = new Map(bars.map((bar) => [bar.time, bar]));
   const establishPoints: RebalancePoint[] = [];
@@ -108,7 +111,7 @@ export function buildStrategyCycleRollingChartOption(
       { type: "slider", id: "cycle-rolling-zoom-slider", start: 0, end: 100, height: 18, bottom: 9, borderColor: "#26332f", fillerColor: "rgba(56,189,248,.12)", backgroundColor: "#0d1613", textStyle: { color: "#6f807a", fontSize: 9 } },
     ],
     series: [
-      { name: labels.price, type: "candlestick", data: bars.map((bar) => [bar.open, bar.close, bar.low, bar.high]), itemStyle: { color: "#22c55e", color0: "#ef5350", borderColor: "#22c55e", borderColor0: "#ef5350" } },
+      { name: labels.price, type: "candlestick", data: bars.map((bar) => [bar.open, bar.close, bar.low, bar.high]), itemStyle: { color: "#22c55e", color0: "#ef5350", borderColor: "#22c55e", borderColor0: "#ef5350" }, markArea: { silent: true, label: { show: false }, data: contextAreas } },
       markerSeries(labels.establish, establishPoints, "#38bdf8"),
       markerSeries(labels.increase, increasePoints, "#0ea5e9"),
       markerSeries(labels.reduce, reducePoints, "#f59e0b"),
@@ -119,6 +122,7 @@ export function buildStrategyCycleRollingChartOption(
 
 interface StrategyCycleRollingChartProps {
   bars: readonly MarketBar[];
+  contextBars?: readonly MarketBar[];
   rebalances: readonly AllocationRebalance[];
   labels: StrategyCycleRollingChartLabels;
   ariaLabel: string;
@@ -127,14 +131,17 @@ interface StrategyCycleRollingChartProps {
 
 export function StrategyCycleRollingChart({
   bars,
+  contextBars,
   rebalances,
   labels,
   ariaLabel,
   dataKey,
 }: StrategyCycleRollingChartProps) {
+  const context = useMemo(() => contextBars ? buildWeeklyMarketContext(contextBars).observations : [], [contextBars]);
+  const areas = useMemo(() => buildContextChartAreas(context, bars.map(bar => bar.time)), [context, bars]);
   const option = useMemo(
-    () => buildStrategyCycleRollingChartOption(bars, rebalances, labels),
-    [bars, rebalances, labels],
+    () => buildStrategyCycleRollingChartOption(bars, rebalances, labels, areas),
+    [bars, rebalances, labels, areas],
   );
   return <EChart option={option} className="cycle-transition-chart" height={430} ariaLabel={ariaLabel} preserveDataZoom dataZoomResetKey={dataKey} horizontalPanDataZoomIds={["cycle-rolling-zoom-inside", "cycle-rolling-zoom-slider"]} horizontalPanDirection="content" />;
 }

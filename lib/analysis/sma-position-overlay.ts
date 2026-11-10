@@ -8,7 +8,11 @@ export const FIXED_HOLD5_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold5-s
 export const ENGULF_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-v5" as const;
 export const REBOUND_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-v6" as const;
 export const ATR_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-v7" as const;
-export const CURRENT_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-v8" as const;
+export const RSI_SHAPE_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-v8" as const;
+export const BIAS_ADD_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-bias20s3down3-v9" as const;
+export const RANGE_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-bias20s3down3-range3-v10" as const;
+export const CURRENT_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-bias20s3down3-range3-sameclose-v11" as const;
+export const ORDINARY_EXIT_RANGE_FRACTION = 0.03;
 export const SUPPLEMENTAL_MINIMUM_HOLD_BARS = 7;
 export const EARLY_POSITION_STOP_BARS = 5;
 export const EARLY_POSITION_STOP_FRACTION = 0.04;
@@ -18,7 +22,7 @@ export const REBOUND_DECLINE_FRACTION = 0.05;
 export const REBOUND_ENTRY_FRACTION = 0.04;
 export const POSITION_OVERLAY_MODELS = [MIXED_POSITION_OVERLAY_MODEL, PREVIOUS_POSITION_OVERLAY_MODEL,
   HOLD5_POSITION_OVERLAY_MODEL, FIXED_HOLD5_POSITION_OVERLAY_MODEL, ENGULF_POSITION_OVERLAY_MODEL, REBOUND_POSITION_OVERLAY_MODEL,
-  ATR_POSITION_OVERLAY_MODEL, CURRENT_POSITION_OVERLAY_MODEL] as const;
+  ATR_POSITION_OVERLAY_MODEL, RSI_SHAPE_POSITION_OVERLAY_MODEL, BIAS_ADD_POSITION_OVERLAY_MODEL, RANGE_POSITION_OVERLAY_MODEL, CURRENT_POSITION_OVERLAY_MODEL] as const;
 
 export interface SmaPositionOverlayOptions {
   model?: (typeof POSITION_OVERLAY_MODELS)[number];
@@ -39,12 +43,21 @@ export const REBOUND_POSITION_OVERLAY_OPTIONS: Readonly<SmaPositionOverlayOption
 export const ATR_POSITION_OVERLAY_OPTIONS: Readonly<SmaPositionOverlayOptions> = Object.freeze({
   ...DEFAULT_POSITION_OVERLAY_OPTIONS, model: ATR_POSITION_OVERLAY_MODEL,
 });
+export const RSI_SHAPE_POSITION_OVERLAY_OPTIONS: Readonly<SmaPositionOverlayOptions> = Object.freeze({
+  ...DEFAULT_POSITION_OVERLAY_OPTIONS, model: RSI_SHAPE_POSITION_OVERLAY_MODEL,
+});
+export const BIAS_ADD_POSITION_OVERLAY_OPTIONS: Readonly<SmaPositionOverlayOptions> = Object.freeze({
+  ...DEFAULT_POSITION_OVERLAY_OPTIONS, model: BIAS_ADD_POSITION_OVERLAY_MODEL,
+});
+export const RANGE_POSITION_OVERLAY_OPTIONS: Readonly<SmaPositionOverlayOptions> = Object.freeze({
+  ...DEFAULT_POSITION_OVERLAY_OPTIONS, model: RANGE_POSITION_OVERLAY_MODEL,
+});
 
 function hasReboundEntry(model: SmaPositionOverlayOptions["model"]): boolean {
-  return model === CURRENT_POSITION_OVERLAY_MODEL || model === ATR_POSITION_OVERLAY_MODEL || model === REBOUND_POSITION_OVERLAY_MODEL;
+  return model === CURRENT_POSITION_OVERLAY_MODEL || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL || model === ATR_POSITION_OVERLAY_MODEL || model === REBOUND_POSITION_OVERLAY_MODEL;
 }
 function hasAtrExit(model: SmaPositionOverlayOptions["model"]): boolean {
-  return model === CURRENT_POSITION_OVERLAY_MODEL || model === ATR_POSITION_OVERLAY_MODEL;
+  return model === CURRENT_POSITION_OVERLAY_MODEL || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL || model === ATR_POSITION_OVERLAY_MODEL;
 }
 
 function isFixedPolicy(model: SmaPositionOverlayOptions["model"]): boolean {
@@ -65,7 +78,7 @@ interface Features {
   turns: boolean[]; protected: boolean[]; entryAllowed: boolean[];
   policy?: { closes: number[]; supplementalAllowed: boolean[]; wmaNegative: boolean[]; recoveryAllowed: boolean[];
     reversalEntry: boolean[]; reboundAllowed: boolean[]; shockExit: boolean[];
-    shapeEntry: boolean[]; shapeExit: boolean[] };
+    shapeEntry: boolean[]; shapeExit: boolean[]; holdingAddBlocked: boolean[] };
 }
 const featuresByBars = new WeakMap<MarketBar[], Map<string, Features>>();
 function features(bars: MarketBar[], model?: SmaPositionOverlayOptions["model"]): Features {
@@ -86,10 +99,17 @@ function features(bars: MarketBar[], model?: SmaPositionOverlayOptions["model"])
     if (isFixedPolicy(model)) {
       const average20 = sma(closes, 20);
       const volatility = hasAtrExit(model) ? atr(bars, 14) : [];
-      const shapePolicy = model === CURRENT_POSITION_OVERLAY_MODEL;
+      const shapePolicy = model === CURRENT_POSITION_OVERLAY_MODEL || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL;
+      const bias20 = average20.map((value, index) => value === null ? null : (closes[index]! / value - 1) * 100);
+      const smoothBias20 = bias20.map((value, index) => value === null || bias20[index - 1] == null || bias20[index - 2] == null
+        ? null : (bias20[index - 2]! + bias20[index - 1]! + value) / 3);
       const entryStrength = shapePolicy ? rsi(closes, 7) : [];
       const exitStrength = shapePolicy ? rsi(closes, 10) : [];
       result.policy = { closes,
+        holdingAddBlocked: smoothBias20.map((value, index) => (model === CURRENT_POSITION_OVERLAY_MODEL || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL) && value !== null &&
+          smoothBias20[index - 1] != null && smoothBias20[index - 2] != null && smoothBias20[index - 3] != null &&
+          value < smoothBias20[index - 1]! && smoothBias20[index - 1]! < smoothBias20[index - 2]! &&
+          smoothBias20[index - 2]! < smoothBias20[index - 3]!),
         shockExit: closes.map((close, index) => hasAtrExit(model) && entry[index] != null &&
           close < entry[index]! && volatility[index - 1] != null && volatility[index - 1]! > 0 &&
           closes[index - 1]! - close >= 2 * volatility[index - 1]!),
@@ -143,6 +163,27 @@ function features(bars: MarketBar[], model?: SmaPositionOverlayOptions["model"])
   return result;
 }
 
+export interface SmaPositionOverlayState {
+  allocation: number;
+  pending: number | null;
+  lastSupplement: number | null;
+  flatStart: number | null;
+  previousCloseAllocation: number;
+  entryIndex: number | null;
+  entryClose: number;
+  recoveryTarget: number | null;
+  stoppedAt: number;
+  blockedUntil: number;
+  lastClosedIndex: number;
+  lastIncreaseRequestIndex: number;
+  rangeEpisode?: PositionRangeEpisode | null;
+  rangeRequestStart?: SmaPositionOverlayState;
+  rangeRequestIndex?: number;
+  rangePartialAllocation?: number;
+}
+
+export interface PositionRangeEpisode { index: number; cost: number; high: number; low: number; includeEntryBar: boolean }
+
 /** One inherited account; callers retain their own execution timing and prices. */
 export class SmaPositionOverlay {
   allocation: number;
@@ -166,7 +207,12 @@ export class SmaPositionOverlay {
   private lastClosedIndex = -1;
   private lastIncreaseRequestIndex = -1;
   private readonly features: Features;
-  constructor(bars: MarketBar[], private readonly options: SmaPositionOverlayOptions, initialAllocation = 0) {
+  private rangeEpisode: PositionRangeEpisode | null = null;
+  private rangeRequestStart: SmaPositionOverlayState | null = null;
+  private rangeRequestIndex = -1;
+  private rangePartialAllocation: number | null = null;
+  constructor(private readonly bars: MarketBar[], private readonly options: SmaPositionOverlayOptions, initialAllocation = 0,
+    private readonly holdingAddDecisionLag: 0 | 1 = 0) {
     this.options = normalizeSmaPositionOverlay(options) ?? options;
     this.features = features(bars, options.model);
     this.allocation = initialAllocation;
@@ -181,13 +227,122 @@ export class SmaPositionOverlay {
     this.reversalEntry = this.features.policy?.reversalEntry ?? [];
     this.reboundAllowed = this.features.policy?.reboundAllowed ?? [];
   }
+  checkpoint(): SmaPositionOverlayState {
+    return {
+      allocation: this.allocation,
+      pending: this.pending,
+      lastSupplement: this.lastSupplement,
+      flatStart: this.flatStart,
+      previousCloseAllocation: this.previousCloseAllocation,
+      entryIndex: this.entryIndex,
+      entryClose: this.entryClose,
+      recoveryTarget: this.recoveryTarget,
+      stoppedAt: this.stoppedAt,
+      blockedUntil: this.blockedUntil,
+      lastClosedIndex: this.lastClosedIndex,
+      lastIncreaseRequestIndex: this.lastIncreaseRequestIndex,
+      ...(this.rangeEnabled ? { rangeEpisode: this.rangeEpisode ? { ...this.rangeEpisode } : null,
+        ...(this.rangeRequestStart ? { rangeRequestStart: structuredClone(this.rangeRequestStart), rangeRequestIndex: this.rangeRequestIndex,
+          ...(this.rangePartialAllocation !== null ? { rangePartialAllocation: this.rangePartialAllocation } : {}) } : {}) } : {}),
+    };
+  }
+
+  restore(state: SmaPositionOverlayState): void {
+    if (this.rangeEnabled && state.rangeEpisode === undefined) throw new Error("Range-protected account checkpoint is incomplete; replay the saved selections to restore this account");
+    if (this.rangeEnabled) {
+      const episode = state.rangeEpisode;
+      if (episode && (!Number.isInteger(episode.index) || episode.index < 0 || episode.index >= this.bars.length ||
+        ![episode.cost, episode.high, episode.low].every(Number.isFinite) || episode.cost <= 0 || episode.low <= 0 ||
+        episode.high < episode.low || typeof episode.includeEntryBar !== "boolean")) throw new Error("Invalid range-protection checkpoint episode");
+      if (state.rangeRequestStart && (state.rangeRequestStart.rangeRequestStart !== undefined ||
+        !Number.isInteger(state.rangeRequestIndex) || state.rangeRequestIndex! < 0 || state.rangeRequestIndex! >= this.bars.length))
+        throw new Error("Invalid range-protection checkpoint request");
+      if (state.rangePartialAllocation !== undefined && (!Number.isFinite(state.rangePartialAllocation) ||
+        state.rangePartialAllocation <= 0 || state.rangePartialAllocation > 1)) throw new Error("Invalid range-protection checkpoint partial allocation");
+    }
+    this.allocation = state.allocation;
+    this.pending = state.pending;
+    this.lastSupplement = state.lastSupplement;
+    this.flatStart = state.flatStart;
+    this.previousCloseAllocation = state.previousCloseAllocation;
+    this.entryIndex = state.entryIndex;
+    this.entryClose = state.entryClose;
+    this.recoveryTarget = state.recoveryTarget;
+    this.stoppedAt = state.stoppedAt;
+    this.blockedUntil = state.blockedUntil;
+    this.lastClosedIndex = state.lastClosedIndex;
+    this.lastIncreaseRequestIndex = state.lastIncreaseRequestIndex;
+    this.rangeEpisode = state.rangeEpisode ? { ...state.rangeEpisode } : null;
+    this.rangeRequestStart = state.rangeRequestStart ? structuredClone(state.rangeRequestStart) : null;
+    this.rangeRequestIndex = state.rangeRequestIndex ?? -1;
+    this.rangePartialAllocation = state.rangePartialAllocation ?? null;
+  }
+
+  private get rangeEnabled(): boolean { return this.options.model === CURRENT_POSITION_OVERLAY_MODEL || this.options.model === RANGE_POSITION_OVERLAY_MODEL; }
+
+  /** Execution callers provide real fills; adds/partial sells never reset an episode. */
+  recordExecution(index: number, previousUnits: number, units: number, fillPrice: number, commission: number, atOpen = false): void {
+    if (!this.rangeEnabled) return;
+    if (!Number.isInteger(index) || !this.bars[index] || !Number.isFinite(fillPrice) || fillPrice <= 0 || !Number.isFinite(commission) || commission < 0 ||
+      !Number.isFinite(previousUnits) || !Number.isFinite(units) || previousUnits < 0 || units < 0)
+      throw new Error("Invalid range-protection execution context");
+    if (previousUnits <= 1e-10 && units > 1e-10) this.rangeEpisode = {
+      index, cost: fillPrice * (1 + commission), high: fillPrice, low: fillPrice, includeEntryBar: atOpen,
+    };
+    if (previousUnits > 1e-10 && units <= 1e-10) this.rangeEpisode = null;
+  }
+
+  private beginRangeDay(index: number): void {
+    if (!this.rangeEnabled || this.rangeRequestIndex === index && this.rangeRequestStart) return;
+    if (this.rangeEpisode && (index > this.rangeEpisode.index || index === this.rangeEpisode.index && this.rangeEpisode.includeEntryBar)) {
+      this.rangeEpisode.high = Math.max(this.rangeEpisode.high, this.bars[index].high);
+      this.rangeEpisode.low = Math.min(this.rangeEpisode.low, this.bars[index].low);
+    }
+    this.rangeRequestStart = null;
+    this.rangePartialAllocation = null;
+    this.rangeRequestStart = this.checkpoint(); this.rangeRequestIndex = index;
+  }
+
+  private rangeBlocksExit(before: SmaPositionOverlayState, index: number): boolean {
+    if (!this.rangeEnabled || !this.bars[index] || before.allocation <= 1e-10 || this.allocation > 1e-10 || !this.rangeEpisode) return false;
+    const early = before.entryIndex !== null && index - before.entryIndex <= EARLY_POSITION_STOP_BARS && before.entryClose > 0 &&
+      this.bars[index].close <= before.entryClose * (1 - EARLY_POSITION_STOP_FRACTION);
+    if (this.stoppedAt === index || early || this.features.policy?.shockExit[index]) return false;
+    return (this.rangeEpisode.high - this.rangeEpisode.low) / this.rangeEpisode.cost < ORDINARY_EXIT_RANGE_FRACTION - 1e-12;
+  }
+
+  private retainRangePosition(before: SmaPositionOverlayState, index: number, closed: boolean): void {
+    const lastRequest = this.lastIncreaseRequestIndex;
+    const partial = this.rangePartialAllocation;
+    this.restore(before); this.pending = 0; this.flatStart = null;
+    if (closed) {
+      this.allocation = Math.min(before.allocation, partial ?? before.allocation);
+      this.previousCloseAllocation = this.allocation; this.lastClosedIndex = index;
+    }
+    this.lastIncreaseRequestIndex = lastRequest;
+  }
+
   request(direction: "increase" | "reduce", target: number, completedIndex: number): number {
+    const priorCloseOrder = this.rangeEnabled && completedIndex <= this.lastClosedIndex;
+    if (this.rangeEnabled && !priorCloseOrder) this.beginRangeDay(completedIndex);
+    const before = priorCloseOrder ? this.checkpoint() : null;
+    this.requestNative(direction, target, completedIndex);
+    if (this.rangeRequestStart && direction === "increase") this.rangePartialAllocation = null;
+    if (this.rangeRequestStart && direction === "reduce" && target > 1e-10 && this.allocation > 1e-10 &&
+      this.allocation < this.rangeRequestStart.allocation - 1e-10)
+      this.rangePartialAllocation = Math.min(this.rangePartialAllocation ?? this.rangeRequestStart.allocation, this.allocation);
+    if (before && this.rangeBlocksExit(before, completedIndex)) this.retainRangePosition(before, completedIndex, false);
+    return this.allocation;
+  }
+  private requestNative(direction: "increase" | "reduce", target: number, completedIndex: number): number {
     target = Math.min(1, Math.max(0, target));
     if (direction === "increase") {
       this.lastIncreaseRequestIndex = completedIndex;
       this.pending = null;
       if (this.fixedPolicy && this.allocation <= 1e-10 && completedIndex < this.blockedUntil) return this.allocation;
-      if (this.allocation > 1e-10 || this.entryAllowed(completedIndex)) this.allocation = Math.max(this.allocation, target);
+      const holdingAddBlocked = this.allocation > 1e-10 &&
+        this.features.policy?.holdingAddBlocked[completedIndex - (this.options.model === CURRENT_POSITION_OVERLAY_MODEL ? 0 : this.holdingAddDecisionLag)] === true;
+      if (!holdingAddBlocked && (this.allocation > 1e-10 || this.entryAllowed(completedIndex))) this.allocation = Math.max(this.allocation, target);
     } else if (target < this.allocation - 1e-10) {
       this.pending = Math.min(this.pending ?? this.allocation, target);
     }
@@ -208,6 +363,17 @@ export class SmaPositionOverlay {
     return this.allocation;
   }
   close(index: number, hasOriginalSignal: boolean, originalIncrease = false): number {
+    if (!this.rangeEnabled) return this.closeNative(index, hasOriginalSignal, originalIncrease);
+    if (this.lastClosedIndex === index) return this.allocation;
+    this.beginRangeDay(index);
+    const before = this.rangeRequestStart!;
+    this.closeNative(index, hasOriginalSignal, originalIncrease);
+    if (this.rangeBlocksExit(before, index)) this.retainRangePosition(before, index, true);
+    this.rangeRequestStart = null; this.rangeRequestIndex = -1;
+    this.rangePartialAllocation = null;
+    return this.allocation;
+  }
+  private closeNative(index: number, hasOriginalSignal: boolean, originalIncrease = false): number {
     if (this.fixedPolicy && this.lastClosedIndex === index) return this.allocation;
     if (this.flatStart === null && this.previousCloseAllocation <= 1e-10) this.flatStart = index;
     if (this.fixedPolicy && this.previousCloseAllocation <= 1e-10 && index < this.blockedUntil) {

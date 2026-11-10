@@ -358,6 +358,65 @@ function clampAllocation(value: number): number {
   return Math.min(Math.max(value, 0), 1);
 }
 
+export interface AllocationAccountState {
+  cash: number;
+  units: number;
+}
+
+export function rebalanceAllocationAccount(
+  account: AllocationAccountState,
+  bar: MarketBar,
+  marketPrice: number,
+  targetAllocation: number,
+  commissionRate: number,
+  slippageRate: number,
+  signals: readonly AllocationSignalEvent[],
+  reason: AllocationRebalance["reason"] = "strategy",
+  recordTrade = true,
+): AllocationRebalance | true | undefined {
+  const equityAtFill = account.cash + account.units * marketPrice;
+  if (equityAtFill <= 0 || marketPrice <= 0) return;
+  const fromAllocation = clampAllocation(
+    (account.units * marketPrice) / equityAtFill,
+  );
+  const desiredUnits = (equityAtFill * targetAllocation) / marketPrice;
+  const unitDelta = desiredUnits - account.units;
+  const tolerance = Math.max(desiredUnits, account.units, 1) * 1e-10;
+
+  if (unitDelta > tolerance) {
+    const fillPrice = marketPrice * (1 + slippageRate);
+    const unitCost = fillPrice * (1 + commissionRate);
+    const boughtUnits = Math.min(unitDelta, account.cash / unitCost);
+    if (boughtUnits <= tolerance) return;
+    account.cash -= boughtUnits * unitCost;
+    account.units += boughtUnits;
+    if (!recordTrade) return true;
+    return {
+      time: bar.time,
+      fromAllocation,
+      targetAllocation,
+      fillPrice,
+      reason,
+      signals: [...signals],
+    };
+  } else if (unitDelta < -tolerance) {
+    const fillPrice = marketPrice * (1 - slippageRate);
+    const soldUnits = Math.min(-unitDelta, account.units);
+    if (soldUnits <= tolerance) return;
+    account.cash += soldUnits * fillPrice * (1 - commissionRate);
+    account.units -= soldUnits;
+    if (!recordTrade) return true;
+    return {
+      time: bar.time,
+      fromAllocation,
+      targetAllocation,
+      fillPrice,
+      reason,
+      signals: [...signals],
+    };
+  }
+}
+
 export function runAllocationBacktest(
   allBars: MarketBar[],
   fullTarget: readonly number[] | AllocationTimelineReader,
@@ -397,9 +456,8 @@ export function runAllocationBacktest(
   const intraday = settings.interval !== "1d";
   const sessionMetadata = context.sessionMetadata;
 
-  let cash = Math.max(settings.initialCash, 1);
-  let units = 0;
-  let peak = cash;
+  const account = { cash: Math.max(settings.initialCash, 1), units: 0 };
+  let peak = account.cash;
   const commissionRate = Math.max(settings.commissionRate, 0);
   const slippageRate = Math.max(settings.slippageRate, 0);
   const summaryOnly = Boolean(settings.summaryOnly);
@@ -434,16 +492,17 @@ export function runAllocationBacktest(
       ? clampAllocation(previousTimelineState?.targetAllocation ?? 0)
       : 0;
   if (openingAllocation > 0) {
-    const openingEquity = cash;
-    units =
+    const openingEquity = account.cash;
+    account.units =
       (openingEquity * openingAllocation) /
       firstBar.open;
-    cash = openingEquity * (1 - openingAllocation);
+    account.cash = openingEquity * (1 - openingAllocation);
   }
   let plannedAllocation = openingAllocation;
   const positionOverlay = normalizeSmaPositionOverlay(settings.positionOverlay);
   if (positionOverlay && intraday) throw new Error("SMA position overlays require daily bars");
   const overlay = positionOverlay ? new SmaPositionOverlay(allBars, positionOverlay, openingAllocation) : null;
+  let executionIndex = context.startIndex;
 
   const rebalanceAtPrice = (
     bar: MarketBar,
@@ -451,53 +510,23 @@ export function runAllocationBacktest(
     targetAllocation: number,
     signals: readonly AllocationSignalEvent[],
     reason: AllocationRebalance["reason"] = "strategy",
+    atOpen = false,
   ) => {
-    const equityAtFill = cash + units * marketPrice;
-    if (equityAtFill <= 0 || marketPrice <= 0) return;
-    const fromAllocation = clampAllocation(
-      (units * marketPrice) / equityAtFill,
+    const previousUnits = account.units;
+    const trade = rebalanceAllocationAccount(
+      account, bar, marketPrice, targetAllocation, commissionRate, slippageRate, signals, reason, !summaryOnly,
     );
-    const desiredUnits = (equityAtFill * targetAllocation) / marketPrice;
-    const unitDelta = desiredUnits - units;
-    const tolerance = Math.max(desiredUnits, units, 1) * 1e-10;
-
-    if (unitDelta > tolerance) {
-      const fillPrice = marketPrice * (1 + slippageRate);
-      const unitCost = fillPrice * (1 + commissionRate);
-      const boughtUnits = Math.min(unitDelta, cash / unitCost);
-      if (boughtUnits <= tolerance) return;
-      cash -= boughtUnits * unitCost;
-      units += boughtUnits;
-      rebalanceCount += 1;
-      if (!summaryOnly) rebalances.push({
-        time: bar.time,
-        fromAllocation,
-        targetAllocation,
-        fillPrice,
-        reason,
-        signals: [...signals],
-      });
-    } else if (unitDelta < -tolerance) {
-      const fillPrice = marketPrice * (1 - slippageRate);
-      const soldUnits = Math.min(-unitDelta, units);
-      if (soldUnits <= tolerance) return;
-      cash += soldUnits * fillPrice * (1 - commissionRate);
-      units -= soldUnits;
-      rebalanceCount += 1;
-      if (!summaryOnly) rebalances.push({
-        time: bar.time,
-        fromAllocation,
-        targetAllocation,
-        fillPrice,
-        reason,
-        signals: [...signals],
-      });
-    }
+    if (!trade) return;
+    overlay?.recordExecution(executionIndex, previousUnits, account.units,
+      marketPrice * (account.units > previousUnits ? 1 + slippageRate : 1 - slippageRate), commissionRate, atOpen);
+    rebalanceCount += 1;
+    if (trade !== true) rebalances.push(trade);
   };
 
   for (let index = 0; index < selectedBars.length; index += 1) {
     const bar = selectedBars[index]!;
     const originalIndex = context.startIndex + index;
+    executionIndex = originalIndex;
     const currentTimelineState = timelineStateAt(originalIndex);
     const session = sessionMetadata[index]!;
     const sameSessionAsPrevious =
@@ -521,6 +550,7 @@ export function runAllocationBacktest(
           overlay && !previousTimelineState?.signals.length
             ? [nextAllocation > plannedAllocation ? "long-entry" : "long-exit"]
             : previousTimelineState?.signals ?? [],
+          "strategy", true,
         );
         plannedAllocation = nextAllocation;
       }
@@ -546,6 +576,7 @@ export function runAllocationBacktest(
           execution.fillPrice,
           targetAllocation,
           execution.signals,
+          "strategy", execution.fillPrice === bar.open,
         );
         plannedAllocation = targetAllocation;
       }
@@ -570,7 +601,7 @@ export function runAllocationBacktest(
       overlay.close(originalIndex, changed || currentTimelineState.signals.length > 0 || intrabarExecutions.length > 0, intrabarIncrease);
     }
 
-    const currentEquity = cash + units * bar.close;
+    const currentEquity = account.cash + account.units * bar.close;
     peak = Math.max(peak, currentEquity);
     const drawdown = peak === 0 ? 0 : ((currentEquity - peak) / peak) * 100;
     maxDrawdown = Math.min(maxDrawdown, drawdown);
@@ -592,7 +623,7 @@ export function runAllocationBacktest(
   }
 
   const lastBar = selectedBars.at(-1)!;
-  const finalEquity = cash + units * lastBar.close;
+  const finalEquity = account.cash + account.units * lastBar.close;
 
   const performance = summaryOnly
     ? summarizePerformanceOnline(
@@ -618,7 +649,7 @@ export function runAllocationBacktest(
     rebalances,
     ...(positionOverlay ? { positionOverlay } : {}),
     ...(overlay ? { latestTargetAllocation: overlay.allocation } : {}),
-    executedAllocation: units > 0 ? plannedAllocation : 0,
+    executedAllocation: account.units > 0 ? plannedAllocation : 0,
     openingPosition:
       openingAllocation > 0
         ? {
@@ -778,6 +809,7 @@ export function runBacktestFromTarget(
     exitReason: BacktestTrade["exitReason"] = "strategy",
   ) => {
     if (units === 0) return;
+    const previousUnits = units;
 
     const fillPrice = marketPrice * (1 - slippageRate);
     const proceeds = units * fillPrice;
@@ -807,10 +839,12 @@ export function runBacktestFromTarget(
     entryTime = "";
     entryCost = 0;
     inheritedPosition = false;
+    overlay?.recordExecution(executionIndex, previousUnits, units, fillPrice, commissionRate);
   };
 
-  const openPosition = (marketPrice: number, nextEntryTime: string) => {
+  const openPosition = (marketPrice: number, nextEntryTime: string, atOpen = false) => {
     if (cash <= 0) return;
+    const previousUnits = units;
     const fillPrice = marketPrice * (1 + slippageRate);
     units = cash / (fillPrice * (1 + commissionRate));
     const entryNotional = units * fillPrice;
@@ -820,6 +854,7 @@ export function runBacktestFromTarget(
     entryPrice = fillPrice;
     entryTime = nextEntryTime;
     inheritedPosition = false;
+    overlay?.recordExecution(executionIndex, previousUnits, units, fillPrice, commissionRate, atOpen);
   };
 
   const firstBar = selectedBars[0]!;
@@ -839,10 +874,12 @@ export function runBacktestFromTarget(
   const positionOverlay = normalizeSmaPositionOverlay(settings.positionOverlay);
   if (positionOverlay && intraday) throw new Error("SMA position overlays require daily bars");
   const overlay = positionOverlay ? new SmaPositionOverlay(allBars, positionOverlay, units > 0 ? 1 : 0) : null;
+  let executionIndex = context.startIndex;
 
   for (let index = 0; index < selectedBars.length; index += 1) {
     const bar = selectedBars[index]!;
     const originalIndex = context.startIndex + index;
+    executionIndex = originalIndex;
     const orders = fullOrders?.[originalIndex];
     const session = sessionMetadata[index]!;
     const sameSessionAsPrevious =
@@ -853,7 +890,7 @@ export function runBacktestFromTarget(
       session.barsRemaining > DEFAULT_INTRADAY_ENTRY_CUTOFF_BARS;
 
     if (overlay && index > 0) {
-      if (overlay.allocation > 0 && units === 0) openPosition(bar.open, bar.time);
+      if (overlay.allocation > 0 && units === 0) openPosition(bar.open, bar.time, true);
       else if (overlay.allocation <= 0 && units > 0) closePosition(bar.open, bar.time);
     }
     let hadOrderSignal = false;
@@ -880,13 +917,13 @@ export function runBacktestFromTarget(
         if (fill.action === "sell") {
           closePosition(fill.fillPrice, bar.time);
         } else {
-          openPosition(fill.fillPrice, bar.time);
+          openPosition(fill.fillPrice, bar.time, fill.fillPrice === bar.open);
         }
       }
     } else if (!overlay && index > 0 && (!intraday || sameSessionAsPrevious)) {
       const priorTarget = (effectiveTarget[originalIndex - 1] ?? 0) > 0 ? 1 : 0;
       if (priorTarget === 1 && units === 0 && canEnterIntraday) {
-        openPosition(bar.open, bar.time);
+        openPosition(bar.open, bar.time, true);
       } else if (priorTarget === 0 && units > 0) {
         closePosition(bar.open, bar.time);
       }

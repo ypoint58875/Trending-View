@@ -383,7 +383,7 @@ test("coordinator finishes a pre-submitted queue without browser polling", async
   const childScript = join(directory, "fake-child.mjs");
   await writeFile(
     childScript,
-    `import { appendFile, readFile, rename, rm, writeFile } from "node:fs/promises";
+    `import { access, appendFile, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { deserialize } from "node:v8";
 const directory = process.argv[2];
@@ -392,6 +392,18 @@ const bars = deserialize(await readFile(request.sharedBarsPath ?? join(directory
 await appendFile(join(dirname(directory), "executions.log"), request.checkpoint.key + "\\n");
 const runningPath = join(dirname(directory), "running-" + process.pid);
 await writeFile(runningPath, "1");
+// Hold the initial pair until the observer acknowledges both markers. A fixed
+// sleep can let one child finish before its sibling starts on a loaded runner.
+if (request.checkpoint.key !== "queue-2") {
+  const observedPath = join(dirname(directory), "concurrency-observed");
+  const deadline = Date.now() + 10_000;
+  while (true) {
+    try { await access(observedPath); break; }
+    catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (Date.now() >= deadline) throw new Error("Concurrency observation timed out");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
 await new Promise((resolve) => setTimeout(resolve, 500));
 const resultTemporaryPath = join(directory, "result.tmp");
 await writeFile(resultTemporaryPath, JSON.stringify({ key: request.checkpoint.key, bars: Math.min(request.barCount ?? bars.times.length, bars.times.length), sharedBarsPath: request.sharedBarsPath }));
@@ -483,6 +495,9 @@ process.stdout.write(JSON.stringify({ type: "completed" }) + "\\n");
         (await readdir(stateDirectory)).filter((entry) => entry.startsWith("running-"))
           .length,
       );
+      if (peakRunningChildren === 2) {
+        await writeFile(join(stateDirectory, "concurrency-observed"), "1");
+      }
       snapshots = await Promise.all(
         jobIds.map((jobId) =>
           fetch(`${baseUrl}/screening/jobs/${jobId}`).then((response) => response.json()),

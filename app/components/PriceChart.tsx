@@ -9,7 +9,7 @@ import type {
   XAxisComponentOption,
   YAxisComponentOption,
 } from "echarts";
-import type { MarketBar, MarketInterval } from "@/lib/market/types";
+import type { MarketBar, MarketInterval, MarketSeries } from "@/lib/market/types";
 import type { BacktestTrade } from "@/lib/analysis/backtest";
 import {
   buildTradeMarkers,
@@ -78,10 +78,28 @@ import {
   type IndicatorParameters,
 } from "@/lib/analysis/indicator-registry";
 import { EChart, type DataZoomWindow } from "./EChart";
+import { buildContextQuantiles, completedContextSeries, CONTEXT_PERIODS, CONTEXT_QUANTILES } from "@/lib/analysis/market-context";
+import { buildRawWeeklyContext, buildWeeklyMarketContext, smoothWeeklyContext, WEEKLY_CONTEXT_PERIODS } from "@/lib/analysis/weekly-market-context";
+import { buildContextChartAreas } from "@/lib/analysis/context-chart";
+import { IndicatorTabs } from "./IndicatorTabs";
+import { useWorkspaceSwitchPreferences } from "./useWorkspaceSwitchPreferences";
+import { setContextRegionsPreference } from "@/lib/analysis/workspace-switch-preferences";
+import { zhCN } from "../i18n/zh-CN";
 
 export type { IndicatorId } from "@/lib/analysis/indicator-registry";
 
-export type ChartIndicatorConfiguration = IndicatorConfiguration;
+export interface ChartIndicatorConfiguration extends IndicatorConfiguration {
+  contextPeriod?: 20 | 60 | 200;
+}
+
+export const CONTEXT_CHART_TABS = [
+  { key: "bias20", id: "biasContext", period: 20 },
+  { key: "bias60", id: "biasContext", period: 60 },
+  { key: "bias200", id: "biasContext", period: 200 },
+  { key: "slope20", id: "smaSlopeContext", period: 20 },
+  { key: "slope60", id: "smaSlopeContext", period: 60 },
+  { key: "slope200", id: "smaSlopeContext", period: 200 },
+] as const;
 
 export interface StrategyLineLabels {
   prefix: string;
@@ -97,6 +115,7 @@ export interface ChartStrategyConfiguration {
 
 interface PriceChartProps {
   bars: MarketBar[];
+  contextSeries?: MarketSeries;
   interval: Extract<MarketInterval, "1d" | "1m">;
   trades?: BacktestTrade[];
   tradeMarkers?: TradeMarkers;
@@ -434,12 +453,36 @@ export function buildIndicatorSeries(
   xAxisIndex: number,
   yAxisIndex: number,
   bollingerVisible = false,
+  contextPeriod?: 20 | 60 | 200,
 ): SeriesOption[] {
   const parameters = {
     ...getDefaultIndicatorParameters(indicator),
     ...inputParameters,
   };
   const closes = bars.map((bar) => bar.close);
+  if (indicator === "biasContext" || indicator === "smaSlopeContext") {
+    const curves = buildRawWeeklyContext(bars);
+    const values = indicator === "biasContext" ? curves.bias : curves.slope;
+    const palette = [colors.cyan, colors.amber, colors.violet];
+    return values.flatMap((data, index) => {
+      if (contextPeriod !== undefined && CONTEXT_PERIODS[index] !== contextPeriod) return [];
+      const axisOffset = contextPeriod === undefined ? index : 0;
+      const name = `${labels[indicator] ?? indicator} ${WEEKLY_CONTEXT_PERIODS[index]}${zhCN.marketContext.weekUnit}`;
+      const unit = indicator === "biasContext" ? "%" : zhCN.marketContext.slopeUnit;
+      const rawLine = lineSeries(`${name} ${zhCN.marketContext.raw} (${unit})`, data, colors.muted, xAxisIndex + axisOffset, yAxisIndex + axisOffset);
+      const smoothLine = lineSeries(`${name} ${zhCN.marketContext.smooth} (${unit})`, smoothWeeklyContext(data), palette[index], xAxisIndex + axisOffset, yAxisIndex + axisOffset);
+      const lines = [rawLine, smoothLine];
+      if (indicator === "biasContext") {
+        const quantiles = buildContextQuantiles(bars.map((bar) => bar.time), data);
+        quantiles.forEach((quantile, slot) => {
+          const color = slot === 0 || slot === 3 ? "#e78383" : "#bfa26a";
+          lines.push({ ...lineSeries(`${name} P${Math.round(CONTEXT_QUANTILES[slot] * 100)}`, quantile, color, xAxisIndex + axisOffset, yAxisIndex + axisOffset),
+            lineStyle: { width: 1, color, type: slot === 0 || slot === 3 ? "dashed" : "dotted" } });
+        });
+      }
+      return lines.map((line) => ({ ...line, tooltip: { valueFormatter: (value: unknown) => value == null ? "—" : Number(value).toFixed(3) } }));
+    });
+  }
   const indicatorLine = (
     name: string,
     data: NumericSeries | number[],
@@ -1194,7 +1237,7 @@ export function buildStrategyLineSeries(
     });
 }
 
-const baseChartHeight = 544;
+const baseChartHeight = 596;
 const paneChartHeight = 150;
 const legendTop = 4;
 const priceGridTop = 54;
@@ -1225,6 +1268,18 @@ export function buildPriceChartLegend(series: SeriesOption[] = []): LegendCompon
   };
 }
 
+export function buildPriceChartLegends(series: SeriesOption[], grids: GridComponentOption[]): LegendComponentOption[] {
+  const axisIndex = (item: SeriesOption) => "xAxisIndex" in item ? item.xAxisIndex ?? 0 : 0;
+  return [
+    buildPriceChartLegend(series.filter((item) => Number(axisIndex(item)) < 2)),
+    ...grids.slice(2).map((grid, index) => ({
+      ...buildPriceChartLegend(series.filter((item) => axisIndex(item) === index + 2)),
+      top: Number(grid.top) - 24,
+      right: 62,
+    })),
+  ];
+}
+
 export function buildPriceChartLayout(
   times: string[],
   paneCount: number,
@@ -1240,8 +1295,8 @@ export function buildPriceChartLayout(
     grids.push({
       left: 12,
       right: 62,
-      top: 504 + index * paneChartHeight,
-      height: 135,
+      top: 516 + index * paneChartHeight,
+      height: 123,
     });
   }
 
@@ -1487,6 +1542,7 @@ export function buildVisiblePriceAxisRange(
 
 export function PriceChart({
   bars,
+  contextSeries,
   interval,
   trades = [],
   tradeMarkers,
@@ -1503,6 +1559,10 @@ export function PriceChart({
   ariaLabel,
   labels,
 }: PriceChartProps) {
+  const showContextRegions = useWorkspaceSwitchPreferences().contextRegions;
+  const context = useMemo(() => contextSeries ? buildWeeklyMarketContext(completedContextSeries(contextSeries).bars).observations : [], [contextSeries]);
+  const contextAreas = useMemo(() => buildContextChartAreas(context, bars.map(bar => bar.time)), [context, bars]);
+  const [contextTab, setContextTab] = useState<"indicators" | typeof CONTEXT_CHART_TABS[number]["key"]>("indicators");
   const zoomDataKey = `${dataKey}:${
     focusRange?.startTime ?? "latest"
   }:${focusRange?.endTime ?? "latest"}`;
@@ -1537,30 +1597,28 @@ export function PriceChart({
   );
   const chartIndicators = useMemo<readonly ChartIndicatorConfiguration[]>(
     () => {
-      if (visibleIndicators !== undefined) return visibleIndicators;
-      if (!indicator) return [];
-      return [
-        {
-          id: indicator,
-          parameters: indicatorParameters ?? {},
-        },
+      const configured = visibleIndicators ?? (indicator ? [{ id: indicator, parameters: indicatorParameters ?? {} }] : []);
+      const selected = CONTEXT_CHART_TABS.find(({ key }) => key === contextTab);
+      return !selected ? configured : [
+        ...configured.filter(({ id }) => getIndicator(id).placement === "overlay"),
+        { id: selected.id, parameters: {}, contextPeriod: selected.period },
       ];
     },
-    [indicator, indicatorParameters, visibleIndicators],
+    [indicator, indicatorParameters, visibleIndicators, contextTab],
   );
 
   const chart = useMemo(() => {
     const times = bars.map((bar) => formatPriceChartTime(bar, interval));
     const closes = bars.map((bar) => bar.close);
-    const paneCount = chartIndicators.filter(
-      (configuredIndicator) =>
-        getIndicator(configuredIndicator.id).placement === "pane",
-    ).length;
+    const paneCounts = chartIndicators.map(({ id, contextPeriod }) => {
+      const definition = getIndicator(id);
+      return definition.placement === "pane" ? contextPeriod ? 1 : definition.paneCount ?? 1 : 0;
+    });
+    const paneCount = paneCounts.reduce((sum, count) => sum + count, 0);
     const bollingerVisible = chartIndicators.some(({ id }) => id === "bollinger");
-    let nextPaneAxisIndex = 2;
-    const indicatorSeries = chartIndicators.flatMap((configuredIndicator) => {
+    const indicatorSeries = chartIndicators.flatMap((configuredIndicator, index) => {
       const overlay = getIndicator(configuredIndicator.id).placement === "overlay";
-      const targetAxisIndex = overlay ? 0 : nextPaneAxisIndex++;
+      const targetAxisIndex = overlay ? 0 : 2 + paneCounts.slice(0, index).reduce((sum, count) => sum + count, 0);
       return buildIndicatorSeries(
         bars,
         configuredIndicator.id,
@@ -1569,6 +1627,7 @@ export function PriceChart({
         targetAxisIndex,
         targetAxisIndex,
         bollingerVisible,
+        configuredIndicator.contextPeriod,
       );
     });
     const priceAxisRange = buildVisiblePriceAxisRange(
@@ -1627,6 +1686,7 @@ export function PriceChart({
       } as SeriesOption);
     }
 
+    if (series[0]) series[0] = { ...series[0], markArea: { silent: true, label: { show: false }, data: showContextRegions ? contextAreas : [] } } as SeriesOption;
     series.push(
       ...buildTradeMarkerSeriesFromMarkers(
         tradeMarkers ?? buildTradeMarkers(trades),
@@ -1684,7 +1744,7 @@ export function PriceChart({
     const option: EChartsOption = {
       animation: false,
       backgroundColor: "transparent",
-      legend: buildPriceChartLegend(series),
+      legend: buildPriceChartLegends(series, layout.grids),
       axisPointer: {
         link: [{ xAxisIndex: "all" }],
         label: { backgroundColor: "#26332f" },
@@ -1711,6 +1771,8 @@ export function PriceChart({
     return { option, height: layout.height };
   }, [
     bars,
+    contextAreas,
+    showContextRegions,
     interval,
     activeZoomWindow,
     chartIndicators,
@@ -1725,6 +1787,11 @@ export function PriceChart({
   ]);
 
   return (
+    <div className="price-chart-with-tabs">
+    {contextSeries && <button type="button" role="switch" aria-checked={showContextRegions}
+      className="chart-context-toggle" onClick={() => setContextRegionsPreference(!showContextRegions)}>
+      <span className="chart-context-switch-track" aria-hidden="true" />{zhCN.marketContext.regionsToggle}
+    </button>}
     <EChart
       option={chart.option}
       className="price-chart"
@@ -1738,5 +1805,10 @@ export function PriceChart({
         "price-zoom-slider",
       ]}
     />
+    <div className="market-context-tabs" title={zhCN.marketContext.quantileBasis}>
+      <IndicatorTabs tabs={(["indicators", ...CONTEXT_CHART_TABS.map(({ key }) => key)] as const).map(key => ({ key, label: zhCN.marketContext.tabs[key] }))}
+        value={contextTab} onChange={value => setContextTab(value as typeof contextTab)} label={zhCN.marketContext.title} />
+    </div>
+    </div>
   );
 }

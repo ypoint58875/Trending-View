@@ -13,6 +13,8 @@ import {
 } from "../lib/analysis/indicator-registry";
 
 const expectedIds = [
+  "biasContext",
+  "smaSlopeContext",
   "sma",
   "ema",
   "wma",
@@ -60,7 +62,7 @@ test("registers all configurable chart indicators once", () => {
     INDICATORS.map((indicator) => indicator.id),
     expectedIds,
   );
-  assert.equal(new Set(expectedIds).size, 40);
+  assert.equal(new Set(expectedIds).size, 42);
 
   for (const indicator of INDICATORS) {
     const keys = indicator.parameters.map((parameter) => parameter.key);

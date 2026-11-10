@@ -1,4 +1,41 @@
 export const zhCN = {
+  navigation: { label: "工作区页面", research: "研究台", cycles: "周期验证", trend: "走势分析" },
+  trendAnalysis: {
+    chartTitle: "六线总览", chartView: "图表显示方式", history: "行情区间", historyCount: "历史交易日", details: "规则与指标说明",
+    title: "走势分析", subtitle: "原六线确认方向，分歧时保留 · 4／12／40周参数，3日节点",
+    loading: "正在读取共享行情…", error: "行情加载失败，已有数据保留，请重试。", retry: "刷新行情", source: "统一行情来源", end: "最近已收盘", bars: "交易日", candles: "周K线", close: "收盘线", all: "全部历史",
+    sixGroup: "六条线", otherGroup: "其他参数", previousTabs: "向左移动选项卡", nextTabs: "向右移动选项卡",
+    tabs: { six: "六线总览", bias4: "BIAS4周", bias12: "BIAS12周", bias40: "BIAS40周", slope4: "4周均线斜率", slope12: "12周均线斜率", slope40: "40周均线斜率", strength: "ADX／RSI／方向效率", atr: "ATR波动率", breadth: "日经市场广度", vi: "日经VI", vix: "VIX", spread: "日本10年−2年利差", rate: "日本10年收益率", rateChange: "日本利率／利差20日变化", roc: "ROC10", macd: "MACD12/26/9", dmi: "DMI方向" },
+    labels: { price: "收盘价", adx: "ADX14", rsi: "RSI14", efficiency: "方向效率×100", atr: "ATR14／收盘价 %", above50: "站上50日均线 %", above200: "站上200日均线 %", above200YoY: "200日广度同比（百分点）", vi: "此前已知日经VI", vix: "此前已知VIX", spread: "10年−2年（百分点）", rate: "日本10年收益率 %", rise20: "10年收益率20日变化（基点）", curve20: "10年−2年利差20日变化（基点）", roc: "ROC10 %", macd: "MACD柱", dmi: "+DI − −DI", up: "转强确认", down: "转弱确认" },
+    note: "绿色为已确认转强，红色为已确认转弱；分歧保留上次确认。辅助附图不改变主图区间。周K汇总用于展示，日确认不使用未来周收盘。",
+    overviewNote: "六线总览左轴为BIAS%，右轴为均线周差（指数点）；各线均做3个交易日平滑。",
+    auxiliaryNote: "辅助指标为此前已知值，晚于可用数据的区域留空；日经广度、VI与日本国债使用各自已验证来源，VIX为美国市场指标。",
+    auxiliaryEnd: "辅助数据截至", unavailable: "该时段没有可用辅助数据", historicalAux: "已留存历史数据，未作为实时行情延伸", timing: "六线使用发展中4／12／40周均线；3个交易日平滑，连续3个交易日六线变化同向才确认。",
+  },
+  marketContext: {
+    regionsToggle: "六线红绿区间",
+    title: "六线走势监测",
+    tabs: { indicators: "现有指标", bias20: "BIAS4周 (%)", bias60: "BIAS12周 (%)", bias200: "BIAS40周 (%)",
+      slope20: "4周斜率", slope60: "12周斜率", slope200: "40周斜率" },
+    smoothing: "六线均为 3 日平滑",
+    raw: "原始线",
+    smooth: "3日平滑",
+    slopeUnit: "指数点／周差",
+    weekUnit: "周",
+    quantileBasis: "分位取此前3个日历年原始BIAS，不含当天，至少252个有效样本；按原始线判断触及。",
+    basis: "最近已收盘日线",
+    warmup: "数据预热中，需完整40周历史及3日平滑、确认",
+    unavailable: "暂无已收盘日线",
+    invalid: "监测数据无效或超过一万根上限，请刷新行情后重试",
+    up: ["联合转强提醒", "转强待确认", "联合转强确认"],
+    down: ["联合转弱提醒", "转弱待确认", "联合转弱确认"],
+    mixed: "当天存在分歧，连续计数归零",
+    previous: { up: "上次确认转强", down: "上次确认转弱" },
+    disagreement: "目前出现分歧",
+    consecutive: "连续 {days} 个交易日",
+    note: "只描述六项协同改善或恶化，不改变策略持仓；收盘后更新，关闭页面后重开恢复。",
+    rule: "每天收盘，以此前3／11／39个已完成周收盘加当天收盘计算SMA4／12／40周与BIAS；周斜率对比上个完成周均线。六线各做3日平滑，变化同向连续3日确认；分歧清零连续计数并保留上次确认方向。",
+  },
   validatedCycle: {
     title: "动态验证策略",
     nameSuffix: "日验证策略",
@@ -9,6 +46,11 @@ export const zhCN = {
     updated: "验证策略已追加，快捷栏已同步。",
     unchanged: "当日已确认，无需重复更新。",
     repair: "前往周期验证补全",
+    historyFields: {
+      prefix: "历史起始日期缺失", adjustment: "复权口径", missing: "交易日缺失",
+      time: "交易日期", open: "开盘价", high: "最高价", low: "最低价", close: "收盘价",
+      volume: "成交量", amount: "成交额",
+    },
     errors: {
       rules: "验证策略规则同步失败，旧版已保留；请重新打开页面重试。",
       gap: "验证策略存在空缺，已停止追加。缺失日期：",
@@ -20,10 +62,11 @@ export const zhCN = {
   },
   positionOverlay: {
     alwaysEnabled: "默认规则 · 全部开启",
-    priority: "优先级：风险清仓 > 普通减仓与补仓；原买入优先于形态清仓，建仓 E 最后检查。两种风险同时触发，按 4% 止损处理。",
+    priority: "优先级：风险清仓优先；普通清仓（含原策略清仓）须通过 3% 区间保护，部分减仓照常。原买入可取消待清仓，建仓 E 最后检查。两种风险同时触发，按 4% 止损处理。",
     entryTitle: "建仓／加仓",
     entryRules: [
-      "原策略信号优先；空仓建仓须 WMA7 不下降，持仓加仓不受此限。",
+      "当前选中策略的基础信号优先于附加补仓／形态规则（不是上一轮旧策略优先）；空仓建仓须 WMA7 不下降，持仓加仓不受 WMA7 建仓限制，但须满足下述 BIAS20 禁加仓规则。",
+      "每日收盘判断：BIAS20 的3日平滑线连续下降至少3个交易日，当日禁止持仓加仓；持平或回升后，当日解除限制。只限制已有持仓的增加，不影响空仓建仓、减仓或清仓；解除后仍须出现原策略加仓信号，不自动补买。不叠加20日斜率条件。",
       "无原信号且空仓：① EMA7 刚转升且收盘 > SMA20；② 先跌 ≥ 5% 后阳线反包；③ 先跌 ≥ 5%、反弹 ≥ 4%、EMA7 连续 3 日上升且收盘 ≤ SMA20。按①②③顺序补满，①③须 WMA7 不下降。",
       "4% 止损后等 5 日，第 6 日起恢复入口；无原信号时，EMA7、WMA7 均上升且收盘 > EMA7，可优先回补止损仓位。",
       "建仓 E：原入口及止损回补均未成交、无原信号且仍空仓时，先跌 ≥ 9%、今低 > 昨低、今收 > 昨高，且前 5 日 RSI7 曾 ≤ 25、今日 RSI7 上升，补满；须 WMA7 不下降、无待减仓且等待期结束。",
@@ -34,6 +77,7 @@ export const zhCN = {
       "ATR 清仓：收盘 < EMA7，且昨收−今收 ≥ 昨日 ATR14 × 2，清仓；不受持有期或均线保护限制，不新增等待期或自动回补。",
       "形态清仓：最高价连续 4 日严格降低且 RSI10 < 35，提交清仓请求；当天有原买入则不触发，不绕过持有期或均线保护。",
       "普通减仓由原信号或形态清仓请求触发；补仓至少持有 7 个交易日（信号日为第 0 日），且 SMA11 日斜率 ≤ 0.075%、WMA7 下降才执行。待减仓保留，原买入信号取消。",
+      "3% 区间保护：建仓后最高价与最低价之差 ÷ 首次建仓成本 < 3% 时，暂缓普通清仓（含原策略清仓），保留待清仓请求；部分减仓照常，4% 止损及 ATR 风险清仓不受影响。加仓不重置区间，完全清仓后重置。",
     ],
     reversalDefinition: "反包与跌幅怎么算",
     reversalDetail: "近 5 日最低开盘价，比该低点之前 10 日最高收盘价低至少 5%。昨收 < 昨开，今开 ≤ 昨收，今收 > 昨开，即为阳线反包。仅在空仓、无原策略信号且止损等待期结束时补至满仓。",
@@ -41,7 +85,7 @@ export const zhCN = {
     reboundDetail: "仅在空仓、无原策略信号、无待减仓且止损等待期结束时检查。低点取本次空仓内、今天之前 10 根日线的最低收盘价；相同低点取最近一次。该低点比其之前 10 根日线的最高收盘价低至少 5%，当前收盘较低点反弹至少 4%，EMA7 连续 3 日严格上升、WMA7 不下降且收盘 ≤ SMA20 时补至满仓。不要求当天刚转正，不含 RSI 或布林线；原入口及止损回补优先。",
     shapeDefinition: "建仓 E 的跌幅与 RSI 怎么算",
     shapeDetail: "低点取今天之前 10 根 K 线的最低收盘价（不限于本次空仓，相同低点取最近一次），较该低点之前 10 根 K 线最高收盘价回落至少 9%。RSI7、RSI10 分别按 7、10 周期计算；“前 5 日曾 ≤ 25”不含今天，不要求今天刚上穿 25。E 按补仓处理，继承持有期和 4% 止损；形态清仓只是普通请求，不是强制止损。",
-    executionNote: "ATR14 为 14 日平均真实波幅，使用昨日值。普通回测次日开盘执行；日经验证用当日收盘代理。阈值不保证成交价。",
+    executionNote: "BIAS20=(收盘/SMA20−1)×100，3日平滑取最近3个交易日平均；连续下降3日需4个相邻平滑值严格递减。禁加仓状态使用当日完整收盘数据：日经验证在当日收盘代理调仓时生效，不额外延迟一日；普通回测按信号日状态限制次日开盘的加仓，不使用未来数据或改为当日成交。区间从首次实际成交开始记录，成本含买入费用与滑点；不使用成交前高低价。ATR14 使用昨日值；阈值不保证成交价。",
   },
   appName: "QuantScope",
   appTagline: "量化策略研究台",
@@ -208,6 +252,8 @@ export const zhCN = {
     backtestAria: "策略回测权益曲线与回撤图",
     bars: "根 K 线",
     series: {
+      biasContext: "BIAS",
+      smaSlopeContext: "均线一阶导",
       sma: "SMA",
       smaFast: "SMA 快线",
       smaSlow: "SMA 慢线",
@@ -389,6 +435,8 @@ export const zhCN = {
     structure: "结构与突破",
   },
   indicators: {
+    biasContext: { name: "乖离率（3日平滑）", short: "BIAS", description: "4 / 12 / 40 周 · 3日平滑 · %" },
+    smaSlopeContext: { name: "均线一阶导（3日平滑）", short: "SMA Δ", description: "4 / 12 / 40 周 · 3日平滑 · 指数点／周差" },
     sma: { name: "简单移动平均线", short: "SMA", description: "10 / 30 周期" },
     ema: { name: "指数移动平均线", short: "EMA", description: "12 / 26 周期" },
     wma: { name: "加权移动平均线", short: "WMA", description: "20 / 50 周期" },
@@ -1247,17 +1295,11 @@ export const zhCN = {
     rebalances: "调仓",
   },
   cycleValidation: {
-    monitoringStorageError: "无法读取本机已保存的监测区间，当前使用默认区间。",
-    monitoringCoverage: "监测区间持仓覆盖率",
-    monitoringCoverageHint: "覆盖率 = 区间内收盘后实际有持仓的交易日数 ÷ 有效验证交易日数；部分仓位也计为持仓。仅统计验证范围内已有日线，非交易日不计。",
-    monitoringNoData: "无有效验证数据",
-    monitoringCounts: "持仓 {held} / 有效 {total} 个交易日",
-    monitoringActual: "实际统计：{start} ~ {end}",
-    title: "策略周期验证",
+    title: "周期验证",
     subtitle: "日经完整日线筛选与当日收盘价模拟成交",
     back: "返回研究台",
     localOnly: "本机长期任务",
-    openPage: "验证策略周期",
+    openPage: "周期验证",
     settingsEyebrow: "验证配置",
     settingsTitle: "趋势触发历史筛选",
     loading: "正在恢复本机验证任务…",
@@ -1298,7 +1340,7 @@ export const zhCN = {
     matrixTitle: "每次更新与收益基准",
     rollingPeriod: "回测区间：{start} 至 {end}；每次筛选使用 {window} 日行情，共触发 {count} 次筛选、跳过 {skipped} 次。",
     rollingBenchmark: "基准收益",
-    rollingLatest: "执行方案：冲突时采用新策略",
+    rollingLatest: "执行方案：新旧筛选赢家冲突时采用本轮新赢家",
     rollingOldOnConflict: "对照：冲突沿用旧策略",
     rollingNewOnConflict: "冲突时采用新策略",
     rollingConflictHint: "新旧策略最近两条完整日线共出现 {count} 次反向信号。执行方案在冲突当日采用新一轮策略的当前信号，下一次筛选重新判断；不额外等待一天或改看三日。完整走势图及箭头对应新策略执行方案，收益包含手续费和滑点。",
@@ -1306,6 +1348,7 @@ export const zhCN = {
     rollingHigher: "每次采用同窗收益较高策略",
     rollingLower: "每次采用同窗收益较低策略",
     rollingChartTitle: "完整回测区间调仓信号",
+    rollingContextNote: "背景沿用走势分析的六线确认区间：绿色为转强、红色为转弱，分歧时保留上次确认。区间由完整历史计算后对齐到本回测日期，仅作走势对照。",
     screeningWindowOption: "{window} 日周期",
     rollingChartAriaLabel: "{mode}的完整区间行情与实际调仓",
     rollingChartHint: "箭头标记执行方案按筛选当日日经收盘价模拟完成的调仓；新旧信号相反时采用新一轮策略的当前信号。策略继承原仓位，只检查截至筛选日的最后两条完整 K 线：末日无信号才补执行前日信号；同方向取末次目标，先减后加不操作，先加后减只减仓。目标已满足时不重复交易。图内 K 线随鼠标同向移动：向右拖看更早日期，向左拖看更晚日期；底部滑块向右看更晚日期，向左看更早日期。",
@@ -1447,3 +1490,11 @@ export const zhCN = {
   footer:
     "行情可能延迟或缺失。指数与商品期货行情均为研究代理；商品回测未模拟换月、合约乘数、保证金、到期和交割。",
 } as const;
+
+export function validatedCycleErrorMessage(error: {
+  code: keyof typeof zhCN.validatedCycle.errors; dates: readonly string[]; detail?: string;
+}): string {
+  const field = zhCN.validatedCycle.historyFields[error.detail as keyof typeof zhCN.validatedCycle.historyFields];
+  return zhCN.validatedCycle.errors[error.code] +
+    (error.dates.length ? ` ${error.dates.join(", ")}` : "") + (field ? ` (${field})` : "");
+}

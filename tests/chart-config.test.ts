@@ -958,6 +958,7 @@ test("uses at most two decimals on the price axis for low-priced instruments", (
 
 test("replaces variable chart components without recreating interaction state", () => {
   assert.deepEqual(ECHART_REPLACE_MERGE_COMPONENTS, [
+    "legend",
     "grid",
     "xAxis",
     "yAxis",
@@ -971,7 +972,7 @@ test("replaces variable chart components without recreating interaction state", 
   assert.equal(replacedComponents.has("axisPointer"), false);
   assert.deepEqual(
     chartReplaceMergeComponents(true, false, { start: 42, end: 68 }),
-    ["grid", "xAxis", "yAxis", "series"],
+    ["legend", "grid", "xAxis", "yAxis", "series"],
   );
   assert.deepEqual(
     chartReplaceMergeComponents(true, true, { start: 42, end: 68 }),

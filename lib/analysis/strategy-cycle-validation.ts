@@ -1,6 +1,8 @@
-import { normalizeSmaPositionOverlay, SmaPositionOverlay } from "./sma-position-overlay";
+import { normalizeSmaPositionOverlay, SmaPositionOverlay, type SmaPositionOverlayState } from "./sma-position-overlay";
 import {
   runAllocationBacktest,
+  rebalanceAllocationAccount,
+  type AllocationAccountState,
   type AllocationBacktestResult,
   type AllocationIntrabarExecution,
   type AllocationRebalance,
@@ -36,6 +38,30 @@ export function completedNikkeiCycleSeries(series: MarketSeries, now = new Date(
     return bar.time < currentDate || series.latestBarStatus === "complete";
   });
   return { ...series, bars, latestBarStatus: "complete" };
+}
+
+/** Join recent quotes to a full response only after both ends of the bridge are verified. */
+export function bridgeCycleMarketHistory(
+  history: MarketSeries, latest: MarketSeries, anchorTime: string,
+): MarketSeries | null {
+  const bars = new Map(history.bars.map((bar) => [bar.time, bar]));
+  if (!bars.has(anchorTime) || history.source !== latest.source ||
+    history.priceAdjustment !== latest.priceAdjustment ||
+    !latest.bars.some((bar) => bars.has(bar.time))) return null;
+  latest.bars.forEach((bar) => bars.set(bar.time, bar));
+  return { ...latest, bars: [...bars.values()].sort((left, right) => left.time.localeCompare(right.time)) };
+}
+
+/** Explicit validation refreshes only the two newest completed primary sessions. */
+export function refreshRecentCycleBars(merged: MarketSeries, primary: MarketSeries, now = new Date()): MarketSeries {
+  if (merged.priceAdjustment !== primary.priceAdjustment) return merged;
+  const recent = completedNikkeiCycleSeries(merged, now).bars.slice(-2);
+  const incoming = new Map(completedNikkeiCycleSeries(primary, now).bars.map((bar) => [bar.time, bar]));
+  const corrected = new Map(recent.flatMap((bar) => {
+    const replacement = incoming.get(bar.time);
+    return replacement ? [[bar.time, replacement] as const] : [];
+  }));
+  return { ...merged, bars: merged.bars.map((bar) => corrected.get(bar.time) ?? bar) };
 }
 
 export const DEFAULT_CYCLE_SCREENING_WINDOWS = [64, 128, 256] as const;
@@ -80,6 +106,27 @@ export function buildCycleScreeningWindows(
   return windows;
 }
 
+interface StrategyCycleReportCheckpoint {
+  version: 1;
+  current: AllocationAccountState;
+  previous: AllocationAccountState;
+  benchmark: AllocationAccountState;
+  currentTarget: number;
+  previousTarget: number;
+  currentPlanned: number;
+  previousPlanned: number;
+  currentOverlay?: SmaPositionOverlayState;
+  previousOverlay?: SmaPositionOverlayState;
+}
+
+interface StrategyCyclePriorClose {
+  time: string;
+  checkpoint: StrategyCycleReportCheckpoint;
+  rebalanceCount: number;
+  decisionCount: number;
+  conflictCount: number;
+}
+
 export interface StrategyCycleRollingReport {
   evaluationStartTime: string;
   evaluationEndTime: string;
@@ -92,6 +139,8 @@ export interface StrategyCycleRollingReport {
   conflictCount: number;
   oldOnConflictReturn: number;
   newOnConflictReturn: number;
+  checkpoint?: StrategyCycleReportCheckpoint;
+  priorCloses?: StrategyCyclePriorClose[];
 }
 
 export function buildStrategyCycleRollingSchedule(
@@ -237,6 +286,7 @@ function reportRecentSignals(bars: MarketBar[], snapshot: StrategyCycleSelection
   return signals;
 }
 
+/** The caller must verify history, settings and the selection prefix before passing a prior report. */
 export function buildStrategyCycleRollingReport(
   bars: MarketBar[],
   snapshots: readonly StrategyCycleSelectionSnapshot[],
@@ -247,7 +297,9 @@ export function buildStrategyCycleRollingReport(
     "initialCash" | "commissionRate" | "slippageRate" | "executionPolicy" | "positionOverlay"
   > & { interval: MarketInterval },
   decisionCalendar?: readonly number[],
+  previousReport?: StrategyCycleRollingReport,
 ): StrategyCycleRollingReport {
+  if (settings.interval !== "1d") throw new Error("Cycle close replay requires daily bars");
   const schedule = buildStrategyCycleRollingSchedule(
     bars, evaluationSessions, screeningWindow,
   );
@@ -271,112 +323,150 @@ export function buildStrategyCycleRollingReport(
       snapshot.decisionTime !== bars[snapshot.decisionIndex]?.time)
   ) throw new Error("Rolling cycle screening results are incomplete");
 
-  const target = new Array<number>(bars.length).fill(0);
-  const signalEvents = Array.from(
-    { length: bars.length },
-    () => [] as AllocationSignalEvent[],
-  );
-  const oldTarget = new Array<number>(bars.length).fill(0);
-  const oldSignalEvents = Array.from({ length: bars.length }, () => [] as AllocationSignalEvent[]);
-  let inheritedAllocation = 0;
-  let oldInheritedAllocation = 0;
+  const firstDecisionIndex = ordered[0]!.decisionIndex;
+  const resumeIndex = previousReport?.checkpoint?.version === 1
+    ? bars.findIndex((bar) => bar.time === previousReport.evaluationEndTime) : -1;
+  const saved = resumeIndex >= firstDecisionIndex ? previousReport?.checkpoint : undefined;
+  if (saved && resumeIndex === schedule.evaluationEndIndex) return previousReport!;
   const overlayOptions = normalizeSmaPositionOverlay(settings.positionOverlay);
-  const overlay = overlayOptions ? new SmaPositionOverlay(bars, overlayOptions) : null;
-  const oldOverlay = overlayOptions ? new SmaPositionOverlay(bars, overlayOptions) : null;
+  // Keep archived v9/v10 gate lag; v11 uses the current completed close internally.
+  const overlay = overlayOptions ? new SmaPositionOverlay(bars, overlayOptions, 0, 1) : null;
+  const oldOverlay = overlayOptions ? new SmaPositionOverlay(bars, overlayOptions, 0, 1) : null;
+  if (saved?.currentOverlay) overlay?.restore(saved.currentOverlay);
+  if (saved?.previousOverlay) oldOverlay?.restore(saved.previousOverlay);
+  const initialCash = Math.max(settings.initialCash, 1);
+  const current = saved ? { ...saved.current } : { cash: initialCash, units: 0 };
+  const previous = saved ? { ...saved.previous } : { cash: initialCash, units: 0 };
+  const benchmark = saved ? { ...saved.benchmark } : { cash: initialCash, units: 0 };
+  const rebalances = saved ? [...previousReport!.rebalances] : [];
+  const commission = Math.max(settings.commissionRate, 0);
+  const slippage = Math.max(settings.slippageRate, 0);
+  const trade = (account: AllocationAccountState, index: number, price: number, target: number,
+    signals: AllocationSignalEvent[], recordTrade: boolean, atOpen = false) => {
+    const previousUnits = account.units;
+    const fill = rebalanceAllocationAccount(account, bars[index]!, price, target, commission, slippage,
+      signals, "strategy", recordTrade);
+    if (fill) (account === current ? overlay : account === previous ? oldOverlay : null)?.recordExecution(
+      index, previousUnits, account.units, price * (account.units > previousUnits ? 1 + slippage : 1 - slippage), commission, atOpen);
+    return fill;
+  };
+  if (!saved) trade(benchmark, firstDecisionIndex, bars[firstDecisionIndex]!.close, 1, [], false);
+  let inheritedAllocation = saved?.currentTarget ?? 0;
+  let oldInheritedAllocation = saved?.previousTarget ?? 0;
+  let planned = saved?.currentPlanned ?? 0;
+  let oldPlanned = saved?.previousPlanned ?? 0;
   const applyOverlay = (account: SmaPositionOverlay, signals: readonly StrategyCycleRecentSignal[], index: number) => {
     const direction = strategyCycleSignalDirection(signals);
     if (direction) account.request(direction, signals.at(-1)!.targetAllocation, index);
     return account.close(index, signals.length > 0);
   };
-  let conflictCount = 0;
-  const firstDecisionIndex = ordered[0]!.decisionIndex;
-  let selectedIndex = -1;
-  for (let index = firstDecisionIndex; index <= schedule.evaluationEndIndex; index += 1) {
+  let conflictCount = saved ? previousReport!.conflictCount : 0;
+  let selectedIndex = saved ? previousReport!.decisionCount - 1 : -1;
+  const firstPriorIndex = schedule.evaluationEndIndex - 2;
+  const priorTimes = new Set(bars.slice(Math.max(firstDecisionIndex, firstPriorIndex), schedule.evaluationEndIndex)
+    .map((bar) => bar.time));
+  const priorCloses = (saved ? previousReport?.priorCloses ?? [] : []).filter((close) => priorTimes.has(close.time));
+  if (saved && priorTimes.has(previousReport!.evaluationEndTime)) {
+    priorCloses.push({
+      time: previousReport!.evaluationEndTime, checkpoint: saved, rebalanceCount: rebalances.length,
+      decisionCount: selectedIndex + 1, conflictCount,
+    });
+  }
+  const capture = (): StrategyCycleReportCheckpoint => ({
+    version: 1, current: { ...current }, previous: { ...previous }, benchmark: { ...benchmark },
+    currentTarget: inheritedAllocation, previousTarget: oldInheritedAllocation,
+    currentPlanned: planned, previousPlanned: oldPlanned,
+    currentOverlay: overlay?.checkpoint(), previousOverlay: oldOverlay?.checkpoint(),
+  });
+  for (let index = saved ? resumeIndex + 1 : firstDecisionIndex; index <= schedule.evaluationEndIndex; index += 1) {
+    let signals: AllocationSignalEvent[] = [];
+    let oldSignals: AllocationSignalEvent[] = [];
+    const priorAllocation = inheritedAllocation;
+    const priorOldAllocation = oldInheritedAllocation;
     const isDecision =
       selectedIndex + 1 < ordered.length &&
       ordered[selectedIndex + 1]!.decisionIndex === index;
     if (!isDecision) {
+      inheritedAllocation = overlay?.close(index, false) ?? inheritedAllocation;
+      oldInheritedAllocation = oldOverlay?.close(index, false) ?? oldInheritedAllocation;
+      signals = [inheritedAllocation > priorAllocation ? "long-entry" : "long-exit"];
+      oldSignals = [oldInheritedAllocation > priorOldAllocation ? "long-entry" : "long-exit"];
+    } else {
+      selectedIndex += 1;
+      const recentSignals = reportRecentSignals(bars, ordered[selectedIndex]!, index);
+      const previousSignals = selectedIndex > 0
+        ? strategyCyclePlanKey(ordered[selectedIndex]!) === strategyCyclePlanKey(ordered[selectedIndex - 1]!)
+          ? recentSignals
+          : reportRecentSignals(bars, ordered[selectedIndex - 1]!, index)
+        : [];
+      const conflict = strategyCycleSignalsOppose(recentSignals, previousSignals);
+      if (conflict) conflictCount += 1;
+      const resolved = resolveStrategyCycleRecentSignals(
+        inheritedAllocation,
+        recentSignals,
+      );
       if (overlay) {
-        const next = overlay.close(index, false);
-        if (Math.abs(next - inheritedAllocation) > 1e-10) signalEvents[index] = [next > inheritedAllocation ? "long-entry" : "long-exit"];
-        inheritedAllocation = next;
+        resolved.targetAllocation = applyOverlay(overlay, recentSignals, index);
+        if (!resolved.signals.length) resolved.signals = [resolved.targetAllocation > inheritedAllocation ? "long-entry" : "long-exit"];
       }
+      signals = resolved.signals;
+      inheritedAllocation = resolved.targetAllocation;
+      // The previous winner is used only for conflicting decisions in the research account.
+      const oldResolved = resolveStrategyCycleRecentSignals(
+        oldInheritedAllocation, conflict ? previousSignals : recentSignals,
+      );
       if (oldOverlay) {
-        const next = oldOverlay.close(index, false);
-        if (Math.abs(next - oldInheritedAllocation) > 1e-10) oldSignalEvents[index] = [next > oldInheritedAllocation ? "long-entry" : "long-exit"];
-        oldInheritedAllocation = next;
+        oldResolved.targetAllocation = applyOverlay(oldOverlay, conflict ? previousSignals : recentSignals, index);
       }
-      target[index] = inheritedAllocation;
-      oldTarget[index] = oldInheritedAllocation;
-      continue;
+      oldSignals = oldResolved.signals;
+      oldInheritedAllocation = oldResolved.targetAllocation;
     }
-    selectedIndex += 1;
-    const recentSignals = reportRecentSignals(bars, ordered[selectedIndex]!, index);
-    const previousSignals = selectedIndex > 0
-      ? strategyCyclePlanKey(ordered[selectedIndex]!) === strategyCyclePlanKey(ordered[selectedIndex - 1]!)
-        ? recentSignals
-        : reportRecentSignals(bars, ordered[selectedIndex - 1]!, index)
-      : [];
-    const conflict = strategyCycleSignalsOppose(recentSignals, previousSignals);
-    if (conflict) conflictCount += 1;
-    const resolved = resolveStrategyCycleRecentSignals(
-      inheritedAllocation,
-      recentSignals,
-    );
-    if (overlay) {
-      resolved.targetAllocation = applyOverlay(overlay, recentSignals, index);
-      if (!resolved.signals.length) resolved.signals = [resolved.targetAllocation > inheritedAllocation ? "long-entry" : "long-exit"];
+    // The shared daily backtester reconciles tiny target changes at the next open.
+    const bar = bars[index]!;
+    if (Math.abs(priorAllocation - planned) > 1e-10) {
+      const fill = trade(current, index, bar.open, priorAllocation, [], true, true);
+      if (fill && fill !== true) rebalances.push(fill);
+      planned = priorAllocation;
     }
-    target[index] = resolved.targetAllocation;
-    if (Math.abs(resolved.targetAllocation - inheritedAllocation) > 1e-10) {
-      signalEvents[index] = resolved.signals;
+    if (Math.abs(priorOldAllocation - oldPlanned) > 1e-10) {
+      trade(previous, index, bar.open, priorOldAllocation, [], false, true);
+      oldPlanned = priorOldAllocation;
     }
-    inheritedAllocation = resolved.targetAllocation;
-    // Only the conflicting decision uses the previous selection's current signals.
-    // The next screen compares against its chronological previous winner again.
-    const oldResolved = resolveStrategyCycleRecentSignals(
-      oldInheritedAllocation, conflict ? previousSignals : recentSignals,
-    );
-    if (oldOverlay) {
-      oldResolved.targetAllocation = applyOverlay(oldOverlay, conflict ? previousSignals : recentSignals, index);
-      if (!oldResolved.signals.length) oldResolved.signals = [oldResolved.targetAllocation > oldInheritedAllocation ? "long-entry" : "long-exit"];
+    if (Math.abs(inheritedAllocation - priorAllocation) > 1e-10 &&
+      Math.abs(inheritedAllocation - planned) > 1e-10) {
+      const fill = trade(current, index, bar.close, inheritedAllocation, signals, true);
+      if (fill && fill !== true) rebalances.push(fill);
+      planned = inheritedAllocation;
     }
-    if (Math.abs(oldResolved.targetAllocation - oldInheritedAllocation) > 1e-10) {
-      oldSignalEvents[index] = oldResolved.signals;
+    if (Math.abs(oldInheritedAllocation - priorOldAllocation) > 1e-10 &&
+      Math.abs(oldInheritedAllocation - oldPlanned) > 1e-10) {
+      trade(previous, index, bar.close, oldInheritedAllocation, oldSignals, false);
+      oldPlanned = oldInheritedAllocation;
     }
-    oldInheritedAllocation = oldResolved.targetAllocation;
-    oldTarget[index] = oldInheritedAllocation;
+    if (index >= firstPriorIndex && index < schedule.evaluationEndIndex) {
+      priorCloses.push({
+        time: bar.time, checkpoint: capture(), rebalanceCount: rebalances.length,
+        decisionCount: selectedIndex + 1, conflictCount,
+      });
+    }
   }
-  const replaySettings = {
-    ...settings,
-    startTime: bars[schedule.evaluationStartIndex]!.time,
-    endTime: bars[schedule.evaluationEndIndex]!.time,
-  };
-  const newResult = runStrategyCycleCloseBacktest(
-    bars,
-    target,
-    replaySettings,
-    signalEvents,
-  );
-  const oldResult = runStrategyCycleCloseBacktest(bars, oldTarget, { ...replaySettings, summaryOnly: true }, oldSignalEvents);
-  const benchmarkTarget = new Array<number>(bars.length).fill(0);
-  benchmarkTarget.fill(1, schedule.evaluationStartIndex, schedule.evaluationEndIndex + 1);
-  const benchmarkReturn = runStrategyCycleCloseBacktest(bars, benchmarkTarget, {
-    ...replaySettings,
-    summaryOnly: true,
-  }).totalReturn;
+  const lastClose = bars[schedule.evaluationEndIndex]!.close;
+  const totalReturn = (account: AllocationAccountState) =>
+    ((account.cash + account.units * lastClose - initialCash) / initialCash) * 100;
   return {
     evaluationStartTime: bars[schedule.evaluationStartIndex]!.time,
     evaluationEndTime: bars[schedule.evaluationEndIndex]!.time,
     screeningWindow,
     decisionCount: ordered.length,
     skippedDecisionCount: Math.max(evaluationSessions - ordered.length, 0),
-    benchmarkReturn,
-    updateReturn: newResult.totalReturn,
-    rebalances: newResult.rebalances,
+    benchmarkReturn: totalReturn(benchmark),
+    updateReturn: totalReturn(current),
+    rebalances,
     conflictCount,
-    oldOnConflictReturn: oldResult.totalReturn,
-    newOnConflictReturn: newResult.totalReturn,
+    oldOnConflictReturn: totalReturn(previous),
+    newOnConflictReturn: totalReturn(current),
+    checkpoint: capture(),
+    priorCloses,
   };
 }
 

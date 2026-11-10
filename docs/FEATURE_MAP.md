@@ -1,5 +1,359 @@
 # Feature Map
 
+## Confirmed holding-bearish current-strategy backtest
+
+User-selected scope reuses research/nikkei-downtrend-signal-review holding-
+downtrend replay: original decisions OR actual holding with close below open.
+No new winner screening;native v11,two-bar resolution and all other dates stay.
+Fresh full replay gives350.59114%/DD12.61744%/141fills versus baseline463.09228%/
+DD10.87532%/128fills,with149 additional checks. Exact requested-mask identity
+holds on all2000 days;25 tests,typecheck,lint,production parity,12 prefix/resume
+checks and independent8000-observation audit pass. Original frozen source ends
+2026-10-26. Link:FINDINGS,README,existing outputs and CODEX_STATE. Research only;
+formal app/account/filter rules unchanged. No shared pattern or source update.
+
+## 2026-11-10 shared regions and switch-memory linkage
+
+| Feature | Implementation | Verification / persistence |
+| --- | --- | --- |
+| Context region projection | analysis/context-chart; TrendAnalysisChart; PriceChart; StrategyCycleRollingChart | Same colors/retained states; inherited full-history first visible state; causal prefixes |
+| Cycle result background | StrategyValidationWorkspace contextHistoryBars in fresh/saved paths | Existing candles/fills/tooltip outputs unchanged; controlled cached-profile browser preview |
+| Research overlay switch | PriceChart contextSeries; MarketWorkspace; i18n/globals.css | Default on;right-side control strip;toggle/reload;does not affect trade results |
+| Remembered switches | workspace-switch-preferences; useWorkspaceSwitchPreferences; MarketWorkspace | Versioned4096-character localStorage;context flag and A/B/C filter drafts;no new tab preference |
+| Single trend worksheet strip | VISIBLE_TREND_TABS; TrendAnalysisWorkspace; IndicatorTabs |11 retained choices;research-identical size;centered footer;desktop-only policy |
+
+
+## 2026-11-10 desktop worksheet layout update
+
+| Feature | Linked files | Behavior / checks |
+| --- | --- | --- |
+| Shared worksheet tabs | components/AppNavigation; components/IndicatorTabs; globals.css | Footer,research indicators,trend indicators and chart mode share flat tab styling; selected underline; overflow scroll |
+| Desktop trend layout | trend-analysis/TrendAnalysisWorkspace; i18n/zh-CN; globals.css | Left six-line overview,right monitor/source panel; weekly/close tabs in chart heading;18 indicator tabs stay in reserved lower band |
+| Navigation cleanup | MarketWorkspace; strategy-validation/StrategyValidationWorkspace | Removed redundant top cycle link and upper-left research-back link; footer routes remain |
+| Desktop-only scope | AGENTS; README; globals.css; rendered-html tests | No independent mobile app exists; seven phone/tablet width branches removed; minimum1180px;desktop accessibility retained |
+
+
+## 2026-11-10 integrated trend feature linkage
+
+| Feature | Implementation | UI / rules | Verification / data |
+| --- | --- | --- | --- |
+| Three native pages | app/layout.tsx; components/AppNavigation; trend-analysis/page/workspace | navigation/trendAnalysis in zh-CN; research/cycle/trend bottom navigation | rendered-html routes; browser navigation/mobile |
+| Unified price identity | market/workspace-series; WorkspaceMarketProvider; MarketWorkspace; StrategyValidationWorkspace | canonical Nikkei profile/cache; complete closes; anchor checks | weekly-market-context tests; existing canonical/refresh/cycle suites |
+| Weekly six-line display and monitors | context-replay; weekly-market-context; market-context; PriceChart; ValidatedCycleShortcuts |4/12/40 developing weeks,3 daily smooth/confirm, retain on disagreement | full6570-date reference parity; causal prefix/close/limit tests |
+|18 indicator panes | trend-panels; TrendAnalysisChart; IndicatorTabs; EChart; globals.css | compact two-row card inside reserved indicator lower band; overflow arrows | browser18 tabs/no-overlap/mobile; panel/null/lag tests |
+| Historical auxiliary snapshot | import-trend-auxiliary script; API trend-auxiliary | visible per-source dates, no auxiliary direction gating | processed JSON, raw backups, source registry, DATA_SOURCES |
+
+
+## Strict screening-skip safety audit (research only)
+
+`research/nikkei-screening-skip-audit` links the frozen full-screen source to
+same-state actual/omitted decision branches, cash/fill/risk identity, carried
+plan identity and normalized-signal counterexamples. It retains production
+nondecision semantics and does not add daily old-winner checks. Of 1,293 dates,
+1,247 preserve fills, 949 preserve full account/risk and 157 also preserve the
+plan after observing the winner. No pre-screen rule-only skip is certified.
+The 157-date combined hindsight replay is exact but is not a deployable gate.
+Tests: three audit plus 21 cycle tests, typecheck/lint, production parity,
+serialized probes, causal prefix, actual restart and independent Python audit.
+Artifacts: raw/progress in ignored data/<identity>, summary/branches/date CSV
+in output/<identity>. Docs: README/FINDINGS, CODEX_STATE, DEBUGGING,
+TECH_RESEARCH and DATA_SOURCES. No production behavior or shared pattern change.
+
+## Downtrend continuation signal review (research only)
+
+research/nikkei-downtrend-signal-review/model/run/model.test/audit.py and
+README/FINDINGS/RESULTS link the existing full-screen2000-session source to
+current v11 production-baseline parity,additional current-winner two-bar checks,
+actual inherited holdings,three declared continuation scopes,protected/pending
+exits and same-state no-request attribution. No new winner screening or UI change.
+Frozen sample ends2026-10-26,not current browser state. Narrow body-run2 checks
+have no sells;close-run4 checks alter one target;broader holding-down checks
+materially worsen this sample. MA2 trigger differs from simple body sign flips.
+25 focused tests,typecheck,lint,12 prefix/resume checks,actual extraction restart
+and independent8000-observation audit pass. Checkpoints/raw provenance in ignored
+data/<identity>,daily results in output/<identity>. Links:CODEX_STATE,DEBUGGING,
+TECH_RESEARCH,DATA_SOURCES. No adoption or shared pattern change.
+
+## Adopted v11 BIAS-only same-day holding-add restriction
+
+- Core:sma-position-overlay.ts adds current v11,current-close gate index and
+  RANGE model/options archivev10. Range3,actual-fill costs,risk/partial priority
+  and entry conditions remain.
+- Cycle:strategy-cycle-validation.ts retains archived lag context;both v11
+  controllers use today's completed BIAS at the existing close proxy. Ordinary
+  next-open orders still use completed signal-day data only.
+- UI:zh-CN entryRules/executionNote state same-day onset/release,no SMA20 slope
+  condition,holding-add-only scope and ordinary next-open execution.
+- Persistence:existing preview/promotion,current-rule sync,revision CAS,
+  cancellable worker,atomic upgrade and one old-rule backup. Staticv10 stays.
+- Tests:new same-close-bias suite;range tests pinnedv10;archived bias/rebound,
+  store v9/v10->v11 and rendered wording. Research v10 imports pinned in
+  nikkei-bias-six-sizing model/run/gate-model/gate-model.test.
+- Docs:README,ARCHITECTURE,FUNCTIONS,DEBUGGING,CODEX_STATE,TECH_RESEARCH.
+  No provider,data,secret,protocol or shared architecture pattern change.
+
+## Isolated same-day holding-add gate comparison (no adoption)
+
+- Code: research/nikkei-bias-six-sizing/gate-{model,run}.ts;3 model tests and
+  independent gate-audit.py. Retains actual v10 controller,with clone-isolated
+  research-only gate injection. Current/same-close native parity and zero
+  shared-feature leakage are verified.
+- Rules:current next-session BIAS,off,same-day BIAS/slope-turn/AND/OR;current
+  plus slope/AND are separate additive controls. Only invested holding adds
+  change;flat entries,reductions,risk/range3 rules retained.
+- Outcome:BIAS/OR463.09% tie,slope/AND455.65%,current458.46%;allfinal50099.85%,
+  DD10.88%. Additive459.04% is not replacement AND. Timing sensitivity weakens
+  the small BIAS advantage. No production adoption.
+- Verification:8 focused tests/typecheck/lint,8 prefix/resume paths,8 masks/
+  16000 daily equities/all fills independently audited;2-case stop/6 resume.
+- Docs:GATE_DESIGN,GATE_RESULTS,README,CODEX_STATE,DEBUGGING,TECH_RESEARCH.
+  No source/provider/account/production/API/shared-pattern change.
+
+## BIAS double-condition and retained-six sizing research (no adoption)
+
+- Implementation: research/nikkei-bias-six-sizing/{model,run}.ts; reuses
+  market-context six curves/retained3-day confirmation and current v10 actual
+  fill replay. Frozen winners are not rescreened.
+- Rules: strict BIAS20 SMA3 down3 AND first SMA20 slope SMA3 downturn; additive
+  holding-add veto,half/clear sleeves with both recovery semantics; weak-state
+  original-target multipliers75/50/25/0%. Same-close BIAS-only timing diagnostic
+  and broader falling-condition cases are separately identified.
+- Verification:5 model tests; independent audit.py checks15 cases/30000 daily
+  equities/all fills/context formulas;3 native serialized resumes and causal
+  prefixes,13 sleeve prefixes; actual case-boundary stop/resume.
+- Docs: research DESIGN/README/RESULTS; CODEX_STATE,DEBUGGING,TECH_RESEARCH,
+  DATA_SOURCES. No UI,production,account,protocol or shared-pattern change.
+- Outcome: no evidence supporting blanket weak-state cuts or double-condition
+  half/clear. Single additional add veto has insufficient, timing-sensitive
+  benefit. Native shadow sleeves do not establish integrated-controller parity.
+
+## Adopted v10 range3 ordinary full-exit protection
+
+- Core: sma-position-overlay.ts versions v10/archive v9, actual-fill episode,
+  daily request/partial checkpoint, full-exit protection and risk bypass.
+- Execution: backtest.ts allocation/single/summary paths and cycle-validation.ts
+  both accounts notify actual fills; next-open and Nikkei-close timing retained.
+- UI: zh-CN positionOverlay priority/exitRules/executionNote disclose overriding
+  original ordinary clears, preserved partial/risk exits and actual entry cost.
+- Persistence: existing validated-cycle-preview/store promotion, revision CAS,
+  cancellable worker and one old-rule backup; no new DB schema. New checkpoints
+  retain only bounded range/request state and reject incompatible old context.
+- Tests: range-position-policy, archived bias-add/rebound, validated-cycle store
+  v9->v10 backup/idempotence, rendered rule count/copy and historical458.46% path.
+- Archives: context-entry adoption integration, small-move and range-integration
+  source/test imports pin v9 explicitly. Native v8 archives remain unchanged.
+- Memory: README,ARCHITECTURE,FUNCTIONS,DEBUGGING,CODEX_STATE,MODULE_PATTERNS,
+  TECH_RESEARCH,DATA_SOURCES,DECISIONS. No credentials/provider/protocol changes.
+
+## Range3/range10 signal-priority integration research (no adoption)
+
+research/nikkei-range-exit-integration DESIGN/model/report/run/tests/audit/README/
+RESULTS link current v9 production controller and real cycle report with frozen
+original decisions and prior small-move replay. Five cases distinguish blanket
+ordinary full-exit protection from explicit base-clear/necessary pending-clear
+priority; accepted base partial sells are preserved in priority controls.
+Same-state probes and lineage serialize with controller/cash/episode; deferred
+spells track cancellation, eventual risk/ordinary exit and post-age5 losses.
+Exact prior3-path and actual baseline fill parity;22 combined tests,5 fresh
+audits,10 prefix/resume pairs,80 independent metric groups/10000 trace checks.
+No production/UI/account/config changes; results require preserving the chosen
+priority contract. Memory links: CODEX_STATE,FUNCTIONS,MODULE_PATTERNS,
+TECH_RESEARCH,DATA_SOURCES,DEBUGGING.
+
+## Cycle holding-coverage removal and priority wording (2026-11-06)
+
+Supersedes older entries retaining a read-only coverage display. Validation UI
+no longer renders holding-coverage ranges or reads their localStorage setting.
+Linked files: app/strategy-validation/StrategyValidationWorkspace.tsx,
+app/i18n/zh-CN.ts, tests/rendered-html.test.mjs, docs/CODEX_STATE.md.
+The pure strategy-cycle-monitoring helper and its research/test consumers remain;
+no saved preferences, account history, task state or backup is deleted.
+The existing page source contract now rejects any monitoring display/read path.
+
+Base-strategy priority refers to the currently selected strategy relative to
+supplemental/shape rules. Incoming-versus-previous screening-winner conflict
+priority remains incoming-current-signals-on-conflict-v1. UI label clarifies
+this distinction; report.updateReturn and report.rebalances remain unchanged.
+No shared module, protocol, provider or execution policy changes.
+
+## Small-move ordinary full-exit research (no adoption)
+
+research/nikkei-small-move-exit links DESIGN/model/run/9 tests/audit/README and
+v8/v9 reports to frozen full-screen-6-15 decisions, production controller,
+shared risk probe/economic ledgers. Actual first-entry cost/causal extrema
+serialize with account. Full-exit protection retains pending0; partial/risk
+sales pass. Each version gets same21 cases, model-scoped atomic progress and
+independent audits. V9 cycle uses lag1; no timing/model mixing.25 combined tests,
+42 fresh cases,84 prefix/resume pairs,672 independent cash metric groups and
+5289 live episode checks pass. No current-v9 qualification/adoption. Range2/3
+remain sparse historical diagnostics. Linked memory: CODEX_STATE,FUNCTIONS,
+MODULE_PATTERNS,TECH_RESEARCH,DATA_SOURCES,DEBUGGING. No production/UI/account edits.
+
+## Adopted v9 BIAS20 next-session holding-add gate
+
+- Core/version: lib/analysis/sma-position-overlay.ts adds v9 and archived v8
+  constants/options, causal SMA3 BIAS decline features and request-time add veto.
+- Execution linkage: strategy-cycle-validation.ts passes holdingAddDecisionLag1
+  to both cycle controllers; ordinary backtest callers retain default0 because
+  their completed signal index already targets next open.
+- UI: app/i18n/zh-CN.ts entryRules/executionNote describe next-session scope,
+  strict3 declines, release, no automatic rebuy, and unchanged cycle close fills.
+- Compatibility: existing validated-cycle-preview/store promotion and one-rule
+  backup, saved plan parsing and checkpoint identity need no schema change.
+- Tests: bias-add-position-policy, archived rsi-shape-position-policy and
+  validated-cycle-strategy-store; frozen adoption-check/integration research.
+- Historical research models/runners/tests in bias90-exit, chop-filter,
+  context-entry-gates, rebound-gate-review, switch-turnover, reduction-cooldown,
+  and overlay-stability RSI studies now import explicit archived v8 options.
+- Documentation: README, ARCHITECTURE, FUNCTIONS, MODULE_PATTERNS, DEBUGGING,
+  TECH_RESEARCH, DATA_SOURCES and CODEX_STATE. No provider/protocol changes.
+
+## Post-reduction increase cooldown research (no adoption)
+
+research/nikkei-reduction-cooldown DESIGN/model/run/9 tests/audit/README/RESULTS
+link frozen full-screen-6-15 decisions with production controller and allocation
+ledger. X0/1/2/3/5/7/10 starts only from actual sales; covers all buy/reentry
+sources, preserves risk exits, pending semantics and real holding age. Serializes
+controller, sale clock, cash/units and planned targets. Source/design/code keyed
+checkpoints and outputs stay ignored. Every policy matches economic fills, native
+baseline, prefixes/resumes and independent Python accounting. No case qualifies;
+no product/UI/account/ranking change. Memory links: CODEX_STATE,FUNCTIONS,
+MODULE_PATTERNS,TECH_RESEARCH,DATA_SOURCES,DEBUGGING.
+
+## Declining six-curve increase gates (research only)
+
+research/nikkei-context-entry-gates links production raw/SMA3 context curves,
+SmaPositionOverlay checkpoints, frozen original signals and both backtest timing
+engines. DESIGN freezes190 cases; model/run/model.test/README/RESULTS link onset
+versus ongoing states and entry/add/all scopes. Atomic case checkpoints and
+latest.json support bounded resume. Narrow holding-add candidates show small
+historical improvements with few events and no final500 gain; no registry/UI/
+account adoption. User's final onset means the smoothed speed curve turning
+down, not the underlying moving average beginning a negative-speed phase.
+
+## Strategy replacement turnover research (no production adoption)
+
+research/nikkei-switch-turnover links DESIGN/README/RESULTS with model.ts,
+run.ts, independent audit.py, seven research tests and four existing v8 integration tests. Read-only
+dependencies: frozen full-screen-6-15 input/signals, strategyCyclePlanKey,
+same-current-date native two-bar signals, production controller checkpoints and
+close/next-open allocation ledgers. Seven cases compare old-on-conflict,
+switch-only direction consensus and positive allocation-delta gates. Same-state
+probes and pending-origin records link actual fills to local signal mechanisms;
+future reversal labels are diagnostic-only. Raw backups/checkpoints and derived
+ledgers/manifests stay ignored and identity-scoped. No candidate qualifies;
+product incoming-winner policy remains unchanged. Linked memory: CODEX_STATE,
+FUNCTIONS, MODULE_PATTERNS, TECH_RESEARCH, DATA_SOURCES and DEBUGGING.
+
+## Weighted BIAS90 exit contribution (research only)
+
+The existing BIAS90 research now links weightedPolicies/scoreDecision, the
+--weighted runner,18 matched point-ablation pairs, WEIGHTED_DESIGN and generated
+WEIGHTED_RESULTS. Tests cover additive contribution, original increase priority,
+scope/threshold boundaries and37-case resume/prefix behavior. Native-intent
+and executed-partial-reduction scopes reuse production state rather than
+precomputed baseline masks. No production scoring or UI linkage/adoption.
+
+## BIAS20 P90 speed-decline exit research (no adoption)
+
+research/nikkei-bias90-exit links production market-context raw/smoothed curves
+and causal quantiles with SmaPositionOverlay checkpoint/request/release APIs,
+frozen full-screen-6-15 original decisions, close-proxy and next-open backtests.
+DESIGN/README link model, runner, five research tests and both generated reports.
+Twelve initial plus23 combination replays distinguish raw/smoothed speed,
+same-day/armed triggers, native guards, extra confirmations and half reductions.
+No production signal, chart, registry or saved-account changes. No candidate
+passes the declared historical screening conditions under both timings.
+
+## Current-v8 rebound gate review (research only)
+
+research/nikkei-rebound-gate-review links DESIGN.md, model.ts, run.ts,
+model.test.ts, README.md and RESULTS.md to the existing frozen overlay input,
+production SmaPositionOverlay checkpoint contract and both close-proxy and
+next-open backtests. Nine variants alter only the below-SMA20 rebound fallback.
+Baseline target/final-state identity and all-case prefix/resume checks protect
+the linked native entry/risk behavior. No application or registry adoption.
+WMA14 history and current WMA7 flat-entry scope are documented in README;
+existing-position adds remain outside that gate. See CODEX_STATE for results.
+
+## Frozen-v8 whipsaw parameter research (no production adoption)
+
+research/nikkei-chop-filter contains the declared153-case design, pure filters,
+production-controller accepted-state replay, bounded resumable grid runner,
+independent fresh-grid audit, tests and compact results. Sources are frozen
+nikkei-overlay-stability/data/full-screen-6-15 input/signals. Production
+SmaPositionOverlay checkpoints/restore and shared close/next-open backtest APIs
+are read-only dependencies. Filtered trades cannot leave phantom entry/stop
+state; ordinary pending reductions persist; hard exits always bypass filters.
+
+Coverage:7 research tests plus4 existing rsi-shape-integration tests,153 fresh
+target/metric replays, risk/zero-filter/prefix/resume checks. Data/output remain
+local ignored artifacts; RESULTS.md and design are project memory. Related
+records: TECH_RESEARCH, DATA_SOURCES, DEBUGGING, MODULE_PATTERNS, FUNCTIONS,
+CODEX_STATE. All candidate families fail predeclared eligibility; none deployed.
+
+## Six independent context tabs and disagreement outcome study
+
+- UI: app/components/PriceChart.tsx, app/i18n/zh-CN.ts, app/globals.css. Six
+ independent period tabs, raw/SMA3 lines, raw-BIAS P5/P10/P90/P95 and scrollable
+ left-accessible controls; existing zoom/overlays/pane-local legends remain.
+- Shared core/metadata: lib/analysis/market-context.ts and indicator-registry.ts
+ add raw construction, causal quantiles and optional grouped paneCount.
+ Existing six-smoothed-curve monitoring and account rules are unchanged.
+- Tests: tests/market-context.test.ts (raw/quantile warmup, leap cutoff,
+ exclusion of today, selected/grouped axes, bounded 10000-bar input);
+ tests/market-context-research.test.ts (first single/multiple departures,
+ stage deduplication, six-on-one-day is not confirmation, censoring, next-open
+ timing and deterministic replay). Existing chart/registry coverage retained.
+- Research: research/nikkei-context-disagreement/{study.ts,analyze.ts,
+ verify_reference.py,README.md,RESULTS.md,.gitignore}; local raw/normalized
+ data and output tables are ignored reproducibility artifacts.
+- Docs: ARCHITECTURE, FUNCTIONS, MODULE_PATTERNS, DEBUGGING, TECH_RESEARCH,
+ DATA_SOURCES and CODEX_STATE. No new provider, secret, engine protocol,
+ strategy execution, persisted account schema or automated trade rule.
+
+## Six-curve chart tabs and validated-shortcut monitoring
+
+- Core: lib/analysis/market-context.ts; fixed 20/60/200 BIAS and SMA daily
+  differences, trailing SMA3, strict adjacent directions and three-day state.
+- Registry/chart: lib/analysis/indicator-registry.ts;
+  app/components/PriceChart.tsx preserves overlays/zoom and places each pane's
+  legend above its own plot, with bottom metric tabs. EChart.tsx replaces
+  obsolete legends along with variable grids and series.
+- UI: app/components/ValidatedCycleShortcuts.tsx consumes matching live/full
+  series from app/MarketWorkspace.tsx, falling back to dated stored bars.
+  A single independent per-instrument card precedes all X-day strategy buttons.
+  app/i18n/zh-CN.ts owns copy; app/globals.css emphasizes confirmed states.
+- Tests: tests/market-context.test.ts and tests/indicator-registry.test.ts;
+  tests/chart-config.test.ts verifies shared layout/zoom contracts and
+  tests/community-analysis.test.ts retains the total indicator-count contract.
+  The full-gate coordinator fixture uses explicit concurrency acknowledgement
+  in tests/screening-engine-coordinator.test.ts (see DEBUGGING).
+- Recovery: deterministic replay from canonical cache or stored account series;
+  no new service, persisted schema, credentials or trading-state change.
+- Related records: ARCHITECTURE, FUNCTIONS, MODULE_PATTERNS, DEBUGGING,
+  TECH_RESEARCH, DATA_SOURCES and CODEX_STATE.
+
+## Validated-cycle shortcut page position
+
+MarketWorkspace.openValidatedCycle selects the dynamic account and advances its
+chart-open revision without requesting a page scroll. The latest 128-session
+chart reset and other strategy actions retain their existing behavior. Linked
+state: CODEX_STATE.md.
+
+## Validated-cycle history and published volume enrichment
+
+validated-cycle-strategy.ts accepts canonical zero-to-positive volume backfill
+while retaining frozen bars for account replay/repair. assertValidatedCycleHistory
+returns anchored inputs used by StrategyValidationWorkspace before screening.
+MarketWorkspace and the cycle page share localized date/field error formatting
+from zh-CN.ts. Real price/volume corrections, missing dates and incompatible
+models remain blocked. Tests: validated-cycle-strategy.test.ts with existing
+preview/store suites. Links: CODEX_STATE and DEBUGGING. No protocol/storage
+schema/source change; canonical chart volume can enrich without rewriting the
+validated ledger or its historical performance.
+
+
 ## All strategy-shortcut128-session focus
 
 MarketWorkspace uses its existing saved-recent128-session range for chart focus
@@ -883,3 +1237,9 @@ research, frozen inputs, event outcomes, and continuous comparisons live under
   Any protocol or endpoint edit must review this whole set. An incompatible
   status request must leave the running state with a localized restart message;
   it must not enter an unbounded polling loop.
+
+## Strategy-cycle continuation checkpoints
+
+The validation workspace merges matching completed task snapshots with published selections by date and window. The published report stores the closing account, benchmark, previous-winner comparison and overlay state in the same validated-cycle record. A compatible report advances through appended bars or rewinds to the last unchanged close for recent revisions. The chart and publication share the same computed report when they use the same history and execution settings. The existing history and pending-unit limits apply. Regression coverage lives in `tests/validated-cycle-strategy.test.ts`.
+
+The same validation flow repairs recent primary-bar revisions and backfills the full missing suffix. A missing overlap with the five-bar refresh requires a verified history bridge. Tests cover two revised bars on the same terminal date, nine missing sessions, and rejection of changes outside the revision window.

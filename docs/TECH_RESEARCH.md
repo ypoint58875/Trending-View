@@ -1,5 +1,419 @@
 # Technical Research
 
+## 2026-11-10 native three-page integration decisions
+
+User approved replacing the display's old20/60/200-day context with the
+standalone4/12/40-week/daily-node rule, and requested shared sources plus all
+18 indicator tabs. Compare embedding a frozen standalone HTML versus native
+React/ECharts using existing canonical daily history. The native option shares
+identity/close gating, receives latest prices and uses one UI/runtime; the
+frozen iframe would duplicate data and rule ownership. Choose native.
+
+For navigation compare mounting all three complete workspaces continuously
+versus existing native routes under a shared layout. Choose routes plus a
+bounded shared-series provider and existing IndexedDB recovery. This avoids
+keeping all charts/workers mounted; existing durable cycle jobs remain owned
+by their coordinator/store. No framework/dependency/protocol migration.
+Official references checked during planning:
+- https://nextjs.org/docs/app/getting-started/layouts-and-pages
+- https://nextjs.org/docs/app/api-reference/functions/use-pathname
+- https://react.dev/reference/react/useContext
+The project uses vinext, so actual routing/render/state recovery is verified
+in its own runtime instead of assuming all Next-specific behavior.
+
+Independent approved-reference comparison:6570 dates,38864 finite curve
+values,max absolute difference0,state differences0. This establishes a faithful
+rule port on identical prices, not a prediction or trading-return improvement.
+MACD reference uses histogram without2x; trend panel divides the existing
+shared indicator's2x histogram by2. The two-axis six-line overview separates
+BIAS percentages from weekly mean-difference index points.
+
+
+## 2026-11-10 rule-only screening skip versus hindsight neutrality
+
+The user requested skipping only when all possible screening signals leave
+fills, pending state, carried strategy and risk state unchanged. Compare a
+pre-screen universal gate with same-state retrospective omission of actual
+saved winners. The latter supplies evidence but cannot serve as the former:
+its label depends on a result that has already been computed. No framework,
+new integration or external research is needed for this local code contract.
+
+Production always retains the selected winner even if account guards prevent
+trading. That carried-plan dependency has no rule-based locking gate. Audit
+1,293 frozen dates: 1,247 no fill difference, 949 full account/risk-neutral,
+157 also plan-neutral, zero rule-only before-screen certified. All 157 together
+preserve the observed 2,000-day path, but their 12.14% hindsight reduction is
+not an achievable causal speedup. Valid normalized signal witnesses refute
+full state independence on each date; they do not enumerate or rank all
+possible alternative optimizer winners.
+
+Reuse the production controller and source/code-hashed atomic replay pattern.
+Retain the current trigger and do not adopt a skip rule. Any future reduction
+must separately prove winner equivalence or explicitly change strategy policy.
+See research/nikkei-screening-skip-audit/FINDINGS.md for category counts, date
+CSV, production equality, 24 tests, prefix/restart checks and Python audit.
+Frozen source ends 2026-10-26; this is not a current browser-account export.
+
+## 2026-11-10 local downtrend signal-check alternatives (no adoption)
+
+User requested impact evidence before changing the trigger. Compare retaining
+current frozen winners and checking their signals on skipped invested downtrend
+dates versus state-dependent full rescreening. The former isolates the missed
+exit hypothesis without new optimizer jobs;the latter can select new winners
+and changes subsequent eligibility,so this replay cannot estimate its results.
+No framework,integration or unfamiliar implementation choice is introduced;
+online research is unnecessary for this deterministic local diagnostic.
+
+Within retained-winner replay compare broad holding-down checks,close-down
+entry followed by uninterrupted declining closes,and bearish-body entry/run.
+Keep production two-bar sequence semantics,guards,costs and actual execution.
+Baseline463.09228%/128fills;respectively350.59114%/141,462.90483%/130 and
+exactly unchanged. Narrow-body2 dates have only buys;close-down4 dates include
+one guarded clear and one partial sale. Broad results do not support automatic
+adoption. Current MA2 trigger skips94 bullish-to-bearish transitions,41 invested,
+which separately conflicts with a simple sign-flip interpretation.
+
+research/nikkei-downtrend-signal-review/FINDINGS.md records definitions,dates,
+same-state attribution and limits. Actual source/code-hashed restart,12 causal
+prefixes/serialized resumes and independent8000-observation Python accounting
+pass. Frozen2000 dates end2026-10-26;current browser account was not exported.
+No policy,shared architecture,provider or production change adopted.
+
+## 2026-11-06 adopted BIAS-only same-close add restriction
+
+User explicitly selected A alone,current-day effect. Adopt versioned v11 and
+archive v10 rather than silently changing saved-model meaning. Reuse native
+causal BIAS calculation and account replay/backup patterns;no new framework,
+source or integration. Prior gate study compares BIAS,slope,AND,OR and timing.
+Frozen same-close BIAS463.09% versus v10lag1458.46%,sameDD10.88% andfinal500
+99.85%. Timing-sensitivity caution remains;implementation follows user choice,
+not a guarantee of improved future returns. Dynamic upgrades replay the same
+saved winners atomically. Research v10 source imports are pinned explicitly.
+
+## 2026-11-06 same-day gate replacement isolation
+
+Follow-up compares BIAS-only,slope-first-turn,AND,OR holding-add masks acting
+at current Nikkei close against current BIAS lag1. An additive experiment
+cannot answer replacement-condition attribution. Keep those controls separate.
+
+Options:extend production's constructor/configuration,or isolate an experimental
+derived mask in research. Selected per-instance feature/policy clone with a
+strict structural assertion,retaining actual v10 range/risk execution. This
+avoids adding an unadopted public API but depends on a private implementation
+shape,so tests enforce native parity and unchanged shared cache/other instances.
+No source/config/model-version changes. Future adoption would require a normal
+production contract and complete linked verification.
+
+See GATE_RESULTS.md:BIAS/OR tie463.09%,slope/AND tie455.65%,current458.46%;
+identical final50099.85%,DD10.88%. Same-close historical advantage reverses
+under next-open sensitivity. No new provider/library/framework research needed;
+this is a bounded local attribution experiment on already verified formulas.
+
+## 2026-11-06 BIAS/six-curve exposure study
+
+Compared integrating reductions into the native v10 controller versus a
+separate exposure sleeve. Integration alters entry age,cost/range protection,
+stop/recovery paths; a sleeve isolates allocation on existing strategy signals
+but cannot establish production state-feedback parity. Selected sleeves for
+half/clear/regime attribution, native replay for add-gate/timing diagnostics.
+Compare both native-increase recovery and immediate condition-clear recovery
+to avoid attributing slow reentry losses to the signal alone. No adoption.
+
+Primary first-turn and broad falling conditions are distinct. Retained six
+confirmation labels only subsequent returns. Fixed historical segments,
+next-open and20bps costs are sensitivities, not untouched validation. Reviewed
+primary methodological reference on2026-11-06: Bailey et al., The Probability
+of Backtest Overfitting,https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf.
+Repeated selection weakens claims from the previously inspected final500.
+See research/nikkei-bias-six-sizing/DESIGN.md and RESULTS.md for alternatives,
+definitions and all15 results. No framework,provider or shared pattern changes.
+
+## 2026-11-06 user-adopted range3 full-exit protection implementation
+
+User explicitly selects the all-ordinary contract, including delaying original
+strategy clears; no further approval gate. Add version10 and retain archived v9.
+Compared deriving range from controller intents with receiving actual economic
+fills: choose actual fill notifications from allocation/single backtests and
+cycle ledgers, including summary-only paths. Predicted close costs or next-open
+future prices would change the researched anchor or introduce lookahead.
+First actual fill cost includes fee/slippage; post-entry extrema only, adds
+retain, full exit resets. An inherited initial position with unknown entry
+provenance has no invented range protection until a real new entry.
+
+Capture at most one pre-request daily state; after native close, veto only an
+ordinary full exit below3%, retain pending0 and holding/risk state. Early4%/ATR
+bypass; native buys still cancel pending. Actual fill range and a bounded daily
+snapshot serialize in model10 checkpoints; incompatible old checkpoints require
+full saved-selection replay. Existing current-rule worker/atomic promotion and
+one backup handle upgrades. Verify exact range3 research targets/fills458.46%,
+archived v9 parity, actual costs, next-open/intrabar causality and resume before
+full npm test. See new range-position-policy tests and linked architecture.
+Completed verification:492 unit tests, production build,4 rendered tests and13
+archived adoption/integration tests passed. Frozen458.4631387547417%/129-fill
+path reproduced exactly; independent single/allocation next-open equity matches
+for320 bars. This validates execution consistency on the fixed sample, not
+future profitability. Final live page/health checks return200.
+
+## 2026-11-06 range3/range10 holding and rebalance integration rerun
+
+Compare all-ordinary exit protection with base-signal-priority protection,
+holding current v9/winners/fees/timing fixed. Existing research already retained
+native holding guards, but a post-native veto can override an explicit ordinary
+strategy clear. New isolated research/nikkei-range-exit-integration declares
+five cases and same-state native/no-original/no-pending probes, pending lineage
+and full deferred-spell outcomes. Do not silently reinterpret the original rule
+or sum spell price changes as portfolio PnL. Reuse production controller/ledger
+and prior research engine as equality oracle; no new framework/network data.
+Main baseline445.342093% and all-ordinary range3/10 must fully reproduce before
+interpreting priority controls. No source newer than frozen2026-10-26 or untouched
+holdout claim; no production adoption. See DESIGN.md for exact contract/bounds.
+
+Completed:prior range3/10 targets/state/fills exactly reproduce458.46%/482.44%.
+Range3's4 vetoes all override original base clears/pending, so base-priority
+control equals native445.34% with133 fills. Range10 base-priority suppresses
+one controller sale on2022-12-19 and ATR exits next day after2.46% further price
+decline; full431.94%,unchanged133 fills. Blanket range10's128 vetoes/43 spells
+include116 explicit/necessary pending base-clear attempts;5 spells lose>=4%
+after early-stop age, worst entry floating loss5.30%. Reproduced headline gain
+therefore depends on overriding ordinary base instructions. Do not describe it
+as maintaining that priority. Partial-order undo risk is covered synthetically,
+but no such cases occurred in sample. No adoption; full trace/independent audit
+and actual report parity are retained. Frozen history remains conditional.
+
+## 2026-11-06 small-move ordinary full-exit protection design
+
+User requests cost-distance AND post-entry range across multiple amplitudes.
+Freeze21 cases: baseline plus each definition at0.5/1/1.5/2/3/4/5/6/8/10 percent.
+Cost-distance can reactivate near entry after an excursion; accumulated range
+cannot. Protect only ordinary full exits, retain pending0 and native holding/
+buy guards; partial sells and native early4%/ATR hard exits pass. Anchor at first
+actual entry unit cost including fees/slippage; adds do not reset, full flat
+does; range excludes pre-entry extrema. Reuse existing checkpoint/risk/economic
+ledger research patterns. Exact definitions, seven-source linkage, qualification
+and bounded recovery in research/nikkei-small-move-exit/DESIGN.md. No new cooldown
+is combined. AQR primary background accessed2026-11-06:
+https://www.aqr.com/-/media/AQR/Documents/Insights/Working-Papers/AQR--Craftsmanship-Alpha.pdf
+compares turnover savings with stale-position cost, not these untested thresholds.
+
+Completed42 replays: archived v8 and current-v9 cycle lag1, same21 cases.
+V9 baseline445.34%/DD10.88%/133 fills. Cost-distance all worsen DD. Range2/3
+454.81%/458.46% retain DD/final500 but affect only2/4 exit attempts. Range5
+446.80%/DD10.18%/113 fills has final50099.12% versus99.85%,development80.51%
+versus85.79%. Post-hoc range10 full482.44% trades off DD11.87% and fails
+development tolerance. No v9 qualification; range2/3 fail5% development-turnover
+reduction, not return comparison. V8 range5 selection455.16% loses most benefit
+under v9 interactions. Do not copy old-version parameters or select by full
+history/audit after inspection. Sparse reused episodes do not justify adoption.
+
+## 2026-11-06 v9 adoption timing check before implementation
+
+User explicitly adopts smoothed BIAS20 declining3 days as a holding-add gate,
+clarifying only this rule is next-session; cycle fills retain their close proxy.
+Compared signal-close flag with prior-close flag before production edits.
+Frozen baseline440.98%/DD10.88%; same-close gate444.10%; chosen next-session
+cycle gate445.34%/DD10.88%,2 blocked adds. Ordinary next-open baseline465.36%,
+adopted gate473.38%/DD9.28%,4 blocks. Final500 is unchanged in each timing.
+Independent literal20-close means and3-point smoothing agree on13,132 gate
+checks; five paths pass prefix/serialized resume. Production v9 subsequently
+matches both researched target paths AND final states and the actual cycle
+report. Small reused historical effects remain limited evidence, not a forward
+performance guarantee. No external integration/framework selection involved.
+
+## 2026-11-06 post-reduction increase cooldown design
+
+User proposes an X-session increase ban after reductions. Compare request-only
+suppression with accepted-allocation gating; choose the latter so supplemental,
+shape, rebound and native recovery buys cannot bypass the rule. Shared economic
+ledger must confirm an actual sale before arming the clock. FreezeX=0/1/2/3/5/7/10
+and trading-session boundaries in research/nikkei-reduction-cooldown/DESIGN.md.
+Partial and full sales reset the clock; restrictions can extend native stop
+reentry waits but never block risk exits. No automatic catch-up. Reuse original
+winners/current-v8 state and existing isolated resumable research pattern.
+Primary background accessed2026-11-06:
+https://www.aqr.com/-/media/AQR/Documents/Insights/Working-Papers/AQR--Craftsmanship-Alpha.pdf
+Trading-cost savings trade off against stale-position opportunity cost. Exact
+cooldown performance is an unverified local hypothesis until the declared run.
+
+Completed seven-case result: allX>0 reduce fills but lower full net return;
+X3 359.26%/DD11.98%/115 fills versus440.98%/10.88%/134. It blocks18 flat entry
+decisions versus4 holding adds and reduces <=7-session sell-buy pairs29->9.
+No train/validation candidate qualifies; next-open full sensitivity also favors
+baseline. All buys obey their actual-sale deadlines. Independent112 metric
+groups/fills and native baseline agree. Fixed ban removes timely reentry as
+well as churn; do not deploy based on lower trade counts. User explicitly
+confirmed that reopening after a full exit is included. See study RESULTS/README.
+
+## 2026-11-06 declining context gates and smoothed-speed onset
+
+User clarified onset of falling MA-speed SMA3, not speed becoming negative.
+190 fixed increase-gate cases compare periods/smoothing/streaks/entry-add scopes.
+20-smoothed-speed onset restricting holding adds improves440.98%->442.59%
+close-proxy and465.36%->468.46% next-open, unchanged close DD, but only2 early
+events and no final500 effect. Restricting flat entries instead381.85% and
+worse DD. Smooth BIAS20 declining3 sessions and raw200-speed declining gates
+also show small holding-add effects. Largest post-hoc BIAS-down flat-entry
+gain reverses under next-open.31 preliminary-screen IDs permit3pp development
+return loss;8 improve both full timings, with duplicate paths. Reused sample,
+selection breadth and rare affected events preclude robustness/adoption claims.
+See research/nikkei-context-entry-gates for exact causal definitions/evidence.
+
+## 2026-11-06 weighted versus conjunctive BIAS90 tests
+
+Weighted study adds37 fixed cases and18 same-threshold/scope context ablations.
+Some local pairs improve: executed-partial-reduce threshold4 C0/C1 gives
+416.23%/430.12% close-proxy full return, unchanged98.99% final500, still below
+baseline440.98%/99.85% with worse DD. One additional2020-12-11 action and later
+state changes drive this paired difference. Next-open C1470.06% vs465.36%
+baseline, but DD11.24% vs9.44% and final500104.06% vs106.91% are worse.
+Other score contributions can degrade results. No non-no-op case passes
+declared conditions under both timings; no reliable scoring adoption. Do not
+confuse improvement over a weaker score with improvement over the original
+strategy. See WEIGHTED_DESIGN/WEIGHTED_RESULTS in the existing study directory.
+
+## 2026-11-06 replacement-turnover research design (before execution)
+
+Compare switch-date direction consensus with minimum allocation-delta vetoes,
+using incoming baseline and previous-current-signal conflict control. Consensus
+can discard new information; allocation bands can miss large reversals. Existing
+execution already inherits positions, so plan identity changes alone cause no
+forced liquidation. Diagnose actual economic fills before claiming switch churn.
+Reuse current v8, frozen winners and production account state; no new optimizer,
+three-bar delay or product adoption. Seven cases, qualification rules, same-state
+probes and bounded atomic recovery are fixed in
+research/nikkei-switch-turnover/DESIGN.md. AQR primary background accessed
+2026-11-06 discusses trading cost versus stale-position opportunity cost:
+https://www.aqr.com/-/media/AQR/Documents/Insights/Working-Papers/AQR--Craftsmanship-Alpha.pdf
+The local candidates are hypotheses, not conclusions from that paper.
+
+Completed result:1112 replacements yield only134 baseline economic fills. Local
+switch-current/pending mechanisms cover22/31 fills;27 of42 <=7-session opposite
+fill pairs have such a leg. Switch-only consensus reduces fills but degrades
+return/DD; reduce-only377.52%/DD-14.67%/105 fills versus440.98%/-10.88%/134.
+Old-on-conflict302.95%/141 fills does not reproduce the older shorter archive's
+favorable impression. Positive10/25pp request bands find no eligible changes.
+Do not suppress equal-target increases, which cancel pending reductions. Zero
+cases qualify on the declared train/validation rules; next-open full sensitivity
+also favors baseline. No adoption. Same-date probes identify local mechanisms,
+not an additive causal loss decomposition; overlapping pairs and reused samples
+remain conditional historical evidence. See the study README/RESULTS.
+
+## 2026-11-06 P90 plus falling SMA20 speed: role and combination evidence
+
+Compared same-day versus armed conditions and raw versus SMA3 speed, preserving
+production quantile history. Speed falling is deceleration, not necessarily a
+negative SMA change. With raw BIAS armed, raw/smooth exits261.87%/300.70% full
+versus440.98% baseline, with worse close-proxy DD. Price20 sessions after sales
+averages+2.39%/+1.95%. Primary-source background: moving averages lag price,
+https://www.fidelity.com/quick-content/etf/help/research/etf/advancedChart.shtml.
+The precise statistics and implications above are local historical evidence.
+
+User-authorized23-case extension combines two declines, EMA7/SMA20 price breaks,
+SMA60 speed, four-of-six, WMA7, original hold/trend/growth guards and half caps.
+None passes declared return/drawdown conditions under close and next-open
+timings. Smooth two-day+EMA7 half cap reduces full DD10.88% to9.79% but return
+440.98% to356.15%, final50099.85% to85.83%. A descriptive high-position
+deceleration reminder remains plausible as a label, but an actionable severity
+ladder is not validated. No tuning, adoption or prospective claim. See
+research/nikkei-bias90-exit/{DESIGN,RESULTS,COMBINED_RESULTS,README}.md.
+
+## 2026-11-06 below-SMA20 rebound gate comparison
+
+Compared nine fixed alternatives using current-v8 production state transitions,
+not archived v5/v6 headline returns. Above-SMA20 confirmation415.85% full and
+DD-11.38% trails current440.98%/DD-10.88%. Disabling this fallback or requiring
+previous-high/nondeclining-SMA20 yields450.90% with unchanged DD, but removes
+the same single losing entry. All final500 paths are identical. Four EMA7 rises
+and additional WMA14 do not change the baseline. No robust winner or adoption.
+The <= gate is intentional below-average rebound coverage; SMA/EMA are lagging
+price summaries, not proof of continuation. Primary background reference:
+https://www.fidelity.com/learning-center/trading-investing/technical-analysis/technical-indicator-guide/sma
+Exact rules, frozen cases and local evidence: research/nikkei-rebound-gate-review.
+
+## 2026-11-06 whipsaw grid evidence and limits
+
+Completed the predeclared153-case ER+low-width, ER-only and initial-request-price
+ATR buffer screen against frozen v8. Every alternative reduces total fills;
+none beats the baseline full net return. No family passes the predeclared
+training/validation constraints. Keep baseline and disclose failed validation
+leaders, full grid and post-hoc best separately. This is conditional historical
+research, not an untouched holdout or proof that every volatility filter fails.
+
+The proposed detector does not capture the intended failure population well:
+only1 of10 <=7-session closed rounds started with ER20<=.25 and width rank<=.35.
+Nine short rounds lose, but holding length is a future outcome. Do not encode
+it as an entry-time predictor. Reducing costs alone is insufficient when many
+profitable entries are removed. Next research should diagnose signal provenance
+before declaring another parameter grid. No extra grid was added after results.
+
+## 2026-11-05 frozen-v8 low-volatility trade reduction screen
+
+Compare conditional ER+low-BB-width confirmation with an ATR directional price
+buffer, plus ER-only controls. ER distinguishes directionality from raw movement
+size; width contraction alone can precede a breakout. Official indicator-source
+references and the153-case declared grid are frozen in
+research/nikkei-chop-filter/DESIGN.md. Post-processing a fixed baseline path is
+rejected because it leaves entry/stop state tied to unexecuted trades. Reuse
+production controller checkpoints and accepted-state replay instead. Risk exits
+always bypass filters. No production code is modified. Select using first1000
+and next500 sessions only; final500 is a conditional historical audit because
+these frozen selections and v8 rules have already been studied repeatedly.
+
+## 2026-11-05 independent periods, percentiles and 1..6 reversals
+
+Compared grouped three-period panels with six independent period tabs.
+Both use native ECharts axes and shared zoom; the user explicitly chose
+independent tabs. Retain grouped registry compatibility and select one period
+using chart-only state, avoiding preference or strategy migrations.
+Compared full-sample percentiles with the supplied BIAS report's rolling bands.
+Choose the existing report's prior three-calendar-year raw BIAS distribution,
+linear interpolation, exclusion of the current bar and minimum 252 values.
+Full-sample fitting would introduce future information. This implementation
+uses bounded sorted windows rather than sorting a new complete history daily.
+
+For disagreement, compare first-departure events with later first visits to
+each exact reversal count. Keep these cohorts separate; an episode ends only
+at a fresh three-day confirmation. All counts 1..6, initial directions,
+fixed 1/3/5/10/20-session horizons, time splits and a >20-session-spaced
+sensitivity are reported. No most-profitable count is adopted. Restored
+unanimity, three-day reconfirmation and opposite confirmation are different
+outcomes. The curves share price inputs and are not independent votes.
+
+Local reference: ../BIAS/tools/study_market_context.py rolling_bands and
+../BIAS/src/biaslab/analysis.py quantile. Primary references accessed2026-11-05:
+https://echarts.apache.org/en/option.html (multiple grids/legends/dataZoom),
+https://www.itl.nist.gov/div898/handbook/prc/section2/prc241.htm (Wilson intervals).
+Wilson intervals in the exported tables are descriptive; overlapping events
+and repeated dataset inspection prevent treating these as untouched independent
+predictive trials. No statistical significance or universal grade is claimed.
+
+## 2026-11-05 six-curve market context
+
+Compared embedding the external static HTML with native registered indicators.
+An iframe preserves the old snapshot but has independent zoom, file-origin
+constraints and stale prices. Native ECharts panes reuse canonical MarketSeries,
+shared zoom and locale metadata; choose native biasContext/smaSlopeContext.
+Both display BIAS20/60/200 and SMA20/60/200 daily first differences, each with
+an unweighted trailing three-session mean. Compare adjacent smoothed values,
+not their zero-line signs. Strict equality is disagreement; no fitted deadband.
+Use the requested fixed three consecutive sessions, retaining the last confirmed
+direction through disagreement or an unconfirmed opposite candidate.
+
+Primary references accessed 2026-11-05:
+- https://echarts.apache.org/en/option.html (multiple legends and axis-linked dataZoom)
+- https://apache.github.io/echarts-handbook/en/concepts/axis/ (multiple axes)
+- https://library.tradingtechnologies.com/trade/analytics/charts/technical-indicators/disparity-index/ (relative close/average distance)
+
+Local references: ../BIAS/output/nikkei-market-context.html,
+../BIAS/src/biaslab/{analysis,direction}.py and
+../BIAS/tools/study_confirmation_days.py all-turn. Existing research is
+retrospective and does not establish predictive reliability or an optimal
+universal wait. This implementation is descriptive monitoring only.
+Independent Python/reference versus TypeScript replay of 6570 observations
+(2000-01-04..2026-10-30) matched every daily vote and retained confirmation:
+zero mismatches, 1458 unanimous-up days, 1427 unanimous-down days, 256 confirmed
+direction changes. Source SHA-256:
+df8c1c139c4b3984299de21d7b4eb33d42b076f7c23c41db63eedd6987bff5bd.
+
 ## 2026-10-27 user-adopted shared account synchronization
 
 Root cause of v7 shortcut/v8 report mismatch: preview-only display preserved old
@@ -4479,3 +4893,7 @@ Primary sources accessed 2026-09-25:
   https://www.quantconnect.com/docs/v2/writing-algorithms/optimization/walk-forward-optimization
 - QuantConnect, Research Guide, look-ahead bias and point-in-time data:
   https://www.quantconnect.com/docs/v2/writing-algorithms/key-concepts/research-guide
+
+## 2026-11-05 Cycle validation checkpoints
+
+Full replay is simple and serves as the recovery baseline, but repeats historical signal and account work. A versioned end-of-day snapshot can resume a verified input prefix and replay only appended bars. Reuse the existing IndexedDB transactions and retain the latest close and two preceding closes per published report. Preserve the old reader path for records without a checkpoint. See https://learn.microsoft.com/en-us/azure/architecture/patterns/event-sourcing#snapshots.

@@ -1,4 +1,7 @@
 "use client";
+import { PublishWorkspaceSeries, useWorkspaceMarket } from "./components/WorkspaceMarketProvider";
+import { preferWorkspaceSeries } from "@/lib/market/workspace-series";
+import { readWorkspaceSwitchPreferences, setEntrySwitchPreference } from "@/lib/analysis/workspace-switch-preferences";
 import { SmaPositionOverlayControls, useSmaPositionOverlayPreferences } from "./components/SmaPositionOverlayControls";
 import { ValidatedCycleShortcuts, useValidatedCycles } from "./components/ValidatedCycleShortcuts";
 import { appendValidatedCycle, seedCompletedValidatedCycles } from "@/lib/analysis/validated-cycle-strategy-store";
@@ -49,7 +52,7 @@ import type {
   StrategyLineLabels,
 } from "./components/PriceChart";
 import { CommittedNumberInput } from "./components/CommittedNumberInput";
-import { zhCN as copy } from "./i18n/zh-CN";
+import { zhCN as copy, validatedCycleErrorMessage } from "./i18n/zh-CN";
 import {
   runAllocationBacktest,
   runBacktest,
@@ -1082,6 +1085,7 @@ function MovingAverageSlopeFilterFields({
 }
 
 export function MarketWorkspace() {
+  const sharedMarket = useWorkspaceMarket();
   const validatedCycles = useValidatedCycles();
   const [activeValidatedKey, setActiveValidatedKey] = useState<string | null>(null);
   const [validatedChartOpenRevision, setValidatedChartOpenRevision] = useState(0);
@@ -1091,7 +1095,10 @@ export function MarketWorkspace() {
   const [instrument, setInstrument] =
     useState<MarketInstrument>(defaultInstrument);
   const [seriesState, setSeries] = useState<MarketSeries | null>(null);
-  const series = isMarketSeries(seriesState) ? seriesState : null;
+  const localSeries = isMarketSeries(seriesState) ? seriesState : null;
+  const sharedSeries = [sharedMarket.series, sharedMarket.nikkei].find(value => value &&
+    canonicalMarketInstrumentKey(value.instrument) === canonicalMarketInstrumentKey(instrument));
+  const series = localSeries && sharedSeries ? preferWorkspaceSeries(localSeries, sharedSeries) : localSeries;
   const [researchInterval] = useState<WorkspaceInterval>(DAILY_INTERVAL);
   const activeValidated = validatedCycles.records.find((record) => record.key === activeValidatedKey &&
     canonicalMarketInstrumentKey(record.series.instrument) === canonicalMarketInstrumentKey(series?.instrument ?? instrument) &&
@@ -1136,6 +1143,15 @@ export function MarketWorkspace() {
   const [strategyCEntryFilterDraft, setStrategyCEntryFilterDraft] = useState(
     () => createMovingAverageSlopeFilterDraft(),
   );
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const stored = readWorkspaceSwitchPreferences().entryFilters;
+      if (stored.A) setStrategyAEntryFilterDraft(stored.A);
+      if (stored.B) setStrategyBEntryFilterDraft(stored.B);
+      if (stored.C) setStrategyCEntryFilterDraft(stored.C);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [initialCash, setInitialCash] = useState(100_000);
@@ -1175,8 +1191,8 @@ export function MarketWorkspace() {
     if (!series || !smaOverlay.ready) return;
     let disposed = false;
     void seedCompletedValidatedCycles(series, smaOverlay.settings).catch((error) => {
-      if (!disposed) setCycleSyncNotice(copy.validatedCycle.errors[
-        error instanceof ValidatedCycleError ? error.code : "storage"]);
+      if (!disposed) setCycleSyncNotice(error instanceof ValidatedCycleError
+        ? validatedCycleErrorMessage(error) : copy.validatedCycle.errors.storage);
     });
     return () => { disposed = true; };
   }, [series, smaOverlay.ready, smaOverlay.settings]);
@@ -1349,6 +1365,14 @@ export function MarketWorkspace() {
   );
   const cyclesForInstrument = (target: MarketInstrument) => validatedCycles.records.filter((record) =>
     canonicalMarketInstrumentKey(record.series.instrument) === canonicalMarketInstrumentKey(target));
+  const contextMarketSeriesForRecord = (record: ValidatedCycleStrategy): MarketSeries => {
+    const key = savedBacktestInstrumentKey(record.series.instrument);
+    const latest = series && canonicalMarketInstrumentKey(series.instrument) === canonicalMarketInstrumentKey(record.series.instrument)
+      ? series : refreshedShortcutMarkets.get(key)?.canonicalSeries;
+    return latest && latest.bars.length >= record.series.bars.length &&
+      (latest.bars.at(-1)?.time ?? "") >= (record.series.bars.at(-1)?.time ?? "")
+      ? latest : record.series;
+  };
   const orphanCycles = validatedCycles.records.filter((record) => !savedBacktestGroups.some((group) =>
     canonicalMarketInstrumentKey(record.series.instrument) === canonicalMarketInstrumentKey(group.instrument)));
   const expandedCycleGroupsRef = useRef(new Set<string>());
@@ -5059,8 +5083,8 @@ export function MarketWorkspace() {
     } catch (error) {
       const code = error instanceof ValidatedCycleError ? error.code : "storage";
       setCycleSyncNeedsRepair(code === "gap" || code === "history");
-      setCycleSyncNotice(copy.validatedCycle.errors[code] +
-        (error instanceof ValidatedCycleError && code === "gap" ? error.dates.join(", ") : ""));
+      setCycleSyncNotice(error instanceof ValidatedCycleError
+        ? validatedCycleErrorMessage(error) : copy.validatedCycle.errors.storage);
     }
   };
 
@@ -5299,7 +5323,6 @@ export function MarketWorkspace() {
     }
     setActiveValidatedKey(record.key);
     setValidatedChartOpenRevision((current) => current + 1);
-    scrollToStrategyChart();
   };
   const sharedRangeSessions =
     sampleValidationPeriods[0]?.sessions ??
@@ -5915,6 +5938,7 @@ export function MarketWorkspace() {
 
   return (
     <main className="workspace-shell">
+      <PublishWorkspaceSeries series={series} />
       <header className="topbar">
         <div className="brand-lockup" aria-label={copy.appName}>
           <span className="brand-mark">
@@ -5960,10 +5984,6 @@ export function MarketWorkspace() {
         </div>
 
         <div className="topbar-actions">
-          <Link className="cycle-validation-link" href="/strategy-validation">
-            <FlaskConical size={15} />
-            {copy.cycleValidation.openPage}
-          </Link>
           <div className="source-pill">
             <span className="live-dot" />
             {copy.marketDelayed}
@@ -6378,6 +6398,7 @@ export function MarketWorkspace() {
               <Suspense fallback={<div className="chart-state" />}>
                <PriceChart
                 bars={activeValidated?.series.bars ?? series.bars}
+                contextSeries={isNikkeiCycleInstrument((activeValidated?.series ?? series).instrument) ? (activeValidated?.series ?? series) : undefined}
                 interval={researchInterval}
                 trades={
                   !activeValidated && appliedBacktest && "trades" in appliedBacktest
@@ -6530,7 +6551,7 @@ export function MarketWorkspace() {
             {validatedCycles.error && <div role="alert">{copy.validatedCycle.errors.storage}</div>}
             {orphanCycles.length > 0 && <div className="saved-shortcut-group">
               <strong>{orphanCycles[0]!.series.instrument.name}</strong>
-              <ValidatedCycleShortcuts records={orphanCycles} error={false} embedded
+              <ValidatedCycleShortcuts records={orphanCycles} error={false} embedded marketSeriesForRecord={contextMarketSeriesForRecord}
                 activeKey={activeValidatedKey} onOpen={openValidatedCycle} />
             </div>}
             {cycleSyncNotice && <div className="saved-shortcuts-state" role="status">
@@ -6851,7 +6872,7 @@ export function MarketWorkspace() {
                           className="saved-shortcut-group-records"
                           id={groupPanelId}
                         >
-                          <ValidatedCycleShortcuts records={cyclesForInstrument(group.instrument)} error={false} embedded
+                          <ValidatedCycleShortcuts records={cyclesForInstrument(group.instrument)} error={false} embedded marketSeriesForRecord={contextMarketSeriesForRecord}
                             activeKey={activeValidatedKey} onOpen={openValidatedCycle} />
                           {strategyShortcutSectionsForGroup(group).map(
                             (strategySection) => {
@@ -7416,7 +7437,7 @@ export function MarketWorkspace() {
                   <MovingAverageSlopeFilterFields
                     namePrefix="strategy-a-entry-filter"
                     draft={strategyAEntryFilterDraft}
-                    onChange={setStrategyAEntryFilterDraft}
+                    onChange={draft => { setStrategyAEntryFilterDraft(draft); setEntrySwitchPreference("A", draft); }}
                     intraday={researchInterval === INTRADAY_INTERVAL}
                   />
                 </>
@@ -7470,7 +7491,7 @@ export function MarketWorkspace() {
                   <MovingAverageSlopeFilterFields
                     namePrefix="strategy-b-entry-filter"
                     draft={strategyBEntryFilterDraft}
-                    onChange={setStrategyBEntryFilterDraft}
+                    onChange={draft => { setStrategyBEntryFilterDraft(draft); setEntrySwitchPreference("B", draft); }}
                     intraday={researchInterval === INTRADAY_INTERVAL}
                   />
                 </>
@@ -7521,7 +7542,7 @@ export function MarketWorkspace() {
                   <MovingAverageSlopeFilterFields
                     namePrefix="strategy-c-entry-filter"
                     draft={strategyCEntryFilterDraft}
-                    onChange={setStrategyCEntryFilterDraft}
+                    onChange={draft => { setStrategyCEntryFilterDraft(draft); setEntrySwitchPreference("C", draft); }}
                     intraday={researchInterval === INTRADAY_INTERVAL}
                   />
                 </>

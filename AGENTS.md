@@ -1,5 +1,15 @@
 # QuantScope Project Rules
 
+## Desktop-only product scope
+
+- This application supports desktop computers only, by explicit user request.
+- Do not create or retain a mobile app, mobile-specific UI, phone/tablet
+  layouts, mobile navigation, or mobile-specific acceptance requirements.
+- Keep desktop chart/sidebar layouts side by side. Narrow windows may scroll
+  horizontally rather than switching to a phone layout.
+- Preserve desktop accessibility, reduced-motion support, and desktop-window
+  sizing adjustments. These are not a mobile implementation.
+
 ## Default autonomous execution
 
 - Proceed autonomously by default once the requested outcome and scope are clear.

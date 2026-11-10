@@ -1,5 +1,251 @@
 # Data Sources
 
+## 2026-11-10 unified trend pages and auxiliary import
+
+All three pages use the existing canonical Nikkei profile (`index:N225`),
+primary Yahoo policy, permitted verified recovery adapters, canonical
+IndexedDB history and completed-close rules. No standalone frozen Nikkei price
+series is installed into production and no saved-account price is substituted
+for the canonical feed. Existing source provenance/health records remain.
+
+scripts/import-trend-auxiliary.mjs imports the previous local research's
+nikkei-candidate-data.json and jgb-core-data.json. It checks completed status
+and size bounds, writes raw backups under data/raw/trend-auxiliary/<identity>,
+atomically writes data/processed/trend-auxiliary.json and appends an idempotent
+local-access/hash entry to data/trend-auxiliary-source-registry.jsonl. Current
+identity740d7ba6e0b730b2f36616c7fc9dfe48a2309a12533cb206505d92923b8edcc2.
+The API exposes only normalized series/metadata, not credentials.
+
+Sources retain previous official Nikkei VI/constituent and MOF JGB provenance;
+VIX retains its previously verified source. MOF source URLs/hashes are included
+in snapshot metadata. The raw candidate retains upstream rawHashes. Source
+research and source ledger are in ../../nikkei-context-durations/docs/DATA_SOURCES.md
+and data/source_registry.jsonl. Last observations: breadth/JGB2026-10-30,
+VI2026-11-09,VIX2026-11-05. External joins require strictly earlier source day
+and<=7 calendar days; breadth uses exact dates/coverage>=90%. These dates do
+not assert point-in-time macro vintage. No live auxiliary collector was added.
+
+
+## 2026-11-10 screening-skip audit local provenance
+
+Reuse research/nikkei-overlay-stability/data/full-screen-6-15/input.json and
+signals.json. Parsed source SHA256:
+b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+The source has 6,566 history/warmup bars, 2,000 evaluation sessions ending
+2026-10-26, 1,293 full-screen 10-session winners and a maximum of six component
+strategies. Original costs: 3bps commission and 2bps slippage; replay uses v11.
+No provider/API or new optimizer requests, secrets or browser export are used.
+
+Raw input/signal backups and machine-readable local access timestamps/hashes
+live in ignored research/nikkei-screening-skip-audit/data/<identity>; processed
+branches, summary and independently verified date CSV are separate in
+output/<identity>. Identity:
+6654c78a46edb5f8250a274da271cddda8fb3aa4657f81072c21a4187c3c2219.
+output/latest.json locates both. Existing upstream provenance remains
+authoritative. Retrospective neutral-date labels are derived research data,
+not future information available to a causal pre-screen gate. No raw source
+data is added to Git. Source date is not the browser account's current date.
+
+## 2026-11-10 downtrend signal-review local source reuse
+
+Reuse research/nikkei-overlay-stability/data/full-screen-6-15/input.json and
+signals.json with parsed sourceSHA256b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+6566 warmup/history bars,2000 evaluation sessions2018-08-09..2026-10-26,
+1293 full-screen10-session winners,max6 strategies,3bps commission+2bps slippage.
+Replay uses current v11;no new provider/API request or credential access.
+This is not an export of current browser validation state.
+
+Research-local raw JSON backups and machine-readable access-time/hash registry
+are in ignored nikkei-downtrend-signal-review/data/<identity>;processed traces,
+fills and summary are separate under output/<identity>. Source/code identity
+1601f4b0768a9c27cdfbad3cd527a56a4f98ca444a116c3dc6aedd9b59255467;
+output/latest.json locates both directories. Additional signals use each day's
+completed causal prefix and last frozen winner;no new winners are synthesized.
+Existing upstream market provenance remains authoritative. No large/private
+raw data is added to Git. README/FINDINGS and independent audit document limits.
+
+## 2026-11-06 BIAS/six-curve sizing local replay inputs
+
+Read existing research/nikkei-overlay-stability/data/full-screen-6-15/input.json
+and signals.json. Source identityb543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e;
+2000 evaluation sessions2018-08-09..2026-10-26 and1293 frozen decisions.
+Long price-only input is existing nikkei-context-disagreement/data/bars.json,
+6570 sessions2000-01-04..2026-10-30. No market-provider requests or credential
+use. Existing upstream provenance remains authoritative.
+
+Local access timestamps,SHA256 hashes,original JSON backups and long-source
+record are under ignored research/nikkei-bias-six-sizing/data/<identity>/;
+derived targets,equity,fills,context and summary under output/<identity>/.
+Identity50427ff9eca63478f0b7e9553d612a9498a8384c5519e0984ff31a63f6fc2f34.
+Close-to-close state attribution uses preceding close's retained state, while
+the existing Nikkei close proxy applies current-close decisions prospectively.
+This does not supply China ETF prices,premiums,FX or actual late-session fills.
+
+## 2026-11-06 adopted range3 actual-execution provenance
+
+Production v10 adds no source request. Episode cost derives from the existing
+ledger's first actual buy fill and configured commission/slippage; extrema from
+the same canonical MarketBar after entry. Actual open entries can use that
+completed bar; close/intrabar entries exclude earlier high/low. Adds/partial
+sales retain provenance, full flat resets it. Carried unknown entry never gains
+a fabricated historical range. Stored range follows the account checkpoint.
+
+Frozen adoption verification reuses full-screen-6-15 input/signals,6566 bars/
+1293 selections,final2000 through2026-10-26, parsed SHA256
+b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+V10 matches selected range3 v9 research458.4631387547417%/129 fills exactly.
+No screenshot-account419.65% or current quote reproduction is implied. Original
+raw/source registry backups remain under the existing ignored research data.
+Execution parity artifact: output/range3-v10-execution-parity.json,320 daily
+single/allocation next-open equity points match. No private/paid data committed.
+
+## 2026-11-06 range-exit integration trace provenance
+
+No market fetch/rescreening. Reuse full-screen-6-15 input/signals:6566 bars,
+1293 decisions,final2000 sessions2018-08-09..2026-10-26,parsed SHA256
+b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+Research nikkei-range-exit-integration keeps raw backups/access-time/file/bar/
+implementation/model registry in ignored data/<identity>; processed daily
+native/request/accepted/lineage/episode traces and scalar audit in output/<identity>.
+output/latest.json locates atomic complete5-case manifest. No source archive,
+provider,credential or saved-account changes. Source cutoff does not cover the
+newer browser2006-session account ending2026-11-05; never claim that reproduction.
+
+## 2026-11-06 small-move exit source and episode provenance
+
+No market fetch. Frozen full-screen-6-15 input/signals,6566 bars/1293 decisions;
+final2000 ending2026-10-26. Parsed SHA256
+b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+research/nikkei-small-move-exit keeps raw backups/registry in ignored data/<identity>
+and processed fill/episode/metric/audit ledgers in output/<identity>. Model/source/
+design/code identity separates v8/v9 cycle lag1; latest.json/latest-v9.json locate
+complete manifests. First-entry fee-inclusive cost derives from actual buy;
+extrema from subsequent completed bars, excluding pre-entry same-day high/low.
+Independent audit reconstructs live episode criteria from fills. No raw source
+overwrite, new credential or large tracked dataset.
+
+## 2026-11-06 v9 pre-adoption timing verification
+
+No external fetch. adoption-check/integration tests reuse hash-pinned
+full-screen-6-15 input/signals:2000 evaluated sessions2018-08-09..2026-10-26.
+Parsed source hash remains b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+Independent formula/lag comparisons and account ledgers are atomically saved
+under research/nikkei-context-entry-gates/output/adoption-<identity>, with raw
+input backups and machine-readable source registry. ADOPTION_CHECK.md documents
+why473.38% is ordinary next-open, while the chosen cycle-close configuration is
+445.34%. Archived research options explicitly stay v8 after default adoption.
+
+## 2026-11-06 reduction-cooldown frozen source reuse
+
+No market fetch. Reuse full-screen-6-15/input.json and signals.json,6566 bars/
+1293 frozen decisions; last2000 ending2026-10-26. Parsed source SHA256
+b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+research/nikkei-reduction-cooldown/data/<identity> retains separate raw backups,
+timestamped file/source/bar/implementation registry and atomic progress. Ignored
+output/<identity> contains economic-fill/event ledgers, independent cash audit
+and completed manifest; output/latest.json locates the authoritative run. Source
+archives remain unchanged; no new secrets or private/large tracked data.
+
+## 2026-11-06 context increase-gate study source reuse
+
+No new market fetch. Reuse overlay-stability/data/full-screen-6-15 input/signals,
+parsed SHA256 b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+6566 bars/1293 original decisions, last2000 ending2026-10-26 evaluated. Production
+raw BIAS/SMA differences and causal SMA3 create all features. Raw backups and
+machine-readable access/hash registry in ignored identity-scoped data; per-case
+accepted-state ledgers and summaries in matching output identity directories.
+output/latest.json identifies current complete/incomplete study, not a live quote.
+
+## 2026-11-06 replacement turnover frozen-source reuse
+
+No new market-data fetch. Reuse full-screen-6-15/input.json and signals.json:
+6566 bars,1293 frozen decisions, final2000 sessions ending2026-10-26. Parsed
+source SHA256 b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+Recompute previous winner on the incoming decision's inclusive prefix, not its
+old recommendation date. All incoming cached signals match fresh derivations.
+research/nikkei-switch-turnover/data/<identity>/ retains separate raw JSON,
+source_registry.jsonl with access time/file/bar/source/implementation hashes,
+and atomic signal/policy checkpoints; output/<identity>/ holds derived ledgers,
+summaries and manifest separately. Authoritative run is named in output/latest.json.
+Older draft identity remains preserved but superseded. Inputs/output are ignored;
+no private, large or paid data is newly tracked. Reused historical sample, not a
+new quote or untouched holdout. AQR methodology URL is in DESIGN/TECH_RESEARCH.
+
+## 2026-11-06 weighted BIAS90 source reuse
+
+Weighted cases reuse the exact frozen full-screen-6-15 input/signals and causal
+quantile features documented below. No external data access. run.ts --weighted
+writes separate output/weighted reports,18 pair deltas, source/implementation
+hashes and retained raw backups under ignored data/<identity>. Original reduce
+intent is reconstructed from current accepted controller state/pending requests,
+not future outcomes or a fixed unmodified baseline decision mask.
+
+## 2026-11-06 BIAS90 exit study provenance
+
+No new market fetch. Reuse frozen overlay-stability/full-screen-6-15 input and
+signals:6566 bars,1293 decisions; final2000 sessions ending2026-10-26 evaluated.
+Parsed source SHA256 b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+research/nikkei-bias90-exit/data/<identity> retains raw JSON and a machine-readable
+source registry with access time/file/implementation hashes. Ignored
+output/initial and output/combined contain separate atomic case/summary manifests.
+P90 samples exclude current day and use at most prior3 calendar years of raw
+BIAS; all curves use only causal bars. This is previously examined historical
+data, not a current quote or untouched holdout.
+
+## 2026-11-06 rebound-gate review source reuse
+
+No external market fetch. Reuses research/nikkei-overlay-stability/data/full-screen-6-15
+input/signals:6566 bars,1293 decisions, evaluated final2000 sessions ending
+2026-10-26. Parsed source SHA256 b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+The review runner preserves raw backups, source/implementation identity and
+atomic manifests under ignored research/nikkei-rebound-gate-review/data/output.
+This is the previously studied historical sample, not fresh market validation.
+
+## 2026-11-06 frozen whipsaw-screen source provenance
+
+Read-only local source: research/nikkei-overlay-stability/data/full-screen-6-15/
+input.json and signals.json. Parsed input SHA-256:
+b543028a5db9860a9ac262d8bf65cf6df06f8d625afba728d875ce0d0274873e.
+6566 daily bars and1293 exact frozen signal decisions; last2000 sessions span
+2018-08-09..2026-10-26. Validate barsHash, signal sourceHash and decision-index
+alignment. No network, credential or data-provider call is added. Original
+provider/queue-request provenance remains in the source study's registry.
+
+New local identity03f9e237082fbb376f216f0c6b2a96d1b9e171863b7ff03c2c094780a49b89ad
+under research/nikkei-chop-filter/data contains separate raw JSON backups,
+input/signals file SHA-256, parsed source/bar hashes, access timestamp and
+implementation identity in source_registry.jsonl. Progress is atomic and
+identity-scoped. Raw backups and derived grid/ledgers remain ignored; no large
+or private account data is added to tracked source files.
+
+## 2026-11-05 disagreement-study frozen local input
+
+No new network market request is introduced. Read-only reference:
+C:/Users/Administrator/Desktop/Code/BIAS/data/processed/nikkei225.csv;
+6570 rows, 2000-01-04..2026-10-30, 567209 bytes, SHA-256
+df8c1c139c4b3984299de21d7b4eb33d42b076f7c23c41db63eedd6987bff5bd.
+Exact access timestamps are retained in the bounded machine-readable local
+research/nikkei-context-disagreement/data/source_registry.jsonl. Raw bytes are
+backed up separately from normalized bars under ignored data/. Derived event,
+cohort, policy, chart-reference and summary files stay in ignored output/;
+manifest.json records complete status and eight output SHA-256 values.
+The sample cutoff differs from the live chart; unfinished future horizons
+are censored, not imputed. External BIAS project files remain untouched.
+
+## 2026-11-05 market-context formula and parity reference
+
+Runtime monitoring adds no provider or network endpoint. It derives values
+from existing canonical Nikkei daily MarketSeries and preserves its source,
+price adjustment and close-completion metadata. The external BIAS HTML is a
+formula/reference snapshot, never an imported live feed or account input.
+Read-only parity reference accessed 2026-11-05 Asia/Shanghai:
+C:/Users/Administrator/Desktop/Code/BIAS/data/processed/nikkei225.csv,
+6570 daily observations, 2000-01-04..2026-10-30, SHA-256
+df8c1c139c4b3984299de21d7b4eb33d42b076f7c23c41db63eedd6987bff5bd.
+The external file was left untouched. Local derived verification artifacts are
+output/market-context-oracle.json and output/market-context-validation.json;
+no historical dataset is added to tracked application data.
+
 ## 2026-10-27 RSI first-pullback source reuse
 
 Uses unchanged full-screen-6-15/input.json and signals.json with verified source
@@ -653,3 +899,7 @@ adaptations, and long-only mapping are recorded in the community catalog and
 - `https://www.tradingview.com/script/dbxXeuw2-Indicator-Schaff-Trend-Cycle-STC/`
 - `https://www.tradingview.com/script/uDRS8vr5-Session-Volume-Profile-Open-Source-CantoLab/`
 - `https://www.tradingview.com/script/L1tWQjgR-Anchored-VWAP/`
+
+### Nikkei validation gap recovery
+
+Continue validation requests the existing latest endpoint and falls back to the existing history endpoint when the response lacks the cache or validation anchor. The two responses must overlap and agree on provider and adjustment mode before merging. Explicit refresh can replace the latest two completed primary quotes.

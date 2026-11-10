@@ -1,6 +1,60 @@
 # QuantScope
 
-The default position overlay is now v8: the existing entries plus Entry E
+## Desktop-only application
+
+QuantScope is a desktop-computer application. No mobile application or mobile
+layout is maintained. Desktop charts and sidebars remain side by side; narrow
+windows use the desktop layout with horizontal scrolling. Phone/tablet-specific
+responsive branches have been removed by explicit user request.
+
+## Integrated research, cycle and trend workspaces
+
+The bottom navigation contains Research (`/`), Cycle Validation
+(`/strategy-validation`) and Trend Analysis (`/trend-analysis`). Trend analysis
+is native React/ECharts, using the existing canonical Nikkei daily feed/cache,
+not the standalone HTML's frozen price payload. All displayed context monitors
+and context charts use developing4/12/40-week curves with3-session smoothing
+and3-session unanimous confirmation. Auxiliary panels never change that state.
+
+Trend analysis currently exposes11 retained indicator tabs in one worksheet row. The shared-size worksheet strip occupies a reserved
+control band below the indicator plotting grid and above its date labels;
+only overflowing rows expose horizontal arrows. No curve is covered.
+Start through the existing local launcher or `npm run local:dev`; the local
+market relay remains the existing source dependency. Run `npm test`.
+
+Historical auxiliary inputs are imported explicitly with:
+`node scripts/import-trend-auxiliary.mjs <candidate.json> <jgb-rates.json>`.
+The shared `/api/trend-auxiliary` endpoint exposes versioned inputs and hashes.
+Dates are shown individually; breadth/JGB end2026-10-30,VI2026-11-09 and
+VIX2026-11-05 in this snapshot. This does not silently refresh those sources.
+
+
+The default position overlay is now v11: BIAS20's trailing three-session mean
+declining on at least three consecutive closes blocks holding adds using that
+same completed close. Nikkei cycle close-proxy operations have no extra day
+of delay;flat/rising observations release the restriction at that close.
+Ordinary backtests retain next-open fills using the signal day's gate.
+No SMA20 slope condition is combined. Flat entries,reductions,risk exits and
+range3 protection retain their rules;release never invents a deferred buy.
+Archived v10 retains its original timing and saved-plan identity.
+
+The overlay retains v10: ordinary full exits, including selected
+strategy clears, wait while the post-entry high-low range is below3% of the
+first actual entry cost including buy fees/slippage. Partial reductions and
+native early4%/ATR risk exits retain priority. Pending clears survive and native
+buys can cancel them. Adds retain the range; full flat resets it. Actual execution
+records and bounded serialized range state are shared by both backtest paths
+and cycle reports. Archived v9 remains available.
+
+Archived v9/v10 retain the following original rule: after BIAS20's trailing three-session
+mean declines on at least three consecutive closes, block holding adds on the
+following session. Flat entries, reductions and exits retain their existing
+rules. A flat/rising observation releases the restriction on the next session;
+no deferred buy is invented. Ordinary next-open execution uses its signal-close
+gate; the Nikkei close proxy uses the preceding session's gate. Archived v8
+remains available and retains its original behavior.
+
+The overlay retains the existing entries plus Entry E
 (9% decline, higher low, previous-high breakout, recent RSI7 extreme and recovery),
 and a guarded four-decreasing-high exit when RSI10 <35. Existing buy priority,
 minimum holding period, moving-average protection and hard risk exits remain.
@@ -25,7 +79,7 @@ commodity futures quote proxy at a time. It
 combines filtered asset search,
 dividend/split-adjusted price charts when the selected source supports them,
 technical indicators, strategy backtests, parameter sensitivity diagnostics,
-and staged exhaustive parameter screening in one responsive page. It does not place
+and staged exhaustive parameter screening in one desktop workspace. It does not place
 trades or run unattended jobs.
 
 Nikkei date-gap recovery keeps Yahoo as the primary and only inserts missing,

@@ -97,7 +97,7 @@ test("community catalog is complete and registry-backed", () => {
     ),
     COMMUNITY_INDICATOR_IDS,
   );
-  assert.equal(INDICATORS.length, 40);
+  assert.equal(INDICATORS.length, 42);
   assert.equal(STRATEGIES.length, 55);
 });
 

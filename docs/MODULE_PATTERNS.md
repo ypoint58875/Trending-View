@@ -1,5 +1,218 @@
 # Module Patterns
 
+## Context-area and switch-preference patterns
+
+Visual context areas must call buildContextChartAreas on full-history weekly
+observations,then project onto displayed dates. Do not independently calculate
+regions in each chart or replay only an evaluation slice. Raw backtest/price
+inputs remain authoritative;never substitute another chart's prices. Cycle
+UI keeps a full-history reference for both new and saved reports. MarkArea is
+silent and belongs behind price bars,not to execution/ranking logic.
+
+Boolean preferences use one bounded versioned device-local switch registry.
+Use the reactive snapshot hook for display-only flags;persist entry controls
+with their validated associated parameters. Restore workspace drafts once,
+while explicit saved-plan actions keep precedence. Do not add tab selection or
+running-job state to this registry. Existing indicator preferences remain their
+own established boundary. Local-storage failure keeps a bounded session value
+and emits one non-secret diagnostic rather than blocking the UI.
+
+
+## Desktop worksheet navigation pattern
+
+User explicitly limits this product to desktop computers. Do not add a mobile
+app,phone/tablet layouts or mobile-specific acceptance checks. Preserve desktop
+accessibility and desktop-size adjustments. Current minimum width is1180px;
+narrow windows may scroll horizontally instead of stacking the chart/sidebar.
+
+AppNavigation and IndicatorTabs share worksheet-tabs/worksheet-tab styles:
+flat adjacent tabs,vertical separators and an active green bottom border.
+Use navigation semantics for routes and tab semantics for indicator/view
+selection. New display switches should reuse these components. Overflow arrows
+remain available only when a row exceeds its desktop container. Trend analysis
+reuses the research workspace-grid and panel structure,with a372px monitoring
+sidebar. Keep state calculations and canonical source ownership unchanged.
+
+
+## Integrated context display pattern
+
+Context calculations are pure and shared: state-machine primitives in
+context-replay, weekly feature projection in weekly-market-context, and panel
+metadata/calculation in trend-panels. Keep legacy research APIs explicit; never
+change a trading controller because its indicator name resembles a display.
+All user-facing Chinese remains in app/i18n/zh-CN.ts. New UI tabs reuse
+IndicatorTabs and EChart rather than creating additional chart runtimes.
+
+The root provider is a bounded routing bridge, not another market cache.
+Persistent history remains in existing canonical IndexedDB. Source refresh
+reuses shortcut-refresh; components do not invent their own source ranking.
+Historical auxiliary snapshots keep source hashes and dates, with raw/processed
+separation. A missing external value is null, not a directional vote.
+
+
+## Actual-fill state for versioned holding protection
+
+Keep execution accounting in the ledger; notify the shared holding controller
+after actual unit transitions with fill price/fees, even when trade details are
+omitted. Never infer entry cost from future opens or reset range on adds/partial
+sells. At most one pre-request state and accepted partial amount may survive
+within a daily decision. A full-exit guard must retain already accepted partial
+reductions, native age/recovery, buy cancellation and pending0, while native risk
+exits bypass it. Entry-at-open may observe its completed bar; intrabar/close
+entries exclude unobservable pre-entry extrema. Carried unknown provenance has
+no synthetic range. Serialize fixed-size episode/request state, reject malformed
+or wrong-version context and use full saved-selection replay for upgrades.
+Archive old model options and pin old research before changing defaults.
+
+## Native request versus close-stage exit provenance
+
+For layered exit research capture pre-day, post-original-request, native-close
+and accepted states separately. A final-target veto can undo an earlier accepted
+partial sale; priority-preserving controls retain that partial while blocking
+only extra full liquidation. Classify explicit base-clear separately from a
+necessary base-pending release, controller exit and risk. Probe without pending
+from the same state to avoid treating a redundant old request as causal.
+Keep source/index/selection lineage of active minimum pending requests; original
+increase cancels it even without an economic fill. Duplicate automatic clears
+must not erase still-active base lineage. Never force native holding/MA guards
+off to preserve signal priority. Same-state probes are diagnostics, not accounts.
+Serialize lineage with controller/episode/cash and independently verify state
+chains. Deferred spell price moves are not additive portfolio return attribution.
+
+## Episode-based exit research and concurrent versions
+
+Anchor on actual first economic entry cost. Keep cost/extrema across adds and
+partial sells; clear only on full flat. Initialize extrema at fill price to
+exclude pre-entry entry-day highs/lows. Calculate live criterion before close
+execution from completed bars. Full-exit vetoes restore real account state,
+retain pending0 and preserve native risk priority. Serialize episode with
+controller/cash/planned state; reconstruct independently from fills. On concurrent
+default upgrade, stop on baseline mismatch, pin archived options and repeat
+identical cases in separate current-model identity. Respect cycle lag flags;
+next-open sensitivity is not the ordinary execution model. Preserve concurrent work.
+
+## Next-session rule context without shifting other fills
+
+An added next-session restriction need not change an account's execution engine.
+The v9 holding-add feature derives one causal completed-close flag; ordinary
+next-open callers use their existing signal index, while same-close cycle
+callers explicitly offset only this flag by one session. Do not shift all
+overlay inputs, re-lag ordinary next-open fills, or reinterpret research timing.
+No extra durable state is needed for a flag derived from immutable bar history.
+Version shared behavior, retain explicit archived options, and pin historical
+research imports before changing defaults. Reuse atomic current-rule promotion
+and prior-rule backup instead of mutating saved static plans or adding a schema.
+
+## Actual-sale cooldown research
+
+Arm waits from shared economic sale fills, not strategy names, requests or
+pending reductions. Serialize sale index with accepted controller, cash/units,
+previous target and planned target. Block net increases across original and
+automatic entry/recovery paths; preserve native buy pending-cancellation and
+occupied-day semantics. Restoring a blocked increase must retain real entry age,
+cost and native recovery instead of phantom entries. Risk exits and subsequent
+sales remain active; waits overlap rather than shortening native stop waits.
+Verify every actual buy against its deadline and every clock fill against the
+shared backtester, plus prefixes/resume and independent cash accounting.
+
+## Increase-filter research state preservation
+
+Declining-context gates follow the earlier accepted-account filter pattern:
+process native intent/close, gate only net increases, restore prior accepted
+allocation/entry/risk state while advancing close/request indices. Original
+increase cancellation of pending reductions remains honored. Preserve actual
+flat-window history and holding age. Scope depends on current accepted
+allocation, not baseline labels. Reductions/stops bypass the gate. Check
+entry/add scope, phantom entries, hard-stop state, prefixes and serialized
+resume. Identity-scoped atomic case reports are durable bounded study units.
+
+## Replacement-request research and local provenance
+
+Compare exact strategyCyclePlanKey identities, not winner labels. Evaluate old
+and new plans on the same completed-bar prefix and probe each request from the
+same actual controller checkpoint. Track the source of pending reductions across
+later releases; distinguish observed fill mechanisms from causal PnL claims.
+Gate requests rather than smoothing accepted targets. Preserve original signal
+occupancy on vetoed days, native close/risk processing, and inherited pending
+state. Positive allocation bands must exempt equal-target requests: those can
+cancel pending reductions despite producing no immediate economic fill. Keep
+overlapping future reversal labels diagnostic-only. Research stays isolated from
+application and account persistence; compare complete native baseline state.
+
+## Research decision weights require paired ablation
+
+Weighted BIAS90 research compares contextWeight1 versus0 while preserving every
+other weight, threshold, scope and native priority. Context is an additive point,
+not an implicit mandatory gate. Group EMA7/WMA7 short weakness into one point;
+do not claim remaining price features are independent or calibrated risk odds.
+Native accepted-reduction scope differs from merely queued intent; derive both
+from current modified controller state. Report full/segment performance against
+both ablation and original baseline, excluding no-op candidates from adoption.
+
+## Extra-exit research around production account state
+
+BIAS90 exit research processes native orders/risk first, then applies a declared
+exit or position cap to the accepted controller state. Full exits clear pending,
+recovery, entry and supplemental-hold state; partial caps retain holding age.
+No invented cooldown. Threshold arming is serialized alongside the controller
+and resets on native flat or additional action. To test native guards, probe
+the existing request/release API and restore rejected probes, avoiding stale
+pending orders and duplicated guard formulas. Distinguish net sales from
+entry/add vetoes, and compare future exposure with the action's cap. Require
+baseline state/target identity and all-case causal-prefix/resume checks.
+
+## Isolated fallback research through production checkpoints
+
+The rebound-gate review temporarily sets a flat account's window start to today
+to exclude only native rebound eligibility, restores its real start after native
+processing, and injects a candidate only if native processing leaves it flat
+without an original signal, pending reduction or cooldown. Shared options and
+private feature arrays are never mutated. Native overlapping entries keep
+priority. Require default target AND final-state parity plus causal-prefix and
+serialized-resume checks before interpreting results. This is research-only;
+do not use the adapter as a second production rule implementation.
+
+## Research filters around the accepted production account
+
+For read-only candidate filters, checkpoint the production controller before
+its daily decision. Commit accepted state only. Blocked entries retain real
+entry price/age/flat/recovery state; blocked ordinary reductions retain pending
+targets, while close progress advances. Hard risk exits bypass all delays.
+Never smooth a frozen baseline target path while leaving controller state tied
+to orders that were not executed. Test zero-filter identity, separate hard exits,
+serialized resume and causal prefixes before any parameter grid.
+
+Freeze the candidate menu and selection rules before inspecting results. Audit
+metrics must not enter selection; report qualified choices, failed validation
+leaders and post-hoc full-period leaders separately. Preserve historical bias
+labels even when a recent segment is called an audit.
+
+## Multi-pane registered groups and period-only chart views
+
+An optional registry paneCount expresses grouped fixed studies. Existing
+overlay/one-pane definitions default to zero/one axes. A chart-only
+contextPeriod selects one member of the fixed group; it is not a saved strategy
+parameter or a preference migration. Derive pane axis offsets immutably from
+preceding configured pane counts. Preserve zoom, overlay inputs and scoped
+legends when switching between individual periods and original indicators.
+
+Raw context values are built once with buildRawContextCurves; smoothing uses
+smoothContext for both chart and monitor. Rolling quantiles use raw BIAS and
+a sorted bounded window with a strict earlier-than-current observation set.
+Never use today's raw value to set today's thresholds or backfill warmup.
+
+## Shared chart and monitoring curves
+
+Register fixed context indicators alongside configurable studies. Chart series
+and monitoring must use the same buildContextCurves output; do not separately
+implement smoothing or infer direction from sign. Retain aligned null warmup
+and never round before comparison. replayContextDirections owns reset and
+retained-confirmation semantics. Monitoring filters unfinished bars before
+calculation; charts may display provisional tails. Keep all display copy in
+the locale. Main and lower-pane legends own only their respective axis series. Include
+legend in EChart replaceMerge to remove obsolete pane legends after switching.
+Render monitoring once per canonical instrument, outside every strategy button.
+
 ## Execution markers versus component signals
 
 Use actual portfolio transitions for portfolio trade labels. Core/satellite or
@@ -1018,3 +1231,7 @@ modify candidate scores, rankings, backtests, or validation reports.
   progress bar.
 - Worker market input uses a structure-of-arrays transferable buffer. Result
   messages remain compact; display curves are generated on application.
+
+### Allocation replay checkpoints
+
+Keep execution math in the shared account rebalance function. When adding a resumable projection, capture only the mutable state at the last completed input. Validate its source prefix and effective settings before restoring it. Keep the replay path available for legacy or incompatible records.

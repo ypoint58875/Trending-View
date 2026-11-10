@@ -3,7 +3,7 @@ import test from "node:test";
 import { readValidatedCycles, publishValidatedCycle, appendValidatedCycle,
   subscribeValidatedCycles, saveValidatedCyclePreview, promoteValidatedCycleRules } from "../lib/analysis/validated-cycle-strategy-store";
 import { buildValidatedCyclePreview, cachedValidatedCyclePreview } from "../lib/analysis/validated-cycle-preview";
-import { DEFAULT_POSITION_OVERLAY_OPTIONS, ATR_POSITION_OVERLAY_OPTIONS } from "../lib/analysis/sma-position-overlay";
+import { DEFAULT_POSITION_OVERLAY_OPTIONS, ATR_POSITION_OVERLAY_OPTIONS, BIAS_ADD_POSITION_OVERLAY_OPTIONS, RANGE_POSITION_OVERLAY_OPTIONS } from "../lib/analysis/sma-position-overlay";
 import { createValidatedCycleStrategy, ValidatedCycleError } from "../lib/analysis/validated-cycle-strategy";
 import { buildStrategyCycleRollingSchedule, type StrategyCycleSelectionSnapshot } from "../lib/analysis/strategy-cycle-validation";
 import type { MarketSeries } from "../lib/market/types";
@@ -147,7 +147,34 @@ test("unavailable IndexedDB is an explicit error rather than false success", asy
   await assert.rejects(readValidatedCycles(), (error: unknown) => error instanceof ValidatedCycleError && error.code === "storage");
 });
 
-test("shared rule upgrade is atomic, idempotent, preserves a v7 backup and continues under v8", async () => {
+for (const previousOptions of [BIAS_ADD_POSITION_OVERLAY_OPTIONS, RANGE_POSITION_OVERLAY_OPTIONS]) test(`archived ${previousOptions.model} promotes to same-close v11 with one backup and no duplicate migration`, async () => {
+  const memory = memoryIndexedDB(), oldDatabase = Object.getOwnPropertyDescriptor(globalThis, "indexedDB"), oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: memory.factory });
+  Object.defineProperty(globalThis, "window", { configurable: true, value: new EventTarget() });
+  try {
+    const first = fixture();
+    const legacy = createValidatedCycleStrategy(first.series, first.profile.snapshots, 10, 5,
+      { ...first.profile.settings, positionOverlay: previousOptions });
+    await publishValidatedCycle(legacy);
+    const original = (await readValidatedCycles())[0]!;
+    const preview = buildValidatedCyclePreview(original, DEFAULT_POSITION_OVERLAY_OPTIONS);
+    assert.equal(await promoteValidatedCycleRules(original, DEFAULT_POSITION_OVERLAY_OPTIONS, preview), true);
+    const updated = (await readValidatedCycles())[0]!;
+    assert.equal(updated.settings.positionOverlay?.model, DEFAULT_POSITION_OVERLAY_OPTIONS.model);
+    assert.equal(updated.ruleBackup?.settings.positionOverlay?.model, previousOptions.model);
+    assert.ok(updated.report.checkpoint?.currentOverlay?.rangeEpisode !== undefined);
+    assert.deepEqual(updated.snapshots, original.snapshots); assert.deepEqual(updated.series, original.series);
+    assert.equal(updated.revision, original.revision + 1);
+    assert.equal(await promoteValidatedCycleRules(updated, DEFAULT_POSITION_OVERLAY_OPTIONS,
+      buildValidatedCyclePreview(updated, DEFAULT_POSITION_OVERLAY_OPTIONS)), false);
+    assert.equal((await readValidatedCycles())[0]!.revision, updated.revision);
+  } finally {
+    if (oldDatabase) Object.defineProperty(globalThis, "indexedDB", oldDatabase); else Reflect.deleteProperty(globalThis, "indexedDB");
+    if (oldWindow) Object.defineProperty(globalThis, "window", oldWindow); else Reflect.deleteProperty(globalThis, "window");
+  }
+});
+
+test("shared rule upgrade is atomic, idempotent, preserves a v7 backup and continues under current v11", async () => {
   const memory = memoryIndexedDB();
   const oldDatabase = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
   const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window");

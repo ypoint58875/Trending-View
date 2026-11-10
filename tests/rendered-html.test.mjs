@@ -2,6 +2,27 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+test("three integrated pages share bottom navigation and native trend tabs", async () => {
+  for (const path of ["/", "/strategy-validation", "/trend-analysis"]) {
+    const response = await render(path);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /app-bottom-navigation worksheet-tabs/);
+    assert.doesNotMatch(html, /class="cycle-validation-link"|class="cycle-back-link"/);
+    for (const label of ["研究台", "周期验证", "走势分析"]) assert.ok(html.includes(label));
+    if (path === "/trend-analysis") {
+      assert.match(html, /trend-analysis-layout/);assert.match(html, /trend-monitor-panel/);assert.match(html, /图表显示方式/);
+      assert.match(html, /BIAS4周/);assert.doesNotMatch(html, /role="tab"[^>]*>MACD12\/26\/9/);
+      assert.match(html, /日本10年−2年利差/);assert.doesNotMatch(html, /<iframe/i);
+    }
+  }
+  const styles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const rules = await readFile(new URL("../AGENTS.md", import.meta.url), "utf8");
+  assert.match(rules, /Desktop-only product scope/);
+  assert.doesNotMatch(styles, /@media\s*\(max-width:\s*(?:700|760|820|900|1120)px\)/);
+  assert.match(styles, /min-width:\s*1180px/);
+});
+
 async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
@@ -51,7 +72,13 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(entryGroup, /昨日 ATR14 × 2/);
   assert.match(entryGroup, /EMA7 连续 3 日上升/);
   assert.match(entryGroup, /空仓反弹的低点怎么算/);
-  assert.equal(entryGroup.match(/<li\b/g)?.length, 8);
+  assert.equal(entryGroup.match(/<li\b/g)?.length, 10);
+  assert.match(entryGroup, /3% 区间保护/);
+  assert.match(entryGroup, /含原策略清仓/);
+  assert.match(entryGroup, /BIAS20/);
+  assert.match(entryGroup, /当日禁止持仓加仓/);
+  assert.match(entryGroup, /当日解除限制/);
+  assert.match(entryGroup, /不叠加20日斜率条件/);
   assert.match(entryGroup, /建仓 E/);
   assert.match(entryGroup, /RSI7 曾 ≤ 25/);
   assert.match(entryGroup, /RSI10 &lt; 35/);
@@ -340,10 +367,10 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(workspace, /c\.initialCash[\s\S]*c\.reset[\s\S]*<SmaPositionOverlayControls/);
   assert.match(workspace, /<SmaPositionOverlayControls \/>/);
   assert.doesNotMatch(workspace, /quickScreening|screening-parameter/);
-  assert.match(html, /\u7b56\u7565\u5468\u671f\u9a8c\u8bc1/);
+  assert.match(html, /<strong>周期验证<\/strong>/);
   assert.match(html, /\u65e5\u7ecf\u5b8c\u6574\u65e5\u7ebf\u7b5b\u9009\u4e0e\u5f53\u65e5\u6536\u76d8\u4ef7\u6a21\u62df\u6210\u4ea4/);
   assert.match(html, /\u6bcf\u6b21\u66f4\u65b0\u4e0e\u6536\u76ca\u57fa\u51c6/);
-  assert.match(html, /\u8fd4\u56de\u7814\u7a76\u53f0/);
+  assert.doesNotMatch(html, /class="cycle-back-link"/);
   assert.match(
     workspace,
     /useState<ScreeningObjective>\("totalReturn"\)/,
@@ -351,9 +378,13 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(workspace, /loadStrategyValidationMarketSeries/);
   assert.match(
     workspace,
-    /readCanonicalMarketSeriesEntry\([\s\S]*?cached\?\.series\.bars\.length && !refreshLatest[\s\S]*?completedNikkeiCycleSeries\(cached\.series\)[\s\S]*?fetch\(marketRequestUrl/,
+    /loadWorkspaceMarketSeries\(instrument, signal, refreshLatest\)[\s\S]*?completedNikkeiCycleSeries\(series\)[\s\S]*?validationAnchor/,
   );
-  assert.match(workspace, /writeCanonicalMarketSeries\(series, profile\)/);
+  const sharedLoader = await readFile(new URL("../lib/market/workspace-series.ts", import.meta.url), "utf8");
+  const canonicalRefresh = await readFile(new URL("../lib/market/shortcut-refresh.ts", import.meta.url), "utf8");
+  assert.match(sharedLoader, /readCanonicalMarketSeriesEntry/);
+  assert.match(sharedLoader, /refreshShortcutMarketInstrument/);
+  assert.match(canonicalRefresh, /writeCanonicalMarketSeries/);
   assert.match(workspace, /isNikkeiCycleInstrument\(group\.instrument\)/);
   assert.match(workspace, /rollingSchedule: NIKKEI_CYCLE_MODEL/);
   assert.match(workspace, /conflictPolicy: NIKKEI_CYCLE_CONFLICT_POLICY/);
@@ -364,7 +395,8 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(workspace, /selectedGroup\.instrument,\s*controller\.signal,\s*true/);
   assert.match(workspace, /storedTask\.status !== "completed"/);
   assert.doesNotMatch(workspace, /cycleScreeningInterval/);
-  assert.match(workspace, /buildStrategyCycleRollingReport/);
+  assert.match(workspace, /createValidatedCycleStrategy\([\s\S]*?setRollingReports\(profiles\.map\(\(profile\) => profile\.report\)\)/);
+  assert.match(workspace, /profiles\.map\(\(profile\) => publishValidatedCycle\(profile,/);
   assert.match(workspace, /StrategyCycleRollingChart/);
   assert.match(workspace, /rebalances=\{rollingReport\.rebalances\}/);
   assert.match(workspace, /rollingReports\.map[\s\S]{0,350}setSelectedReportWindow/);
@@ -384,7 +416,7 @@ test("server-renders the strategy cycle validation route", async () => {
   assert.match(workspace, /const maxCombinationStrategies = CYCLE_MAX_COMBINATION_STRATEGIES;/);
   assert.doesNotMatch(workspace, /setMaxCombinationStrategies|c\.maxCombinationStrategies/);
   assert.doesNotMatch(workspace, /cycle-monitoring-settings|c\.calculationHint/);
-  assert.match(workspace, /cycleMonitoringCoverage\(reportBars, rollingReport\.rebalances, monitoringRanges\)/);
+  assert.doesNotMatch(workspace, /cycleMonitoringCoverage|monitoringRanges|MONITORING_STORAGE_KEY|c\.monitoring/);
   assert.match(workspace, /storedTask\.maxCombinationStrategies \?\? CYCLE_MAX_COMBINATION_STRATEGIES\) !== maxCombinationStrategies/);
   assert.match(
     workspace,

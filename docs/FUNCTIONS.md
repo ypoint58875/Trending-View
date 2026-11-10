@@ -1,5 +1,201 @@
 # Function Map
 
+## Shared area projection and switch preferences
+
+buildContextChartAreas(observations,visibleDates) returns bounded,silent-area
+coordinates using a common color registry. It inherits full-history retained
+confirmation,requires ordered dates and leaves dates without source state
+unpainted. All three chart surfaces reuse it.
+
+buildStrategyCycleRollingChartOption accepts optional precomputed areas;
+StrategyCycleRollingChart memoizes full-history weekly states independently
+of rebalance updates. PriceChart renders/hides the same projection through a
+remembered boolean;it does not modify candle or trade data.
+
+parseWorkspaceSwitchPreferences validates version,size,booleans and associated
+entry-filter parameters. Snapshot/subscribe/setContextRegionsPreference/
+setEntrySwitchPreference implement bounded local persistence. The React hook
+uses useSyncExternalStore;the research workspace restores entry drafts once
+and persists only explicit control edits,leaving saved-plan rules authoritative.
+
+
+## 2026-11-10 integrated trend functions
+
+- buildRawWeeklyContext: bounded prior-week buffer, developing weekly means,
+  unsmoothed weekly BIAS and mean differences aligned to daily dates.
+- smoothWeeklyContext/buildWeeklyMarketContext: exact reference summation,
+  daily smooth and shared retained-state replay.
+- completedContextSeries/buildNikkeiContextMonitor: shared close gate followed
+  by weekly-context calculation; no unclosed-tail confirmation.
+- preferWorkspaceSeries/loadWorkspaceMarketSeries: reject shortened/older
+  shared snapshots and reuse canonical cache/shortcut-refresh source policy.
+- buildTrendPanels/alignPriorTrendSeries/weeklyTrendCandles:18 auxiliary panes,
+  lagged signed external inputs, display-only weekly OHLC.
+- WorkspaceMarketProvider/PublishWorkspaceSeries: at most two bounded series
+  shared through the route layout; reload recovery uses existing IndexedDB.
+- IndicatorTabs: overflow-only arrows, selected-tab visibility and observer
+  cleanup. Trend control-card layout reserves space above shifted date labels.
+
+
+## v11 current-close BIAS timing
+
+SmaPositionOverlay.request reads holdingAddBlocked at completedIndex for v11;
+v9/v10 retain holdingAddDecisionLag from execution context. RANGE model/options
+preserve v10 identity and actual-fill range protection. Normalization/registries
+accept all11 models. Cycle current/previous research controllers retain fill
+timing while v11 derives same-close add gates. Existing preview/promotion
+provide atomic v10->v11 replay,backup and idempotence;no new schema or public
+function. Research v10 baselines import RANGE options explicitly.
+
+## v10 range-protected account functions
+
+SmaPositionOverlay.recordExecution(index,previousUnits,units,fillPrice,commission,
+atOpen) observes real entry/flat transitions. beginRangeDay observes only causal
+extrema and captures one pre-request state; request retains accepted partial
+reductions and guards prior-close price orders; close runs native rules before
+ordinary full-exit gating. rangeBlocksExit preserves native early4%/ATR priority;
+retainRangePosition restores actual age/recovery and pending0 without phantom
+entries. checkpoint/restore serialize bounded episode/in-flight partial state,
+rejecting missing/malformed v10 context. Archived BIAS_ADD options preserve v9.
+Allocation/single backtests and both cycle ledgers notify fills even in summary
+mode. Existing dynamic-account preview/promotion performs full versioned replay
+and atomic backup. Public request/close/caller timing signatures retained.
+
+## Range-exit integration research helpers
+
+research/nikkei-range-exit-integration/model.ts replay runs native/no-original/
+no-pending probes from identical accepted checkpoints, classifies full-exit
+origin and applies fixed contracts; pendingLineage tracks active minimum request
+source through cancellation/release. Base-priority preserves accepted original
+partial sells. report.ts diagnose collapses repeat vetoes into deferred spells
+ending on full/risk exit, native-increase cancellation or sample end. run.ts
+verifies previous range paths and actual cycle-report fills, fresh metrics,
+prefixes/resumes and bounded checkpoints; audit.py independently checks cash,
+episode,state chain,original signal precedence and EMA/ATR risk. No public API edits.
+
+## Small-move full-exit research functions
+
+research/nikkei-small-move-exit/model.ts policies declares21 cases; amplitude
+separates cost-distance from accumulated range; replay runs native requests/close,
+bypasses risk, retains protected pending0 and updates actual first-entry cost/
+extrema without resetting on adds. Cursor serializes model/controller/cash/episode.
+run.ts scopes v8/v9 with cycle lag1, verifies native/fill identity and all-case
+prefixes/resumes. audit.py reuses scalar cash primitives and independently
+reconstructs live episode criteria. No production exports changed here.
+
+## v9 BIAS20 holding-add restriction
+
+SmaPositionOverlay feature construction derives strict three-day declines in
+the trailing3 BIAS20 mean. request cancels pending native reductions as before,
+then vetoes increases only while already invested and gated. Constructor's
+holdingAddDecisionLag0/1 distinguishes ordinary next-open from the cycle close
+proxy's next-session restriction. Checkpoint/restore schema is unchanged.
+Archived RSI_SHAPE_POSITION_OVERLAY_OPTIONS retains v8. New adoption tests verify
+independent curve equivalence, lag/release, preserved entry/risk state and exact
+frozen ordinary/cycle paths. See FEATURE_MAP for linked call sites.
+
+## Post-reduction cooldown research functions
+
+research/nikkei-reduction-cooldown/model.ts isCooling defines next-X-session
+boundaries; replay applies accepted-state increase caps, uses shared economic
+fills to arm/reset the clock and serializes controller/cash/clock/plan state;
+validateProgress rejects identity/hash/order mismatches. run.ts measures seven
+fixed cases, audits native/state/fill parity and all-case prefixes/resumes;
+audit.py invokes the previous independent Python cash oracle on local output.
+No production API changes.
+
+## Declining context increase-gate functions
+
+research/nikkei-context-entry-gates/model.ts policies declares190 cases;
+falling/turning distinguish ongoing decline from its onset; Features.blocked
+checks causal consecutive conditions; replay gates only net increases using
+actual allocation scope and restores accepted state. run.ts verifies native
+baseline, prefixes and resume, then checkpoints each case atomically under
+identity; --limit5 exercises study interruption. No production API changes.
+
+## Strategy replacement turnover research functions
+
+research/nikkei-switch-turnover/model.ts: choose applies seven declared policies
+only to actual plan replacements, preserving two-bar sequence rules and no-op
+allocation-band requests; replay probes same-state old/no-request accounts,
+tracks switch-sensitive pending origin and serializes accepted controller state;
+validateProgress rejects wrong identities or reordered policy prefixes. run.ts
+recomputes causal old/new signals, validates all frozen incoming signals, saves
+atomic bounded progress and freshly audits paths/metrics/prefixes/resumes;
+diagnostics labels actual fills, overlapping opposite pairs and closed rounds;
+qualified reads only train/validation metrics. audit.py independently rebuilds
+cash/units ledgers and verifies112 metric groups plus actual fills across all
+seven cases. No production API changes.
+
+## Weighted BIAS90 research extension
+
+weightedPolicies declares37 cases; scoreDecision computes the four grouped
+weights and gates scope/original increase priority. replay uses native pending
+and accepted partial reductions as causal score inputs. run.ts --weighted
+generates paired C1/C0 segment deltas and excludes baseline-identical no-ops
+from qualification. WEIGHTED_RESULTS and README document timing/ablation limits.
+
+## BIAS20 P90 exit research functions
+
+research/nikkei-bias90-exit/model.ts: policies/combinedPolicies declare12/23
+cases; Features reuses production raw curves/smoothing/quantiles; evaluate
+distinguishes speed decline, new turn and negative speed; replay serializes
+arming with the production controller and applies net exit/cap state.
+Native-guards probes request/release and restores rejected probes. run.ts
+verifies baseline state/targets, resume/prefixes, measures account and forward
+price outcomes, and writes bounded atomic reports. No public API additions.
+
+## Rebound gate research functions
+
+research/nikkei-rebound-gate-review/model.ts defines the fixed policy menu,
+Context.ready causal rebound gates and replay over production checkpoints.
+run.ts verifies exact default targets/final state, evaluates nine policies,
+checks causal prefixes/serialized resume and writes bounded atomic artifacts.
+See its README for commands and RESULTS for interpretation; no public API changes.
+
+## Frozen-v8 whipsaw research functions
+
+research/nikkei-chop-filter/model.ts: policies declares153 candidates; Features
+builds causal ER/width-rank/prior-channel observations; replay uses production
+checkpoint/restore to gate ordinary decisions on one inherited account; select
+reads training/validation eligibility only. run.ts validates frozen sources,
+production baseline and contiguous resumable progress, then measures shared
+execution results by time segment. audit.ts freshly recomputes153 targets and
+metrics, zero-filter/state-resume/prefix/risk invariants. report.ts generates
+idempotent diagnostic and cost/missed-up-block tables. No production exports,
+function names or runtime behavior change.
+
+## Context raw series, quantiles and disagreement research
+
+- buildRawContextCurves: aligned raw BIAS percentages and point/session SMA
+ first differences; buildContextCurves applies the original trailing SMA3.
+- buildContextQuantiles: four interpolated raw-value percentiles, previous
+ three calendar years, 252 valid samples, inclusive cutoff/exclusive today.
+- CONTEXT_CHART_TABS and contextPeriod: six individual chart selections;
+ registry paneCount retains correct axes for legacy grouped menu studies.
+- research/nikkei-context-disagreement/study.ts: single-line first departures,
+ multi-count episode/stage identities, censored fixed-horizon outcomes,
+ Wilson descriptive intervals and causal next-open long/cash comparisons.
+- analyze.ts: bounded local CSV snapshot, atomic source/output writes and
+ eight output hashes. verify_reference.py independently checks chart values,
+ single/multiple event identities and six threshold-account cash flows.
+
+## Market context functions
+
+- smoothContext: trailing three valid observations, preserving null gaps.
+- buildContextCurves: bounded 20/60/200 BIAS percent and SMA first differences
+  in points/session, both SMA3 smoothed; positive finite closes required.
+- replayContextDirections: six aligned strictly ordered curves; unanimous
+  adjacent direction, consecutive count, retained confirmed direction/date.
+- buildNikkeiContextMonitor: shared daily Nikkei close gate and latest replay
+  observation. Older dates are complete; only today's/future tail needs the
+  expensive session conversion, preserving the existing close contract.
+- buildPriceChartLegends: main legend plus one axis-scoped lower-pane legend.
+- MarketContextMonitor/contextObservationLabel: dated localized display and
+  emphasized confirmed status without changing the strategy's position.
+  ValidatedCycleShortcuts groups by canonical instrument and renders one
+  independent monitor above all validation-window buttons.
+
 ## Saved shortcut128-session chart focus
 
 openSavedBacktest sets saved-recent and advances savedChartOpenRevision.
@@ -1082,3 +1278,9 @@ separate guidance card.
   `pendingShortcutBatchInstrumentKeys(...)`: validate the bounded durable batch
   checkpoint and return only incomplete canonical shortcut instruments when
   the full screening configuration signature still matches.
+
+### Strategy-cycle continuation
+
+- `reusableCycleTaskSnapshots` checks screening task identity and the saved history prefix before offering completed selections.
+- `buildStrategyCycleRollingReport` can advance an already validated close checkpoint through new daily bars. The validated-cycle module owns compatibility checks and fallback.
+- `rebalanceAllocationAccount` provides the same cash, units, fee and slippage calculation to general allocation backtests and cycle reports.

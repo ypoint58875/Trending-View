@@ -3,6 +3,45 @@ import test from "node:test";
 import { buildStrategyCycleRollingChartOption } from "../app/components/StrategyCycleRollingChart";
 import type { AllocationRebalance } from "../lib/analysis/backtest";
 import type { MarketBar } from "../lib/market/types";
+import { buildContextChartAreas, CONTEXT_AREA_COLORS } from "../lib/analysis/context-chart";
+import { buildWeeklyMarketContext } from "../lib/analysis/weekly-market-context";
+import { VISIBLE_TREND_TABS } from "../lib/analysis/trend-panels";
+import type { ContextObservation } from "../lib/analysis/context-replay";
+
+test("context regions inherit confirmation before the evaluation slice and retain disagreement", () => {
+  const history: ContextObservation[] = bars.map((bar,index) => ({time:bar.time,direction:index===1?"mixed":index<2?"up":"down",consecutive:index<2?3:index-1,confirmed:index<4?"up":"down",confirmedTime:index<4?bars[0].time:bars[4].time}));
+  const regions=buildContextChartAreas(history,bars.slice(1).map(bar=>bar.time));
+  assert.equal(regions[0][0].xAxis,bars[1].time);
+  assert.equal(regions[0][0].itemStyle.color,CONTEXT_AREA_COLORS.up);
+  assert.equal(regions[0][1].xAxis,bars[4].time);
+  assert.equal(regions[1][0].itemStyle.color,CONTEXT_AREA_COLORS.down);
+  assert.deepEqual(buildContextChartAreas(history,["2026-10-01"]),[]);
+  assert.throws(()=>buildContextChartAreas(history,[bars[2].time,bars[1].time]),/Unordered/);
+});
+
+test("full weekly history supplies ready regions at an evaluation start and remains prefix causal", () => {
+  const history: MarketBar[]=Array.from({length:500},(_,index)=>{const timestamp=Date.UTC(2020,0,6+index+Math.floor(index/5)*2),close=10000+10*index+80*Math.sin(index/9);return {...bars[0],timestamp,time:new Date(timestamp).toISOString().slice(0,10),open:close-1,high:close+2,low:close-2,close};});
+  const context=buildWeeklyMarketContext(history).observations;
+  const dates=history.slice(350,450).map(bar=>bar.time),regions=buildContextChartAreas(context,dates);
+  assert.ok(context[350].confirmed);assert.equal(regions[0][0].itemStyle.color,CONTEXT_AREA_COLORS[context[350].confirmed!]);
+  assert.equal(buildWeeklyMarketContext(history.slice(350,450)).observations[0].confirmed,null);
+  const prefix=buildWeeklyMarketContext(history.slice(0,450)).observations;
+  assert.deepEqual(buildContextChartAreas(prefix,dates),regions);
+});
+
+test("adding background regions leaves candles, fills, tooltips and marker positions unchanged", () => {
+  const fills=[trade(bars[1].time,0,1),trade(bars[3].time,1,0)],original=JSON.stringify(fills);
+  const labels={price:"Price",establish:"Establish",increase:"Increase",reduce:"Reduce",clear:"Clear",targetAllocation:"Target",fillPrice:"Fill"};
+  const plain=buildStrategyCycleRollingChartOption(bars,fills,labels);
+  const regions=buildContextChartAreas(bars.map(bar=>({time:bar.time,direction:"up",consecutive:3,confirmed:"up",confirmedTime:bars[0].time})),bars.map(bar=>bar.time));
+  const withRegions=buildStrategyCycleRollingChartOption(bars,fills,labels,regions);
+  const a=plain.series as Array<{data:unknown;markArea?:{data:unknown};tooltip?:{formatter:(value:unknown)=>string}}>,b=withRegions.series as typeof a;
+  assert.deepEqual(a[0].data,b[0].data);assert.deepEqual(JSON.parse(JSON.stringify(a.slice(1))),JSON.parse(JSON.stringify(b.slice(1))));for(let i=1;i<a.length;i++)assert.equal(a[i].tooltip?.formatter({dataIndex:0}),b[i].tooltip?.formatter({dataIndex:0}));assert.deepEqual(plain.dataZoom,withRegions.dataZoom);assert.deepEqual(b[0].markArea?.data,regions);assert.equal(JSON.stringify(fills),original);
+});
+
+test("the requested single trend tab row contains only the retained eleven options", () => {
+  assert.deepEqual([...VISIBLE_TREND_TABS],["six","bias4","bias12","bias40","slope4","slope12","slope40","atr","breadth","vix","spread"]);
+});
 
 const bars: MarketBar[] = Array.from({ length: 5 }, (_, index) => ({
   time: `2026-09-0${index + 1}`,

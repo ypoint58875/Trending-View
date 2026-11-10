@@ -1,5 +1,462 @@
 # Debugging
 
+## Latest worksheet,context and switch recovery
+
+Current trend UI shows11 retained indicators in one worksheet row,using the
+same34px/12px tab style as research. Footer tabs are centered. This supersedes
+the historical two-row miniature-card description below. The strip remains
+within reserved chart-local672..724px space,clear of plots/date labels.
+Desktop-only policy is explicit in AGENTS/README;no mobile acceptance applies.
+
+Cycle backgrounds require contextHistoryBars from the entire completed input
+in BOTH fresh-report and saved-profile display paths. Missing history must not
+silently become a fresh replay starting at evaluationStartTime. Compare the
+first visible area's color with the full weekly observation on that date.
+Areas are visual only;verify marker data/tooltip outputs and returns unchanged.
+
+Switch storage:quantscope.workspace-switches.v1,version1,max4096 characters.
+Reload/route changes restore context visibility and A/B/C enabled/filter drafts.
+New tab choices are intentionally not stored. Malformed state falls back safely;
+blocked/full storage warns once and retains only an in-session value. Clearing
+this exact key resets these preferences but does not delete accounts or cached
+prices. Do not clear whole localStorage or IndexedDB to repair one preference.
+
+Recovery remains whole bounded local recomputation;there is no new worker,
+queue,remote write or long-running job. App and relay lifecycles are unchanged.
+Browser QA used an isolated17-day temporary profile,deleted only that key and
+restored original switch preferences in finally. Screenshots/report are under
+output/cycle-context-*. Existing user data and running jobs were not reset.
+
+
+## Desktop-only worksheet layout
+
+The application now targets desktop computers only. AGENTS.md is the policy
+source;do not reintroduce phone/tablet CSS or mobile-specific QA. Test desktop
+window widths such as1440/1600/1920. Below1180px the desktop canvas may scroll
+horizontally;chart and monitor remain side by side. Historical mobile checks in
+older state entries describe previous versions,not current acceptance scope.
+
+Flat worksheet tabs are shared across footer,PriceChart indicators,trend
+indicators and weekly/close mode. TrendAnalysisWorkspace uses workspace-grid
+with the research-style372px right column. Its indicator control band still
+occupies chart-local672..724px,below the plotting grid and above the date axis.
+Do not move it over a series. Only overflow arrows are conditional.
+
+Removed seven max-width layout branches at700,760,820,900 and1120px. The1800px
+desktop adjustment and reduced-motion accessibility remain. There were no
+Android/iOS/native/PWA mobile application sources to delete. No business logic,
+market adapter,account cache or stored task was removed. Backups and SHA256
+manifest are in output/worksheet-layout-backup-20261110,with .backup suffixes.
+
+
+## Integrated trend page operation and recovery
+
+Open /trend-analysis on the existing local app. The application/market-relay
+ports and launch procedure are unchanged. Three bottom links navigate native
+routes. After refresh/reboot, canonical prices reload from the existing
+IndexedDB and primary refresh continues; the root memory bridge is disposable.
+Cycle jobs/checkpoints retain their existing coordinator/store recovery. Page
+navigation does not reset saved records or deliberately pause a durable job.
+
+Historical auxiliary refresh is explicit: run import-trend-auxiliary with the
+completed candidate and JGB input paths, then rebuild/reload the app. Source
+hash/raw backups are preserved and identical imports do not duplicate ledger
+entries. A partial .tmp is overwritten by a whole bounded rerun. Snapshot API
+metadata/source end dates distinguish missing history from loading failure.
+No per-day queue or new credential is required.
+
+Limits:10000 bars per series,two root references,40 prior weekly closes,
+2000 breadth rows,10000 external rows,16MiB importer input. API snapshot is
+about466KiB. Shared cache/refresh preserves full history, and stale/shortened
+root inputs cannot replace a newer same-instrument series. Browser aborts
+cancel obsolete requests; ResizeObserver/event subscriptions are disposed.
+
+The compact card is at chart-local top672px,below the indicator plot ending
+at665px; the lower date axis is offset62px. The control band is reserved, not
+a cover over the indicator. Overflow arrows occupy reserved right padding;
+rows that fit hide them. If layout changes, verify these bounds at desktop window sizes. New modules pass scoped lint; existing cycle-page set-state-in-
+effect warnings/errors predate this display refactor. Local HTTPS favicon
+console failures are a pre-existing metadata-origin issue, not a chart failure.
+
+Before this change,19 existing files were backed up in
+output/trend-integration-backup-20261110 with a SHA256 manifest. EChart has an
+additional backup. TypeScript backups use .backup suffix to avoid accidental
+compiler inclusion; remove that suffix when selectively restoring. Never
+restore the whole tree over later user work. Existing uncommitted changes
+were preserved; no commit/reset/cleanup or process replacement was performed.
+
+
+## Strict screening-skip audit recovery
+
+Run `npx tsx research/nikkei-screening-skip-audit/run.ts --limit 128`, then
+rerun without the limit to resume. Atomic data/<identity>/progress.json stores
+accepted daily controller/account/plan state, completed decision rows, pending
+days, attempts, time and lastError. Complete identity
+6654c78a46edb5f8250a274da271cddda8fb3aa4657f81072c21a4187c3c2219
+has 2,000 days and 1,293 decisions complete, pending zero. Source/code changes
+create a fresh identity; malformed progress fails explicitly. Crash/cancel/
+reboot/timeout repeats only uncommitted days and has no external side effects.
+
+Run model.test.ts with tsx --test and audit.py with Python. output/latest.json
+locates decision branches, summary and date-classification.csv. The strict
+comparison includes the carried plan, not only full risk/account state. Of
+1,247 same-fill dates, only 157 also preserve every required state after the
+winner is known. This retrospective label cannot be used before computing the
+winner. No rule-only skip is certified. See FINDINGS for overlapping categories,
+valid counterexample limits and exact combined hindsight replay verification.
+Do not clear browser data, cancel optimizer jobs or edit production rules to
+run or recover this local audit. Frozen source ends 2026-10-26.
+
+## Downtrend signal-review recovery and interpretation
+
+Run `npx tsx research/nikkei-downtrend-signal-review/run.ts --limit 16`,then
+rerun without --limit to resume. Atomic data/<identity>/progress.json records
+completed/pending dates,attempts,time and lastError;output/latest.json locates
+complete results. Complete identity1601f4b0768a9c27cdfbad3cd527a56a4f98ca444a116c3dc6aedd9b59255467
+has322/322 extracted dates,pending0. Crash/reboot/timeout/cancellation repeats
+only uncommitted extraction work;code/source changes use a new identity.
+Corrupt state fails explicitly. No network,queue cancellation or browser write.
+
+Run research/model.test.ts plus tests/strategy-cycle-validation.test.ts with
+tsx --test;run research/audit.py with Python. Verify exact production baseline,
+not archived v10:463.09228%/128fills. A discovered sell may remain pending under
+native guards. Check days are not unique signals;checked-day risk fills are not
+necessarily caused by extra requests. Same-state probe fields distinguish them.
+Bearish bodies,close-to-close declines and MA2 trend are separate definitions.
+Current code can skip a bullish-to-bearish body transition during strong-down
+MA2;do not assume a simple sign-flip calendar. Frozen source endsOct26;never
+label this study the current browser-account result. See research/FINDINGS.md.
+
+## v11 same-day holding-add activation
+
+Refresh the existing page;current model suffix is sameclose-v11 and UI states
+same-day holding-add prohibition/release with no SMA20 slope combination.
+Static saved plans intentionally retain v10;dynamic validated accounts upgrade
+through current-rule replay and retain one prior-rule backup. Cancellation or
+storage failure leaves the prior account intact;reopen to retry. Do not clear
+browser data or rescreen providers to repair an interrupted rule replay.
+
+Run npm test;focused suites:same-close-bias-position-policy,range-position-
+policy,bias-add-position-policy,validated-cycle-strategy-store. Frozen actual
+v11 report463.0922799282711%/128 fills matches researched same-close BIAS;
+archived v10 remains458.4631387547417%/129. These are2000 days throughOct26,
+not newer browser-account metrics. Prefix/serialized report recovery and atomic
+v10->v11 backup/idempotence are covered. Live health/validation return200 and
+show same-day strings. Log:output/same-close-bias-v11-npm-test.log.
+
+## Individual/joint same-day gate study recovery
+
+Run research/nikkei-bias-six-sizing/gate-run.ts via npx tsx with --limit2
+(two separate arguments: `--limit 2`),then rerun without the limit. Atomic
+progress/input backups live in data/gates/<identity>,derived case outputs in
+output/gates/<identity>;changed input/implementation gets a fresh identity.
+Complete8/8,pending0,peak132.83MiB for identity
+9d56f7f9ecb3b8ff9651b2cff299e18e729c3ed244d209e6c93644510f0bde4b.
+Use gate-model.test.ts and gate-audit.py to verify no shared-cache leakage,
+native parity,independent masks,all16000 equity observations and all fills.
+If the production-derived feature seam changes,the research must fail;do not
+weaken its shape check or modify the shared feature cache. No gate was adopted.
+
+## BIAS/six-curve sizing research recovery
+
+Run `npx tsx research/nikkei-bias-six-sizing/run.ts --limit 2`, then rerun
+without --limit to resume at a completed case boundary. Pure native replay
+also checks serialized controller/account recovery and causal prefixes.
+Ignored data/<identity>/progress.json records completed/pending counts,status,
+attempts,timestamp,lastError and peakRSS. Inputs and results commit by atomic
+replacement. A changed input or implementation starts a separate identity.
+Never repair results by manually changing saved metrics; preserve failed state
+and reproduce from source. Bound violations stop with an assertion.
+
+Verify with5 focused tests and `python research/nikkei-bias-six-sizing/audit.py`.
+Audit independently checks all30000 daily equities,economic fills,context
+formulas/states and weak-target multipliers. Final completed identity is
+50427ff9eca63478f0b7e9553d612a9498a8384c5519e0984ff31a63f6fc2f34,15/15,
+pending0,peak356.47MiB. Full application log is local research npm-test.log.
+Do not compare frozen458.46% endingOct26 directly with a newer browser account.
+
+## v10 range3 protection, execution provenance and recovery
+
+Current default v10 defers original ordinary full clears below3% post-entry
+range; archived v9 BIAS_ADD options retain the old policy. Do not confuse this
+with research base-clear-priority, which did not improve range3. New range unit
+cost includes buy fee/slippage. Adds and partial sells keep anchor; actual full
+flat resets it. Check actual ledger callbacks, including summary-only paths,
+before diagnosing a missing range. Unknown inherited entry has no invented
+historical range. Actual open entries observe that bar after completion; close/
+intrabar entries do not use earlier extrema. Price orders use completed context.
+
+Missing/malformed v10 range checkpoint must fail rather than silently continue.
+Reopen/refresh to replay frozen saved selections through the existing bounded
+worker and atomic current-rule upgrade; one prior-rule backup remains. Failure,
+cancellation, crash/reboot or revision conflict cannot partially promote settings
+without the report. Successful migration is idempotent; later appends preserve
+range and pending state. No new external jobs, source calls or persistence schema.
+At most one within-day snapshot/partial amount is serialized, cleared at close;
+normal10000-bar/120s worker bounds and resource release remain in force.
+
+Run tests/range-position-policy.test.ts for risk, partial, cost, price-order,
+serialization and frozen458.46% target/fill parity. Frozen research tests skip
+explicitly when their ignored local source fixture is absent; synthetic tests
+always run. Full gate/log: npm test / output/range3-v10-npm-test.log. Initial
+interrupted pass is retained in range3-v10-before-partial-fix.log. Existing
+output/verify-speed-turn.ts needed an explicit Map type to restore the global
+typecheck; no calculation changed. Prior v9 archived studies now pin BIAS_ADD.
+
+## Range-exit integration priority and restart audit
+
+Run npx tsx research/nikkei-range-exit-integration/run.ts --limit 1 then rerun
+without limit; python audit.py independently verifies cash/episodes and10000
+daily signal/priority/risk/state traces. Atomic ordered hashed progress resumes
+completed matching-identity cases, at most one unfinished policy repeats after
+crash/reboot/cancellation. Missing/corrupt/incompatible files fail. Bounds5 serial
+cases,10000 bars,2048 decisions,2000 trace rows/case,16MiB/JSON,1.5GiB RSS.
+Raw and derived outputs remain separate/ignored; no external job or side effect.
+
+If a return changes after preserving original signal priority, compare the
+contract before blaming execution: blanket range3/10 vetoes ordinary original
+clears, whereas base-priority controls exempt explicit/necessary pending clears.
+Capture after-original-request allocation to retain accepted partial sells when
+native close adds a full exit. Probe without pending from identical state to
+diagnose necessary lineage; duplicate controller clears do not remove base
+lineage, but native increases cancel it even without a fill. Never bypass native
+hold7/WMA/SMA guards, early4% age5,ATR or cooldown. Audit real cycle report445.34%
+against all baseline fills, not a next-open or lag0 headline. The frozen source
+endsOct26 and does not reproduce the newer browser account throughNov5.
+
+## Small-move exit recovery and baseline mismatch
+
+Run npx tsx research/nikkei-small-move-exit/run.ts --limit 3, then without limit;
+repeat with --current for separate v9. Atomic hashed cases reuse only matching
+source/design/code/model identity and ordered menu. Complete21/21 manifest follows
+fresh audit. Missing/corrupt/incompatible files fail. Crash/reboot/cancellation
+repeats at most one case, no external effects. Bounds10000 bars,2048 decisions,
+16MiB/JSON,one replay,21 cases/version,1.5GiB RSS. Python audit.py with/without
+--current independently checks cash/episode state.
+
+On baseline change inspect concurrent model adoption before touching source.
+Archived v8 uses explicit RSI_SHAPE_POSITION_OVERLAY_OPTIONS and440.980703%;
+v9 cycle uses lag1/445.342093%, not lag0 diagnostic444.102592%. Preserve concurrent
+work; use separate manifests/reports. Next-open sensitivity reuses lag1 close
+decisions, not ordinary v9 lag0. Entry-day extrema must not precede actual entry;
+adds retain episode, full flat clears. Protected full exits retain pending0;
+partial/risk sales pass. Native4% keeps its original first-five-session coverage.
+
+## v9 BIAS20 add restriction and account recovery
+
+Rule definition: four valid adjacent trailing3 BIAS20 values strictly decreasing
+mean three declines. Third decline confirms at close; restriction is for the
+following session. Flat/rising values release it on the next session. It blocks
+holding adds, not flat entries/reductions/exits, and never queues an automatic buy.
+If a cycle restriction appears early, check constructor lag1; if an ordinary
+next-open restriction appears late, check that its default lag0 was not shifted
+again. All other cycle execution stays at the existing close proxy.
+
+New default is v9; static v8 plans retain archived behavior. Current dynamic
+accounts replay on open using saved original winners and costs, promote only
+after success, and retain one previous-rule backup. Close/reopen after worker
+cancellation or storage conflict; existing atomic/revision checks prevent partial
+upgrades. Derived gate requires no checkpoint schema migration and adds only a
+bounded per-bar feature array. Existing10,000-bar and worker120s limits remain.
+
+Run npx tsx --test tests/bias-add-position-policy.test.ts for local boundaries;
+run research/nikkei-context-entry-gates/adoption-check.ts and its integration
+tests for frozen timing parity. Historical studies must import explicit v8
+options, not the new default. Never label445.34% cycle replay as473.38%.
+
+## Post-reduction cooldown recovery and scope
+
+Run npx tsx research/nikkei-reduction-cooldown/run.ts --limit 2 then rerun without
+limit. Seven hashed policy checkpoints resume in fixed order; missing completed
+case, wrong source/design/code identity, corrupt hash or reordered rows fails.
+Only atomic completed records are reusable. Crash/reboot/cancellation repeats
+at most one case; no external job, network data fetch or stored account write.
+10000 bars,2048 decisions,16MiB/JSON,one live replay,1.5GiB RSS ceiling.
+
+Clock starts on an economic partial/full/risk sale, not pending sell intent.
+The nextX trading sessions are blocked; dayX+1 can buy only from native conditions.
+All reentry sources are covered, including flat and stop recovery. Native risk
+exits pass and waits overlap. Equal-target buy signals can still cancel pending
+sells. If observed buys violate the deadline, check target versus actual cash
+execution; runner verifies both complete fill equality and every buy deadline.
+python research/nikkei-reduction-cooldown/audit.py independently checks112 metric
+groups/economic fills. Main close clock and next-open sensitivity are separate.
+
+## Declining context increase-gate resume and semantics
+
+Run npx tsx research/nikkei-context-entry-gates/run.ts --limit5 then rerun without
+the limit to verify5 completed/185 resumed. Identity-scoped atomic case reports
+store verified target hashes, policy and controller state. Incomplete manifest
+is not success; changed source/code/design starts a new identity. latest.json
+locates current state. Bounds:16MiB files,10,000 bars,2,048 signals,190 serial
+cases,1.5GiB RSS. Hash mismatch must fail, not silently fetch new history.
+
+Speed3 decline onset requires today's value below yesterday AND yesterday at
+least the preceding value. A positive speed can qualify; a negative-speed
+crossing is a different event. Onset gate blocks only that day, ongoing gate
+persists while down. Entry/add scope must use actual accepted allocation.
+Blocked entry cannot create phantom entry age; blocked add cannot reset it.
+Do not queue a rejected buy for automatic execution. Hard stops/reductions must
+retain native recovery/cooldown behavior. Small same-sample qualification gains
+and numerical equality of final500 are not prospective confirmation.
+
+## Strategy replacement turnover research recovery
+
+Run npx tsx research/nikkei-switch-turnover/run.ts --limit 2 for a bounded safe
+stop, then rerun without --limit. Missing frozen sources fail explicitly; no
+network or rescreening fallback. Atomic decisions.json contains a hash-validated
+contiguous prefix and may be ahead of coarse progress.json after interruption.
+Resume those completed decisions, then ordered policy rows. Source/design/code
+changes create a new identity and preserve old state. Incompatible/copied,
+corrupt or reordered checkpoints fail. Never use temporary files as progress.
+output/latest.json identifies the authoritative complete run; superseded draft
+results must not be mixed with current results. Bounds10000 bars,2048 decisions,
+16MiB/JSON,seven policies,one live plan timeline and1.5GiB RSS. Actual stop/resume,
+prefixes, controller serialization and fresh metrics were verified.
+
+Plan changes do not reset inherited allocation. Compare old/new signals on the
+same date; track pending requests into later fills. A small-allocation band must
+not veto an equal-target increase: it can cancel a pending reduction, leading to
+MORE fills if suppressed. Vetoed occupied days retain original signal presence
+so they cannot synthesize fallback buys. Local switch labels and overlapping
+opposite fill pairs do not prove an unnecessary trade or additive avoided loss.
+
+## Weighted BIAS90 study diagnostics
+
+Run npx tsx research/nikkei-bias90-exit/run.ts --weighted for37 bounded cases.
+Output is isolated from initial/combined studies and supports deterministic
+whole-study restart via atomic manifests. Tests serialize both controller and
+arming state. C0 disables only the context point; it does not disable other
+score exits. No-op C0 threshold5 can equal baseline because the remaining
+maximum is4; exclude it from claimed qualifying candidates. Raw/SMA3 are
+alternatives, never simultaneous points. Native-full exits are already complete;
+executed-reduce applies only to a surviving partial position. Preserve original
+increase priority and distinguish local score improvement from original-strategy
+improvement. Next-open full-return gains alone do not establish robustness.
+
+## BIAS90 exit research recovery and interpretation
+
+From repo root run npx tsx research/nikkei-bias90-exit/run.ts, then the same
+command with --combined. Initial12 and combined23 outputs are isolated; raw
+backups retain source/implementation identity. On interruption rerun bounded
+cases deterministically; never treat a running manifest as complete. Input
+hash mismatch, missing source and oversized input must fail explicitly.
+RSS is limited to1.5GiB at case boundaries. Mid-account resume also serializes
+the armed flag; tests verify exact targets/state after restart and prefixes.
+
+Raw speed is a one-session SMA20 difference; SMA3 speed averages those values.
+A positive speed declining does not mean SMA20 declined. Armed memory can
+survive BIAS falling below P90; same-day cases cannot. Native flat resets memory.
+No extra cooldown means fast reentry is expected. Partial caps preserve entry
+age and record blocked adds separately from actual reductions. Forward price
+windows overlap and must not be described as avoided portfolio losses. Declared
+combination screening uses1e-8 percentage-point tolerance for numeric noise.
+
+## Rebound-gate review recovery and historical rule scope
+
+Run npx tsx research/nikkei-rebound-gate-review/run.ts from the repository root.
+On interruption or RSS-limit failure rerun all bounded nine cases; output
+replacement is atomic, input backups retain identities and incomplete manifests are
+not successful runs. Missing frozen inputs or hash mismatch must fail rather
+than silently fetch/replace data. README documents limits and verification.
+If a variant appears to improve an identical final500 path, check floating-point
+noise with1e-8 percentage-point tolerance. Current v8 has only one nonoverlapping
+fallback entry here; do not reuse archived v6 entry counts. WMA14 was the old
+flat-entry gate, current WMA7 replaces it; holding adds were exempt. Adding WMA14
+only to rebound research does not reinstate a global all-increase prohibition.
+
+## Whipsaw research checkpoint and filter interpretation
+
+Run npx tsx research/nikkei-chop-filter/run.ts --limit 2 for a bounded stop;
+rerun without the limit to resume only newly pending configurations. Source/
+design/implementation changes use distinct data identity directories; old
+progress is preserved. Copied incompatible identity or reordered parameter rows
+fail before reuse. A stopped candidate reruns from its initial inherited account;
+only completed153-row prefixes are durable. One candidate is at most2000 bars.
+
+Run audit.ts to recompute all targets and metrics, then report.ts to append
+idempotent diagnostic tables. Atomic writes replace temporary files. Bounds:
+10000 bars,2048 decisions,16MiB/JSON,153 rows,1.5GiB RSS,one process. There are
+no external jobs to reconcile. SIGINT/SIGTERM stops between completed candidates.
+Runtime failures remain visible; prior committed rows stay usable.
+
+ATR price buffer is measured from the first ordinary request, using priorATR14;
+transient/no-op/opposite requests reset the wait. Regime confirmation requires
+consecutive eligible v8 requests, not a synthetic buy created later. Both may
+remove entries entirely. Their lower fill counts must be assessed alongside
+lost upward blocks and return. Risk exits remain immediate. Do not interpret
+lower transaction counts alone as an improved strategy or deploy a failed row.
+
+## Independent context tabs and disagreement-study recovery
+
+BIAS tab series are raw, SMA3 and four percentile lines; SMA-slope tabs have
+raw and SMA3 only. Quantiles are missing before 252 valid earlier raw values.
+That warmup is longer than the monitor's 204-bar direction warmup, especially
+for BIAS200. Bands use earlier three-calendar-year data, not chart-visible bars;
+dragging zoom must not change their historical values. Hover tab controls for
+the quantile policy. Tabs scroll from the first item on narrow screens.
+
+Research recovery: rerun npx tsx research/nikkei-context-disagreement/analyze.ts.
+A running manifest or .tmp file is unfinished state; never trust it as complete.
+The bounded job rebuilds deterministically from the hash-pinned raw CSV, atomically
+replaces each output and commits complete manifest hashes last. Simulated
+interruption with a running manifest and truncated summary temporary file was
+recovered with all eight output hashes unchanged. Independent Python validation
+passed event identities, chart values (1e-7 tolerance), six threshold-policy
+accounts and manifest hashes. Bounds: 10000 rows, 4MiB CSV, 128KiB source registry,
+fixed horizons and at most two event records per input date; no background queue.
+Missing complete future windows are censored. Raw single-flat events are zero
+in this snapshot; do not invent a flat-case estimate from synthetic tests.
+
+## Coordinator concurrency assertion under runner load
+
+The queue integration fixture previously kept running markers for only 500ms.
+A delayed sibling process could start after the first marker disappeared,
+reporting peakRunningChildren=1 even though the coordinator allows two workers.
+The final-run reproduction passed all job-completion assertions and failed only
+the observed peak. The first two fake children now wait for a file acknowledgement
+written only after the parent observes both markers. The wait has a 10-second
+bound; missing acknowledgements fail explicitly. The test retains the exact
+peak=2 assertion, autonomous completion, shared bars, cancellation and result
+checks. No production coordinator/protocol behavior changes. A standalone
+six-test run passed after the fixture fix.
+
+## Six-curve monitor date, warmup and recovery
+
+The monitoring date is the latest completed Nikkei bar, independently of the
+strategy evaluation end. A currently forming bar is excluded even after the
+clock passes close until the provider marks it complete. Data under 204 closed
+bars cannot produce all six daily directions. Refresh canonical history rather
+than resetting the strategy account. A flat component or disagreement resets
+the candidate counter but retains the previous confirmation. One or two opposite
+days do not replace it. Hover the monitor for the exact formulas and rule.
+
+No monitor checkpoint is necessary: its durable progress units are canonical
+closed daily bars in the existing market cache/account record. Reopening after
+cancellation, crash, reboot or network failure deterministically replays the
+available history, with no duplicate writes or trade effects. Cached data may
+be stale; the explicit input date discloses that. Page-closed notification or
+unattended scheduling is not added. Reopen/refresh to catch up after closure.
+The existing visible-page session-aware refresh updates after close.
+
+History is capped at 10000 bars. Computation is O(n), with six aligned output
+arrays and bounded replay rows; there is no queue, growing log or new cache.
+Invalid data and oversized input produce an actionable localized UI diagnostic.
+Verify with npx tsx --test tests/market-context.test.ts and npm test.
+
+## Validated cycle stops after volume becomes available
+
+The 2026-10-31 incident identified 2026-10-27 volume as the first mismatch in a
+completed 1294-selection account. Canonical series may backfill a completed
+bar's zero volume; that is compatible only when date, OHLC and amount match.
+Validated alignment retains the account's original bars, including zero volume,
+for historical replay and continued cycle screening. The chart's canonical
+volume remains enriched. Do not rewrite the ledger or clear tasks to repair it:
+volume-sensitive winners could otherwise change historical signals/returns.
+Continue the existing task after loading the fix. Actual corrections remain
+blocked, with the first date and field now included in the localized error.
+
+
 ## Consecutive clearing arrows without an intervening entry
 
 Check report.rebalances fromAllocation/targetAllocation before assuming duplicate
@@ -808,3 +1265,13 @@ soon as that stage ends. Per-finalist order-fill maps are required through pair
 allocation replay only; checkpoints at later stages strip them because
 three-through-nine-strategy summary evaluation uses close targets, while final
 detailed results rebuild execution from the retained parameters.
+
+## Strategy-cycle checkpoint recovery
+
+Continue validation reuses completed task selections when the previous market input is an exact prefix and screening settings still match. The task stores its SHA-256 input digest and snapshots together in IndexedDB. A task saved before the digest was introduced may require a fresh screening for dates without published selections.
+
+Each published report keeps the latest close checkpoint and up to two preceding closes per window. Matching history, selections, start date and settings allow replay to resume before the first changed bar. Older records and incompatible report inputs use a full replay. An appended session may still need full parameter screening when the cycle schedule calls for a decision. Market prefix validation, schedule construction and indicator preparation may still read historical bars.
+
+Explicit validation refresh accepts revised primary quotes for the newest two completed sessions. Re-screen from the first changed session according to the normal decision calendar. Earlier validated history still uses strict alignment. When the recent request cannot overlap the cached or validation anchor, fetch history and verify the bridge before processing every missing completed session.
+
+A known correction to either of the last two saved sessions can still be repaired after an interruption that spans more sessions. The market refresh itself only replaces the latest two completed primary sessions.

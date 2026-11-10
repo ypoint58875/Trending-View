@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SmaPositionOverlay, CURRENT_POSITION_OVERLAY_MODEL, DEFAULT_POSITION_OVERLAY_OPTIONS,
+import { SmaPositionOverlay, RSI_SHAPE_POSITION_OVERLAY_MODEL as CURRENT_POSITION_OVERLAY_MODEL, RSI_SHAPE_POSITION_OVERLAY_OPTIONS as DEFAULT_POSITION_OVERLAY_OPTIONS,
   ATR_POSITION_OVERLAY_MODEL, ATR_POSITION_OVERLAY_OPTIONS, normalizeSmaPositionOverlay } from "../lib/analysis/sma-position-overlay";
 import { rsi } from "../lib/analysis/indicators";
 import { runAllocationBacktest } from "../lib/analysis/backtest";

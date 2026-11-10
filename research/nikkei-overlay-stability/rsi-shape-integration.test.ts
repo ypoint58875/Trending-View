@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import test from "node:test";
-import { SmaPositionOverlay, DEFAULT_POSITION_OVERLAY_OPTIONS, ATR_POSITION_OVERLAY_OPTIONS } from "../../lib/analysis/sma-position-overlay";
+import { SmaPositionOverlay, RSI_SHAPE_POSITION_OVERLAY_OPTIONS as DEFAULT_POSITION_OVERLAY_OPTIONS, ATR_POSITION_OVERLAY_OPTIONS } from "../../lib/analysis/sma-position-overlay";
 import { buildStrategyCycleRollingReport, runStrategyCycleCloseBacktest, strategyCycleSignalDirection,
   type StrategyCycleRecentSignal, type StrategyCycleSelectionSnapshot } from "../../lib/analysis/strategy-cycle-validation";
 import { runAllocationBacktest, type BacktestSettings } from "../../lib/analysis/backtest";

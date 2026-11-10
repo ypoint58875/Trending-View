@@ -126,10 +126,13 @@ export async function promoteValidatedCycleRules(profile: ValidatedCycleStrategy
   }
 }
 
-export async function publishValidatedCycle(profile: ValidatedCycleStrategy): Promise<void> {
+export async function publishValidatedCycle(profile: ValidatedCycleStrategy, correctionRevision?: number): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const previous = (await readValidatedCycles()).find((record) => record.key === profile.key);
-    const next = previous ? mergeValidatedCycleRepair(previous, profile) : profile;
+    if (correctionRevision !== undefined && previous?.revision !== correctionRevision) {
+      throw new ValidatedCycleError("conflict");
+    }
+    const next = previous ? mergeValidatedCycleRepair(previous, profile, correctionRevision !== undefined) : profile;
     if (next === previous) return;
     try { await commit(next, previous?.revision ?? 0); return; }
     catch (error) {
