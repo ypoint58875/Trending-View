@@ -14,6 +14,8 @@ export interface StrategyCycleRollingChartLabels {
   increase: string;
   reduce: string;
   clear: string;
+  earlyStop?: string;
+  atrShock?: string;
   targetAllocation: string;
   fillPrice: string;
 }
@@ -71,8 +73,10 @@ export function buildStrategyCycleRollingChartOption(
       formatter: (params: unknown) => {
         const index = Number((params as { dataIndex?: number }).dataIndex ?? -1);
         const trade = points[index]?.rebalance;
+        const riskLabel = trade?.riskExitReason === "early-stop" ? labels.earlyStop
+          : trade?.riskExitReason === "atr-shock" ? labels.atrShock : undefined;
         return trade
-          ? `<strong>${name}</strong><br/>${trade.time}<br/>${labels.targetAllocation}: ${Math.round(trade.targetAllocation * 100)}%<br/>${labels.fillPrice}: ${trade.fillPrice.toFixed(2)}`
+          ? `<strong>${riskLabel ?? name}</strong><br/>${trade.time}<br/>${labels.targetAllocation}: ${Math.round(trade.targetAllocation * 100)}%<br/>${labels.fillPrice}: ${trade.fillPrice.toFixed(2)}`
           : name;
       },
     },

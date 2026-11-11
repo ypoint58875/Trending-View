@@ -1010,6 +1010,8 @@ export function StrategyValidationWorkspace() {
                     increase: c.rollingIncrease,
                     reduce: c.rollingReduce,
                     clear: c.rollingClear,
+                    earlyStop: copy.positionOverlay.earlyStop,
+                    atrShock: copy.positionOverlay.atrShock,
                     targetAllocation: c.targetAllocation,
                     fillPrice: c.rollingFillPrice,
                   }}

@@ -80,7 +80,7 @@ test("server-renders the QuantScope research workspace", async () => {
   assert.match(entryGroup, /当日解除限制/);
   assert.match(entryGroup, /不叠加20日斜率条件/);
   assert.match(entryGroup, /建仓 E/);
-  assert.match(entryGroup, /RSI7 曾 ≤ 25/);
+  assert.match(entryGroup, /前 5 日 RSI10 曾 ≤ 25、今日 RSI10 上升/);
   assert.match(entryGroup, /RSI10 &lt; 35/);
   assert.match(entryGroup, /不绕过持有期或均线保护/);
   assert.doesNotMatch(entryGroup, /<input/);

@@ -1,5 +1,94 @@
 # Codex State
 
+## 2026-11-11: v15 uses RSI10 for entry E
+
+Entry E checks the previous five sessions for RSI10 at or below 25
+and compares today's RSI10 with yesterday's. Shape liquidation shares
+the same RSI10 series. Archived v14 preserves the RSI7 entry.
+
+Replaying the saved 1,297 winners through November 11 matched the
+RSI10 lookback research for total return, rebalance count, and all five
+entry E dates. The account finishes at 484.05% net return and a 100%
+target with 129 rebalances. The upgrade retains a v14 rollback copy.
+
+The candle tooltip now shows detected entry conditions while flat and
+detected reduction or liquidation conditions while invested. It lists only
+blockers relevant to those signals. Browser verification showed November 2
+without rule rows and November 11 showing entry E despite skipped screening.
+
+## 2026-11-11: v14 removes the two-session reversal and adds chart diagnostics
+
+The default removes the greater-than-5% rebound from the recent low-open
+entry. Bullish engulfing retains its flat-sell priority and the day-four
+or day-five stop-wait exception. v13 remains available for archived
+plans. The saved 10-day account upgrades with its existing 1,297 winners
+and ends on November 11 flat, with 473.72% net return.
+
+The validated chart tooltip shows one date, open, close, indicators,
+screening result, resolved original signal, target, and satisfied or
+unsatisfied rule checks. The report records each day during its normal
+replay and backfills missing diagnostics through the preview worker. The
+browser verification observed the new tooltip and the v14 shortcut.
+
+The read-only audit found zero missed eligible 4% close stops across 60
+holding episodes. Four positions crossed only intraday, including three
+in their first five sessions. Another first crossed at the close on
+session 25. The October 28 entry exited on its fifth session. The E RSI10 lookback variant returned
+484.05% net, with 92.59% over the final 500 and 36.79% over the final
+250 sessions. Research used the saved decision calendar and production
+RSI7 remains active. Full period tables and cases are in
+`output/v14-stop-rsi-comparison.md`.
+
+## 2026-11-11: v13 hard-risk precedence and flat reversal entry
+
+Default v13 evaluates hard exits before same-close ordinary signals. Risk
+fills record the 4% or ATR reason. Simultaneous signals retain the 4%
+stop's recovery target and wait. The flat reversal entry includes strict
+engulfing or a rebound greater than 5% on session one or two after the
+recent low open, after a decline of at least 5%. A resolved sell can yield
+to the flat reversal entry. Reversal alone can enter on stop-wait days four
+and five. Archived v12 remains available to saved plans and research.
+
+The saved 10-day account's 1,297 winners replay through 2026-11-11 under
+v13 with the existing v12 rollback backup. It stays flat on November 10,
+records a 100% entry at the November 11 close, and labels the November 5
+clear as a 4% stop. A read-only replay verified the result first. The local
+validation page then completed its normal upgrade and displayed v13 at
+100% allocation. See ARCHITECTURE and FEATURE_MAP.
+
+## v12 entry and exit priority matrix
+
+The research-only `priority-study.ts` completes 103 fixed and 103
+holding-dependent calendar replays with exact cached winners. Seven
+economic paths result. Shortening the early-stop wait to zero, one, or two
+sessions lowers net return to 401.23% and raises drawdown to 12.51% versus
+434.03%/8.95% for v12. Qualified E/recovery wait exceptions have no economic
+effect in the frozen sample. Risk-first attribution restores six masked
+ATR reasons without changing fills. Broad pending-clear priority loses
+return. The isolated engulfing gain comes from one 2022 conflict.
+See `research/nikkei-holding-rescreen/PRIORITY_RESULTS.md` for the actual
+November 11 checkpoint, metrics, and reproduction.
+
+## Flat-account rising-candle screening study
+
+Run `node --import tsx research/nikkei-holding-rescreen/flat-rise.ts` to
+compare v12 against full screening on normally skipped flat dates with
+two bullish candles and a higher close. The completed 2,000-session replay
+restored 85 screens. Net return fell from 434.03% to 345.17%, maximum
+drawdown rose from 8.95% to 9.82%, and fills fell from 135 to 131.
+The candle condition identifies 260 possible dates, 78 on the baseline
+flat path. New winners are optimized and checkpointed in isolated jobs,
+then accepted only according to each replay's actual prior-close units.
+The study design, five rebound examples, command and outputs are in
+`research/nikkei-holding-rescreen/FLAT_RISE_RESULTS.md`.
+
+The independent engulfing-priority replay finished all 2,000 sessions
+using exact cached winners with account-dependent eligibility. Moving
+engulfing ahead of reductions or all original signals produced identical
+paths: 460.39% net versus 434.03% for v12, 8.95% drawdown on both, and
+unchanged trailing windows. The only priority conflict was 2022-02-04.
+See `research/nikkei-holding-rescreen/ENGULFING_PRIORITY_RESULTS.md`.
+
 ## 2026-11-11: adopt SMA11-only full-clear confirmation
 
 The user selected default overlay v12. Only ordinary full-clear requests

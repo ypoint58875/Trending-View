@@ -1,4 +1,7 @@
-import { normalizeSmaPositionOverlay, SmaPositionOverlay, type SmaPositionOverlayState } from "./sma-position-overlay";
+import {
+  hasCycleDayDiagnostics, normalizeSmaPositionOverlay, SmaPositionOverlay,
+  type PositionEntryReason, type PositionRiskExitReason, type PositionRuleCheck, type SmaPositionOverlayState,
+} from "./sma-position-overlay";
 import {
   runAllocationBacktest,
   rebalanceAllocationAccount,
@@ -141,6 +144,24 @@ export interface StrategyCycleRollingReport {
   newOnConflictReturn: number;
   checkpoint?: StrategyCycleReportCheckpoint;
   priorCloses?: StrategyCyclePriorClose[];
+  dayDiagnostics?: StrategyCycleDayDiagnostic[];
+  dayDiagnosticsVersion?: number;
+}
+
+export const CYCLE_DAY_DIAGNOSTICS_VERSION = 2;
+
+export interface StrategyCycleDayDiagnostic {
+  time: string;
+  checks: PositionRuleCheck[];
+  winner?: string;
+  signal: "increase" | "reduce" | "neutral" | "none";
+  signalTarget?: number;
+  before: number;
+  target: number;
+  pending: number | null;
+  pendingBefore?: number;
+  entry?: PositionEntryReason;
+  exit?: PositionRiskExitReason;
 }
 
 export function buildStrategyCycleRollingSchedule(
@@ -374,11 +395,14 @@ export function buildStrategyCycleRollingReport(
   ) throw new Error("Rolling cycle screening results are incomplete");
 
   const firstDecisionIndex = ordered[0]!.decisionIndex;
-  const resumeIndex = previousReport?.checkpoint?.version === 1
+  const overlayOptions = normalizeSmaPositionOverlay(settings.positionOverlay);
+  const collectDiagnostics = hasCycleDayDiagnostics(overlayOptions?.model) &&
+    (throughIndex === undefined || previousReport?.dayDiagnostics !== undefined);
+  const resumeIndex = previousReport?.checkpoint?.version === 1 && (!collectDiagnostics ||
+    previousReport.dayDiagnosticsVersion === CYCLE_DAY_DIAGNOSTICS_VERSION && previousReport.dayDiagnostics)
     ? bars.findIndex((bar) => bar.time === previousReport.evaluationEndTime) : -1;
   const saved = resumeIndex >= firstDecisionIndex ? previousReport?.checkpoint : undefined;
   if (saved && resumeIndex === schedule.evaluationEndIndex) return previousReport!;
-  const overlayOptions = normalizeSmaPositionOverlay(settings.positionOverlay);
   // Keep archived v9/v10 gate lag; v11 uses the current completed close internally.
   const overlay = overlayOptions ? new SmaPositionOverlay(bars, overlayOptions, 0, 1) : null;
   const oldOverlay = overlayOptions ? new SmaPositionOverlay(bars, overlayOptions, 0, 1) : null;
@@ -389,6 +413,7 @@ export function buildStrategyCycleRollingReport(
   const previous = saved ? { ...saved.previous } : { cash: initialCash, units: 0 };
   const benchmark = saved ? { ...saved.benchmark } : { cash: initialCash, units: 0 };
   const rebalances = saved ? [...previousReport!.rebalances] : [];
+  const dayDiagnostics = collectDiagnostics ? [...(saved ? previousReport?.dayDiagnostics ?? [] : [])] : undefined;
   const commission = Math.max(settings.commissionRate, 0);
   const slippage = Math.max(settings.slippageRate, 0);
   const trade = (account: AllocationAccountState, index: number, price: number, target: number,
@@ -396,6 +421,10 @@ export function buildStrategyCycleRollingReport(
     const previousUnits = account.units;
     const fill = rebalanceAllocationAccount(account, bars[index]!, price, target, commission, slippage,
       signals, "strategy", recordTrade);
+    if (fill && fill !== true && target === 0) {
+      const risk = overlay?.riskExitReasonAt(atOpen ? index - 1 : index);
+      if (risk) fill.riskExitReason = risk;
+    }
     if (fill) (account === current ? overlay : account === previous ? oldOverlay : null)?.recordExecution(
       index, previousUnits, account.units, price * (account.units > previousUnits ? 1 + slippage : 1 - slippage), commission, atOpen);
     return fill;
@@ -408,7 +437,7 @@ export function buildStrategyCycleRollingReport(
   const applyOverlay = (account: SmaPositionOverlay, signals: readonly StrategyCycleRecentSignal[], index: number) => {
     const direction = strategyCycleSignalDirection(signals);
     if (direction) account.request(direction, signals.at(-1)!.targetAllocation, index);
-    return account.close(index, signals.length > 0);
+    return account.close(index, signals.length > 0, direction === "increase", direction === "reduce");
   };
   let conflictCount = saved ? previousReport!.conflictCount : 0;
   let selectedIndex = saved ? previousReport!.decisionCount - 1 : -1;
@@ -433,6 +462,10 @@ export function buildStrategyCycleRollingReport(
     let oldSignals: AllocationSignalEvent[] = [];
     const priorAllocation = inheritedAllocation;
     const priorOldAllocation = oldInheritedAllocation;
+    const checks = dayDiagnostics ? overlay!.ruleChecksAt(index) : undefined;
+    const pendingBefore = checks && priorAllocation > 1e-10 ? overlay!.checkpoint().pending : null;
+    let diagnosticSignal: StrategyCycleDayDiagnostic["signal"] = "none";
+    let signalTarget: number | undefined;
     const isDecision =
       selectedIndex + 1 < ordered.length &&
       ordered[selectedIndex + 1]!.decisionIndex === index;
@@ -444,6 +477,11 @@ export function buildStrategyCycleRollingReport(
     } else {
       selectedIndex += 1;
       const recentSignals = reportRecentSignals(bars, ordered[selectedIndex]!, index);
+      if (checks) {
+        const direction = strategyCycleSignalDirection(recentSignals);
+        diagnosticSignal = direction ?? (recentSignals.length ? "neutral" : "none");
+        if (direction) signalTarget = recentSignals.at(-1)?.targetAllocation;
+      }
       const previousSignals = selectedIndex > 0
         ? strategyCyclePlanKey(ordered[selectedIndex]!) === strategyCyclePlanKey(ordered[selectedIndex - 1]!)
           ? recentSignals
@@ -457,7 +495,11 @@ export function buildStrategyCycleRollingReport(
       );
       if (overlay) {
         resolved.targetAllocation = applyOverlay(overlay, recentSignals, index);
-        if (!resolved.signals.length) resolved.signals = [resolved.targetAllocation > inheritedAllocation ? "long-entry" : "long-exit"];
+        if (overlay.riskExitReasonAt(index)) resolved.signals = ["long-exit"];
+        else if (!resolved.signals.length || inheritedAllocation <= 1e-10 && resolved.targetAllocation > 1e-10 &&
+          strategyCycleSignalDirection(recentSignals) === "reduce") {
+          resolved.signals = [resolved.targetAllocation > inheritedAllocation ? "long-entry" : "long-exit"];
+        }
       }
       signals = resolved.signals;
       inheritedAllocation = resolved.targetAllocation;
@@ -493,6 +535,17 @@ export function buildStrategyCycleRollingReport(
       trade(previous, index, bar.close, oldInheritedAllocation, oldSignals, false);
       oldPlanned = oldInheritedAllocation;
     }
+    if (dayDiagnostics && checks) {
+      dayDiagnostics.push({
+        time: bar.time, checks,
+        ...(isDecision ? { winner: ordered[selectedIndex]!.label } : {}),
+        signal: diagnosticSignal, ...(signalTarget === undefined ? {} : { signalTarget }),
+        before: priorAllocation, target: inheritedAllocation, pending: overlay!.checkpoint().pending,
+        ...(pendingBefore === null ? {} : { pendingBefore }),
+        ...(overlay!.entryReason ? { entry: overlay!.entryReason } : {}),
+        ...(overlay!.riskExitReasonAt(index) ? { exit: overlay!.riskExitReasonAt(index) } : {}),
+      });
+    }
     if (index >= firstPriorIndex && index < schedule.evaluationEndIndex) {
       priorCloses.push({
         time: bar.time, checkpoint: capture(), rebalanceCount: rebalances.length,
@@ -517,6 +570,7 @@ export function buildStrategyCycleRollingReport(
     newOnConflictReturn: totalReturn(current),
     checkpoint: capture(),
     priorCloses,
+    ...(dayDiagnostics ? { dayDiagnostics, dayDiagnosticsVersion: CYCLE_DAY_DIAGNOSTICS_VERSION } : {}),
   };
 }
 

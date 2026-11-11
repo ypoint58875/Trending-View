@@ -11,6 +11,7 @@ import type {
 } from "echarts";
 import type { MarketBar, MarketInterval, MarketSeries } from "@/lib/market/types";
 import type { BacktestTrade } from "@/lib/analysis/backtest";
+import type { StrategyCycleDayDiagnostic } from "@/lib/analysis/strategy-cycle-validation";
 import {
   buildTradeMarkers,
   type TradeMarker,
@@ -119,6 +120,7 @@ interface PriceChartProps {
   interval: Extract<MarketInterval, "1d" | "1m">;
   trades?: BacktestTrade[];
   tradeMarkers?: TradeMarkers;
+  dayDiagnostics?: readonly StrategyCycleDayDiagnostic[];
   dataKey: string;
   focusRange?: { startTime: string; endTime: string } | null;
   chartType: "candlestick" | "line";
@@ -137,6 +139,8 @@ interface PriceChartProps {
     openPosition: string;
     carryPosition: string;
     closePosition: string;
+    earlyStop?: string;
+    atrShock?: string;
     shortBuy: string;
     shortSell: string;
     increasePosition?: string;
@@ -265,6 +269,121 @@ export function formatPriceChartTooltipValue(value: unknown): string {
     : "—";
 }
 
+interface PriceTooltipItem {
+  axisValue?: string;
+  seriesName?: string;
+  seriesType?: string;
+  value?: unknown;
+}
+
+function candleRuleSummary(day: StrategyCycleDayDiagnostic) {
+  const copy = zhCN.chart.candleTooltip;
+  const checks = new Map(day.checks);
+  const matched: string[] = [];
+  const blocked: string[] = [];
+  const note = (name: string, reasons: string[]) => {
+    matched.push(name);
+    if (reasons.length) blocked.push(`${name}：${reasons.join("、")}`);
+  };
+  const epsilon = 1e-10;
+  if (day.before <= epsilon) {
+    const waiting = checks.get("wait") === false;
+    const wmaBlocked = checks.get("wma-entry") === false;
+    if (day.signal === "increase") {
+      note(copy.strategyBuy, day.target > epsilon ? [] : [
+        ...(waiting ? [copy.blockers.wait] : []),
+        ...(wmaBlocked ? [copy.blockers.wma] : []),
+      ]);
+    }
+    for (const key of ["engulf", "ema-turn", "rebound", "recovery", "shape-e"] as const) {
+      if (!checks.get(key) && day.entry !== key) continue;
+      if (day.entry === key) {
+        note(copy.entry[key], []);
+        continue;
+      }
+      const reasons = [];
+      if (waiting && (key !== "engulf" || !checks.get("engulf-wait"))) reasons.push(copy.blockers.wait);
+      if (wmaBlocked && (key === "ema-turn" || key === "rebound" || key === "shape-e")) reasons.push(copy.blockers.wma);
+      if (checks.get("no-pending") === false && (key === "engulf" || key === "rebound" || key === "shape-e")) {
+        reasons.push(copy.blockers.pending);
+      }
+      if (day.signal !== "none" && (key !== "engulf" || day.signal !== "reduce")) reasons.push(copy.blockers.original);
+      if (!reasons.length && day.entry) reasons.push(copy.blockers.otherEntry);
+      note(copy.entry[key], reasons);
+    }
+    return { matched, blocked, label: copy.entryMatches };
+  }
+
+  if (day.exit === "early-stop" || checks.get("stop-window") && checks.get("stop-loss")) {
+    note(zhCN.positionOverlay.earlyStop, []);
+  }
+  if (day.exit === "atr-shock" || checks.get("atr-shock")) note(zhCN.positionOverlay.atrShock, []);
+  const ordinary = (name: string, target: number, veto?: string) => {
+    const reasons = [];
+    if (!day.exit && day.target > target + epsilon) {
+      if (veto) reasons.push(veto);
+      else {
+        if (checks.get("hold-clear") === false) reasons.push(copy.blockers.hold);
+        if (target <= epsilon) {
+          if (checks.get("slope-clear") === false) reasons.push(copy.blockers.clearSlope);
+          if (checks.get("range-clear") === false) reasons.push(copy.blockers.range);
+        } else if (checks.get("slope-reduce") === false) reasons.push(copy.blockers.reduceSlope);
+      }
+    }
+    note(name, reasons);
+  };
+  const strategyExit = day.signal === "reduce" && day.signalTarget !== undefined && day.signalTarget < day.before - epsilon;
+  if (strategyExit) {
+    const target = day.signalTarget!;
+    ordinary(target <= epsilon ? copy.strategyClear : copy.strategyReduce, target);
+  }
+  const shapeExit = checks.get("shape-exit") === true;
+  if (shapeExit) ordinary(copy.checks["shape-exit"], 0, day.signal === "increase" ? copy.blockers.original : undefined);
+  const pending = day.pendingBefore ?? (!strategyExit && !shapeExit ? day.pending : null);
+  if (pending !== null && pending < day.before - epsilon &&
+    !(strategyExit && day.signalTarget === pending) && !(shapeExit && pending <= epsilon)) {
+    ordinary(pending <= epsilon ? copy.pendingClear : copy.pendingReduce, pending,
+      day.signal === "increase" ? copy.blockers.canceled : undefined);
+  }
+  return { matched, blocked, label: copy.exitMatches };
+}
+
+export function formatCandleTooltip(
+  date: string, bar: Pick<MarketBar, "open" | "close">, items: readonly PriceTooltipItem[],
+  labels: Pick<PriceChartProps["labels"], "close" | "volume">, day?: StrategyCycleDayDiagnostic,
+  hasDiagnostics = false,
+): string {
+  const copy = zhCN.chart.candleTooltip;
+  const escape = (value: string) => value.replace(/[&<>"']/g, character =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
+  const row = (label: string, value: string) => `<div><strong>${escape(label)}</strong> ${escape(value)}</div>`;
+  const rows = [`<div><strong>${escape(date)}</strong></div>`,
+    row(copy.open, formatPriceChartTooltipValue(bar.open)), row(labels.close, formatPriceChartTooltipValue(bar.close))];
+  for (const item of items) {
+    if (!item.seriesName || item.seriesName === labels.volume || item.seriesName === labels.close ||
+      item.seriesType === "candlestick" || item.seriesType === "scatter" || item.value == null) continue;
+    rows.push(row(item.seriesName, formatPriceChartTooltipValue(item.value)));
+  }
+  if (day) {
+    const percent = (allocation: number) => `${Math.round(allocation * 100)}%`;
+    const reason = day.exit === "early-stop" ? zhCN.positionOverlay.earlyStop : day.exit === "atr-shock"
+      ? zhCN.positionOverlay.atrShock : day.entry ? copy.entry[day.entry] : "";
+    const allocation = day.before === day.target ? percent(day.target) : `${percent(day.before)} → ${percent(day.target)}`;
+    rows.push(
+      row(copy.screen, day.winner === undefined ? copy.skipped : `${copy.screened} · ${day.winner}`),
+    );
+    if (day.winner !== undefined || day.signal !== "none") {
+      rows.push(row(copy.signal, `${copy.signals[day.signal]}${day.signalTarget === undefined ? "" : ` · ${percent(day.signalTarget)}`}`));
+    }
+    rows.push(row(copy.outcome, reason ? `${allocation} · ${reason}` : allocation));
+    if (day.before > 1e-10 && day.pending !== null) rows.push(row(copy.pending, percent(day.pending)));
+    const rules = candleRuleSummary(day);
+    if (rules.matched.length) rows.push(row(rules.label, rules.matched.join("、")));
+    if (rules.blocked.length) rows.push(row(copy.blocked, rules.blocked.join("；")));
+  } else if (hasDiagnostics) rows.push(row(copy.screen, copy.noDiagnostic));
+  return rows.join("");
+}
+
 function formatVolumeTooltipValue(value: unknown): string {
   const numericValue = Number(value);
   return Number.isFinite(numericValue)
@@ -276,6 +395,8 @@ interface TradeMarkerLabels {
   openPosition: string;
   carryPosition: string;
   closePosition: string;
+  earlyStop?: string;
+  atrShock?: string;
   rangeExit: string;
   shortBuy: string;
   shortSell: string;
@@ -288,6 +409,9 @@ function allocationMarkerLabel(
   labels: TradeMarkerLabels,
   fallback: string,
 ): string {
+  if (marker.riskExitReason) {
+    return (marker.riskExitReason === "early-stop" ? labels.earlyStop : labels.atrShock) ?? labels.closePosition;
+  }
   const actionLabels = {
     open: labels.openPosition,
     carry: labels.carryPosition,
@@ -1546,6 +1670,7 @@ export function PriceChart({
   interval,
   trades = [],
   tradeMarkers,
+  dayDiagnostics,
   dataKey,
   focusRange,
   chartType,
@@ -1741,6 +1866,8 @@ export function PriceChart({
       );
     }
 
+    const barByAxisTime = new Map(times.map((time, index) => [time, bars[index]!]));
+    const diagnosticsByTime = new Map(dayDiagnostics?.map(day => [day.time, day]));
     const option: EChartsOption = {
       animation: false,
       backgroundColor: "transparent",
@@ -1751,11 +1878,18 @@ export function PriceChart({
       },
       tooltip: {
         trigger: "axis",
+        confine: true,
+        formatter: (params) => {
+          const items: PriceTooltipItem[] = Array.isArray(params) ? params : [params];
+          const axisTime = items[0]?.axisValue;
+          const bar = axisTime === undefined ? undefined : barByAxisTime.get(String(axisTime));
+          return bar ? formatCandleTooltip(String(axisTime), bar, items, labels, diagnosticsByTime.get(bar.time), !!dayDiagnostics) : "";
+        },
         axisPointer: { type: "cross" },
         backgroundColor: "rgba(11,17,15,.96)",
         borderColor: "#33443e",
         textStyle: { color: "#dfe8e4", fontSize: 11 },
-        extraCssText: "box-shadow:0 14px 38px rgba(0,0,0,.35);",
+        extraCssText: "box-shadow:0 14px 38px rgba(0,0,0,.35);max-width:380px;white-space:normal;",
       },
       grid: layout.grids,
       xAxis: layout.xAxes,
@@ -1783,6 +1917,7 @@ export function PriceChart({
     strategyLineLabels,
     strategyParameters,
     tradeMarkers,
+    dayDiagnostics,
     trades,
   ]);
 

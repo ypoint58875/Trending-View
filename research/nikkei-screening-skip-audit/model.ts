@@ -1,4 +1,4 @@
-import { SmaPositionOverlay, SAME_CLOSE_POSITION_OVERLAY_OPTIONS, type SmaPositionOverlayState } from "../../lib/analysis/sma-position-overlay";
+import { SmaPositionOverlay, SAME_CLOSE_POSITION_OVERLAY_OPTIONS, type SmaPositionOverlayState, type SmaPositionOverlayOptions } from "../../lib/analysis/sma-position-overlay";
 import { rebalanceAllocationAccount, type AllocationAccountState, type AllocationRebalance, type BacktestSettings } from "../../lib/analysis/backtest";
 import { strategyCycleSignalDirection, type StrategyCycleRecentSignal } from "../../lib/analysis/strategy-cycle-validation";
 import type { MarketBar } from "../../lib/market/types";
@@ -11,9 +11,10 @@ export interface Outcome { state: State; fills: AllocationRebalance[] }
 export class Stepper {
   private readonly overlay: SmaPositionOverlay;
   constructor(private readonly bars: MarketBar[], private readonly settings: BacktestSettings,
-    configureOverlay?: (overlay: SmaPositionOverlay) => void) {
+    configureOverlay?: (overlay: SmaPositionOverlay) => void,
+    overlayOptions: SmaPositionOverlayOptions = SAME_CLOSE_POSITION_OVERLAY_OPTIONS) {
     if (bars.length > 10_000) throw new Error("Bar bound exceeded");
-    this.overlay = new SmaPositionOverlay(bars, SAME_CLOSE_POSITION_OVERLAY_OPTIONS, 0, 1);
+    this.overlay = new SmaPositionOverlay(bars, overlayOptions, 0, 1);
     configureOverlay?.(this.overlay);
   }
   initial(start: number): State {

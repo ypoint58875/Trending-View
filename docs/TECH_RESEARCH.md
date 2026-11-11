@@ -1,5 +1,26 @@
 # Technical Research
 
+## 2026-11-11 v12 entry and exit precedence
+
+Compared a fully independent priority simulator with bounded probes of
+the existing v12 Stepper. The former can express unrestricted orders but
+would duplicate stop, hold, range, pending, fee, and fill semantics.
+The chosen approach evaluates explicit conflicts against the same native
+checkpoint and isolates the changed decision. A fixed-calendar pass
+exposes the rule mechanism. A second pass recalculates holding-dependent
+screening to capture later eligibility changes. All 103 cases had the
+required cached winners.
+
+TradingView's strategy documentation distinguishes order timing and
+position effects. The study preserves the existing Nikkei completed-close
+proxy. The multiple-testing paper motivates retaining control and
+single-factor outcomes and reporting the chronologically later segment.
+The frozen history has been studied repeatedly. The current November 11
+account is a point-in-time mechanism check with no evaluated future return.
+
+- [TradingView strategy documentation](https://www.tradingview.com/pine-script-docs/concepts/strategies/)
+- [The Probability of Backtest Overfitting](https://escholarship.org/uc/item/4w1110bb)
+
 ## 2026-11-10 bounded parallel holding-rescreen precomputation
 
 User requested higher CPU utilization during the running study. Compare splitting

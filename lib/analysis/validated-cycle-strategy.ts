@@ -150,6 +150,7 @@ function compatibleCycleReport(
     rebalances: report.rebalances.slice(0, earlier.rebalanceCount),
     checkpoint: earlier.checkpoint,
     priorCloses: report.priorCloses?.filter((close) => close.time < earlier.time),
+    ...(report.dayDiagnostics ? { dayDiagnostics: report.dayDiagnostics.filter(day => day.time <= earlier.time) } : {}),
   };
 }
 

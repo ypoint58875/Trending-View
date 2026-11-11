@@ -39,6 +39,8 @@ test("current-rule preview changes signals using the same winners without rewrit
   const upgraded = promoteValidatedCycleProfile(profile, DEFAULT_POSITION_OVERLAY_OPTIONS, preview);
   assert.equal(validatedCycleRulesMatch(upgraded, DEFAULT_POSITION_OVERLAY_OPTIONS), true);
   assert.deepEqual(upgraded.report, preview.report);
+  assert.equal(upgraded.report.dayDiagnostics?.length, 20);
+  assert.equal(upgraded.report.dayDiagnostics?.filter(day => day.winner !== undefined).length, upgraded.report.decisionCount);
   assert.deepEqual(upgraded.ruleBackup?.report, profile.report);
   assert.deepEqual(upgraded.ruleBackup?.settings, profile.settings);
   assert.deepEqual(upgraded.series, profile.series);
@@ -55,6 +57,17 @@ test("current-rule preview changes signals using the same winners without rewrit
   assert.equal(cachedValidatedCyclePreview({ ...profile, settings: { ...profile.settings, commissionRate: 0.2 } }, DEFAULT_POSITION_OVERLAY_OPTIONS), null);
   const controller = new AbortController(); controller.abort();
   await assert.rejects(requestValidatedCyclePreview(profile, DEFAULT_POSITION_OVERLAY_OPTIONS, controller.signal), { name: "AbortError" });
+});
+
+test("backfills missing diagnostics on a current account and retains its previous-rule backup", () => {
+  const profile = fixture();
+  const overlay = DEFAULT_POSITION_OVERLAY_OPTIONS;
+  const upgraded = promoteValidatedCycleProfile(profile, overlay, buildValidatedCyclePreview(profile, overlay));
+  const incomplete = { ...upgraded, report: { ...upgraded.report, dayDiagnostics: undefined } };
+  assert.equal(validatedCycleRulesMatch(incomplete, overlay), false);
+  const repaired = promoteValidatedCycleProfile(incomplete, overlay, buildValidatedCyclePreview(incomplete, overlay));
+  assert.deepEqual(repaired.report, upgraded.report);
+  assert.deepEqual(repaired.ruleBackup, upgraded.ruleBackup);
 });
 
 test("preview workers terminate on completion, cancellation and invalid replies", async () => {

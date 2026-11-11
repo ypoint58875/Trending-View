@@ -44,6 +44,52 @@ versioned snapshot. No extra provider/network fallback or price overwrite is
 introduced. EChart registers MarkArea for original-state background regions.
 
 
+## v15 shared shape RSI
+
+The default overlay uses one RSI10 series for entry E and shape
+liquidation. Entry E requires a reading at or below 25 in the previous
+five completed sessions and today's RSI10 to exceed yesterday's. Today's
+reading can exceed 25. Archived v14 uses RSI7 for entry E and RSI10
+for shape liquidation. The saved cycle preview replays stored winners
+and retains a rollback copy when the model changes.
+
+## v14 reversal rollback and cycle diagnostics
+
+v14 retains the strict bullish engulfing branch and its precedence
+over resolved sells while flat. The day-four/day-five exception applies
+to strict engulfing. The two-session low-open rebound remains specific
+to archived v13.
+
+The current full cycle report records applicable pre-decision checks,
+the screening winner and resolved signal, and the final target and risk
+reason. Eligibility-only partial replays can omit diagnostics. Published
+report updates carry diagnostics through the last stable close and
+regenerate the corrected tail. If an existing account lacks diagnostics,
+the preview worker reconstructs them from stored winners and preserves
+the existing prior-rule backup. The price tooltip reads this ledger and
+uses pre-decision allocation to select entry or exit signals. The second
+diagnostics version also records the pre-decision pending exit so active
+protections can be shown without reporting them on quiet sessions.
+
+## v13 hard-risk and flat reversal precedence
+
+Before same-close ordinary requests, v13 evaluates the position held into
+the decision. The early 4% stop owns simultaneous ATR signals and records
+the pre-request recovery allocation and five-session wait. An ATR-only
+exit has no added trading-day wait or recovery order. Both bypass ordinary
+exit guards. Same-close cycle rebalances and ordinary next-open fills
+retain the risk reason for chart display.
+
+On a previously flat account with no pending reduction, a resolved buy
+retains priority. The reversal entry accepts a resolved sell or no original
+signal. It recognizes the strict bullish engulfing pattern or a close
+strictly more than 5% above the latest lowest open in the current five-bar
+window, one or two sessions after that low. Either requires the low to be
+at least 5% below the highest close in the ten preceding sessions. Reversal
+can enter on stop-wait days four and five and receives the usual
+supplemental hold. Other entries, including E and normal stop recovery,
+require the wait to finish.
+
 ## v12 ordinary full-clear slope gate
 
 The default overlay requires SMA11 daily growth below +0.075% for ordinary

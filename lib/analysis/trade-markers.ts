@@ -5,6 +5,7 @@ import type {
   BacktestOpenPosition,
   BacktestTrade,
 } from "./backtest";
+import type { PositionRiskExitReason } from "./sma-position-overlay";
 
 export interface TradeMarker {
   time: string;
@@ -12,6 +13,7 @@ export interface TradeMarker {
   event: "entry" | "exit" | "range-exit";
   action?: "open" | "carry" | "short-buy" | "short-sell" | "increase" | "reduce" | "close";
   signals?: AllocationSignalEvent[];
+  riskExitReason?: PositionRiskExitReason;
 }
 
 export interface TradeMarkers {
@@ -38,6 +40,7 @@ export function buildTradeMarkers(
       price: trade.exitPrice,
       event: trade.exitReason === "range-end" ? "range-exit" : "exit",
       action: trade.exitReason === "range-end" ? undefined : "close",
+      ...(trade.riskExitReason ? { riskExitReason: trade.riskExitReason } : {}),
     };
 
     markers.buys.push(entry);
@@ -94,6 +97,7 @@ export function buildAllocationTradeMarkers(
             ? rebalance.targetAllocation <= 1e-10 ? "close" : "reduce"
             : rebalance.fromAllocation <= 1e-10 ? "open" : "increase",
       signals: rebalance.signals,
+      ...(rebalance.riskExitReason ? { riskExitReason: rebalance.riskExitReason } : {}),
     };
     if (event === "range-exit") {
       markers.rangeExits.push(marker);

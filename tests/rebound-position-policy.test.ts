@@ -23,7 +23,7 @@ function replay(source: MarketBar[], end = 50, start = 20, options = DEFAULT_POS
 
 test("current defaults are versioned separately and archived v5 remains fixed and parseable", () => {
   assert.notEqual(CURRENT_POSITION_OVERLAY_MODEL, ENGULF_POSITION_OVERLAY_MODEL);
-  assert.equal(POSITION_OVERLAY_MODELS.length, 12);
+  assert.equal(POSITION_OVERLAY_MODELS.length, 15);
   for (const options of [DEFAULT_POSITION_OVERLAY_OPTIONS, ENGULF_POSITION_OVERLAY_OPTIONS]) {
     assert.deepEqual(normalizeSmaPositionOverlay({ ...options, supplementalEntry: false, exitGuard: false, entrySlopeGate: false }), options);
     const plan = { strategyA: { strategyId: "sma-cross", parameters: { fast: 10, slow: 30 } }, strategyB: null,

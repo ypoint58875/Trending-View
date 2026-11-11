@@ -12,7 +12,7 @@ import {
   resolveStrategyOrderFills,
 } from "./strategy-execution";
 import type { StrategyOrderSeries } from "./strategy-orders";
-import { normalizeSmaPositionOverlay, SmaPositionOverlay, type SmaPositionOverlayOptions } from "./sma-position-overlay";
+import { normalizeSmaPositionOverlay, SmaPositionOverlay, type PositionRiskExitReason, type SmaPositionOverlayOptions } from "./sma-position-overlay";
 import {
   applyMovingAverageSlopeEntryFilter,
   cloneMovingAverageSlopeFilter,
@@ -78,6 +78,7 @@ export interface BacktestTrade {
   exitPrice: number;
   returnPercent: number;
   exitReason: "strategy" | "range-end" | "session-end";
+  riskExitReason?: PositionRiskExitReason;
 }
 
 export interface BacktestOpenPosition {
@@ -118,6 +119,7 @@ export interface AllocationRebalance {
   targetAllocation: number;
   fillPrice: number;
   reason: "strategy" | "range-end" | "session-end";
+  riskExitReason?: PositionRiskExitReason;
   signals?: AllocationSignalEvent[];
 }
 
@@ -511,6 +513,7 @@ export function runAllocationBacktest(
     signals: readonly AllocationSignalEvent[],
     reason: AllocationRebalance["reason"] = "strategy",
     atOpen = false,
+    riskExitReason?: PositionRiskExitReason,
   ) => {
     const previousUnits = account.units;
     const trade = rebalanceAllocationAccount(
@@ -520,7 +523,13 @@ export function runAllocationBacktest(
     overlay?.recordExecution(executionIndex, previousUnits, account.units,
       marketPrice * (account.units > previousUnits ? 1 + slippageRate : 1 - slippageRate), commissionRate, atOpen);
     rebalanceCount += 1;
-    if (trade !== true) rebalances.push(trade);
+    if (trade !== true) {
+      if (riskExitReason) {
+        trade.riskExitReason = riskExitReason;
+        trade.signals = ["long-exit"];
+      }
+      rebalances.push(trade);
+    }
   };
 
   for (let index = 0; index < selectedBars.length; index += 1) {
@@ -551,6 +560,7 @@ export function runAllocationBacktest(
             ? [nextAllocation > plannedAllocation ? "long-entry" : "long-exit"]
             : previousTimelineState?.signals ?? [],
           "strategy", true,
+          nextAllocation === 0 ? overlay?.riskExitReasonAt(originalIndex - 1) : undefined,
         );
         plannedAllocation = nextAllocation;
       }
@@ -598,7 +608,8 @@ export function runAllocationBacktest(
       const rawCurrent = currentTimelineState.targetAllocation;
       const changed = Math.abs(rawCurrent - rawPrevious) > 1e-10;
       if (changed && intrabarExecutions.length === 0) overlay.request(rawCurrent > rawPrevious ? "increase" : "reduce", rawCurrent, originalIndex);
-      overlay.close(originalIndex, changed || currentTimelineState.signals.length > 0 || intrabarExecutions.length > 0, intrabarIncrease);
+      overlay.close(originalIndex, changed || currentTimelineState.signals.length > 0 || intrabarExecutions.length > 0,
+        intrabarIncrease, changed && intrabarExecutions.length === 0 && rawCurrent < rawPrevious);
     }
 
     const currentEquity = account.cash + account.units * bar.close;
@@ -807,6 +818,7 @@ export function runBacktestFromTarget(
     marketPrice: number,
     exitTime: string,
     exitReason: BacktestTrade["exitReason"] = "strategy",
+    riskExitReason?: PositionRiskExitReason,
   ) => {
     if (units === 0) return;
     const previousUnits = units;
@@ -832,6 +844,7 @@ export function runBacktestFromTarget(
         exitPrice: fillPrice,
         returnPercent,
         exitReason,
+        ...(riskExitReason ? { riskExitReason } : {}),
       });
     }
     units = 0;
@@ -891,7 +904,9 @@ export function runBacktestFromTarget(
 
     if (overlay && index > 0) {
       if (overlay.allocation > 0 && units === 0) openPosition(bar.open, bar.time, true);
-      else if (overlay.allocation <= 0 && units > 0) closePosition(bar.open, bar.time);
+      else if (overlay.allocation <= 0 && units > 0) {
+        closePosition(bar.open, bar.time, "strategy", overlay.riskExitReasonAt(originalIndex - 1));
+      }
     }
     let hadOrderSignal = false;
     let hadOrderIncrease = false;
@@ -933,7 +948,7 @@ export function runBacktestFromTarget(
       const current = effectiveTarget[originalIndex] ?? 0, previous = effectiveTarget[originalIndex - 1] ?? 0;
       const changed = Math.abs(current - previous) > 1e-10;
       if (changed && (!fullOrders || (!hadOrderSignal && current > previous))) overlay.request(current > previous ? "increase" : "reduce", current > 0 ? 1 : 0, originalIndex);
-      overlay.close(originalIndex, changed || hadOrderSignal, hadOrderIncrease);
+      overlay.close(originalIndex, changed || hadOrderSignal, hadOrderIncrease, changed && !fullOrders && current < previous);
     }
 
     if (intraday && session.isLast && units > 0) {

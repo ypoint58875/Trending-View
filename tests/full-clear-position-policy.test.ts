@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  DEFAULT_POSITION_OVERLAY_OPTIONS, SAME_CLOSE_POSITION_OVERLAY_OPTIONS, SmaPositionOverlay,
+  SMA11_CLEAR_POSITION_OVERLAY_OPTIONS as DEFAULT_POSITION_OVERLAY_OPTIONS, SAME_CLOSE_POSITION_OVERLAY_OPTIONS, SmaPositionOverlay,
 } from "../lib/analysis/sma-position-overlay";
 import type { MarketBar } from "../lib/market/types";
 

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { SmaPositionOverlay, RSI_SHAPE_POSITION_OVERLAY_MODEL as CURRENT_POSITION_OVERLAY_MODEL, RSI_SHAPE_POSITION_OVERLAY_OPTIONS as DEFAULT_POSITION_OVERLAY_OPTIONS,
-  ATR_POSITION_OVERLAY_MODEL, ATR_POSITION_OVERLAY_OPTIONS, normalizeSmaPositionOverlay } from "../lib/analysis/sma-position-overlay";
+  ATR_POSITION_OVERLAY_MODEL, ATR_POSITION_OVERLAY_OPTIONS, normalizeSmaPositionOverlay,
+  DEFAULT_POSITION_OVERLAY_OPTIONS as CURRENT_OPTIONS, RSI7_ENTRY_POSITION_OVERLAY_MODEL } from "../lib/analysis/sma-position-overlay";
 import { rsi } from "../lib/analysis/indicators";
 import { runAllocationBacktest } from "../lib/analysis/backtest";
 import { parseStrategyAllocationPlan } from "../lib/analysis/saved-backtests";
@@ -16,6 +17,22 @@ function bars(closes: number[]): MarketBar[] {
 function entryBars(low = 91, close = 98, tail: number[] = []) {
   return bars([...Array<number>(40).fill(100), 99, 97, 95, 93, 92, low, close, ...tail]);
 }
+
+test("v15 entry E requires an RSI10 oversold reading and v14 replays its RSI7 entry", () => {
+  const closes = [...Array.from({ length: 40 }, (_, i) => 100 + (i - 39) * .5), 98, 96, 94, 92, 90, 96];
+  const source = bars(closes);
+  const i = source.length - 1;
+  const archived = new SmaPositionOverlay(source, { ...CURRENT_OPTIONS, model: RSI7_ENTRY_POSITION_OVERLAY_MODEL });
+  assert.equal(archived.close(i, false), 1);
+  assert.equal(archived.entryReason, "shape-e");
+  assert.equal(new SmaPositionOverlay(source, CURRENT_OPTIONS).close(i, false), 0);
+
+  const eligible = entryBars();
+  assert.ok(rsi(eligible.map(bar => bar.close), 10).at(-1)! > 25);
+  const current = new SmaPositionOverlay(eligible, CURRENT_OPTIONS);
+  assert.equal(current.close(eligible.length - 1, false), 1);
+  assert.equal(current.entryReason, "shape-e");
+});
 function flat(source: MarketBar[], options = DEFAULT_POSITION_OVERLAY_OPTIONS) {
   const account = new SmaPositionOverlay(source, options);
   for (let index = 20; index < 46; index += 1) assert.equal(account.close(index, false), 0);

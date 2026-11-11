@@ -19,6 +19,7 @@ import {
   formatPriceAxisValue,
   formatPriceChartTime,
   formatPriceChartTooltipValue,
+  formatCandleTooltip,
   priceDataZoomWindowForTimeRange,
 } from "../app/components/PriceChart";
 import type { MarketBar } from "../lib/market/types";
@@ -47,6 +48,41 @@ type ZoomEntry = {
   throttle?: number;
   minValueSpan?: number;
 };
+
+test("candle tooltip shows one date and the stored screening and rule outcomes", () => {
+  const time = "2026-08-19";
+  const html = formatCandleTooltip(time, { open: 66_812.8, close: 65_326.4 }, [
+    { seriesName: zhCN.chart.price, seriesType: "candlestick", value: [66_812.8, 65_326.4, 65_134, 66_833.5] },
+    { seriesName: zhCN.chart.volume, seriesType: "bar", value: 180_000_000 },
+    { seriesName: "RSI (7)", seriesType: "line", value: 40.2 },
+  ], zhCN.chart, { time, checks: [["shape-e", true], ["wait", false], ["engulf", false]], winner: "<winner>",
+    signal: "none", before: 0, target: 0, pending: null });
+  assert.equal(html.split(time).length - 1, 1);
+  assert.doesNotMatch(html, /65,134|66,833|180,000,000/);
+  assert.ok(!html.includes(zhCN.chart.volume));
+  assert.match(html, /RSI \(7\).*40\.2/);
+  assert.match(html, /&lt;winner&gt;/);
+  assert.ok(html.includes(zhCN.chart.candleTooltip.entry["shape-e"]));
+  assert.ok(html.includes(zhCN.chart.candleTooltip.blockers.wait));
+  assert.ok(!html.includes(zhCN.chart.candleTooltip.entry.engulf));
+});
+
+test("candle tooltip shows exit blockers only when a held position has a reduction or clear signal", () => {
+  const time = "2026-08-19";
+  const day = { time, checks: [["hold-clear", false], ["slope-reduce", false], ["shape-exit", false],
+    ["range-clear", false]] as const, signal: "none" as const, before: 1, target: 1, pending: null };
+  const checks = day.checks.map(([key, pass]): [typeof key, boolean] => [key, pass]);
+  const quiet = formatCandleTooltip(time, { open: 100, close: 98 }, [], zhCN.chart, { ...day, checks });
+  const copy = zhCN.chart.candleTooltip;
+  assert.ok(!quiet.includes(copy.blocked));
+  assert.ok(!quiet.includes(copy.exitMatches));
+  const partial = formatCandleTooltip(time, { open: 100, close: 98 }, [], zhCN.chart,
+    { ...day, checks, signal: "reduce", signalTarget: .5, pending: .5 });
+  assert.ok(partial.includes(copy.strategyReduce));
+  assert.ok(partial.includes(copy.blockers.hold));
+  assert.ok(partial.includes(copy.blockers.reduceSlope));
+  assert.ok(!partial.includes(copy.blockers.range));
+});
 
 type MarkerSeries = {
   symbol?: string;

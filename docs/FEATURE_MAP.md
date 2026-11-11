@@ -2,6 +2,37 @@
 
 ## Holding-dependent full-screen backtest (complete)
 
+Default v15 shares the RSI10 series between entry E and shape
+liquidation in `sma-position-overlay.ts`. The localized rule copy uses
+the same entry lookback, threshold, and period constants. The existing
+validated-cycle preview upgrades saved v14 accounts with their stored
+winners and retains a v14 rollback copy.
+
+Default v14 removes the two-session reversal extension from
+`sma-position-overlay.ts` and retains v13 in archived plans. The
+validated cycle replay attaches point-in-time rule diagnostics,
+screening winner and signal, and actual target to each evaluated date.
+`validated-cycle-preview.ts` upgrades old or incomplete reports with
+stored winners. `PriceChart.tsx` renders the compact tooltip from this
+report, with labels in `app/i18n/zh-CN.ts`. The tooltip selects entry or
+exit signals using the pre-decision position and shows only detected
+signals and relevant blockers. Tests cover rollback, archived behavior,
+quiet days, and blocker selection.
+
+Default v13 links hard-risk ordering, risk attribution and the flat
+reversal entry in `sma-position-overlay.ts` to close-proxy and next-open
+execution, chart labels and localized rules. Risk reason is optional on
+fills so archived reports still render. The shared validated-cycle upgrade
+uses stored winners and a rollback backup. The v12 research remains pinned
+to its original overlay. Regression coverage lives in
+`tests/risk-reversal-position-policy.test.ts`.
+
+The research-only `priority-study.ts` crosses v12 post-stop eligibility,
+flat-entry precedence, pending-clear handling, and risk attribution.
+It reuses the frozen calendar or recalculates each variant's eligibility
+with exact cached winners. The 103-case comparison and 17 daily traces
+link to `research/nikkei-holding-rescreen/PRIORITY_RESULTS.md`.
+
 The user adopted the SMA11-only ordinary full-clear gate as default overlay
 v12. `sma-position-overlay.ts` preserves archived v11 behavior, both partial
 reduction checks and independent protections. The existing shared-account

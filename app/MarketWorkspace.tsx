@@ -286,6 +286,8 @@ const priceChartLabels = {
   openPosition: copy.chart.open,
   carryPosition: copy.chart.carryPosition,
   closePosition: copy.chart.closePosition,
+  earlyStop: copy.positionOverlay.earlyStop,
+  atrShock: copy.positionOverlay.atrShock,
   shortBuy: copy.chart.shortBuy,
   shortSell: copy.chart.shortSell,
   increasePosition: copy.chart.increasePosition,
@@ -6406,6 +6408,7 @@ export function MarketWorkspace() {
                     : EMPTY_PRICE_CHART_TRADES
                 }
                 tradeMarkers={activeValidated ? buildAllocationTradeMarkers(activeValidated.report.rebalances) : appliedTradeMarkers}
+                dayDiagnostics={activeValidated?.report.dayDiagnostics}
                 dataKey={activeValidated ? `validated:${activeValidated.key}:${validatedChartOpenRevision}` : `${activeInstrument.provider}:${activeInstrument.secid}:${researchInterval}${appliedChartRange.kind === "saved-recent" ? `:shortcut:${savedChartOpenRevision}` : ""}`}
                 focusRange={appliedChartFocusRange}
                 chartType={chartType}
