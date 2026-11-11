@@ -11,7 +11,8 @@ export const ATR_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-eng
 export const RSI_SHAPE_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-v8" as const;
 export const BIAS_ADD_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-bias20s3down3-v9" as const;
 export const RANGE_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-bias20s3down3-range3-v10" as const;
-export const CURRENT_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-bias20s3down3-range3-sameclose-v11" as const;
+export const SAME_CLOSE_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-bias20s3down3-range3-sameclose-v11" as const;
+export const CURRENT_POSITION_OVERLAY_MODEL = "ema7-sma11-wma7-sma20-hold7-stop4-engulf5-rebound4-ema3-atr2-rsi7-shape9-rsi10-bias20s3down3-range3-sameclose-sma11clear-v12" as const;
 export const ORDINARY_EXIT_RANGE_FRACTION = 0.03;
 export const SUPPLEMENTAL_MINIMUM_HOLD_BARS = 7;
 export const EARLY_POSITION_STOP_BARS = 5;
@@ -22,7 +23,8 @@ export const REBOUND_DECLINE_FRACTION = 0.05;
 export const REBOUND_ENTRY_FRACTION = 0.04;
 export const POSITION_OVERLAY_MODELS = [MIXED_POSITION_OVERLAY_MODEL, PREVIOUS_POSITION_OVERLAY_MODEL,
   HOLD5_POSITION_OVERLAY_MODEL, FIXED_HOLD5_POSITION_OVERLAY_MODEL, ENGULF_POSITION_OVERLAY_MODEL, REBOUND_POSITION_OVERLAY_MODEL,
-  ATR_POSITION_OVERLAY_MODEL, RSI_SHAPE_POSITION_OVERLAY_MODEL, BIAS_ADD_POSITION_OVERLAY_MODEL, RANGE_POSITION_OVERLAY_MODEL, CURRENT_POSITION_OVERLAY_MODEL] as const;
+  ATR_POSITION_OVERLAY_MODEL, RSI_SHAPE_POSITION_OVERLAY_MODEL, BIAS_ADD_POSITION_OVERLAY_MODEL, RANGE_POSITION_OVERLAY_MODEL,
+  SAME_CLOSE_POSITION_OVERLAY_MODEL, CURRENT_POSITION_OVERLAY_MODEL] as const;
 
 export interface SmaPositionOverlayOptions {
   model?: (typeof POSITION_OVERLAY_MODELS)[number];
@@ -52,12 +54,19 @@ export const BIAS_ADD_POSITION_OVERLAY_OPTIONS: Readonly<SmaPositionOverlayOptio
 export const RANGE_POSITION_OVERLAY_OPTIONS: Readonly<SmaPositionOverlayOptions> = Object.freeze({
   ...DEFAULT_POSITION_OVERLAY_OPTIONS, model: RANGE_POSITION_OVERLAY_MODEL,
 });
+export const SAME_CLOSE_POSITION_OVERLAY_OPTIONS: Readonly<SmaPositionOverlayOptions> = Object.freeze({
+  ...DEFAULT_POSITION_OVERLAY_OPTIONS, model: SAME_CLOSE_POSITION_OVERLAY_MODEL,
+});
+
+function hasSameCloseBias(model: SmaPositionOverlayOptions["model"]): boolean {
+  return model === CURRENT_POSITION_OVERLAY_MODEL || model === SAME_CLOSE_POSITION_OVERLAY_MODEL;
+}
 
 function hasReboundEntry(model: SmaPositionOverlayOptions["model"]): boolean {
-  return model === CURRENT_POSITION_OVERLAY_MODEL || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL || model === ATR_POSITION_OVERLAY_MODEL || model === REBOUND_POSITION_OVERLAY_MODEL;
+  return hasSameCloseBias(model) || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL || model === ATR_POSITION_OVERLAY_MODEL || model === REBOUND_POSITION_OVERLAY_MODEL;
 }
 function hasAtrExit(model: SmaPositionOverlayOptions["model"]): boolean {
-  return model === CURRENT_POSITION_OVERLAY_MODEL || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL || model === ATR_POSITION_OVERLAY_MODEL;
+  return hasSameCloseBias(model) || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL || model === ATR_POSITION_OVERLAY_MODEL;
 }
 
 function isFixedPolicy(model: SmaPositionOverlayOptions["model"]): boolean {
@@ -75,7 +84,7 @@ export function normalizeSmaPositionOverlay(value?: SmaPositionOverlayOptions | 
 }
 
 interface Features {
-  turns: boolean[]; protected: boolean[]; entryAllowed: boolean[];
+  turns: boolean[]; protected: boolean[]; fullClearProtected?: boolean[]; entryAllowed: boolean[];
   policy?: { closes: number[]; supplementalAllowed: boolean[]; wmaNegative: boolean[]; recoveryAllowed: boolean[];
     reversalEntry: boolean[]; reboundAllowed: boolean[]; shockExit: boolean[];
     shapeEntry: boolean[]; shapeExit: boolean[]; holdingAddBlocked: boolean[] };
@@ -94,19 +103,21 @@ function features(bars: MarketBar[], model?: SmaPositionOverlayOptions["model"])
       turns: entry.map((value, i) => value != null && entry[i - 1] != null && entry[i - 2] != null &&
         value > entry[i - 1]! && entry[i - 1]! <= entry[i - 2]!),
       protected: exit.map((value, i) => value != null && exit[i - 1] != null && exit[i - 1]! > 0 && value / exit[i - 1]! - 1 > (current ? 0.00075 : 0.00125)),
+      fullClearProtected: model === CURRENT_POSITION_OVERLAY_MODEL ? exit.map((value, i) =>
+        value == null || exit[i - 1] == null || exit[i - 1]! <= 0 || 100 * (value / exit[i - 1]! - 1) >= 0.075) : undefined,
       entryAllowed: gate.map((value, i) => value != null && gate[i - 1] != null && value >= gate[i - 1]!),
     };
     if (isFixedPolicy(model)) {
       const average20 = sma(closes, 20);
       const volatility = hasAtrExit(model) ? atr(bars, 14) : [];
-      const shapePolicy = model === CURRENT_POSITION_OVERLAY_MODEL || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL;
+      const shapePolicy = hasSameCloseBias(model) || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL || model === RSI_SHAPE_POSITION_OVERLAY_MODEL;
       const bias20 = average20.map((value, index) => value === null ? null : (closes[index]! / value - 1) * 100);
       const smoothBias20 = bias20.map((value, index) => value === null || bias20[index - 1] == null || bias20[index - 2] == null
         ? null : (bias20[index - 2]! + bias20[index - 1]! + value) / 3);
       const entryStrength = shapePolicy ? rsi(closes, 7) : [];
       const exitStrength = shapePolicy ? rsi(closes, 10) : [];
       result.policy = { closes,
-        holdingAddBlocked: smoothBias20.map((value, index) => (model === CURRENT_POSITION_OVERLAY_MODEL || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL) && value !== null &&
+        holdingAddBlocked: smoothBias20.map((value, index) => (hasSameCloseBias(model) || model === RANGE_POSITION_OVERLAY_MODEL || model === BIAS_ADD_POSITION_OVERLAY_MODEL) && value !== null &&
           smoothBias20[index - 1] != null && smoothBias20[index - 2] != null && smoothBias20[index - 3] != null &&
           value < smoothBias20[index - 1]! && smoothBias20[index - 1]! < smoothBias20[index - 2]! &&
           smoothBias20[index - 2]! < smoothBias20[index - 3]!),
@@ -278,7 +289,7 @@ export class SmaPositionOverlay {
     this.rangePartialAllocation = state.rangePartialAllocation ?? null;
   }
 
-  private get rangeEnabled(): boolean { return this.options.model === CURRENT_POSITION_OVERLAY_MODEL || this.options.model === RANGE_POSITION_OVERLAY_MODEL; }
+  private get rangeEnabled(): boolean { return hasSameCloseBias(this.options.model) || this.options.model === RANGE_POSITION_OVERLAY_MODEL; }
 
   /** Execution callers provide real fills; adds/partial sells never reset an episode. */
   recordExecution(index: number, previousUnits: number, units: number, fillPrice: number, commission: number, atOpen = false): void {
@@ -341,7 +352,7 @@ export class SmaPositionOverlay {
       this.pending = null;
       if (this.fixedPolicy && this.allocation <= 1e-10 && completedIndex < this.blockedUntil) return this.allocation;
       const holdingAddBlocked = this.allocation > 1e-10 &&
-        this.features.policy?.holdingAddBlocked[completedIndex - (this.options.model === CURRENT_POSITION_OVERLAY_MODEL ? 0 : this.holdingAddDecisionLag)] === true;
+        this.features.policy?.holdingAddBlocked[completedIndex - (hasSameCloseBias(this.options.model) ? 0 : this.holdingAddDecisionLag)] === true;
       if (!holdingAddBlocked && (this.allocation > 1e-10 || this.entryAllowed(completedIndex))) this.allocation = Math.max(this.allocation, target);
     } else if (target < this.allocation - 1e-10) {
       this.pending = Math.min(this.pending ?? this.allocation, target);
@@ -354,8 +365,11 @@ export class SmaPositionOverlay {
   private release(completedIndex: number): number {
     const holdProtected = (this.options.model === HOLD5_POSITION_OVERLAY_MODEL || this.fixedPolicy) && this.lastSupplement !== null &&
       completedIndex - this.lastSupplement < this.minimumHoldBars;
-    const trendProtected = this.fixedPolicy && this.wmaNegative[completedIndex] !== true;
-    if (this.pending !== null && !holdProtected && !trendProtected && !(this.options.exitGuard && this.features.protected[completedIndex])) {
+    const smaOnlyClear = this.features.fullClearProtected !== undefined && this.pending !== null && this.pending <= 1e-10;
+    const trendProtected = !smaOnlyClear && this.fixedPolicy && this.wmaNegative[completedIndex] !== true;
+    const slopeProtected = this.options.exitGuard && (smaOnlyClear
+      ? this.features.fullClearProtected![completedIndex] !== false : this.features.protected[completedIndex]);
+    if (this.pending !== null && !holdProtected && !trendProtected && !slopeProtected) {
       this.allocation = Math.min(this.allocation, this.pending);
       this.pending = null;
     }

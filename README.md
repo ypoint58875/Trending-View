@@ -29,7 +29,13 @@ Dates are shown individually; breadth/JGB end2026-10-30,VI2026-11-09 and
 VIX2026-11-05 in this snapshot. This does not silently refresh those sources.
 
 
-The default position overlay is now v11: BIAS20's trailing three-session mean
+The default position overlay is now v12. Ordinary full clears pass the
+moving-average check when SMA11 daily growth is below 0.075%, regardless of
+WMA7. Partial reductions retain both prior checks, and the supplemental hold,
+3% range and risk exits remain unchanged. Saved v11 plans remain readable
+with their original behavior.
+
+v12 retains v11's same-close BIAS gate: BIAS20's trailing three-session mean
 declining on at least three consecutive closes blocks holding adds using that
 same completed close. Nikkei cycle close-proxy operations have no extra day
 of delay;flat/rising observations release the restriction at that close.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {existsSync,readFileSync} from "node:fs";
 import test from "node:test";
-import {SmaPositionOverlay,DEFAULT_POSITION_OVERLAY_OPTIONS,RANGE_POSITION_OVERLAY_OPTIONS,normalizeSmaPositionOverlay} from "../lib/analysis/sma-position-overlay";
+import {SmaPositionOverlay,SAME_CLOSE_POSITION_OVERLAY_OPTIONS as DEFAULT_POSITION_OVERLAY_OPTIONS,RANGE_POSITION_OVERLAY_OPTIONS,normalizeSmaPositionOverlay} from "../lib/analysis/sma-position-overlay";
 import {buildContextCurves} from "../lib/analysis/market-context";
 import {buildCheckpointIdentity} from "../lib/analysis/screening-worker-client";
 import {parseStrategyAllocationPlan} from "../lib/analysis/saved-backtests";

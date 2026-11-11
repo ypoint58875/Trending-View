@@ -1,5 +1,89 @@
 # Feature Map
 
+## Holding-dependent full-screen backtest (complete)
+
+The user adopted the SMA11-only ordinary full-clear gate as default overlay
+v12. `sma-position-overlay.ts` preserves archived v11 behavior, both partial
+reduction checks and independent protections. The existing shared-account
+upgrade replays saved winners and retains a rollback backup; it does not
+re-screen historical dates. Locale copy and full-clear tests cover v12.
+
+`exit-timing.ts --slope` uses the research-only `clear-slope.ts` hook to
+compare 24 full-clear slope gates. Partial reductions and other native guards
+are preserved. `audit-clear-slope.py` checks the 26 replays, metrics and
+control ledgers in `exit-slope`. No production rule changed.
+
+The same research runner also supports `--delay` and `--candle`. Fixed delays
+and candle/close-dependent submission use the native exit policy, a bounded
+one-to-three-session wait, and cached point-in-time screening results.
+
+Research-only supplemental exit timing: `exit-timing.ts` compares same-close,
+next-close acceleration and strict next-close confirmation. The research
+Stepper allows a forced close without changing the production overlay. Only
+full-clear signals from newly screened holding dates qualify. The five
+replays use cached point-in-time winners and export full/500/250-session
+metrics and daily fills under `exit-timing`. No policy was adopted.
+
+The cycle validation workspace now adopts the audited policy. Its regular
+calendar remains the batchable minimum; `selectHoldingCycleWinners` in
+`lib/analysis/strategy-cycle-validation.ts` resolves extra bearish dates
+using actual units from the preceding close for each window. The workspace
+persists completed winners through the existing task store, and
+`validated-cycle-strategy.ts` replays the accepted calendar. Published dates
+remain frozen and the Chinese status copy describes the holding exception.
+Tests cover first-candle screening, clearing, cached winners and frozen dates.
+
+`research/nikkei-holding-rescreen/plot-divergences.py` adds a local chart album
+with one vertically stacked comparison per contiguous target divergence and
+a trailing 500/250-session return table. It reads completed artifacts only
+and verifies date/target alignment and the existing 500-session summary.
+
+All 2,000 sessions passed the independent audit. The study reused 1,293
+original winners and added 149 full screens. The rescreen returned 408.63%
+vs 463.09% for baseline, with 15.64% vs 10.88% maximum drawdown. Five same-state
+target changes include one direct clear and four canceled pending clears.
+The full paths differ on 32 target dates. `RESULTS.md` and the outputs indexed
+by `output/latest.json` contain the report, attribution, and charts. The notes
+below record interim checkpoints; no production policy was adopted.
+
+CPU expansion:prefetch.ts/prefetch-pool.ts and tests add5independent future-date
+children beside the existing main child (6total on8logical CPUs). Main run.ts
+and its model/source identity are unchanged.32candidate lookahead,free-memory
+reserve,RSS bounds,exact-request publication and main-directory priority preserve
+chronological actual-holding eligibility. Some flat dates may be precomputed but
+are never accepted. Existing jobs/progress remain. Runtime sample:CPU80%,5extra
+children1.7GiB,no errors;66committed days/3extra accepted winners audited. The
+background launcher starts this sidecar on later resumes. See research README,
+MODULE_PATTERNS,TECH_RESEARCH,DATA_PIPELINE,CACHE_POLICY and CODEX_STATE.
+
+Latest continuation identity9e9fc2eb97a74df1c0d049848007af3ab03220378168ecefe210c433b17dd8c6;
+65days/two extra winners committed at handoff. A source-verified one-time report
+initialization migration preserved completed optimizer work. Three study/report
+tests (plus21cycle tests) pass,including complete zero-difference report/plot
+self-comparison and exact reproduction of the existing carried-only diagnostic.
+User requested detailed post-completion attribution;report.ts/plot.py now cover
+same-state new/old/no-screen comparisons,first divergence,additive daily/monthly/
+annual/500-session contributions,dominant months and standalone charts. Active
+30-minute app heartbeat follows this chat quietly until completion/failure;
+then verifies and analyzes real outputs and pauses. No new production policy.
+
+User confirmed restoring complete new-winner screening on normally skipped
+downtrend bearish candles when the alternative account actually holds units.
+research/nikkei-holding-rescreen/model,run,model.test and README link the gate,
+full production optimizer,original-winner reuse,continuous v11 account,atomic
+daily progress and isolated child checkpoints. Original calendar and strong-up
+skips stay;flat accounts keep original filtering. No application/account policy
+adoption. Fresh npm test passes513unit/build/5HTML,plus23focused checks,typecheck
+and scoped lint. Original optimizer winner parity passes;Python independently
+verifies the committed partial prefix. Full computation and final production
+parity/performance remain pending;output/latest.json is the live status source.
+report.ts and audit.py verify causal eligibility,fee/slippage account arithmetic
+and same-state extra-screen exit attribution. run-background.ps1 continues the
+durable job and runs both reports/audits;no service or scheduler is installed.
+TECH_RESEARCH,DATA_SOURCES,DATA_PIPELINE,CACHE_POLICY and CODEX_STATE document
+the incremental choice,local frozen source,recovery and retention boundaries.
+
+
 ## Confirmed holding-bearish current-strategy backtest
 
 User-selected scope reuses research/nikkei-downtrend-signal-review holding-

@@ -35,3 +35,18 @@ test("serialized states and repeated counterfactual probes cannot contaminate th
   assert.equal(JSON.stringify(before), saved);
   assert.equal(compare(first, first).fullEqual, true);
 });
+
+test("research override clears a guarded position once at the completed close", () => {
+  const stepper = new Stepper(bars, settings), before = stepper.initial(20);
+  before.overlay.allocation = 1; before.overlay.previousCloseAllocation = 1;
+  before.target = 1; before.planned = 1;
+  before.account = { cash: 0, units: 500 };
+  const signals = [{ direction: "reduce" as const, targetAllocation: 0, signals: [] }];
+  assert.equal(stepper.step(before, 20, signals).state.overlay.pending, 0);
+  const forced = stepper.step(before, 20, signals, null, true);
+  assert.equal(forced.state.account.units, 0);
+  assert.equal(forced.state.overlay.pending, null);
+  assert.equal(forced.fills.length, 1);
+  assert.equal(forced.fills[0].fillPrice, bars[20].close * (1 - settings.slippageRate));
+  assert.equal(stepper.step(forced.state, 21, []).fills.length, 0);
+});

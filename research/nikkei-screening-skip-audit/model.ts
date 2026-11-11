@@ -1,4 +1,4 @@
-import { SmaPositionOverlay, DEFAULT_POSITION_OVERLAY_OPTIONS, type SmaPositionOverlayState } from "../../lib/analysis/sma-position-overlay";
+import { SmaPositionOverlay, SAME_CLOSE_POSITION_OVERLAY_OPTIONS, type SmaPositionOverlayState } from "../../lib/analysis/sma-position-overlay";
 import { rebalanceAllocationAccount, type AllocationAccountState, type AllocationRebalance, type BacktestSettings } from "../../lib/analysis/backtest";
 import { strategyCycleSignalDirection, type StrategyCycleRecentSignal } from "../../lib/analysis/strategy-cycle-validation";
 import type { MarketBar } from "../../lib/market/types";
@@ -10,21 +10,30 @@ export interface State {
 export interface Outcome { state: State; fills: AllocationRebalance[] }
 export class Stepper {
   private readonly overlay: SmaPositionOverlay;
-  constructor(private readonly bars: MarketBar[], private readonly settings: BacktestSettings) {
+  constructor(private readonly bars: MarketBar[], private readonly settings: BacktestSettings,
+    configureOverlay?: (overlay: SmaPositionOverlay) => void) {
     if (bars.length > 10_000) throw new Error("Bar bound exceeded");
-    this.overlay = new SmaPositionOverlay(bars, DEFAULT_POSITION_OVERLAY_OPTIONS, 0, 1);
+    this.overlay = new SmaPositionOverlay(bars, SAME_CLOSE_POSITION_OVERLAY_OPTIONS, 0, 1);
+    configureOverlay?.(this.overlay);
   }
   initial(start: number): State {
     return { index: start - 1, overlay: this.overlay.checkpoint(),
       account: { cash: this.settings.initialCash, units: 0 }, target: 0, planned: 0, planKey: null };
   }
-  step(before: State, index: number, signals: readonly StrategyCycleRecentSignal[], planKey = before.planKey): Outcome {
+  step(before: State, index: number, signals: readonly StrategyCycleRecentSignal[], planKey = before.planKey,
+    forceClear = false): Outcome {
     if (index !== before.index + 1 || !this.bars[index]) throw new Error("Noncontiguous step");
     this.overlay.restore(before.overlay);
     const account = { ...before.account }, fills: AllocationRebalance[] = [];
     const direction = strategyCycleSignalDirection(signals);
     if (direction) this.overlay.request(direction, signals.at(-1)!.targetAllocation, index);
-    const target = this.overlay.close(index, signals.length > 0);
+    let target = this.overlay.close(index, signals.length > 0);
+    // Research override: keep native risk exits, but bypass sell guards for this close.
+    if (forceClear && before.account.units > 1e-10 && target > 1e-10) {
+      this.overlay.restore({ ...this.overlay.checkpoint(), allocation: 0, previousCloseAllocation: 0,
+        pending: null, lastSupplement: null, entryIndex: null, entryClose: 0, recoveryTarget: null, flatStart: index });
+      target = 0;
+    }
     const trade = (price: number, allocation: number, atOpen: boolean) => {
       const old = account.units;
       const fill = rebalanceAllocationAccount(account, this.bars[index], price, allocation,

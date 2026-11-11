@@ -4,6 +4,7 @@ import type { MarketBar, MarketSeries } from "../market/types";
 import type { ValidatedCyclePreview } from "./validated-cycle-preview";
 import {
   buildStrategyCycleRollingReport,
+  buildStrategyCycleRollingSchedule,
   completedNikkeiCycleSeries,
   NIKKEI_CYCLE_MODEL,
   NIKKEI_CYCLE_CONFLICT_POLICY,
@@ -173,7 +174,13 @@ export function createValidatedCycleStrategy(series: MarketSeries, snapshots: St
   const selected = snapshots.filter((snapshot) => snapshot.screeningWindow === window)
     .sort((left, right) => left.decisionIndex - right.decisionIndex);
   const startTime = series.bars[series.bars.length - sessions]?.time ?? "";
-  const report = buildStrategyCycleRollingReport(series.bars, selected, sessions, window, settings, undefined,
+  const schedule = buildStrategyCycleRollingSchedule(series.bars, sessions, window);
+  const calendar = selected.map((snapshot) => snapshot.decisionIndex);
+  const selectedDates = new Set(calendar);
+  if (!schedule || schedule.decisionIndexes.some((index) => !selectedDates.has(index))) {
+    throw new Error("Rolling cycle screening results are incomplete");
+  }
+  const report = buildStrategyCycleRollingReport(series.bars, selected, sessions, window, settings, calendar,
     compatibleCycleReport(previous, series, selected, startTime, settings));
   return structuredClone({ key: validatedCycleKey(series, window), version: 1,
     model: NIKKEI_CYCLE_MODEL, conflictPolicy: NIKKEI_CYCLE_CONFLICT_POLICY, revision: 0,

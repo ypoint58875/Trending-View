@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { replaceFileAtomically } from "../../scripts/atomic-file";
 import { buildStrategyCycleRollingReport, buildStrategyCycleRollingSchedule, strategyCyclePlanKey,
   type StrategyCycleSelectionSnapshot, type StrategyCycleRecentSignal } from "../../lib/analysis/strategy-cycle-validation";
-import { DEFAULT_POSITION_OVERLAY_OPTIONS } from "../../lib/analysis/sma-position-overlay";
+import { SAME_CLOSE_POSITION_OVERLAY_OPTIONS as DEFAULT_POSITION_OVERLAY_OPTIONS } from "../../lib/analysis/sma-position-overlay";
 import type { BacktestSettings, AllocationRebalance } from "../../lib/analysis/backtest";
 import type { MarketBar } from "../../lib/market/types";
 import { compare, Stepper, WITNESSES, type State, type Outcome } from "./model";

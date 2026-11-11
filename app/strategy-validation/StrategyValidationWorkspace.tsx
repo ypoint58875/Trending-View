@@ -35,6 +35,8 @@ import {
   barsAvailableAtCycleDecision,
   buildCycleScreeningWindows,
   buildStrategyCycleRollingSchedule,
+  isHoldingCycleRescreenCandidate,
+  selectHoldingCycleWinners,
   type StrategyCycleRollingReport,
   type StrategyCycleSelectionSnapshot,
 } from "@/lib/analysis/strategy-cycle-validation";
@@ -542,7 +544,7 @@ export function StrategyValidationWorkspace() {
         screeningWindows.at(-1)!,
       );
       if (!schedule) throw new Error(c.insufficientHistory);
-      const optimizationUnits = schedule.optimizationUnits * screeningWindows.length;
+      let optimizationUnits = schedule.optimizationUnits * screeningWindows.length;
       const signature = signatureForSessions(runEvaluationSessions);
       if (storedTask && storedTask.signature !== signature) {
         await cancelScreeningInLocalEngine(
@@ -555,12 +557,25 @@ export function StrategyValidationWorkspace() {
       // Published selections own the historical cycle when a task overlaps it.
       const publishedSnapshots = profiles.flatMap((profile) => profile.snapshots.filter((snapshot) =>
         !firstChangedTime || snapshot.decisionTime < firstChangedTime));
+      const evaluationIndexes = new Map(series.bars.slice(schedule.evaluationStartIndex)
+        .map((bar, offset) => [bar.time, schedule.evaluationStartIndex + offset]));
+      const published = new Set(publishedSnapshots);
+      const profilesByWindow = new Map(profiles.map((profile) => [profile.screeningWindow, profile]));
+      const isFrozen = (window: number, time: string) => {
+        const profile = profilesByWindow.get(window);
+        return !!profile && time >= profile.startTime && time <= profile.report.evaluationEndTime &&
+          (!firstChangedTime || time < firstChangedTime);
+      };
       for (const snapshot of [...taskSnapshots, ...publishedSnapshots]) {
-        const decisionIndex = decisionByTime.get(snapshot.decisionTime);
+        const decisionIndex = evaluationIndexes.get(snapshot.decisionTime);
         if (decisionIndex === undefined || !selectedWindows.has(snapshot.screeningWindow)) continue;
+        if (!decisionByTime.has(snapshot.decisionTime) && !published.has(snapshot) &&
+          (isFrozen(snapshot.screeningWindow, snapshot.decisionTime) ||
+            !isHoldingCycleRescreenCandidate(series.bars, decisionIndex))) continue;
         reusable.set(`${snapshot.screeningWindow}:${decisionIndex}`, { ...snapshot, decisionIndex });
       }
-      const snapshots = [...reusable.values()];
+      let snapshots = [...reusable.values()];
+      optimizationUnits += snapshots.filter((snapshot) => !decisionByTime.has(snapshot.decisionTime)).length;
       const completed = new Set(reusable.keys());
       const pendingUnits = optimizationUnits - completed.size;
       if (pendingUnits > MAX_CYCLE_OPTIMIZATION_UNITS) {
@@ -708,14 +723,14 @@ export function StrategyValidationWorkspace() {
         outcome: ScreeningValidationOutcome,
       ) => {
         const unitKey = `${unit.screeningWindow}:${unit.decisionIndex}`;
-        if (completed.has(unitKey)) return;
+        if (completed.has(unitKey)) return reusable.get(unitKey)!;
         const best = selectBestShortcutScreeningResult(
           outcome.singleResults,
           outcome.results,
           objective,
         );
         if (!best) throw new Error(c.noResult);
-        snapshots.push({
+        const snapshot: StrategyCycleSelectionSnapshot = {
           decisionIndex: unit.decisionIndex,
           decisionTime: unit.decisionTime,
           screeningWindow: unit.screeningWindow,
@@ -723,11 +738,14 @@ export function StrategyValidationWorkspace() {
           fixedRelativeLongStrategy:
             best.kind === "combination" ? best.result.relativeLongStrategy : null,
           label: resultLabel(best.result),
-        });
+        };
+        reusable.set(unitKey, snapshot);
+        snapshots.push(snapshot);
         completed.add(unitKey);
         currentTask = {
           ...currentTask!,
           completedUnits: completed.size,
+          totalUnits: optimizationUnits,
           snapshots,
           status: "running",
         };
@@ -739,6 +757,29 @@ export function StrategyValidationWorkspace() {
           decisionTime: unit.decisionTime,
           screeningWindow: unit.screeningWindow,
         });
+        return snapshot;
+      };
+
+      const screenUnit = async (decisionIndex: number, screeningWindow: number) => {
+        controller.signal.throwIfAborted();
+        const availableBars = barsAvailableAtCycleDecision(series.bars, decisionIndex);
+        const range = resolveTrailingTradingSessionRange(availableBars, screeningWindow);
+        if (!range) throw new Error(c.insufficientHistory);
+        const decisionTime = series.bars[decisionIndex]!.time;
+        setProgress({ completed: completed.size, total: optimizationUnits, decisionTime, screeningWindow });
+        const outcome = await runScreeningInWorker(
+          availableBars,
+          { ...settings, startTime: range.startTime, endTime: range.endTime },
+          { mode: "sample", periods: [{ sessions: screeningWindow, weight: 100 }] },
+          {
+            objective,
+            excludedStrategyIds: assessMarketVolumeCoverage(availableBars).reliable ? undefined : VOLUME_REQUIRED_STRATEGY_IDS,
+            checkpointNamespace: `cycle:${selectedGroup.key}:${decisionIndex}:${screeningWindow}`,
+            signal: controller.signal,
+            maxCombinationStrategies,
+          },
+        );
+        return recordOutcome({ decisionIndex, decisionTime, screeningWindow }, outcome);
       };
 
       if (localEngine) {
@@ -759,58 +800,44 @@ export function StrategyValidationWorkspace() {
         );
       } else {
         for (const decisionIndex of schedule.decisionIndexes) {
-          if (screeningWindows.every((window) => completed.has(`${window}:${decisionIndex}`))) continue;
-          const availableBars = barsAvailableAtCycleDecision(series.bars, decisionIndex);
-          const volumeReliable = assessMarketVolumeCoverage(availableBars).reliable;
           for (const screeningWindow of screeningWindows) {
-            if (controller.signal.aborted) throw new DOMException("Paused", "AbortError");
-            const unitKey = `${screeningWindow}:${decisionIndex}`;
-            if (completed.has(unitKey)) continue;
-            const range = resolveTrailingTradingSessionRange(availableBars, screeningWindow);
-            if (!range) throw new Error(c.insufficientHistory);
-            setProgress({
-              completed: completed.size,
-              total: optimizationUnits,
-              decisionTime: series.bars[decisionIndex]!.time,
-              screeningWindow,
-            });
-            const workerOptions: WorkerScreeningOptions = {
-              objective,
-              excludedStrategyIds: volumeReliable ? undefined : VOLUME_REQUIRED_STRATEGY_IDS,
-              checkpointNamespace: `cycle:${selectedGroup.key}:${decisionIndex}:${screeningWindow}`,
-              signal: controller.signal,
-              preserveLocalJobOnAbort: true,
-              maxCombinationStrategies,
-            };
-            const outcome = await runScreeningInWorker(
-                availableBars,
-                {
-                  ...settings,
-                  startTime: range.startTime,
-                  endTime: range.endTime,
-                },
-                { mode: "sample", periods: [{ sessions: screeningWindow, weight: 100 }] },
-                workerOptions,
-              );
-            await recordOutcome({
-              decisionIndex,
-              decisionTime: series.bars[decisionIndex]!.time,
-              screeningWindow,
-            }, outcome);
+            if (!completed.has(`${screeningWindow}:${decisionIndex}`)) await screenUnit(decisionIndex, screeningWindow);
           }
         }
       }
-      currentTask = { ...currentTask, completedUnits: completed.size, snapshots, status: "completed" };
+      const accepted: StrategyCycleSelectionSnapshot[] = [];
+      let newUnits = pendingUnits;
+      for (const window of screeningWindows) {
+        const profile = profilesByWindow.get(window);
+        const anchorStart = profile ? evaluationIndexes.get(profile.startTime) : undefined;
+        const cached = new Map(snapshots.filter((item) => item.screeningWindow === window)
+          .map((item) => [item.decisionIndex, item]));
+        accepted.push(...await selectHoldingCycleWinners(series.bars, schedule, window,
+          { ...settings, positionOverlay: smaOverlay.settings }, cached, async (index) => {
+            if (++newUnits > MAX_CYCLE_OPTIMIZATION_UNITS) {
+              throw new Error(c.tooManyUnits.replace("{count}", String(newUnits)));
+            }
+            optimizationUnits++;
+            return screenUnit(index, window);
+          }, (time) => isFrozen(window, time), controller.signal,
+          profile && anchorStart !== undefined ? { startIndex: anchorStart, settings: profile.settings } : undefined));
+      }
+      snapshots = accepted;
+      currentTask = { ...currentTask, completedUnits: snapshots.length, totalUnits: snapshots.length,
+        snapshots, queuedUnits: [], status: "completed" };
       queuedJobIdsRef.current = [];
       await writeStrategyCycleValidationTask(currentTask);
       setStoredTask({ ...currentTask, key: "latest", version: 2, updatedAt: new Date().toISOString() });
       setProgress({
-        completed: completed.size,
-              total: optimizationUnits,
+        completed: snapshots.length,
+        total: snapshots.length,
         decisionTime: snapshots.at(-1)?.decisionTime ?? "",
         screeningWindow: snapshots.at(-1)?.screeningWindow ?? 0,
       });
-      calculateReports(series, snapshots, runEvaluationSessions, screeningWindows, undefined, profiles, correctedWindows);
+      // Extra dates were selected against these exact saved accounts. Do not
+      // publish against a different revision if another window changed one.
+      calculateReports(series, snapshots, runEvaluationSessions, screeningWindows, undefined, profiles,
+        new Set([...correctedWindows, ...profiles.map((profile) => profile.screeningWindow)]));
     } catch (caught) {
       if ((caught as Error).name === "AbortError") {
         if (pauseRequestedRef.current && currentTask) {
@@ -858,6 +885,7 @@ export function StrategyValidationWorkspace() {
     screeningWindows,
     selectedGroup,
     slippagePercent,
+    smaOverlay.settings,
     storedTask,
   ]);
 

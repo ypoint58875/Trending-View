@@ -1,5 +1,18 @@
 # Data Sources
 
+## 2026-11-10 holding-dependent full-rescreen source
+
+research/nikkei-holding-rescreen uses the existing hash-pinned
+nikkei-overlay-stability/data/full-screen-6-15/{input,signals}.json:6566bars,
+2000evaluation sessions,1293original full-screen10-session/max6 winners,
+ending2026-10-26. It is not a current browser-account export. No remote source
+is requested. data/<identity>/source_registry.jsonl records source path,access
+time,SHA256 hashes,parameters and implementation identity. Frozen inputs and
+packed bars are backed up there; new local optimizer requests/results/winners
+are separate per-date records. Current v11 execution retains3bps commission
+and2bps slippage. Existing upstream market provenance remains authoritative.
+
+
 ## 2026-11-10 unified trend pages and auxiliary import
 
 All three pages use the existing canonical Nikkei profile (`index:N225`),

@@ -1,5 +1,25 @@
 # Data Pipeline
 
+## Holding-dependent full-screen research supplementation
+
+research/nikkei-holding-rescreen/run.ts reuses original full-screen10-session
+winners and sequentially computes only newly eligible holding/downtrend/bearish
+dates. Training uses the complete causal prefix; the account remains continuous.
+data/<identity>/progress.json atomically commits each completed economic day
+after durable per-job result/winner files. The existing screening child persists
+sectional optimizer checkpoints and exits75 for a fresh child to resume.
+Interruptions stop at a safe boundary; rerunning the same command resumes.
+Source/code hashes reject incompatible progress. output/latest.json locates the
+active run. The main account remains sequential. Following the user's CPU
+request,prefetch.ts runs5bounded future children alongside1main child,using
+identical requests and causal prefixes.32candidate lookahead,8GiB free-memory
+reserve,3GiB per speculative child and1.5GiB per parent bound resource use.
+Private completed matching jobs publish atomically;existing main jobs win races.
+Unused flat-date precomputations never enter the actual account/calendar.
+10000bars,2000days,2048decisions and16MiBJSON retain prior bounds. No schedule,
+browser mutation,live coordinator queue or market fetch is introduced.
+
+
 ## Adopted rule synchronization across both workspaces
 
 Shared hydration checks each dynamic account against the current overlay, reuses

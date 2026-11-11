@@ -1,5 +1,26 @@
 # Module Patterns
 
+For cycle validation rules that depend on holdings, batch only the regular
+calendar. Decide supplemental screening from a chronological replay checkpoint
+at the preceding close. Reuse the existing worker request and task persistence;
+only the accepted calendar is published, and cached extra winners are not
+evidence that the account still holds on their dates.
+
+## Speculative screening versus chronological account ownership
+
+For holding-dependent research,keep exactly one sequential account writer.
+Parallelize independent complete causal-prefix optimizations in private per-date
+staging using existing checkpoint identity factories and disposable children.
+Validate exact request and successful bounded result before atomic publication;
+an existing main job directory has priority and must never be overwritten.
+Cancel only this sidecar's superseded children;retain checkpoints/raw outputs.
+Holding eligibility and calendar acceptance remain exclusively in the main
+account. Future unused work does not become a trade or screening decision.
+Use bounded worker/lookahead/memory limits and owner markers. Scheduling code
+does not change optimizer/economic identity. See holding-rescreen/prefetch-pool
+and its filesystem contention/request-integrity tests.
+
+
 ## Context-area and switch-preference patterns
 
 Visual context areas must call buildContextChartAreas on full-history weekly

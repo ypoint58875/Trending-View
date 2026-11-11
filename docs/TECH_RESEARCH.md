@@ -1,5 +1,52 @@
 # Technical Research
 
+## 2026-11-10 bounded parallel holding-rescreen precomputation
+
+User requested higher CPU utilization during the running study. Compare splitting
+one optimizer traversal versus computing independent future causal-prefix jobs.
+The former changes checkpoint/traversal machinery and risks tie-order drift;
+the latter reuses the exact existing disposable child and request identity.
+Choose a5-worker speculative sidecar plus the unchanged sequential main child.
+This uses the existing process-isolation pattern,no new library or unfamiliar
+framework. Current host:8logical CPUs,64GiB total,51.2GiB free before launch.
+
+Precompute at most32future downtrend-bearish candidates,leaving current/immediate
+next work to main. Do not use future results to determine past holdings. Main
+still decides eligibility from actual chronological state;unused flat-date
+precomputations have no economic effect. Exact-request successful results move
+atomically from private staging to main only if main has not claimed the date.
+Contending main directories win;stop superseded sidecar work and keep raw/state.
+Main source/execution/optimizer hash and identity remain unchanged. Sample after
+launch:6live children,CPU80%,5sidecar children1.7GiB total,no errors. Not a fixed
+speedup claim. Low-memory checks,3GiB child/1.5GiB parent limits and owner markers
+bound resources;existing checkpoint75 restarts and future-date resume remain.
+
+
+## 2026-11-10 holding-dependent full-screen supplementation
+
+User confirmed full new-winner screening on held, normally filtered downtrend
+bearish dates, rather than the earlier current-winner signal diagnostic.
+Compare full recomputation of all dates with reusing original-date winners and
+optimizing only newly eligible dates. Selection uses causal prices, fixed costs
+and an empty training account, independently of the live account. Therefore
+original winners remain reusable under the same optimizer definition; verify
+an original winner with a fresh full optimizer before supplementing. Choose
+incremental supplementation plus a complete alternative-account replay.
+Git comparison from27597c1 to checkpoint c037d4a shows no changes in strategy
+definitions,indicators,optimizer/search,combination or validation modules.
+Backtest changes extract the unchanged rebalance arithmetic and extend optional
+overlays,which are absent in optimizer settings. Fresh original2018-08-09 full
+screening reproduces the archived winning plan and relative-long choice.
+
+Eligibility must use the alternative's actual pre-close units, not the baseline
+holding mask: a new winner can change future holdings and pending requests.
+Keep strong-uptrend skips unchanged. Reuse the existing Stepper, production
+two-bar resolver, v11 controller, checkpoint identity and disposable child.
+This is established local code, with no new framework, provider or unfamiliar
+algorithm requiring online research. Frozen prices end2026-10-26. No production
+adoption follows automatically from a historical return comparison.
+
+
 ## 2026-11-10 native three-page integration decisions
 
 User approved replacing the display's old20/60/200-day context with the

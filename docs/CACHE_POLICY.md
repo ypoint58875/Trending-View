@@ -1,5 +1,21 @@
 # Cache Policy
 
+## Holding rescreen research retention
+
+research/nikkei-holding-rescreen/data/<identity> retains frozen inputs,raw bars,
+source registry,per-date requests/results/winners and atomic progress. No raw
+backup deletion or automatic TTL is authorized. Only incomplete JSON temporary
+files are overwritten on rerun. Keep child checkpoints until the existing child
+successfully commits a result and removes its own derived checkpoint. Process
+the account one date at a time;the optional5-worker prefetch pool stages at
+most32future candidates under prefetch/jobs. Successful exact-request jobs move
+atomically into jobs only before main ownership;unused speculative outputs and
+superseded partial checkpoints remain reproducibility data. Only abandoned or
+released owner markers are removed. No unbounded queue or periodic collector.
+output/<identity> contains regenerable summaries,traces and selected calendars.
+The research README and DATA_PIPELINE document limits,recovery and identities.
+
+
 ## Adopted shared-account rule upgrades
 
 Following explicit user adoption, a validated current-rule preview is promoted

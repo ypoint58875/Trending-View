@@ -44,6 +44,16 @@ versioned snapshot. No extra provider/network fallback or price overwrite is
 introduced. EChart registers MarkArea for original-state background regions.
 
 
+## v12 ordinary full-clear slope gate
+
+The default overlay requires SMA11 daily growth below +0.075% for ordinary
+full clears and does not wait for WMA7 to decline. Partial reductions still
+use both legacy checks. The supplemental minimum hold, 3% range protection,
+native risk clears, and fill timing are unchanged. Archived v11 plans keep
+their original full-clear gate and a distinct model identity. Validated
+accounts use the existing rule upgrade and backup mechanism: replay the
+saved winner calendar without running new screening.
+
 ## v11 same-completed-close BIAS holding-add gate
 
 v11 supersedes v10 defaults following explicit adoption of BIAS-only same-day
@@ -457,7 +467,13 @@ on 2024-11-05; the present China operating window is 14:30-15:00 UTC+8.
 Each screening decision consumes an inclusive causal prefix. The first
 decision is at the first evaluation close, with subsequent trend triggers
 including the final evaluation close. There is no pre-evaluation synthetic
-position. `strategyCycleRecentSignals` inspects the last two completed bars of
+position. Regular trend-triggered winners can be screened in parallel. For a
+normally skipped bearish continuation candle, each window checks actual units
+at its preceding close and runs a full screen if held. This includes the first
+bearish candle and does not extend to bullish continuation candles. Extra
+winners enter the account in date order; saved history keeps its original
+decision calendar and continuation uses its existing execution settings.
+`strategyCycleRecentSignals` inspects the last two completed bars of
 the selected plan; the target immediately before those bars is context only.
 Same-direction changes use the latest target; reduce-then-increase holds;
 increase-then-reduce only reduces. A quiet final bar permits yesterday's

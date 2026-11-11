@@ -3,7 +3,7 @@ import test from "node:test";
 import { readValidatedCycles, publishValidatedCycle, appendValidatedCycle,
   subscribeValidatedCycles, saveValidatedCyclePreview, promoteValidatedCycleRules } from "../lib/analysis/validated-cycle-strategy-store";
 import { buildValidatedCyclePreview, cachedValidatedCyclePreview } from "../lib/analysis/validated-cycle-preview";
-import { DEFAULT_POSITION_OVERLAY_OPTIONS, ATR_POSITION_OVERLAY_OPTIONS, BIAS_ADD_POSITION_OVERLAY_OPTIONS, RANGE_POSITION_OVERLAY_OPTIONS } from "../lib/analysis/sma-position-overlay";
+import { DEFAULT_POSITION_OVERLAY_OPTIONS, ATR_POSITION_OVERLAY_OPTIONS, BIAS_ADD_POSITION_OVERLAY_OPTIONS, RANGE_POSITION_OVERLAY_OPTIONS, SAME_CLOSE_POSITION_OVERLAY_OPTIONS } from "../lib/analysis/sma-position-overlay";
 import { createValidatedCycleStrategy, ValidatedCycleError } from "../lib/analysis/validated-cycle-strategy";
 import { buildStrategyCycleRollingSchedule, type StrategyCycleSelectionSnapshot } from "../lib/analysis/strategy-cycle-validation";
 import type { MarketSeries } from "../lib/market/types";
@@ -147,7 +147,7 @@ test("unavailable IndexedDB is an explicit error rather than false success", asy
   await assert.rejects(readValidatedCycles(), (error: unknown) => error instanceof ValidatedCycleError && error.code === "storage");
 });
 
-for (const previousOptions of [BIAS_ADD_POSITION_OVERLAY_OPTIONS, RANGE_POSITION_OVERLAY_OPTIONS]) test(`archived ${previousOptions.model} promotes to same-close v11 with one backup and no duplicate migration`, async () => {
+for (const previousOptions of [BIAS_ADD_POSITION_OVERLAY_OPTIONS, RANGE_POSITION_OVERLAY_OPTIONS, SAME_CLOSE_POSITION_OVERLAY_OPTIONS]) test(`archived ${previousOptions.model} promotes to the current overlay with one backup and no duplicate migration`, async () => {
   const memory = memoryIndexedDB(), oldDatabase = Object.getOwnPropertyDescriptor(globalThis, "indexedDB"), oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: memory.factory });
   Object.defineProperty(globalThis, "window", { configurable: true, value: new EventTarget() });
@@ -174,7 +174,7 @@ for (const previousOptions of [BIAS_ADD_POSITION_OVERLAY_OPTIONS, RANGE_POSITION
   }
 });
 
-test("shared rule upgrade is atomic, idempotent, preserves a v7 backup and continues under current v11", async () => {
+test("shared rule upgrade is atomic, idempotent, preserves a v7 backup and continues under the current overlay", async () => {
   const memory = memoryIndexedDB();
   const oldDatabase = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
   const oldWindow = Object.getOwnPropertyDescriptor(globalThis, "window");

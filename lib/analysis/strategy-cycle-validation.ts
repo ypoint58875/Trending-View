@@ -202,6 +202,48 @@ export function shouldScreenStrategyCycleAtIndex(
   return true;
 }
 
+export function isHoldingCycleRescreenCandidate(bars: readonly MarketBar[], index: number): boolean {
+  return !shouldScreenStrategyCycleAtIndex(bars, index) && bars[index]!.close < bars[index]!.open;
+}
+
+/** Accept additional winners only when the account held units at the previous close. */
+export async function selectHoldingCycleWinners(
+  bars: MarketBar[],
+  schedule: StrategyCycleSchedule,
+  screeningWindow: number,
+  settings: Parameters<typeof buildStrategyCycleRollingReport>[4],
+  cached: ReadonlyMap<number, StrategyCycleSelectionSnapshot>,
+  screen: (index: number) => Promise<StrategyCycleSelectionSnapshot>,
+  isFrozen: (time: string) => boolean,
+  signal?: AbortSignal,
+  anchor?: { startIndex: number; settings: Parameters<typeof buildStrategyCycleRollingReport>[4] },
+): Promise<StrategyCycleSelectionSnapshot[]> {
+  const base = new Set(schedule.decisionIndexes);
+  const accepted: StrategyCycleSelectionSnapshot[] = [];
+  let prior: StrategyCycleRollingReport | undefined;
+  let replayStart = schedule.evaluationStartIndex;
+  for (let index = schedule.evaluationStartIndex; index <= schedule.evaluationEndIndex; index++) {
+    signal?.throwIfAborted();
+    const existing = cached.get(index);
+    if (base.has(index) || isFrozen(bars[index]!.time)) {
+      if (existing) accepted.push(existing);
+      else if (base.has(index)) throw new Error("Rolling cycle screening results are incomplete");
+      continue;
+    }
+    if (!isHoldingCycleRescreenCandidate(bars, index)) continue;
+    const anchored = anchor && index > anchor.startIndex;
+    const start = anchored ? anchor.startIndex : schedule.evaluationStartIndex;
+    if (replayStart !== start) prior = undefined;
+    replayStart = start;
+    const history = start === schedule.evaluationStartIndex ? accepted :
+      accepted.filter((item) => item.decisionIndex >= start);
+    prior = buildStrategyCycleRollingReport(bars, history, bars.length - start,
+      screeningWindow, anchored ? anchor.settings : settings, history.map((item) => item.decisionIndex), prior, index - 1);
+    if (prior.checkpoint!.current.units > 1e-10) accepted.push(existing ?? await screen(index));
+  }
+  return accepted;
+}
+
 export interface StrategyCycleRecentSignal {
   direction: "increase" | "reduce";
   targetAllocation: number;
@@ -298,12 +340,20 @@ export function buildStrategyCycleRollingReport(
   > & { interval: MarketInterval },
   decisionCalendar?: readonly number[],
   previousReport?: StrategyCycleRollingReport,
+  throughIndex?: number,
 ): StrategyCycleRollingReport {
   if (settings.interval !== "1d") throw new Error("Cycle close replay requires daily bars");
   const schedule = buildStrategyCycleRollingSchedule(
     bars, evaluationSessions, screeningWindow,
   );
   if (!schedule) throw new Error("Invalid rolling cycle schedule");
+  if (throughIndex !== undefined) {
+    if (!decisionCalendar || !Number.isInteger(throughIndex) ||
+      throughIndex < schedule.evaluationStartIndex || throughIndex > schedule.evaluationEndIndex) {
+      throw new Error("Invalid rolling cycle replay end");
+    }
+    schedule.evaluationEndIndex = throughIndex;
+  }
   if (decisionCalendar) {
     if (decisionCalendar[0] !== schedule.evaluationStartIndex ||
       decisionCalendar.some((index, offset) => !Number.isInteger(index) ||
@@ -458,7 +508,7 @@ export function buildStrategyCycleRollingReport(
     evaluationEndTime: bars[schedule.evaluationEndIndex]!.time,
     screeningWindow,
     decisionCount: ordered.length,
-    skippedDecisionCount: Math.max(evaluationSessions - ordered.length, 0),
+    skippedDecisionCount: schedule.evaluationEndIndex - schedule.evaluationStartIndex + 1 - ordered.length,
     benchmarkReturn: totalReturn(benchmark),
     updateReturn: totalReturn(current),
     rebalances,

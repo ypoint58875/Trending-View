@@ -1,5 +1,253 @@
 # Codex State
 
+## 2026-11-11: adopt SMA11-only full-clear confirmation
+
+The user selected default overlay v12. Only ordinary full-clear requests
+use the SMA11 daily growth check alone, with a strict +0.075% upper bound.
+Partial reductions retain SMA11 and WMA7. The supplemental hold, range,
+native stops, entry gates, and execution timing are unchanged. Archived v11
+plans keep their rules, and the holding-rescreen research is pinned to v11.
+Saved validated accounts use the existing upgrade path, replaying their
+stored winners with one prior-rule backup rather than rescreening history.
+
+A fresh decision-calendar replay of the 2,000-session sample matched the
+research candidate exactly: 134 supplemental dates, 135 fills and 434.025295%
+net return. This is a research parity check, not an assertion that a stored
+account with a fixed historical calendar gets the same result.
+
+Verification: the initial `npm test` found the obsolete model-count
+assertion. The unchanged exact-optimizer suite passed in that run. After
+updating the count and adding two v12 tests, all remaining 476 unit tests,
+typecheck, scoped lint, production build and five rendered-page tests passed.
+
+## Ordinary full-clear slope study complete
+
+The 24-variant EMA7/SMA11/WMA7 study plus two controls passed independent
+accounting for 52,000 replayed sessions. Two previously missing winners were
+computed with the full causal-prefix optimizer; optional unneeded prefetch
+work was stopped after the report, with checkpoints retained. Typecheck,
+scoped lint, and research guard tests passed. See the study's
+`CLEAR_SLOPE_DESIGN.md` and `exit-slope/summary.json`. No production change.
+
+The best full-sample variant releases ordinary full clears when SMA11 daily
+growth is below +0.075%, without the WMA7 veto. It returned 434.03% full,
+108.20% last 500, and 56.52% last 250, versus 408.63%, 102.79%, and 56.37%
+for standard rescreen. Drawdown fell from 15.64% to 8.95%, and pending clear
+days from 644 to 584. It was the only variant with higher full-sample return.
+The first-1,500-session selection instead relaxed WMA7 to +0.075% while
+retaining the native SMA11 gate; its last-500 return of 96.75% lagged the
+102.79% control. This is exploratory sensitivity, not an adoption decision.
+
+## Deferred supplemental clears and candle confirmation
+
+Run `node --import tsx research/nikkei-holding-rescreen/exit-timing.ts --delay`
+for fixed delays of one, two and three sessions, or use `--candle` for four
+bearish/bullish and lower/higher close combinations. Close comparison is
+against the supplemental signal close. Candle policies submit by the third
+subsequent session, even without a match. All variants submit to the native
+exit rules, preserve independent risk exits, and cancel a deferred request
+on an actionable increase or an already flat account. Repeated clear signals
+do not extend the first request's deadline.
+
+Fixed delays return 407.61%, 419.66% and 419.35% over all 2,000 sessions;
+bearish/lower, bullish/lower, bearish/higher and bullish/higher return 407.61%,
+419.35%, 419.66% and 419.35%. All variants match standard rescreen's trailing
+500/250 returns of 102.79%/56.37% and full drawdown of 15.64%. Two-day delay
+avoids the 2020-09-30 clear after a 2020-10-05 entry signal cancels the
+deferred request. All winners were cached. Independent checks verified window
+returns, date offsets and candle matches; typecheck passed. Outputs are
+`exit-delay` and `exit-candle` within the completed study. No production change.
+
+## Supplemental clear timing research
+
+Run `node --import tsx research/nikkei-holding-rescreen/exit-timing.ts` against
+the completed 2,000-session study. Each variant recalculates holding eligibility
+from its own chronological account. All required winners were cached; no
+optimizer ran. The isolated runner uses durable job checkpoints only for an
+uncached winner; otherwise this short replay is safe to restart from the start.
+No production rule changed.
+
+| Policy | Full net % | Last 500 % | Last 250 % |
+| --- | ---: | ---: | ---: |
+| Original filter | 463.09 | 99.85 | 54.10 |
+| Standard full rescreen | 408.63 | 102.79 | 56.37 |
+| Force supplemental clear at signal close | 343.24 | 88.69 | 45.50 |
+| Native clear plus next bearish/lower close override | 369.12 | 87.03 | 44.22 |
+| Wait and require next bearish/lower close | 360.40 | 79.49 | 38.41 |
+
+The comparison uses completed closes and existing costs. The two next-day
+variants use only the immediately following trading session. The strict
+variant withholds that supplemental signal on its own day and discards it
+if the next close does not confirm; other exits stay active. On 2026-06-23/24
+the early exits were followed by re-entry at a higher close on 2026-06-25
+and another sale on 2026-06-26. Results and daily fills are in `exit-timing`
+under the completed study output. Independent accounting verified 15 returns
+and exact daily positions, equity and fills for both controls.
+
+## 2026-11-11: adopt holding-dependent bearish rescreening
+
+The user selected the audited rule: screen the first and every subsequent
+strong-downtrend bearish candle when actual units at the preceding close are
+positive. Flat accounts and rising-trend skips retain the original filter.
+Cycle validation first screens the regular calendar, then resolves the extra
+decisions in chronological order separately for each window. Saved winners and
+completed optimizer jobs remain reusable, but a cached extra winner is accepted
+only if its date is eligible on the current account path. Confirmed published
+history remains frozen; continuing accounts use their original start and
+execution settings for the eligibility check. Existing recent corrections still
+replay from the affected tail. No optimizer protocol or general strategy rule
+changed. The completed research inputs reproduce exactly 149 extra dates,
+132 fills and 408.631264% net return under the production selector. Full
+`npm test` passed: 514 unit tests, production build, and five HTML tests.
+
+The completed holding rescreen study now includes eight vertically stacked
+price and target-allocation comparisons for all 32 divergent target sessions.
+Run `python research/nikkei-holding-rescreen/plot-divergences.py` to regenerate
+the local chart album under the completed run's `divergence-charts` directory.
+The album also compares trailing 500-session returns (99.85% original vs
+102.79% rescreen) and 250-session returns (54.10% vs 56.37%). Both windows
+end on 2026-10-26 and use the prior close as the starting equity; positions
+carry through. The 500-session values match the existing summary. No replay,
+optimizer, or production rule changed.
+
+## 2026-11-11: holding rescreen study complete
+
+The full 2,000-session replay and independent Python audit completed at 01:39
+China time. The run reused 1,293 original winners and accepted 149 additional
+full screens. Baseline versus rescreen: net return 463.092280% vs 408.631264%,
+maximum drawdown 10.875317% vs 15.643071%, fills 128 vs 132, clears 57 vs 59.
+Same-state checks found five immediate target changes: one direct clear on
+2020-09-30 and four pending clears canceled by entry signals. The full paths
+differ on 32 target dates. Annual contributions sum to the final -54.461016
+percentage-point gap; both paths returned 36.537905% in 2025, so its larger
+cash gap reflects the inherited equity difference. See
+`research/nikkei-holding-rescreen/RESULTS.md` and `output/latest.json` in the
+study directory for the report and chart locations. No production rule changed.
+
+## Latest2026-11-10: higher-CPU holding-rescreen execution
+
+User explicitly requested more parallel computation. Added research-only
+prefetch.ts,prefetch-pool.ts and filesystem safety tests;updated README and
+run-background.ps1. Main run.ts,optimizer,account rules and active identity
+9e9fc2eb97a74df1c0d049848007af3ab03220378168ecefe210c433b17dd8c6 are unchanged.
+No running main job was restarted or checkpoint migrated. Existing supervisor
+19808/main32 continue. Sidecar8388 launched hidden with5extra children;future
+launcher runs start a pool automatically (an owner marker prevents duplicates).
+Pool status is data/<identity>/prefetch/status.json;current logs are
+output/prefetch.stdout.log and stderr.log;future launches useprefetch-<PID> logs.
+
+Host8logical CPUs/64GiB,initial free51.2GiB. Observed6screening children,CPU80%,
+sidecar child RSS1.7GiB combined,no errors. Prefetch defaults5 (env
+QUANTSCOPE_PREFETCH_WORKERS,range1..6),clamped by CPU/free memory.32future-candle
+candidate lookahead,reserved current/next candidate,8GiB free-memory reserve,
+1.5GiB parent and3GiB speculative-child RSS limits. Existing child checkpoints
+and exit75 restarts retain recovery. Study source/code hash is verified first.
+
+Private prefetch/jobs/<index> work uses exactly the main request,namespace and
+completed causal prefix. Publish only complete successful exact-request results
+by atomic directory move within the validated study root. Existing main jobs
+win;stop only sidecar-owned superseded children and preserve partial state.
+Main completion/failure stops prefetch. Owner markers are the only sidecar
+files deleted;raw/results remain. Some dates may be computed then unused when
+the chronological alternative is flat. Actual eligibility,calendar,trades and
+future holding state remain solely in the sequential main. This is an execution
+speed change,not a new filter or a baseline-mask approximation.
+
+27focused study/cycle tests,typecheck,scoped ESLint,launcher syntax and diff
+checks pass. Independent Python verifies79committed economic days and4extra
+accepted winners after launch;five speculative workers remain active,no errors.
+The original full npm test passed earlier;production code remains unchanged.
+Existing completion-analysis heartbeat continues;read latest.json for current
+progress rather than treating launch-time snapshots as final results.
+
+
+## Latest holding-rescreen continuation and analysis handoff
+
+Background computation is running,NOT complete. Launch-time snapshot:65/2000
+days committed,two additional full-screen winners,third extra date2018-11-13
+in progress. Read research/nikkei-holding-rescreen/output/latest.json for live
+status. Current identity:
+9e9fc2eb97a74df1c0d049848007af3ab03220378168ecefe210c433b17dd8c6.
+Hidden supervisor19808 runs run-background.ps1;logs are output/background-v2.*.
+Computer must stay on;after reboot rerun that script to resume. No background
+child or live application process outside this study was changed.
+
+User explicitly requested analysis of where differences occur after completion.
+An active30-minute thread heartbeat named "Cycle holding rescreen difference
+analysis" (tool id automation;UI name is localized) follows this chat. It stays
+quiet during normal computation,recovers compatible stopped work,then verifies
+reports/audits and supplies substantive Chinese findings before pausing itself.
+This is an app follow-up,not a Windows scheduled task or service. Keep the Codex
+desktop app running for local follow-up checks. Official source consulted:
+https://learn.chatgpt.com/docs/automations?surface=app.
+
+An end-to-end report self-comparison exposed reuse of a previously used Stepper
+when initializing a SECOND account. Fixed run.ts baseline and report.ts control
+to create fresh Steppers;the alternative account and optimizer were unaffected.
+The test now proves zero self-comparison advantage and reproduces the existing
+independent carried-strategy350.5911425933033%/141fills/149checks diagnostic.
+The owned background child was stopped at a durable checkpoint. One-time
+migrate-report-initialization.ts reconstructed the old source hash,proving that
+the only identity change was baseline initialization. It COPIED original state
+to the new identity and rebound metadata/signatures while preserving unchanged
+binary optimizer sections.38days,one extra winner,original-winner parity and
+the next date's completed-pair checkpoint were retained. Old artifacts remain
+intact;no raw/test/assertion deletion. Migration is not a general stale-result
+override. Independent Python verifies all65committed masks,plans,fee/slippage
+fills and daily cash/units/equity after continuation.
+
+24focused tests now pass (three study/report tests plus21cycle tests);typecheck
+and scoped ESLint pass. Earlier fresh full npm test passed513unit/build/5HTML;
+no production code changed afterward. Full2000-day parity/performance remains
+pending. report.ts will independently replay carried-strategy-only policy,
+compare same-pre-state new/old/no-screen requests,attribute direct clears,
+identify first divergence,and export additive daily/monthly/yearly/500-session
+contributions summing to the final return difference. plot.py creates standalone
+equity/drawdown/advantage/target and monthly PNG/SVG charts;the end-to-end fixture
+also executes chart generation successfully. User-facing conclusions must wait
+for completed real outputs,not the temporary self-comparison test fixture.
+
+
+## 2026-11-10 holding-dependent full-screen supplementation started
+
+User explicitly selected full new-winner screening rather than the earlier
+current-carried-strategy diagnostic,and requested a local commit before work.
+Checkpoint c037d4a records171source/test/doc/research files;large local outputs,
+raw backups and browser temporaries were excluded. No remote push. Existing
+context-replay.ts trailing blank-line diff warning was retained without cleanup.
+
+Research-only implementation is in research/nikkei-holding-rescreen. Keep the
+original1293screen dates;add complete10-session,max6 full-screen optimization
+only for normally skipped strong-down bearish days with actual alternative
+pre-close holdings. Retain v11,two-bar semantics,costs and every other skip.
+Frozen2000-session source ends2026-10-26. No current-browser or product edits.
+
+Run npx tsx research/nikkei-holding-rescreen/run.ts;--limit1 pauses after one
+new winner. Existing screening children run sequentially in isolated research
+data/<identity>/jobs and retain sectional checkpoints across exit75 restarts.
+Atomic progress commits each day after durable output;output/latest.json locates
+the run. Repeat after interruption. No live queue reset or new provider call.
+Original-date optimizer parity PASSED on2018-08-09;new date2018-09-07 is being
+optimized after21committed evaluation days. User additionally clarified that
+flat accounts retain their original filter;the implementation already does so.
+Active identity37085861a3cb27628e39539a27f07517e41f83d1bf6add0a762007cee5ae901a.
+output/latest.json and atomic progress are authoritative;this paragraph is a
+launch-time snapshot,not a live completion claim. Hidden supervisor10288 waits
+for the one-extra-winner pilot20184 to exit,then runs the unlimited continuation,
+exit-attribution report and independent Python audit. It uses the background
+script's OS mutex. No scheduled task/service/remote push was added. Host reboot
+requires rerunning run-background.ps1;committed winners/checkpoints survive.
+
+Fresh full npm test PASSED:513unit tests,production build,5rendered-HTML tests.
+23focused checks,TypeScript and scoped ESLint also pass. Independent Python
+verifies all21committed days,actual-holding masks,fill accounting,fees/slippage,
+carried plans and equity. Final2000-day production parity and new-policy
+performance remain pending. report.ts will compare same-state no-screen probes
+on added dates,distinguishing direct clears from ordinary daily risk fills.
+Full backtest results are not available yet. RESULTS.md is written only on
+complete calculation;never substitute the previous350.59%old-winner diagnostic.
+
+
 ## 2026-11-10 confirmed holding-bearish current-strategy rerun
 
 User explicitly chose current-carried-strategy signal checking rather than new

@@ -26,6 +26,8 @@ import {
   strategyCycleSignalsOppose,
   strategyCycleRecentSignals,
   shouldScreenStrategyCycleAtIndex,
+  isHoldingCycleRescreenCandidate,
+  selectHoldingCycleWinners,
   strategyCycleTrendAngle,
   type StrategyCycleSelectionSnapshot,
 } from "../lib/analysis/strategy-cycle-validation";
@@ -127,6 +129,43 @@ test("rolling schedule screens at the first evaluation close and includes final-
   assert.equal(buildStrategyCycleRollingSchedule(makeBars(20), 2, 20), null);
   assert.ok(buildStrategyCycleRollingSchedule(makeBars(20), 10, 5));
   assert.equal(buildStrategyCycleRollingSchedule(makeBars(20), 10, 4), null);
+});
+
+test("full rescreen starts at the first skipped bearish candle while held and stops after a clear", async () => {
+  const closes = [...Array<number>(10).fill(100), 120, 95, 94, 93, 92];
+  const bars = makeBars(closes.length).map((bar, index) => ({
+    ...bar, open: closes[index]! + 1, close: closes[index]!, high: closes[index]! + 1, low: closes[index]! - 1,
+  }));
+  const schedule = buildStrategyCycleRollingSchedule(bars, 5, 5)!;
+  assert.deepEqual(schedule.decisionIndexes, [10]);
+  assert.equal(isHoldingCycleRescreenCandidate(bars, 11), true);
+  assert.equal(isHoldingCycleRescreenCandidate(makeBars(30), 29), false);
+  const winner = (decisionIndex: number, entry: number, exit: number): StrategyCycleSelectionSnapshot => ({
+    decisionIndex, decisionTime: bars[decisionIndex]!.time, screeningWindow: 5,
+    plan: { strategyA: { strategyId: "roc-momentum", parameters: { period: 1, entry, exit } },
+      strategyB: null, strategyAAllocation: 1, strategyBAllocation: 0 },
+    fixedRelativeLongStrategy: null, label: String(decisionIndex),
+  });
+  const settings = { initialCash: 100_000, commissionRate: 0, slippageRate: 0, interval: "1d" as const };
+  const cached = new Map([[10, winner(10, 1, -50)], [13, winner(13, 1, -1)]]);
+  const requested: number[] = [];
+  const accepted = await selectHoldingCycleWinners(bars, schedule, 5, settings, cached, async (index) => {
+    requested.push(index);
+    return index === 11 ? winner(index, 1_000, -1) : winner(index, 1, -1);
+  }, () => false);
+  assert.deepEqual(requested, [11, 12]);
+  const calendar = accepted.map((snapshot) => snapshot.decisionIndex);
+  assert.deepEqual(calendar, [10, 11, 12]);
+  const report = buildStrategyCycleRollingReport(bars, accepted, 5, 5, settings, calendar);
+  assert.deepEqual(report.rebalances.map((fill) => [fill.time, fill.targetAllocation]),
+    [[bars[10]!.time, 1], [bars[12]!.time, 0]]);
+  const restored = await selectHoldingCycleWinners(bars, schedule, 5, settings,
+    new Map(accepted.map((item) => [item.decisionIndex, item])),
+    async () => assert.fail("A restored winner should not be recomputed"), () => false);
+  assert.deepEqual(restored, accepted);
+  const frozen = await selectHoldingCycleWinners(bars, schedule, 5, settings, cached,
+    async () => assert.fail("Published dates should not be rescreened"), () => true);
+  assert.deepEqual(frozen.map((item) => item.decisionIndex), [10, 13]);
 });
 
 test("two-bar signal resolver inherits position and applies the six supported sequences", () => {
